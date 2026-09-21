@@ -1,4 +1,6 @@
-:root {
+@import "tailwindcss";
+
+:root, [data-theme="dark"] {
   --bg: #12141a;
   --bg-elev: #191c24;
   --bg-elev-2: #20242e;
@@ -11,9 +13,25 @@
   --warn-bg: #3a2f12;
   --warn-border: #7a6320;
   --warn-text: #ffd98a;
-  /* 比 --bg 更深一层的「凹陷」底色：用于代码块 / 工具输出的等宽文本区。
-     卡片底是 --bg-elev，这里需要再深一档，才能把「输出区」从卡片里压下去。 */
   --bg-sunken: #0e0f14;
+  --radius: 10px;
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+[data-theme="light"] {
+  --bg: #f8fafc;
+  --bg-elev: #ffffff;
+  --bg-elev-2: #f1f5f9;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --text-dim: #64748b;
+  --accent: #2563eb;
+  --accent-dim: #dbeafe;
+  --danger: #ef4444;
+  --warn-bg: #fef9c3;
+  --warn-border: #fde047;
+  --warn-text: #854d0e;
+  --bg-sunken: #eaeff5;
   --radius: 10px;
   font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
 }

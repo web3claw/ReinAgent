@@ -1,20 +1,10 @@
-import { defaultCatalogEntry } from "../../lib/providers/catalog";
-import { catalogOptions, validateProviderConfig } from "../../lib/providers/modelFactory";
+import { PROVIDERS, getProviderMeta, type ProviderType } from "../../lib/providers/catalog";
+import { validateProviderConfig } from "../../lib/providers/modelFactory";
 import type { Settings } from "../../lib/settings/store";
 import type { SettingsStatus } from "../../lib/settings/useSettings";
+import { useTranslation } from "../../i18n";
+import { AlertTriangle, CheckCircle2, Server, Key, Cpu, Globe } from "lucide-react";
 
-/**
- * 目录驱动的派生量都是**模块级常量**：`CATALOG` 来自 pi-ai 官方目录、运行期不变，
- * 没有必要每次渲染都重算（`catalogOptions()` 每次新建数组、`defaultCatalogEntry()` 每次 find+回退）。
- */
-const MODELS = catalogOptions();
-const AUTHORITATIVE_BASE_URL = defaultCatalogEntry().baseUrl;
-
-/**
- * 设置面板（S3 收编了 S2 的临时配置条）。
- * 字段：API Key（密码框）/ 模型（下拉，取 catalog）/ baseUrl（可编辑）。
- * 任意改动即通过 onChange 更新内存态，并由 useSettings 自动持久化。
- */
 export function ProviderForm({
   settings,
   status,
@@ -24,62 +14,123 @@ export function ProviderForm({
   status: SettingsStatus;
   onChange: (patch: Partial<Settings>) => void;
 }) {
-  // 实时校验 baseUrl 形状：拦下「忘写协议头」这类错误，不等请求失败才提示。
-  // （validateProviderConfig 对空串返回 null——留空即走默认，不算错。）
+  const { t } = useTranslation();
+  const currentProviderMeta = getProviderMeta(settings.provider || "deepseek");
   const baseUrlError = validateProviderConfig({ baseUrl: settings.baseUrl });
 
+  const handleProviderChange = (newProvider: ProviderType) => {
+    const meta = getProviderMeta(newProvider);
+    onChange({
+      provider: newProvider,
+      modelId: meta.defaultModelId,
+      baseUrl: "", // reset to default for that provider
+    });
+  };
+
   return (
-    <section className="settings-panel" aria-label="设置">
-      <div className="settings-head">
-        <h2 className="settings-title">设置</h2>
-        <span className={`settings-persist ${status.persistent ? "" : "settings-persist-warn"}`}>
-          {!status.ready ? "正在加载…" : status.persistent ? "已启用本地持久化" : "仅内存（未持久化）"}
-        </span>
+    <section className="settings-panel border-b border-[var(--border)] bg-[var(--bg-secondary)] p-4 sm:p-6 transition-colors">
+      <div className="flex items-center justify-between pb-4 mb-4 border-b border-[var(--border)]">
+        <div className="flex items-center gap-2">
+          <Server className="w-5 h-5 text-[var(--accent)]" />
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">{t("settings")}</h2>
+        </div>
+        <div className="flex items-center gap-1.5 text-xs">
+          {status.persistent ? (
+            <span className="flex items-center gap-1 text-emerald-500 font-medium">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              <span>{t("saved")}</span>
+            </span>
+          ) : (
+            <span className="flex items-center gap-1 text-amber-500 font-medium">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>Memory Mode</span>
+            </span>
+          )}
+        </div>
       </div>
 
-      {status.warning ? <div className="settings-warning">⚠ {status.warning}</div> : null}
+      {status.warning ? (
+        <div className="flex items-start gap-2 p-3 mb-4 rounded-lg bg-amber-500/10 border border-amber-500/20 text-xs text-amber-500">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>{status.warning}</span>
+        </div>
+      ) : null}
 
-      <label className="field">
-        <span className="field-label">DeepSeek API Key</span>
-        <input
-          className="field-input"
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          placeholder="留空则使用演示模式（合成数据）"
-          value={settings.apiKey}
-          onChange={(event) => onChange({ apiKey: event.target.value })}
-        />
-      </label>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Provider */}
+        <label className="flex flex-col gap-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+            <Server className="w-3.5 h-3.5" />
+            <span>{t("provider")}</span>
+          </span>
+          <select
+            className="w-full px-3 py-2 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+            value={settings.provider || "deepseek"}
+            onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
+          >
+            {PROVIDERS.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <label className="field">
-        <span className="field-label">模型</span>
-        <select
-          className="field-input"
-          value={settings.modelId}
-          onChange={(event) => onChange({ modelId: event.target.value })}
-        >
-          {MODELS.map((model) => (
-            <option key={model.id} value={model.id}>
-              {model.name}
-            </option>
-          ))}
-        </select>
-      </label>
+        {/* Model */}
+        <label className="flex flex-col gap-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+            <Cpu className="w-3.5 h-3.5" />
+            <span>{t("model")}</span>
+          </span>
+          <select
+            className="w-full px-3 py-2 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
+            value={settings.modelId}
+            onChange={(e) => onChange({ modelId: e.target.value })}
+          >
+            {currentProviderMeta.models.map((m) => (
+              <option key={m.id} value={m.id}>
+                {m.name} ({m.id})
+              </option>
+            ))}
+          </select>
+        </label>
 
-      <label className="field">
-        <span className="field-label">baseUrl</span>
-        <input
-          className={`field-input${baseUrlError ? " field-input-invalid" : ""}`}
-          spellCheck={false}
-          type="url"
-          aria-invalid={baseUrlError ? true : undefined}
-          placeholder={`留空使用默认：${AUTHORITATIVE_BASE_URL}（注意不带 /v1）`}
-          value={settings.baseUrl}
-          onChange={(event) => onChange({ baseUrl: event.target.value })}
-        />
-        {baseUrlError ? <span className="field-error">{baseUrlError}</span> : null}
-      </label>
+        {/* API Key */}
+        <label className="flex flex-col gap-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+            <Key className="w-3.5 h-3.5" />
+            <span>{t("apiKey")}</span>
+          </span>
+          <input
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            placeholder={settings.provider === "ollama" ? "Ollama does not require an API Key" : t("apiKeyPlaceholder")}
+            value={settings.apiKey}
+            onChange={(e) => onChange({ apiKey: e.target.value })}
+            className="w-full px-3 py-2 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)] font-mono"
+          />
+        </label>
+
+        {/* Base URL */}
+        <label className="flex flex-col gap-1.5">
+          <span className="flex items-center gap-1.5 text-xs font-medium text-[var(--text-secondary)]">
+            <Globe className="w-3.5 h-3.5" />
+            <span>{t("baseUrl")}</span>
+          </span>
+          <input
+            type="url"
+            spellCheck={false}
+            placeholder={`Default: ${currentProviderMeta.defaultBaseUrl}`}
+            value={settings.baseUrl}
+            onChange={(e) => onChange({ baseUrl: e.target.value })}
+            className={`w-full px-3 py-2 text-sm rounded-lg border bg-[var(--bg-card)] text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none focus:border-[var(--accent)] font-mono ${
+              baseUrlError ? "border-red-500" : "border-[var(--border)]"
+            }`}
+          />
+          {baseUrlError ? <span className="text-xs text-red-500 mt-0.5">{baseUrlError}</span> : null}
+        </label>
+      </div>
     </section>
   );
 }

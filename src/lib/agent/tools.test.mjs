@@ -549,10 +549,10 @@ test("7 · TOOL_LIMITS 边界：256 长度 / 32 层括号不抛错、深嵌套�
 // ---------------------------------------------------------------------------
 test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册表", async () => {
   assert.ok(Array.isArray(TOOLS), "TOOLS 应是数组");
-  assert.equal(TOOLS.length, 2, "默认两个工具");
+  assert.ok(TOOLS.length >= 2, "默认工具数");
   assert.deepEqual(
     TOOLS.map((t) => t.name),
-    ["get_current_time", "calculate"],
+    ["get_current_time", "calculate", "read_file", "write_file", "edit_file", "list_dir", "exec_command"],
     "工具名与顺序",
   );
 
@@ -560,7 +560,7 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
   const b = getTools();
   assert.notStrictEqual(a, b, "每次返回新数组");
   assert.notStrictEqual(a, TOOLS, "不得直接暴露内部数组");
-  assert.equal(a.length, 2);
+  assert.ok(a.length >= 2);
 
   // 破坏性改动返回数组。
   const firstBefore = a[0];
@@ -569,7 +569,7 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
   a.length = 0;
 
   const c = getTools();
-  assert.equal(c.length, 2, "内部注册表长度不受影响");
+  assert.equal(c.length, TOOLS.length, "内部注册表长度不受影响");
   assert.ok(c[0] && c[0].name, "内部元素未被改写");
   assert.strictEqual(c[0], firstBefore, "浅拷贝：元素仍是同一批工具对象引用");
   assert.notStrictEqual(c, a, "仍是新数组");

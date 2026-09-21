@@ -318,7 +318,7 @@ export function MarkdownBlocks(props) {
   const children = [];
   for (let index = 0; index < visible.length; index += 1) {
     if (index > 0) children.push("\n");
-    children.push(createElement(MarkdownBlock, { key: index, text: visible[index] }));
+    children.push(createElement(props.renderBlock || MarkdownBlock, { key: index, text: visible[index] }));
   }
 
   if (base.truncated) {

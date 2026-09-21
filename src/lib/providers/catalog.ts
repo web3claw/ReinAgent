@@ -1,33 +1,94 @@
-/**
- * 内置模型目录（DeepSeek）。
- *
- * 优先使用 pi-ai 自带的官方目录（`@earendil-works/pi-ai/providers/deepseek.models`），
- * 避免模型 id / 价格 / 上下文窗口变更后我们抄错。权威值来自
- * `node_modules/@earendil-works/pi-ai/dist/providers/data/deepseek.json`。
- *
- * 说明：这是**运行时**导入（不是 `import type`），因为它要提供真实数据。
- * `deepseek.models.js` 只依赖 `model-catalog.js`（无 import）与一个 JSON，
- * 无任何 Node 内置模块，因此对浏览器打包安全。
- */
+export type ProviderType = "deepseek" | "openai" | "anthropic" | "gemini" | "ollama" | "custom";
 
-import type { Model } from "@earendil-works/pi-ai";
-import { DEEPSEEK_MODELS } from "@earendil-works/pi-ai/providers/deepseek.models";
-
-/** 本项目当前只支持 openai-completions 协议的模型。 */
-export type ChatModel = Model<"openai-completions">;
-
-/** 全部可用的内置模型（来自 pi-ai 官方目录）。 */
-export const CATALOG: ChatModel[] = Object.values(DEEPSEEK_MODELS);
-
-/** 默认模型 id（0.86.0 起目录用 `deepseek-flash`，旧 `deepseek-v4-flash` 已退役）。 */
-export const DEFAULT_MODEL_ID = "deepseek-flash";
-
-/** 按 id 查找目录项。 */
-export function findCatalogEntry(id: string): ChatModel | undefined {
-  return CATALOG.find((model) => model.id === id);
+export interface ProviderMeta {
+  id: ProviderType;
+  name: string;
+  defaultBaseUrl: string;
+  defaultModelId: string;
+  api: "openai-completions" | "anthropic-messages" | "google-generative-ai";
+  models: { id: string; name: string }[];
 }
 
-/** 取默认目录项（找不到默认 id 时退化为目录第一项）。 */
-export function defaultCatalogEntry(): ChatModel {
-  return findCatalogEntry(DEFAULT_MODEL_ID) ?? CATALOG[0];
+export const PROVIDERS: ProviderMeta[] = [
+  {
+    id: "deepseek",
+    name: "DeepSeek",
+    defaultBaseUrl: "https://api.deepseek.com",
+    defaultModelId: "deepseek-chat",
+    api: "openai-completions",
+    models: [
+      { id: "deepseek-chat", name: "DeepSeek-V3 (Chat)" },
+      { id: "deepseek-reasoner", name: "DeepSeek-R1 (Reasoner)" },
+    ],
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    defaultBaseUrl: "https://api.openai.com/v1",
+    defaultModelId: "gpt-4o",
+    api: "openai-completions",
+    models: [
+      { id: "gpt-4o", name: "GPT-4o (Omni)" },
+      { id: "gpt-4o-mini", name: "GPT-4o Mini" },
+      { id: "o1", name: "o1 (Reasoning)" },
+      { id: "o3-mini", name: "o3-mini" },
+    ],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    defaultBaseUrl: "https://api.anthropic.com",
+    defaultModelId: "claude-3-7-sonnet-latest",
+    api: "anthropic-messages",
+    models: [
+      { id: "claude-3-7-sonnet-latest", name: "Claude 3.7 Sonnet" },
+      { id: "claude-3-5-sonnet-latest", name: "Claude 3.5 Sonnet" },
+      { id: "claude-3-5-haiku-latest", name: "Claude 3.5 Haiku" },
+    ],
+  },
+  {
+    id: "gemini",
+    name: "Google Gemini",
+    defaultBaseUrl: "https://generativelanguage.googleapis.com/v1beta",
+    defaultModelId: "gemini-2.5-flash",
+    api: "google-generative-ai",
+    models: [
+      { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
+      { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
+    ],
+  },
+  {
+    id: "ollama",
+    name: "Ollama (Local)",
+    defaultBaseUrl: "http://localhost:11434/v1",
+    defaultModelId: "qwen2.5-coder",
+    api: "openai-completions",
+    models: [
+      { id: "qwen2.5-coder", name: "Qwen 2.5 Coder" },
+      { id: "deepseek-r1", name: "DeepSeek-R1 (Local)" },
+      { id: "llama3.3", name: "Llama 3.3" },
+    ],
+  },
+  {
+    id: "custom",
+    name: "Custom (OpenAI Compatible)",
+    defaultBaseUrl: "http://localhost:8000/v1",
+    defaultModelId: "custom-model",
+    api: "openai-completions",
+    models: [
+      { id: "custom-model", name: "Custom Model" },
+    ],
+  },
+];
+
+export const DEFAULT_PROVIDER: ProviderType = "deepseek";
+export const DEFAULT_MODEL_ID = "deepseek-chat";
+
+export function getProviderMeta(provider: ProviderType): ProviderMeta {
+  return PROVIDERS.find((p) => p.id === provider) || PROVIDERS[0];
+}
+
+export function getAllModelsForProvider(provider: ProviderType) {
+  const meta = getProviderMeta(provider);
+  return meta.models;
 }

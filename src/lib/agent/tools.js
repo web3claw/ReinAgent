@@ -379,7 +379,105 @@ export function createTools(options) {
     },
   };
 
-  return [getCurrentTime, calculate];
+  const readFile = {
+    name: "read_file",
+    label: "读取文件",
+    description: "读取指定路径的文件内容。",
+    parameters: Type.Object(
+      {
+        path: Type.String({ description: "文件的路径" }),
+      },
+      { required: ["path"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const content = await invoke("fs_read_file", { path: params.path });
+      return buildTextToolResult(content, { path: params.path });
+    },
+  };
+
+  const writeFile = {
+    name: "write_file",
+    label: "写入文件",
+    description: "将内容写入指定文件（全量覆盖，父目录若不存在会自动创建）。",
+    parameters: Type.Object(
+      {
+        path: Type.String({ description: "文件的路径" }),
+        content: Type.String({ description: "要写入的文件完整文本内容" }),
+      },
+      { required: ["path", "content"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("fs_write_file", { path: params.path, content: params.content });
+      return buildTextToolResult(`Successfully written to ${params.path}`, { path: params.path });
+    },
+  };
+
+  const editFile = {
+    name: "edit_file",
+    label: "编辑文件块",
+    description: "精准替换文件中的特定代码或文本块（target 必须精确匹配文件中的现有片段）。",
+    parameters: Type.Object(
+      {
+        path: Type.String({ description: "文件路径" }),
+        target: Type.String({ description: "待替换的原目标文本块（必须在文件中精确唯一出现）" }),
+        replacement: Type.String({ description: "替换后的新文本内容" }),
+      },
+      { required: ["path", "target", "replacement"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const oldContent = await invoke("fs_read_file", { path: params.path });
+      const occurrences = oldContent.split(params.target).length - 1;
+      if (occurrences === 0) {
+        throw new Error(`edit_file: target text not found in ${params.path}`);
+      }
+      if (occurrences > 1) {
+        throw new Error(`edit_file: target text appears ${occurrences} times in ${params.path}, must be unique`);
+      }
+      const newContent = oldContent.replace(params.target, params.replacement);
+      await invoke("fs_write_file", { path: params.path, content: newContent });
+      return buildTextToolResult(`Successfully modified ${params.path}`, { path: params.path });
+    },
+  };
+
+  const listDir = {
+    name: "list_dir",
+    label: "列出目录",
+    description: "列出指定目录下的文件和子目录列表。",
+    parameters: Type.Object(
+      {
+        path: Type.String({ description: "目录路径，默认为当前目录 ." }),
+      },
+      { required: ["path"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const entries = await invoke("fs_list_dir", { path: params.path });
+      return buildTextToolResult(JSON.stringify(entries, null, 2), { path: params.path, entries });
+    },
+  };
+
+  const execCommand = {
+    name: "exec_command",
+    label: "执行终端命令",
+    description: "在系统终端中执行 shell 命令行（支持 bash / sh 语法，例如 git status, ls 等）。",
+    parameters: Type.Object(
+      {
+        command: Type.String({ description: "要执行的命令行内容" }),
+        cwd: Type.Optional(Type.String({ description: "执行命令的工作目录" })),
+      },
+      { required: ["command"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const output = await invoke("fs_execute", { command: params.command, cwd: params.cwd || null });
+      return buildTextToolResult(output, { command: params.command });
+    },
+  };
+
+  return [getCurrentTime, calculate, readFile, writeFile, editFile, listDir, execCommand];
 }
 
 /**
