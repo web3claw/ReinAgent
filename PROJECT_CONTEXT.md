@@ -115,20 +115,32 @@ ReinAgent 架构全景
 
 ---
 
-## 六、构建、运行与验证规范
+## 六、Linux 编译、运行与环境隔离规范（严格基于 run-linux.sh）
 
-### 1. 构建与测试
+由于宿主工程目录位于网络共享盘（CIFS/SMB 文件系统不支持 Linux 符号链接与标准文件锁机制），为了防止 `bun install` 软链接失败或 Cargo 编译锁死，**所有构建、类型检查与运行必须严格遵循 `run-linux.sh` 的环境隔离配置**：
+
+### 1. 核心隔离参数
+- **本地工作区**：`WORK_DIR="/tmp/reinagent"`
+- **Rust Target 目录**：`TARGET_DIR="/tmp/reinagent/target"`（通过 `export CARGO_TARGET_DIR="$TARGET_DIR"` 挂载）
+- **依赖隔离**：原生 Linux node_modules 安装在 `/tmp/reinagent/node_modules` 下。
+
+### 2. 标准编译与验证命令
 ```bash
-# 前端类型检查与打包验证
-bun run build
-# 或 (若在共享目录有锁问题，可同步到 /tmp 编译)
-rsync -av --delete --exclude 'node_modules' --exclude 'target' --exclude '.git' ./ /tmp/reinagent/ && cd /tmp/reinagent && bun run build
+# 1. 增量同步源码至本地临时工作区
+rsync -av --delete --exclude 'node_modules' --exclude 'target' --exclude '.git' /home/web3claw/DevCode/ReinAgent/ReinAgent/ /tmp/reinagent/
 
-# 单元测试 (Chat 状态机模型与调度逻辑)
+# 2. 前端类型检查与打包构建
+cd /tmp/reinagent && bun run build
+
+# 3. 单元测试 (Chat 状态机模型与调度逻辑)
 npm run test:chat
 ```
 
-### 2. 自动化无头视觉回归
+### 3. 本地启动脚本执行（run-linux.sh）
+- **启动前端 Vite 服务**：端口 `1420`，`(cd /tmp/reinagent && bun /tmp/reinagent/node_modules/vite/bin/vite.js --port 1420) &`
+- **启动 Tauri 桌面应用**：`cargo tauri dev -c '{"build": {"beforeDevCommand": ""}}'`
+
+### 4. 自动化无头视觉回归
 本地运行 dev server 后（默认端口 1420），可通过 Chrome 无头模式快速截取实际渲染图像进行像素级对比：
 ```bash
 google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-size=1280,800 http://localhost:1420
