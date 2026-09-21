@@ -20,21 +20,8 @@ if [ ! -d "$WORK_DIR/node_modules" ]; then
     (cd "$WORK_DIR" && bun install)
 fi
 
-# 链接工程文件并配置 Vite（启用 preserveSymlinks）
-ln -sfn "$PROJECT_DIR/src" "$WORK_DIR/src"
-ln -sfn "$PROJECT_DIR/public" "$WORK_DIR/public"
-ln -sfn "$PROJECT_DIR/tsconfig.json" "$WORK_DIR/tsconfig.json"
-ln -sfn "$PROJECT_DIR/tsconfig.node.json" "$WORK_DIR/tsconfig.node.json"
-cp -f "$PROJECT_DIR/index.html" "$WORK_DIR/index.html"
-
-node -e '
-const fs = require("fs");
-let cfg = fs.readFileSync(process.argv[1], "utf8");
-if (!cfg.includes("preserveSymlinks")) {
-    cfg = cfg.replace("plugins: [react()],", "plugins: [react()],\n  resolve: { preserveSymlinks: true },");
-}
-fs.writeFileSync(process.argv[2], cfg);
-' "$PROJECT_DIR/vite.config.ts" "$WORK_DIR/vite.config.ts"
+# 同步工程文件到 Linux 本地工作区（隔离 CIFS 网络盘与软链接问题）
+rsync -av --delete --exclude 'node_modules' --exclude 'target' --exclude '.git' "$PROJECT_DIR/" "$WORK_DIR/"
 
 echo "=== [2/4] 启动 Vite 前端服务 (http://localhost:1420) ==="
 # 启动本地 Vite 前端服务

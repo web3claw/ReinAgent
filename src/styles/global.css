@@ -7,6 +7,11 @@
   --border: #2c313d;
   --text: #e6e8ee;
   --text-dim: #9aa2b4;
+  --text-primary: #e6e8ee;
+  --text-secondary: #9aa2b4;
+  --bg-card: #1e2028;
+  --bg-hover: #262830;
+  --bg-secondary: #191c24;
   --accent: #5b8cff;
   --accent-dim: #3a5db0;
   --danger: #ff6b6b;
@@ -46,6 +51,11 @@
   --border: #e2e8f0;
   --text: #0f172a;
   --text-dim: #64748b;
+  --text-primary: #0f172a;
+  --text-secondary: #64748b;
+  --bg-card: #ffffff;
+  --bg-hover: #f1f5f9;
+  --bg-secondary: #f8fafc;
   --accent: #2563eb;
   --accent-dim: #dbeafe;
   --danger: #ef4444;

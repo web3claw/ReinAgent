@@ -29,7 +29,7 @@ export default function App() {
   const { t } = useTranslation();
   const { settings, status, update } = useSettings();
   
-  const isDemo = settings.apiKey.trim().length === 0;
+  const isDemo = (settings?.apiKey || "").trim().length === 0;
   const source = isDemo ? "faux" : (settings.provider || "deepseek");
   const currentProviderMeta = getProviderMeta(settings.provider || "deepseek");
 
