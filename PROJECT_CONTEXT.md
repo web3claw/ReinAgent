@@ -148,7 +148,22 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 
 ---
 
-## 七、后续迭代方向推荐
+## 七、核心架构守则与避坑指南
+
+1. **包管理器限制 (Package Manager Rule)**：
+   - 项目采用 **Bun**（`bun@1.4.2` 与 `bun.lock`）。
+   - 严禁使用 npm/pnpm 篡改依赖锁定文件；所有依赖安装与更新必须在 `/tmp/reinagent` 隔离区进行，防止损坏网络共享挂载盘的软链接。
+2. **Tauri 2 + Web 双模兼容 (Dual-mode Compatibility Rule)**：
+   - 涉及系统级能力（终端 PTY、受控文件操作等）时，必须保留 Web Mock / Fallback 兼容层，保证在 Headless Chrome（无头自动化测试/截图回归）或普通浏览器中依然能完整渲染并正常调试。
+3. **Tailwind CSS v4 语义化主题 (Theme Styling Rule)**：
+   - 严禁在组件中硬编码 Hex/RGB 颜色值；必须使用 `src/styles/global.css` 定义的 CSS 语义变量（如 `var(--bg)`、`var(--sidebar-bg)`、`var(--sidebar-text)`、`var(--border)`），确保跟随 `data-theme="dark|light"` 自动平滑换肤。
+4. **Git 与工作区保护 (Workspace Discipline)**：
+   - 未经用户明确许可或要求，**严禁自行调用 `git commit` 或 `git push`**。
+   - 测试产物、截图、中间日志等临时文件必须存放于 `/tmp/`，严禁污染工程工作树。
+
+---
+
+## 八、后续迭代方向推荐
 
 1. **项目管理真正落地**：
    - 目前项目为 Mock 数据，需打通 Tauri 原生对话框（`dialog.open`）选择真实本地目录。
@@ -157,3 +172,4 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
    - 将各个任务的聊天消息序列保存到本地 Sqlite 或 JSON 存储中，点击不同任务时真正恢复历史对话记录。
 3. **Agent 工具执行沙箱**：
    - 完善 Rust 端的命令执行拦截与“变更前确认”审批流（ApprovalMode）。
+

@@ -48,7 +48,22 @@
 
 ---
 
-## 4. Project Context & Real-time Update Rule (核心文档实时同步规范)
+## 4. Key Architectural Rules & Pitfalls (架构避坑与开发铁律)
+
+1. **包管理器限制 (Package Manager Rule)**：
+   - 项目采用 **Bun**（`bun@1.4.2` 与 `bun.lock`）。严禁使用 npm/pnpm 更改锁定文件。
+   - 严禁直接在网络共享盘根目录执行软链接安装，所有依赖变更必须在 `/tmp/reinagent` 隔离区进行。
+2. **Tauri 2 + Web 双模兼容 (Dual-mode Compatibility Rule)**：
+   - 涉及系统级能力（终端、文件操作、对话框等）时，必须编写 Web Mock / Browser Fallback 兼容层，保证在 Headless Chrome（无头自动化测试/截图回归）或浏览器环境下依然可完整运行。
+3. **Tailwind CSS v4 语义化变量 (Theme Styling Rule)**：
+   - 严禁硬编码 Hex/RGB 颜色值；必须使用 `src/styles/global.css` 定义的主题语义变量（如 `var(--bg)`、`var(--sidebar-bg)`、`var(--sidebar-text)`、`var(--border)`），确保与 `data-theme` 换肤机制完美协同。
+4. **代码保护与提交纪律 (Commit Discipline)**：
+   - 未经用户明确许可或确认，**严禁自行调用 `git commit` 或 `git push`**。
+   - 调试产生的截图、日志、测试产物统一存放于 `/tmp/`，严禁提交或污染工作区。
+
+---
+
+## 5. Project Context & Real-time Update Rule (核心文档实时同步规范)
 
 项目的系统设计分层、组件职责、状态流转、持久化键名及交互细节，完整记录在：
 👉 [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md)
