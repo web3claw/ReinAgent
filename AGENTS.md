@@ -16,9 +16,11 @@
 
 ---
 
-## 2. Project Context & Architecture (全景架构指南)
+## 2. Project Context & Real-time Update Rule (核心文档实时同步规范)
 
 项目的系统设计分层、组件职责、状态流转、持久化键名及交互细节，完整记录在：
 👉 [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md)
 
-接手开发或执行任务前，**请优先阅读 `PROJECT_CONTEXT.md`** 以获取最精准的开发上下文。
+### ⚠️ 铁律规范（必须严格遵守）：
+1. **优先查阅**：接手开发或执行任务前，**必须优先通读 `PROJECT_CONTEXT.md`** 获取最精准的开发上下文与设计规范。
+2. **及时同步更新**：**后续完成任何功能迭代、架构调整、新增组件或变更存储键名后，必须第一时间同步更新 `PROJECT_CONTEXT.md`**，确保该文档始终作为全项目的**最新单点真相（Single Source of Truth）**，严禁出现代码更新而文档滞后的情况。
