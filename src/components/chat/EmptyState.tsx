@@ -1,38 +1,69 @@
-import { useTranslation } from "../../i18n";
-import { Sparkles, Terminal, Code2 } from "lucide-react";
+import { useMemo, useEffect, useState } from "react";
+import { useTranslation, type TranslationKey } from "../../i18n";
+import { Sparkles, BarChart2, Bug, Presentation, Moon } from "lucide-react";
 
-export function EmptyState({ demo }: { demo: boolean }) {
+interface EmptyStateProps {
+  demo?: boolean;
+  onQuickPrompt?: (text: string) => void;
+}
+
+export function EmptyState({ demo, onQuickPrompt }: EmptyStateProps) {
   const { t } = useTranslation();
+  const [hour, setHour] = useState(new Date().getHours());
+
+  useEffect(() => {
+    const interval = setInterval(() => setHour(new Date().getHours()), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const greetingKey: TranslationKey = useMemo(() => {
+    if (hour >= 5 && hour < 12) return "goodMorning";
+    if (hour >= 12 && hour < 18) return "goodAfternoon";
+    return "goodEvening";
+  }, [hour]);
+
+  const prompts: { key: TranslationKey; icon: typeof BarChart2 }[] = [
+    { key: "weeklyReport", icon: BarChart2 },
+    { key: "bugFix", icon: Bug },
+    { key: "pptMake", icon: Presentation },
+    { key: "idleTask", icon: Moon },
+  ];
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center p-8 text-center max-w-lg mx-auto">
-      <div className="w-12 h-12 rounded-2xl bg-[var(--accent)]/10 text-[var(--accent)] flex items-center justify-center mb-4">
-        <Sparkles className="w-6 h-6" />
+    <div className="flex-1 flex flex-col items-center justify-center relative w-full h-full overflow-hidden">
+      {/* Watermark */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.04] select-none text-[var(--brand)]">
+        <Sparkles style={{ width: 220, height: 220 }} />
       </div>
-      <h2 className="text-xl font-bold text-[var(--text-primary)] mb-2">
-        {t("emptyTitle")}
-      </h2>
-      <p className="text-sm text-[var(--text-secondary)] mb-6 leading-relaxed">
-        {demo
-          ? "当前为演示模式：未填入 API Key，已连接合成数据与沙箱工具。"
-          : t("emptySubtitle")}
-      </p>
 
-      <div className="grid grid-cols-2 gap-3 w-full text-left">
-        <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent)]/50 transition-colors">
-          <div className="flex items-center gap-2 font-medium text-xs text-[var(--text-primary)] mb-1">
-            <Code2 className="w-4 h-4 text-blue-500" />
-            <span>智能代码编写</span>
+      <div className="z-10 flex flex-col items-center">
+        <h2 className="text-2xl font-bold text-[var(--text-primary)]">
+          {t(greetingKey)}
+        </h2>
+
+        {demo && (
+          <p className="mt-2 text-xs text-amber-500/80 bg-amber-500/10 px-3 py-1 rounded-full border border-amber-500/20">
+            {t("demoMode")}
+          </p>
+        )}
+
+        {onQuickPrompt && (
+          <div className="flex gap-3 mt-6">
+            {prompts.map((p) => {
+              const Icon = p.icon;
+              return (
+                <button
+                  key={p.key}
+                  onClick={() => onQuickPrompt(t(p.key))}
+                  className="flex items-center gap-2 px-4 py-2 rounded-full border border-[var(--chip-border)] bg-[var(--chip-bg)] hover:bg-[var(--chip-hover)] text-[var(--text-primary)] text-sm cursor-pointer transition-colors shadow-sm"
+                >
+                  <Icon className="w-4 h-4" />
+                  <span>{t(p.key)}</span>
+                </button>
+              );
+            })}
           </div>
-          <p className="text-[11px] text-[var(--text-secondary)]">精准定位与安全单处修改</p>
-        </div>
-        <div className="p-3 rounded-lg border border-[var(--border)] bg-[var(--bg-card)] hover:border-[var(--accent)]/50 transition-colors">
-          <div className="flex items-center gap-2 font-medium text-xs text-[var(--text-primary)] mb-1">
-            <Terminal className="w-4 h-4 text-emerald-500" />
-            <span>集成 PTY 终端</span>
-          </div>
-          <p className="text-[11px] text-[var(--text-secondary)]">直接在底部执行 Shell 调试</p>
-        </div>
+        )}
       </div>
     </div>
   );

@@ -2,12 +2,19 @@ import { create } from "zustand";
 
 export type ThemeMode = "dark" | "light";
 export type LocaleMode = "zh-CN" | "en-US";
+export type ViewMode = "workbench" | "settings";
+export type ThinkingLevel = "off" | "low" | "medium" | "high" | "max";
+export type ApprovalMode = "always" | "suggest" | "auto";
 
 interface AppState {
   theme: ThemeMode;
   locale: LocaleMode;
   isTerminalOpen: boolean;
   isSettingsOpen: boolean;
+  isSidebarOpen: boolean;
+  currentView: ViewMode;
+  thinkingLevel: ThinkingLevel;
+  approvalMode: ApprovalMode;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
   setLocale: (locale: LocaleMode) => void;
@@ -16,6 +23,11 @@ interface AppState {
   toggleTerminal: () => void;
   setSettingsOpen: (open: boolean) => void;
   toggleSettings: () => void;
+  setSidebarOpen: (open: boolean) => void;
+  toggleSidebar: () => void;
+  setCurrentView: (view: ViewMode) => void;
+  setThinkingLevel: (level: ThinkingLevel) => void;
+  setApprovalMode: (mode: ApprovalMode) => void;
 }
 
 const getInitialTheme = (): ThemeMode => {
@@ -34,11 +46,23 @@ const getInitialLocale = (): LocaleMode => {
   return "zh-CN";
 };
 
+const getInitialSidebarOpen = (): boolean => {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("reinagent-sidebar");
+    if (saved !== null) return saved === "true";
+  }
+  return true;
+};
+
 export const useAppStore = create<AppState>((set) => ({
   theme: getInitialTheme(),
   locale: getInitialLocale(),
   isTerminalOpen: false,
   isSettingsOpen: false,
+  isSidebarOpen: getInitialSidebarOpen(),
+  currentView: "workbench",
+  thinkingLevel: "max",
+  approvalMode: "suggest",
 
   setTheme: (theme) => {
     if (typeof window !== "undefined") {
@@ -80,4 +104,22 @@ export const useAppStore = create<AppState>((set) => ({
   toggleTerminal: () => set((s) => ({ isTerminalOpen: !s.isTerminalOpen })),
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
   toggleSettings: () => set((s) => ({ isSettingsOpen: !s.isSettingsOpen })),
+  setSidebarOpen: (open) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("reinagent-sidebar", String(open));
+    }
+    set({ isSidebarOpen: open });
+  },
+  toggleSidebar: () => {
+    set((state) => {
+      const next = !state.isSidebarOpen;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("reinagent-sidebar", String(next));
+      }
+      return { isSidebarOpen: next };
+    });
+  },
+  setCurrentView: (view) => set({ currentView: view }),
+  setThinkingLevel: (level) => set({ thinkingLevel: level }),
+  setApprovalMode: (mode) => set({ approvalMode: mode }),
 }));

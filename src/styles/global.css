@@ -14,6 +14,27 @@
   --warn-border: #7a6320;
   --warn-text: #ffd98a;
   --bg-sunken: #0e0f14;
+  --sidebar-bg: #0f1015;
+  --sidebar-text: #a0a4b0;
+  --sidebar-text-active: #e6e8ee;
+  --sidebar-hover: #1a1c24;
+  --sidebar-border: #232630;
+  --surface: #1e2028;
+  --surface-hover: #262830;
+  --brand: #5b8cff;
+  --brand-dim: rgba(91, 140, 255, 0.1);
+  --capsule-bg: #1e2028;
+  --capsule-border: #2c313d;
+  --capsule-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  --chip-bg: #1e2028;
+  --chip-border: #2c313d;
+  --chip-hover: #262830;
+  --settings-nav-bg: #141620;
+  --settings-nav-hover: #1e2028;
+  --settings-nav-active: #252836;
+  --scrollbar-thumb: #2c313d;
+  --scrollbar-track: transparent;
+
   --radius: 10px;
   font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
 }
@@ -32,6 +53,27 @@
   --warn-border: #fde047;
   --warn-text: #854d0e;
   --bg-sunken: #eaeff5;
+  --sidebar-bg: #f0f2f5;
+  --sidebar-text: #64748b;
+  --sidebar-text-active: #0f172a;
+  --sidebar-hover: #e8ecf0;
+  --sidebar-border: #e2e8f0;
+  --surface: #ffffff;
+  --surface-hover: #f8fafc;
+  --brand: #2563eb;
+  --brand-dim: rgba(37, 99, 235, 0.1);
+  --capsule-bg: #ffffff;
+  --capsule-border: #e2e8f0;
+  --capsule-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  --chip-bg: #ffffff;
+  --chip-border: #e2e8f0;
+  --chip-hover: #f1f5f9;
+  --settings-nav-bg: #f8fafc;
+  --settings-nav-hover: #f1f5f9;
+  --settings-nav-active: #e2e8f0;
+  --scrollbar-thumb: #cbd5e1;
+  --scrollbar-track: transparent;
+
   --radius: 10px;
   font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
 }
@@ -568,4 +610,45 @@ body {
   to {
     transform: rotate(360deg);
   }
+}
+
+
+/* ---------- ZCode Extensions ---------- */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-dim);
+}
+
+.sidebar {
+  width: 260px;
+  transition: width 0.3s ease, padding 0.3s ease;
+  overflow-y: auto;
+  overflow-x: hidden;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-text);
+  border-right: 1px solid var(--sidebar-border);
+}
+.sidebar-collapsed {
+  width: 0;
+  padding: 0;
+  border-right: none;
+  overflow: hidden;
+}
+
+.capsule-composer {
+  background: var(--capsule-bg);
+  border: 1px solid var(--capsule-border);
+  box-shadow: var(--capsule-shadow);
+  border-radius: 16px;
+  padding: 12px;
 }
