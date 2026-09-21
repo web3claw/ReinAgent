@@ -1,0 +1,553 @@
+:root {
+  --bg: #12141a;
+  --bg-elev: #191c24;
+  --bg-elev-2: #20242e;
+  --border: #2c313d;
+  --text: #e6e8ee;
+  --text-dim: #9aa2b4;
+  --accent: #5b8cff;
+  --accent-dim: #3a5db0;
+  --danger: #ff6b6b;
+  --warn-bg: #3a2f12;
+  --warn-border: #7a6320;
+  --warn-text: #ffd98a;
+  /* 比 --bg 更深一层的「凹陷」底色：用于代码块 / 工具输出的等宽文本区。
+     卡片底是 --bg-elev，这里需要再深一档，才能把「输出区」从卡片里压下去。 */
+  --bg-sunken: #0e0f14;
+  --radius: 10px;
+  font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 0 16px;
+}
+
+/* ---------- 顶栏 ---------- */
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 0 10px;
+}
+
+.topbar-title {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: 0.3px;
+}
+
+.badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  color: var(--text-dim);
+}
+
+.badge-demo {
+  border-color: var(--warn-border);
+  background: var(--warn-bg);
+  color: var(--warn-text);
+}
+
+/* ---------- 演示横幅 ---------- */
+.demo-banner {
+  margin-top: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  color: var(--warn-text);
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ---------- 消息区 ---------- */
+.message-list {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding: 16px 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.msg {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.msg-role {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.msg-body {
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.msg-user .msg-body {
+  background: var(--accent-dim);
+  border-color: var(--accent-dim);
+  color: #fff;
+}
+
+.msg-assistant .msg-body {
+  background: var(--bg-elev);
+  /* 助手消息渲染 Markdown，需恢复正常空白处理（用户消息仍 pre-wrap 保留换行）。 */
+  white-space: normal;
+}
+
+.msg-caret {
+  color: var(--accent);
+  animation: blink 1s steps(1) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.msg-error {
+  margin-top: 6px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+/* ---------- 空状态 ---------- */
+.empty-state {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--text-dim);
+  padding: 0 24px;
+}
+
+.empty-title {
+  color: var(--text);
+  margin: 0 0 8px;
+}
+
+.empty-text {
+  max-width: 420px;
+  margin: 0;
+}
+
+/* ---------- 输入区 ---------- */
+.composer {
+  display: flex;
+  gap: 8px;
+  align-items: flex-end;
+  padding: 12px 0 16px;
+}
+
+.composer-input {
+  flex: 1 1 auto;
+  resize: none;
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font: inherit;
+  outline: none;
+}
+
+.composer-input:focus {
+  border-color: var(--accent-dim);
+}
+
+.btn {
+  flex: 0 0 auto;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  padding: 10px 18px;
+  font: inherit;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+  cursor: not-allowed;
+}
+
+.btn-stop {
+  background: var(--bg-elev-2);
+  color: var(--text-dim);
+}
+
+/* ---------- 顶栏右侧 / 幽灵按钮 ---------- */
+.topbar-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-dim);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  font-size: 13px;
+  border-radius: 999px;
+}
+
+.btn-ghost:hover {
+  color: var(--text);
+  border-color: var(--accent-dim);
+}
+
+/* ---------- 设置面板（S3） ---------- */
+.settings-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.settings-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.settings-persist {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.settings-persist-warn {
+  color: var(--warn-text);
+}
+
+.settings-warning {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-border);
+  color: var(--warn-text);
+  font-size: 13px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.field-label {
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+.field-input {
+  background: var(--bg-elev-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 7px 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.field-input:focus {
+  border-color: var(--accent-dim);
+}
+
+/* baseUrl 形状校验失败：红边 + 行内提示（不等请求失败才暴露）。 */
+.field-input-invalid {
+  border-color: var(--warn-border);
+}
+
+.field-error {
+  font-size: 12px;
+  color: var(--warn-text);
+}
+
+/* ---------- 已停止标注（S4） ---------- */
+.msg-stopped {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-dim);
+  border-left: 2px solid var(--border);
+  padding-left: 8px;
+}
+
+/* ---------- 已达最大步数标注（S7） ---------- */
+.msg-max-steps {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--warn-text);
+  border-left: 2px solid var(--warn-border);
+  padding-left: 8px;
+}
+
+/* ---------- Markdown（S5） ---------- */
+.md {
+  margin: 0;
+}
+
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md > :last-child {
+  margin-bottom: 0;
+}
+
+.md p {
+  margin: 0.4em 0;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  margin: 0.6em 0 0.3em;
+  line-height: 1.3;
+}
+
+.md ul,
+.md ol {
+  margin: 0.4em 0;
+  padding-left: 1.4em;
+}
+
+.md li {
+  margin: 0.15em 0;
+}
+
+.md a {
+  color: var(--accent);
+}
+
+.md blockquote {
+  margin: 0.5em 0;
+  padding: 0.2em 0 0.2em 10px;
+  border-left: 3px solid var(--border);
+  color: var(--text-dim);
+}
+
+.md table {
+  border-collapse: collapse;
+  margin: 0.5em 0;
+  display: block;
+  overflow-x: auto;
+}
+
+.md th,
+.md td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+}
+
+/* 行内代码 */
+.md code {
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-size: 0.92em;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 0 4px;
+}
+
+/* 代码块：等宽字体 + 背景 + 横向滚动。
+   底色与工具输出区（.tool-result）**刻意共用**同一层「凹陷」token --bg-sunken ——
+   改一边记得改另一边，否则会出现「代码块与工具输出深浅不一」的隐蔽不一致。 */
+.md pre {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  margin: 0.5em 0;
+}
+
+.md pre code {
+  background: transparent;
+  border: none;
+  padding: 0;
+  font-size: 0.9em;
+  line-height: 1.5;
+}
+
+/* S6：块级 Markdown 容器与「展开全文 / 收起」按钮 */
+.md-blocks > :first-child {
+  margin-top: 0;
+}
+
+.md-blocks > :last-child {
+  margin-bottom: 0;
+}
+
+.md-blocks-toggle {
+  display: block;
+  margin: 0.6em 0 0.2em;
+  font-size: 0.85em;
+}
+
+/* ---------- 工具调用卡片（S7） ---------- */
+/* 工具调用是「过程」，不是「对话」：用更窄、左缩进、小字号、次级底色 + 细边框，
+   与助手/用户气泡在视觉上区隔开（不喧宾夺主，但一眼可辨）。 */
+.tool-card {
+  align-self: flex-start;
+  max-width: 86%;
+  margin-left: 10px;
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+/* 头部：状态标记 + 中文状态文案 + 工具名（如「正在调用 get_current_time」）。 */
+.tool-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.tool-mark {
+  display: inline-block;
+  flex: 0 0 auto;
+  width: 1em;
+  text-align: center;
+}
+
+.tool-status {
+  flex: 0 0 auto;
+}
+
+.tool-name {
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 参数行：单行、超出省略，全文由 title 属性承载（供悬停查看）。 */
+.tool-args {
+  margin-top: 2px;
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tool-pending {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+
+/* 结果区：任意长度 / 任意空白都要能安全渲染。 */
+.tool-details {
+  margin-top: 4px;
+}
+
+.tool-details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
+  user-select: none;
+}
+
+.tool-result {
+  margin: 4px 0 0;
+  padding: 8px 10px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 240px;
+  overflow: auto;
+  color: var(--text);
+}
+
+/* running：低调；标记用 CSS 旋转动画（不用 JS）。 */
+.tool-card[data-status="running"] .tool-mark {
+  color: var(--accent);
+  animation: tool-spin 1s linear infinite;
+}
+
+/* done：最低调，融入背景。 */
+.tool-card[data-status="done"] {
+  opacity: 0.92;
+}
+
+/* error：描边 + 文字标红，失败信息必须一眼可见。 */
+.tool-card[data-status="error"] {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.tool-card[data-status="error"] .tool-name {
+  color: var(--danger);
+}
+
+.tool-card[data-status="error"] .tool-result {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+@keyframes tool-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
