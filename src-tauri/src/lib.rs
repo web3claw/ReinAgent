@@ -14,6 +14,7 @@ pub fn run() {
         .manage(TerminalState::default())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_store::Builder::new().build())
+        .plugin(tauri_plugin_window_state::Builder::default().build())
         .invoke_handler(tauri::generate_handler![
             greet,
             terminal::terminal_create,
