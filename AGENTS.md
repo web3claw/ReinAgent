@@ -16,7 +16,15 @@
 
 ---
 
-## 2. Project Context & Real-time Update Rule (核心文档实时同步规范)
+## 2. Requirement Confirmation & Workflow Rule (需求前置确认铁律)
+
+- **接收到用户发送的任何开发需求时，严禁直接动手写代码**。
+- **必须先进行需求分析与要点整理，输出清晰的需求明细发给用户确认**。
+- **只有在得到用户的明确确认回复后，方可进入实际编码开发阶段**。
+
+---
+
+## 3. Project Context & Real-time Update Rule (核心文档实时同步规范)
 
 项目的系统设计分层、组件职责、状态流转、持久化键名及交互细节，完整记录在：
 👉 [PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md)
