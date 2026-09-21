@@ -28,8 +28,10 @@
   --surface-hover: #262830;
   --brand: #5b8cff;
   --brand-dim: rgba(91, 140, 255, 0.1);
-  --capsule-bg: #1e2028;
-  --capsule-border: #2c313d;
+  --capsule-outer-bg: #1e1f25;
+  --capsule-outer-border: #2d303b;
+  --capsule-bg: #282b36;
+  --capsule-border: #383d4c;
   --capsule-shadow: 0 4px 24px rgba(0,0,0,0.3);
   --chip-bg: #1e2028;
   --chip-border: #2c313d;
@@ -72,8 +74,10 @@
   --surface-hover: #f8fafc;
   --brand: #2563eb;
   --brand-dim: rgba(37, 99, 235, 0.1);
+  --capsule-outer-bg: #eff2f6;
+  --capsule-outer-border: #dbe0ea;
   --capsule-bg: #ffffff;
-  --capsule-border: #e2e8f0;
+  --capsule-border: #d1d7e2;
   --capsule-shadow: 0 4px 24px rgba(0,0,0,0.08);
   --chip-bg: #ffffff;
   --chip-border: #e2e8f0;
@@ -104,6 +108,8 @@ body {
   color: var(--text);
   font-size: 14px;
   line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 .app {
@@ -159,11 +165,10 @@ body {
 /* ---------- 消息区 ---------- */
 .message-list {
   flex: 1 1 auto;
-  overflow-y: auto;
-  padding: 16px 2px;
+  padding: 8px 2px;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 16px;
 }
 
 .msg {

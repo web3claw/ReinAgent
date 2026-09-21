@@ -30,14 +30,14 @@ export function EmptyState({ demo, onQuickPrompt }: EmptyStateProps) {
   ];
 
   return (
-    <div className="flex-1 flex flex-col items-center justify-center relative w-full h-full overflow-hidden">
+    <div className="flex flex-col items-center relative w-full overflow-hidden">
       {/* Watermark */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.04] select-none text-[var(--brand)]">
         <Sparkles style={{ width: 220, height: 220 }} />
       </div>
 
       <div className="z-10 flex flex-col items-center">
-        <h2 className="text-2xl font-bold text-[var(--text-primary)]">
+        <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-[var(--text)] text-center">
           {t(greetingKey)}
         </h2>
 

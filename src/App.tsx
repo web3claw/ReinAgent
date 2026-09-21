@@ -13,17 +13,18 @@ import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
 import { getProviderMeta } from "./lib/providers/catalog";
 import {
-  Sun, Moon, Languages, Terminal, HelpCircle,
-  PanelLeftClose, PanelLeft, Minus, Maximize2, X, PlusCircle
+  Terminal, PanelLeftClose, PanelLeft, Minus, Maximize2, X, PlusCircle
 } from "lucide-react";
 
 export default function App() {
   const {
-    theme, toggleTheme,
-    locale, toggleLocale,
+    theme,
     isTerminalOpen, toggleTerminal,
     isSidebarOpen, toggleSidebar,
     currentView, setCurrentView,
+    activeTaskId,
+    createTask, updateTaskTitle,
+    selectedProject,
   } = useAppStore();
 
   const { t } = useTranslation();
@@ -44,6 +45,23 @@ export default function App() {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
   });
 
+  const handleNewTask = () => {
+    clear();
+  };
+
+  const handleSend = (text: string) => {
+    // If no active task or currently empty, create or name task with user prompt
+    if (!activeTaskId || state.messages.length === 0) {
+      const summary = text.slice(0, 30).trim() || "新任务";
+      if (!activeTaskId) {
+        createTask(summary, selectedProject);
+      } else {
+        updateTaskTitle(activeTaskId, summary);
+      }
+    }
+    return send(text);
+  };
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
@@ -60,7 +78,7 @@ export default function App() {
   }
 
   const handleQuickPrompt = (text: string) => {
-    send(text);
+    handleSend(text);
   };
 
   const hasMessages = state.messages.length > 0;
@@ -70,7 +88,7 @@ export default function App() {
       {/* Sidebar */}
       {isSidebarOpen && (
         <div className="flex-shrink-0 w-[260px] h-full border-r border-[var(--border)]">
-          <WorkspaceSidebar />
+          <WorkspaceSidebar onNewTask={handleNewTask} />
         </div>
       )}
 
@@ -106,24 +124,6 @@ export default function App() {
             >
               <Terminal className="w-4 h-4" />
             </button>
-            <button
-              onClick={toggleTheme}
-              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors"
-              title="Toggle Theme"
-            >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <button
-              onClick={toggleLocale}
-              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors flex items-center gap-1 text-xs"
-              title="Toggle Language"
-            >
-              <Languages className="w-4 h-4" />
-              <span>{locale === "zh-CN" ? "EN" : "中"}</span>
-            </button>
-            <button className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors">
-              <HelpCircle className="w-4 h-4" />
-            </button>
             <div className="w-px h-4 bg-[var(--border)] mx-1" />
             <button className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] transition-colors">
               <Minus className="w-4 h-4" />
@@ -140,13 +140,13 @@ export default function App() {
         {/* Chat / Composer Area */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {!hasMessages ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-4 overflow-y-auto">
-              <div className="w-full max-w-3xl">
+            <div className="flex-1 flex flex-col items-center justify-start pt-28 md:pt-36 px-4 pb-8 overflow-y-auto">
+              <div className="w-full px-[120px]">
                 <EmptyState demo={isDemo} onQuickPrompt={handleQuickPrompt} />
-                <div className="mt-8">
+                <div className="mt-8 w-full">
                   <LexicalComposer
                     isStreaming={isStreaming}
-                    onSend={send}
+                    onSend={handleSend}
                     onStop={stop}
                     providerName={currentProviderMeta.name}
                     modelId={settings.modelId}
@@ -155,22 +155,23 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <>
-              <div className="flex-1 overflow-y-auto">
-                <MessageList messages={state.messages} />
-              </div>
-              <div className="p-4 bg-[var(--bg)] border-t border-[var(--border)] flex justify-center">
-                <div className="w-full max-w-4xl">
+            <div className="flex-1 overflow-y-auto min-h-0 relative">
+              <div className="min-h-full flex flex-col justify-between">
+                <div className="w-full px-3 sm:px-4 md:px-6 pt-3 pb-36 flex-1">
+                  <MessageList messages={state.messages} onEditSend={handleSend} />
+                </div>
+                <div className="sticky bottom-0 w-full bg-[var(--bg)] px-3 sm:px-4 md:px-6 pb-2.5 pt-1 z-10 shrink-0">
                   <LexicalComposer
                     isStreaming={isStreaming}
-                    onSend={send}
+                    onSend={handleSend}
                     onStop={stop}
                     providerName={currentProviderMeta.name}
                     modelId={settings.modelId}
+                    hasMessages={true}
                   />
                 </div>
               </div>
-            </>
+            </div>
           )}
         </div>
 

@@ -5,8 +5,13 @@ import { MessageItem } from "./MessageItem";
 /** 距底部小于此像素视为「贴着底部」，此时才自动跟随流式滞底。 */
 const STICK_TO_BOTTOM_PX = 120;
 
+export interface MessageListProps {
+  messages: TimelineEntry[];
+  onEditSend?: (newText: string) => void;
+}
+
 /** 消息列表。新内容到达且用户本就贴在底部附近时自动滞底（S2 不引入虚拟滚动）。 */
-export function MessageList({ messages }: { messages: TimelineEntry[] }) {
+export function MessageList({ messages, onEditSend }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const last = messages.length > 0 ? messages[messages.length - 1] : undefined;
@@ -30,16 +35,17 @@ export function MessageList({ messages }: { messages: TimelineEntry[] }) {
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    const distanceToBottom = list.scrollHeight - list.scrollTop - list.clientHeight;
+    const scrollParent = list.closest('.overflow-y-auto') as HTMLElement | null || list;
+    const distanceToBottom = scrollParent.scrollHeight - scrollParent.scrollTop - scrollParent.clientHeight;
     if (distanceToBottom <= STICK_TO_BOTTOM_PX) {
-      endRef.current?.scrollIntoView({ block: "end" });
+      scrollParent.scrollTo({ top: scrollParent.scrollHeight, behavior: "smooth" });
     }
   }, [messages.length, lastText, lastThinking, lastToolSignal]);
 
   return (
     <div className="message-list" ref={listRef}>
       {messages.map((message) => (
-        <MessageItem key={message.id} message={message} />
+        <MessageItem key={message.id} message={message} onEditSend={onEditSend} />
       ))}
       <div ref={endRef} />
     </div>

@@ -6,6 +6,13 @@ export type ViewMode = "workbench" | "settings";
 export type ThinkingLevel = "off" | "low" | "medium" | "high" | "max";
 export type ApprovalMode = "always" | "suggest" | "auto";
 
+export interface AppTask {
+  id: string;
+  title: string;
+  createdAt: number;
+  project: string | null;
+}
+
 interface AppState {
   theme: ThemeMode;
   locale: LocaleMode;
@@ -15,6 +22,9 @@ interface AppState {
   currentView: ViewMode;
   thinkingLevel: ThinkingLevel;
   approvalMode: ApprovalMode;
+  selectedProject: string | null;
+  tasks: AppTask[];
+  activeTaskId: string | null;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
   setLocale: (locale: LocaleMode) => void;
@@ -28,6 +38,11 @@ interface AppState {
   setCurrentView: (view: ViewMode) => void;
   setThinkingLevel: (level: ThinkingLevel) => void;
   setApprovalMode: (mode: ApprovalMode) => void;
+  setSelectedProject: (project: string | null) => void;
+  createTask: (title?: string, project?: string | null) => string;
+  setActiveTaskId: (id: string | null) => void;
+  updateTaskTitle: (id: string, title: string) => void;
+  deleteTask: (id: string) => void;
 }
 
 const getInitialTheme = (): ThemeMode => {
@@ -54,6 +69,31 @@ const getInitialSidebarOpen = (): boolean => {
   return true;
 };
 
+const getInitialTasks = (): AppTask[] => {
+  if (typeof window !== "undefined") {
+    try {
+      const saved = localStorage.getItem("reinagent-tasks");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load initial tasks", e);
+    }
+  }
+  // Default mock task matching user's screenshot
+  return [
+    {
+      id: "task-init-1",
+      title: "你好",
+      createdAt: Date.now() - 2 * 3600 * 1000, // 2 hours ago
+      project: null,
+    },
+  ];
+};
+
 export const useAppStore = create<AppState>((set) => ({
   theme: getInitialTheme(),
   locale: getInitialLocale(),
@@ -63,6 +103,66 @@ export const useAppStore = create<AppState>((set) => ({
   currentView: "workbench",
   thinkingLevel: "max",
   approvalMode: "suggest",
+  selectedProject: null,
+  tasks: getInitialTasks(),
+  activeTaskId: null,
+  setSelectedProject: (selectedProject) => set({ selectedProject }),
+  setActiveTaskId: (activeTaskId) => set({ activeTaskId }),
+
+  createTask: (title, project = null) => {
+    const newId = `task-${Date.now()}`;
+    const newTask: AppTask = {
+      id: newId,
+      title: title || (typeof window !== "undefined" && localStorage.getItem("reinagent-locale") === "en-US" ? "New Task" : "新建任务"),
+      createdAt: Date.now(),
+      project: project,
+    };
+    set((state) => {
+      const nextTasks = [newTask, ...state.tasks];
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks, activeTaskId: newId };
+    });
+    return newId;
+  },
+
+  updateTaskTitle: (id, title) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id ? { ...t, title } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  deleteTask: (id) => {
+    set((state) => {
+      const nextTasks = state.tasks.filter((t) => t.id !== id);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return {
+        tasks: nextTasks,
+        activeTaskId: state.activeTaskId === id ? null : state.activeTaskId,
+      };
+    });
+  },
 
   setTheme: (theme) => {
     if (typeof window !== "undefined") {

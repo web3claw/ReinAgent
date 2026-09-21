@@ -2,15 +2,58 @@ import { useState } from 'react';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
-  ChevronLeft, ChevronRight, Plus, Search,
+  Sun, Moon, HelpCircle, Plus, Search,
   Timer, Puzzle, Hash, FolderOpen, Settings, Monitor,
   Filter,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
 
-const MOCK_PROJECTS: ProjectGroup[] = [
+/** 融合版 SVG 地球仪图标（内置中/EN状态镂空刻字） */
+export function LanguageGlobeIcon({ locale, className = "w-4 h-4" }: { locale: string; className?: string }) {
+  const isZh = locale === "zh-CN";
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.75"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className={className}
+    >
+      {/* 地球仪外圆 */}
+      <circle cx="12" cy="12" r="9.5" />
+      {/* 经纬辅助弧线 */}
+      <path d="M 4 7.5 C 7 9 17 9 20 7.5" strokeOpacity="0.35" strokeWidth="1.2" />
+      <path d="M 4 16.5 C 7 15 17 15 20 16.5" strokeOpacity="0.35" strokeWidth="1.2" />
+      {/* 赤道段（避开文字区） */}
+      <line x1="2.5" y1="12" x2="5.5" y2="12" strokeWidth="1.5" />
+      <line x1="18.5" y1="12" x2="21.5" y2="12" strokeWidth="1.5" />
+      {/* 本初子午线段 */}
+      <line x1="12" y1="2.5" x2="12" y2="5.5" strokeWidth="1.5" />
+      <line x1="12" y1="18.5" x2="12" y2="21.5" strokeWidth="1.5" />
+      {/* 镂空刻字状态 */}
+      <text
+        x="12"
+        y={isZh ? "15.2" : "15"}
+        textAnchor="middle"
+        fill="currentColor"
+        stroke="none"
+        fontSize={isZh ? "8.5" : "7.5"}
+        fontWeight="800"
+        fontFamily="system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif"
+        letterSpacing={isZh ? "0" : "-0.5"}
+      >
+        {isZh ? "中" : "EN"}
+      </text>
+    </svg>
+  );
+}
+
+export const MOCK_PROJECTS: ProjectGroup[] = [
   {
-    name: 'deepseek-plugin',
+    name: 'deepseek-harness-plugin',
     children: [
       { name: 'dsh-core', daysAgo: 5 },
       { name: 'dsh-desktop', daysAgo: 20 },
@@ -25,11 +68,22 @@ const MOCK_PROJECTS: ProjectGroup[] = [
   },
 ];
 
-export function WorkspaceSidebar() {
+export function WorkspaceSidebar({ onNewTask }: { onNewTask?: () => void }) {
   const { t } = useTranslation();
   const isSidebarOpen = useAppStore(state => state.isSidebarOpen);
   const setCurrentView = useAppStore(state => state.setCurrentView);
+  const theme = useAppStore(state => state.theme);
+  const toggleTheme = useAppStore(state => state.toggleTheme);
+  const locale = useAppStore(state => state.locale);
+  const toggleLocale = useAppStore(state => state.toggleLocale);
+  const createTask = useAppStore(state => state.createTask);
+  const selectedProject = useAppStore(state => state.selectedProject);
   const [activeTab, setActiveTab] = useState<'groups' | 'projects'>('projects');
+
+  const handleNewTask = () => {
+    createTask(undefined, selectedProject);
+    onNewTask?.();
+  };
 
   if (!isSidebarOpen) return null;
 
@@ -44,18 +98,36 @@ export function WorkspaceSidebar() {
           <span>ReinAgent</span>
         </div>
         <div className="flex items-center gap-1 text-[var(--sidebar-text)]">
-          <button className="p-1 hover:bg-[var(--sidebar-hover)] rounded-md transition-colors">
-            <ChevronLeft className="w-4 h-4" />
+          <button
+            onClick={toggleTheme}
+            className="p-1 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] rounded-md transition-colors"
+            title={theme === 'dark' ? t('lightMode') : t('darkMode')}
+          >
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </button>
-          <button className="p-1 hover:bg-[var(--sidebar-hover)] rounded-md transition-colors">
-            <ChevronRight className="w-4 h-4" />
+          <button
+            onClick={toggleLocale}
+            className="p-1 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] rounded-md transition-colors"
+            title={locale === 'zh-CN' ? 'Switch to English' : '切换为简体中文'}
+          >
+            <LanguageGlobeIcon locale={locale} className="w-4 h-4" />
+          </button>
+          <button
+            onClick={() => setCurrentView('settings')}
+            className="p-1 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] rounded-md transition-colors"
+            title={t('settings')}
+          >
+            <HelpCircle className="w-4 h-4" />
           </button>
         </div>
       </div>
 
       {/* Quick Actions */}
       <div className="flex flex-col gap-1 p-3">
-        <button className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md">
+        <button
+          onClick={handleNewTask}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md"
+        >
           <div className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
             <span className="text-sm">{t('newTask')}</span>
@@ -111,7 +183,7 @@ export function WorkspaceSidebar() {
       {/* Project List */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden mt-2 p-2">
         {activeTab === 'projects' ? (
-          <ProjectList projects={MOCK_PROJECTS} />
+          <ProjectList projects={MOCK_PROJECTS} onNewTask={onNewTask} />
         ) : (
           <div className="p-3 text-sm text-[var(--sidebar-text)] opacity-50">
             {t('groups')} (WIP)
