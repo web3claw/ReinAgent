@@ -30,16 +30,40 @@ export function MessageList({ messages, onEditSend }: MessageListProps) {
       ? `${last.status}:${(last.resultText ?? "").length}:${last.isError ? 1 : 0}`
       : "";
 
-  // ★ 只在用户本就贴在底部附近时滞底：否则用户上翻看历史会被每个 delta 强行拽回底部。
-  //   距底 = scrollHeight - scrollTop - clientHeight；≤ 阈值则视为「在看最新内容」，跟随滞底。
+  // 用户是否意图保持跟随底部（默认开启）
+  const isFollowingRef = useRef(true);
+
   useEffect(() => {
     const list = listRef.current;
     if (!list) return;
-    const scrollParent = list.closest('.overflow-y-auto') as HTMLElement | null || list;
-    const distanceToBottom = scrollParent.scrollHeight - scrollParent.scrollTop - scrollParent.clientHeight;
-    if (distanceToBottom <= STICK_TO_BOTTOM_PX) {
-      scrollParent.scrollTo({ top: scrollParent.scrollHeight, behavior: "smooth" });
+    const scrollParent = (list.closest('.overflow-y-auto') as HTMLElement | null) || list;
+
+    const handleScroll = () => {
+      const distanceToBottom = scrollParent.scrollHeight - scrollParent.scrollTop - scrollParent.clientHeight;
+      // 当距离底部小于阈值时，认为用户回到最新内容并重新锁定跟随；若用户大幅上滑则暂停吸底
+      isFollowingRef.current = distanceToBottom <= STICK_TO_BOTTOM_PX;
+    };
+
+    scrollParent.addEventListener("scroll", handleScroll, { passive: true });
+
+    // 用 ResizeObserver 监听内容实际高度变化（Markdown 渲染、代码块展开、工具高度增加）
+    const observer = new ResizeObserver(() => {
+      if (isFollowingRef.current) {
+        scrollParent.scrollTop = scrollParent.scrollHeight;
+      }
+    });
+
+    observer.observe(list);
+
+    // 初始或新消息到达时立即吸底
+    if (isFollowingRef.current) {
+      scrollParent.scrollTop = scrollParent.scrollHeight;
     }
+
+    return () => {
+      scrollParent.removeEventListener("scroll", handleScroll);
+      observer.disconnect();
+    };
   }, [messages.length, lastText, lastThinking, lastToolSignal]);
 
   return (

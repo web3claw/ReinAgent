@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import "./styles/global.css";
 import { useConversation } from "./lib/chat/useConversation";
 import { useSettings } from "./lib/settings/useSettings";
@@ -12,8 +12,9 @@ import { DEFAULT_SYSTEM_PROMPT } from "./lib/providers/runAgentTurn";
 import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
 import { getProviderMeta } from "./lib/providers/catalog";
+import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import {
-  Terminal, PanelLeftClose, PanelLeft, Minus, Maximize2, X, PlusCircle
+  Terminal, PanelLeftClose, PanelLeft, Minus, Maximize2, X
 } from "lucide-react";
 
 export default function App() {
@@ -22,9 +23,9 @@ export default function App() {
     isTerminalOpen, toggleTerminal,
     isSidebarOpen, toggleSidebar,
     currentView, setCurrentView,
-    activeTaskId,
+    activeTaskId, setActiveTaskId,
     createTask, updateTaskTitle,
-    selectedProject,
+    selectedProject, setSelectedProject,
   } = useAppStore();
 
   const { t } = useTranslation();
@@ -34,7 +35,9 @@ export default function App() {
   const source = isDemo ? "faux" : (settings.provider || "deepseek");
   const currentProviderMeta = getProviderMeta(settings.provider || "deepseek");
 
-  const { state, send, stop, clear, isStreaming } = useConversation({
+  const [focusTrigger, setFocusTrigger] = useState(0);
+
+  const { state, send, stop, clear, loadState, isStreaming } = useConversation({
     source,
     config: {
       provider: settings.provider,
@@ -45,20 +48,116 @@ export default function App() {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
   });
 
-  const handleNewTask = () => {
+  // Keep ref of current messages and activeTaskId to prevent closure races and empty overrides
+  const currentMessagesRef = useRef(state.messages);
+  currentMessagesRef.current = state.messages;
+
+  const activeTaskIdRef = useRef(activeTaskId);
+  activeTaskIdRef.current = activeTaskId;
+
+  const prevTaskIdRef = useRef<string | null>(activeTaskId);
+  // Mark whether activeTaskId transition was triggered by sending the first draft message
+  const isPromotingDraftRef = useRef(false);
+
+  // Helper to persist non-empty messages for a given taskId
+  const persistTaskMessages = (taskId: string | null, messages: typeof state.messages) => {
+    if (!taskId || messages.length === 0) return;
+    try {
+      localStorage.setItem(`reinagent-task-msg-${taskId}`, JSON.stringify(messages));
+    } catch (e) {
+      console.error("Failed to persist task messages", e);
+    }
+  };
+
+  // When activeTaskId changes, persist previous task's messages and load next task's messages
+  useEffect(() => {
+    // If transitioning because of first message in draft, keep the ongoing conversation intact
+    if (isPromotingDraftRef.current) {
+      isPromotingDraftRef.current = false;
+      prevTaskIdRef.current = activeTaskId;
+      return;
+    }
+
+    const prevId = prevTaskIdRef.current;
+    if (prevId && prevId !== activeTaskId) {
+      // Only persist if previous task has valid non-empty messages
+      persistTaskMessages(prevId, currentMessagesRef.current);
+    }
+
+    prevTaskIdRef.current = activeTaskId;
+
+    if (!activeTaskId) {
+      // Draft mode (empty state)
+      clear();
+    } else {
+      // Load saved messages for the active task
+      try {
+        const raw = localStorage.getItem(`reinagent-task-msg-${activeTaskId}`);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            loadState(parsed);
+            return;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load task messages", e);
+      }
+      clear();
+    }
+  }, [activeTaskId]);
+
+  // Persist current active task messages whenever messages change
+  useEffect(() => {
+    if (activeTaskId && state.messages.length > 0) {
+      persistTaskMessages(activeTaskId, state.messages);
+    }
+  }, [activeTaskId, state.messages]);
+
+  const handleNewTask = (project?: string | null) => {
+    // If switching from an existing task, persist it first before clearing
+    if (activeTaskIdRef.current) {
+      persistTaskMessages(activeTaskIdRef.current, currentMessagesRef.current);
+    }
+    setActiveTaskId(null);
+    if (project !== undefined) {
+      setSelectedProject(project);
+    }
     clear();
+    // Trigger auto-focus on the input box
+    setFocusTrigger((c) => c + 1);
   };
 
   const handleSend = (text: string) => {
-    // If no active task or currently empty, create or name task with user prompt
-    if (!activeTaskId || state.messages.length === 0) {
-      const summary = text.slice(0, 30).trim() || "新任务";
-      if (!activeTaskId) {
-        createTask(summary, selectedProject);
-      } else {
-        updateTaskTitle(activeTaskId, summary);
+    let targetTaskId = activeTaskId;
+
+    // If currently in draft mode (no activeTaskId), create the task on first message
+    if (!targetTaskId) {
+      isPromotingDraftRef.current = true;
+      const fallbackTitle = text.slice(0, 30).trim() || (t("newTask") || "新任务");
+      targetTaskId = createTask(fallbackTitle, selectedProject);
+      setActiveTaskId(targetTaskId);
+
+      // Trigger AI session title generation in background sidecar
+      if (!isDemo && settings?.apiKey) {
+        generateSessionTitle(text, {
+          provider: settings.provider,
+          apiKey: settings.apiKey,
+          modelId: settings.modelId,
+          baseUrl: settings.baseUrl,
+        }).then((aiTitle) => {
+          if (aiTitle && targetTaskId) {
+            updateTaskTitle(targetTaskId, aiTitle);
+          }
+        }).catch((err) => {
+          console.warn("Background AI title generation failed", err);
+        });
       }
+    } else if (state.messages.length === 0) {
+      const fallbackTitle = text.slice(0, 30).trim() || (t("newTask") || "新任务");
+      updateTaskTitle(targetTaskId, fallbackTitle);
     }
+
     return send(text);
   };
 
@@ -106,17 +205,6 @@ export default function App() {
             </button>
           </div>
           <div className="flex items-center gap-2">
-            {hasMessages && (
-              <button
-                type="button"
-                onClick={clear}
-                className="flex items-center gap-1 px-2 py-1 rounded text-xs text-[var(--text-dim)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition-colors"
-                title={t("clearHistory")}
-              >
-                <PlusCircle className="w-3.5 h-3.5" />
-                <span>{t("clearHistory")}</span>
-              </button>
-            )}
             <button
               onClick={toggleTerminal}
               className={`p-1.5 rounded transition-colors flex items-center gap-1 text-sm ${isTerminalOpen ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
@@ -150,6 +238,7 @@ export default function App() {
                     onStop={stop}
                     providerName={currentProviderMeta.name}
                     modelId={settings.modelId}
+                    focusRequestTrigger={focusTrigger}
                   />
                 </div>
               </div>

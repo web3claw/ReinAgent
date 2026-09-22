@@ -84,10 +84,29 @@ ReinAgent 架构全景
   - 项目右侧 `+` 按钮：悬停显示 `新建项目` / `New Project`。
   - 任务右侧 `MessageSquarePlus` 按钮：悬停显示 `新建任务` / `New Task`。
 
-### 2. 任务生命周期与工作区归属
-- **工作区隔离**：未选择具体项目时，新建任务自动归属于全局 `任务` 列表；若选中具体项目，则挂载在项目下。
-- **相对时间动态计算**：每项任务右侧以柔和副色显示相对时间（`< 1m` 显示“刚刚”，`X分钟`、`X小时`、`X天`）。
-- **首句标题自动生成**：新开空白任务并在输入框首次敲击发送时，系统自动截取前 30 个字符作为任务标题并更新。
+### 2. 任务与项目生命周期与隔离架构（对齐 ZCode 会话模型）
+- **多任务独立隔离与会话切换恢复（Session Isolation & Instant Task Switching）**：
+  - 每个任务独立拥有持久化的消息流（`reinagent-task-msg-${taskId}`），点击左侧侧边栏的任意历史任务时，主视图无缝切换至该任务，并精准恢复其保存在 `localStorage` 中的完整对话历史（含 Markdown 问答、思考过程与工具调用结果）。
+  - 加固了切换快照防御机制：采用 `currentMessagesRef` 与非空校验守卫，防止在新建任务或切换离开时被 `clear()` 后的空状态误覆盖历史记录；切换后输入框无缝接续为后续多轮追问模式。
+- **草稿态与懒创建机制（Draft Mode & Lazy Creation）**：
+  - 点击任何「新建任务」（侧边栏快捷操作、项目右侧 `+` 或 `Ctrl+N`）不直接生成任务，而是回到首页 EmptyState 草稿态（`activeTaskId = null`）。
+  - 若在某个具体项目下点击新建，项目下拉框自动预选该项目；若在全局新建，则默认“不在项目中工作”。
+  - 自动将光标焦点置入底部输入框，待用户发送第一句后，才正式生成 `AppTask` 并分配 `taskId` 写入存储。
+- **标题生成策略（首句兜底 + 异步 AI 提炼）**：
+  - 发送首句瞬间，前 30 字符即时成为任务初始标题；
+  - 后台异步触发轻量级大模型总结（参考 ZCode `SESSION_TITLE_SYSTEM_PROMPT` 约束提炼 3~7 词精简标题），总结完成后平滑更新。
+- **任务与项目 CRUD 交互规范（深度对标 ZCode）**：
+  - **任务置顶（Pin / Unpin）**：
+    - 鼠标悬停任务行时左侧显示图钉图标（`Pin`），点击自由切换置顶状态；
+    - 已置顶任务图钉常驻显示且带有品牌色高亮，列表中**所有置顶任务优先固定在最顶部**展示；
+    - 属性字段 `pinned?: boolean` 同步落盘至 `reinagent-tasks`。
+  - **行内二次确认删除（无阻塞式）**：
+    - 悬停点击删除垃圾桶按钮时，不调用任何系统级阻塞弹窗（`window.confirm`）；
+    - 右侧原地平滑切换为红色圆角胶囊「确认」（`Confirm`）按钮与取消「✕」按钮；
+    - 点击「确认」正式执行删除并清理消息分片；按 `Esc` 键或在列表外部点击任意位置自动安全回退取消。
+  - **任务行内重命名**：支持悬停点击编辑图标触发行内输入框，回车或失焦确认更新。
+  - **自定义项目管理**：支持添加自定义项目、重命名（级联更新已有任务的项目归属）以及删除项目。
+  - **顶栏清爽化**：移除了原有的全局「清空对话」按钮，避免打断当前任务或误清空多会话上下文。
 
 ### 3. 双层胶囊输入框（LexicalComposer）
 - **结构**：上下双层严格对齐胶囊形态，采用平滑圆角与自适应边框。
@@ -111,7 +130,10 @@ ReinAgent 架构全景
 | `reinagent-projects-section-expanded`| `"true" \| "false"` | 项目类目本身展开/收起 |
 | `reinagent-tasks-expanded` | `"true" \| "false"` | 任务类目本身展开/收起 |
 | `reinagent-projects-open-groups` | `Record<string, boolean>` | 每个具体子项目的折叠状态 |
-| `reinagent-tasks` | `AppTask[]` | 任务列表数据（id, title, createdAt, project） |
+| `reinagent-tasks` | `AppTask[]` | 任务元数据列表（id, title, createdAt, updatedAt, project, pinned） |
+| `reinagent-task-msg-${id}` | `Message[]` | 各任务独立分片持久化的对话完整消息记录 |
+| `reinagent-custom-projects` | `ProjectItem[]` | 用户自定义添加的项目集合 |
+| `reinagent-active-task-id` | `string \| null` | 当前活动的任务 ID（null 为草稿/首页） |
 
 ---
 

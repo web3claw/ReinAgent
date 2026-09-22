@@ -29,6 +29,7 @@ export interface LexicalComposerProps {
   providerName?: string;
   modelId?: string;
   hasMessages?: boolean;
+  focusRequestTrigger?: number;
 }
 
 export const LexicalComposer: React.FC<LexicalComposerProps> = ({
@@ -38,6 +39,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   providerName = "DeepSeek",
   modelId = "v3",
   hasMessages = false,
+  focusRequestTrigger,
 }) => {
   const { t } = useTranslation();
   const {
@@ -78,6 +80,22 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    if (focusRequestTrigger !== undefined && focusRequestTrigger > 0) {
+      textareaRef.current?.focus();
+    }
+  }, [focusRequestTrigger]);
+
+  // Keep focused when mounted in hasMessages mode
+  useEffect(() => {
+    if (hasMessages) {
+      const timer = setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 50);
+      return () => clearTimeout(timer);
+    }
+  }, [hasMessages]);
+
   const submit = () => {
     const trimmed = text.trim();
     if ((trimmed.length === 0 && attachments.length === 0) || isStreaming) return;
@@ -93,6 +111,10 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       setAttachments([]);
       setShowMentionMenu(false);
       setShowSlashMenu(false);
+      // Keep input focused after sending
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 0);
     }
   };
 

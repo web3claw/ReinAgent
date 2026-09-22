@@ -34,6 +34,8 @@ export interface ConversationController {
   stop: () => void;
   /** 清空会话。 */
   clear: () => void;
+  /** 加载或切换到指定消息列表。 */
+  loadState: (messages: import("./conversationModel").TimelineEntry[]) => void;
 }
 
 export function createConversationController(

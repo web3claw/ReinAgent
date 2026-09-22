@@ -37,6 +37,7 @@ import {
   finish,
   finishAborted,
   initialState,
+  restoreState,
   noteMaxSteps,
   toApiMessages,
 } from "./conversationModel.js";
@@ -81,6 +82,13 @@ export function createConversationController(deps) {
     if (abortRef !== null) abortRef.abort();
     abortRef = null;
     setState(() => initialState());
+  }
+
+  /** 加载或切换会话：中断在途轮次并置入目标消息列表。 */
+  function loadState(messages) {
+    if (abortRef !== null) abortRef.abort();
+    abortRef = null;
+    setState(() => restoreState(messages));
   }
 
   /**
@@ -169,5 +177,5 @@ export function createConversationController(deps) {
     return true;
   }
 
-  return { send, stop, clear };
+  return { send, stop, clear, loadState };
 }

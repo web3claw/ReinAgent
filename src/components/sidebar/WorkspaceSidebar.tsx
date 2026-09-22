@@ -51,24 +51,9 @@ export function LanguageGlobeIcon({ locale, className = "w-4 h-4" }: { locale: s
   );
 }
 
-export const MOCK_PROJECTS: ProjectGroup[] = [
-  {
-    name: 'deepseek-harness-plugin',
-    children: [
-      { name: 'dsh-core', daysAgo: 5 },
-      { name: 'dsh-desktop', daysAgo: 20 },
-      { name: 'freeIlmapi', daysAgo: 21 },
-    ],
-  },
-  {
-    name: 'ZCodeProject',
-    children: [
-      { name: '你好', daysAgo: 12 },
-    ],
-  },
-];
+export const MOCK_PROJECTS: ProjectGroup[] = [];
 
-export function WorkspaceSidebar({ onNewTask }: { onNewTask?: () => void }) {
+export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string | null) => void }) {
   const { t } = useTranslation();
   const isSidebarOpen = useAppStore(state => state.isSidebarOpen);
   const setCurrentView = useAppStore(state => state.setCurrentView);
@@ -76,13 +61,13 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: () => void }) {
   const toggleTheme = useAppStore(state => state.toggleTheme);
   const locale = useAppStore(state => state.locale);
   const toggleLocale = useAppStore(state => state.toggleLocale);
-  const createTask = useAppStore(state => state.createTask);
+  const startNewTaskDraft = useAppStore(state => state.startNewTaskDraft);
   const selectedProject = useAppStore(state => state.selectedProject);
   const [activeTab, setActiveTab] = useState<'groups' | 'projects'>('projects');
 
   const handleNewTask = () => {
-    createTask(undefined, selectedProject);
-    onNewTask?.();
+    startNewTaskDraft(selectedProject);
+    onNewTask?.(selectedProject);
   };
 
   if (!isSidebarOpen) return null;

@@ -41,6 +41,7 @@ export interface UseConversationResult {
   send: (text: string) => boolean;
   stop: () => void;
   clear: () => void;
+  loadState: (messages: import("./conversationModel").TimelineEntry[]) => void;
   isStreaming: boolean;
 }
 
@@ -86,6 +87,10 @@ export function useConversation(options: UseConversationOptions): UseConversatio
   const send = useCallback((text: string) => controller.send(text), [controller]);
   const stop = useCallback(() => controller.stop(), [controller]);
   const clear = useCallback(() => controller.clear(), [controller]);
+  const loadState = useCallback(
+    (messages: import("./conversationModel").TimelineEntry[]) => controller.loadState(messages),
+    [controller],
+  );
 
-  return { state, send, stop, clear, isStreaming: state.status === "streaming" };
+  return { state, send, stop, clear, loadState, isStreaming: state.status === "streaming" };
 }

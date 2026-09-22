@@ -21,6 +21,21 @@ export function initialState() {
 }
 
 /**
+ * 恢复指定消息列表的状态机（切换会话时使用）。
+ * @param {import("./conversationModel").TimelineEntry[]} messages
+ * @returns {import("./conversationModel").ChatState}
+ */
+export function restoreState(messages) {
+  const list = Array.isArray(messages) ? messages : [];
+  return {
+    messages: list,
+    status: "idle",
+    error: undefined,
+    nextMessageSeq: list.length,
+  };
+}
+
+/**
  * 取下一条消息序号（用于生成**唯一** id `m${seq}`）。
  *
  * 为什么不再用 `m${messages.length}`：那种写法的唯一性依赖「数组只增不减」，

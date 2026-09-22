@@ -10,7 +10,9 @@ export interface AppTask {
   id: string;
   title: string;
   createdAt: number;
+  updatedAt?: number;
   project: string | null;
+  pinned?: boolean;
 }
 
 interface AppState {
@@ -43,6 +45,8 @@ interface AppState {
   setActiveTaskId: (id: string | null) => void;
   updateTaskTitle: (id: string, title: string) => void;
   deleteTask: (id: string) => void;
+  toggleTaskPin: (id: string) => void;
+  startNewTaskDraft: (project?: string | null) => void;
 }
 
 const getInitialTheme = (): ThemeMode => {
@@ -75,7 +79,7 @@ const getInitialTasks = (): AppTask[] => {
       const saved = localStorage.getItem("reinagent-tasks");
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed)) {
           return parsed;
         }
       }
@@ -83,15 +87,7 @@ const getInitialTasks = (): AppTask[] => {
       console.error("Failed to load initial tasks", e);
     }
   }
-  // Default mock task matching user's screenshot
-  return [
-    {
-      id: "task-init-1",
-      title: "你好",
-      createdAt: Date.now() - 2 * 3600 * 1000, // 2 hours ago
-      project: null,
-    },
-  ];
+  return [];
 };
 
 export const useAppStore = create<AppState>((set) => ({
@@ -115,6 +111,7 @@ export const useAppStore = create<AppState>((set) => ({
       id: newId,
       title: title || (typeof window !== "undefined" && localStorage.getItem("reinagent-locale") === "en-US" ? "New Task" : "新建任务"),
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       project: project,
     };
     set((state) => {
@@ -131,10 +128,17 @@ export const useAppStore = create<AppState>((set) => ({
     return newId;
   },
 
+  startNewTaskDraft: (project = null) => {
+    set({
+      activeTaskId: null,
+      selectedProject: project,
+    });
+  },
+
   updateTaskTitle: (id, title) => {
     set((state) => {
       const nextTasks = state.tasks.map((t) =>
-        t.id === id ? { ...t, title } : t
+        t.id === id ? { ...t, title, updatedAt: Date.now() } : t
       );
       if (typeof window !== "undefined") {
         try {
@@ -148,6 +152,13 @@ export const useAppStore = create<AppState>((set) => ({
   },
 
   deleteTask: (id) => {
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.removeItem(`reinagent-task-msg-${id}`);
+      } catch (e) {
+        console.error("Failed to remove task message chunk", e);
+      }
+    }
     set((state) => {
       const nextTasks = state.tasks.filter((t) => t.id !== id);
       if (typeof window !== "undefined") {
@@ -161,6 +172,22 @@ export const useAppStore = create<AppState>((set) => ({
         tasks: nextTasks,
         activeTaskId: state.activeTaskId === id ? null : state.activeTaskId,
       };
+    });
+  },
+
+  toggleTaskPin: (id) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id ? { ...t, pinned: !t.pinned } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
     });
   },
 

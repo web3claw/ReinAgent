@@ -99,6 +99,7 @@ export interface ChatState {
 }
 
 export function initialState(): ChatState;
+export function restoreState(messages: TimelineEntry[]): ChatState;
 
 export function appendUser(state: ChatState, text: string): ChatState;
 
