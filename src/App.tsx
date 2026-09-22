@@ -138,21 +138,19 @@ export default function App() {
       targetTaskId = createTask(fallbackTitle, selectedProject);
       setActiveTaskId(targetTaskId);
 
-      // Trigger AI session title generation in background sidecar
-      if (!isDemo && settings?.apiKey) {
-        generateSessionTitle(text, {
-          provider: settings.provider,
-          apiKey: settings.apiKey,
-          modelId: settings.modelId,
-          baseUrl: settings.baseUrl,
-        }).then((aiTitle) => {
-          if (aiTitle && targetTaskId) {
-            updateTaskTitle(targetTaskId, aiTitle);
-          }
-        }).catch((err) => {
-          console.warn("Background AI title generation failed", err);
-        });
-      }
+      // Trigger AI session title generation or heuristic summarization in background sidecar
+      generateSessionTitle(text, {
+        provider: settings.provider,
+        apiKey: settings.apiKey,
+        modelId: settings.modelId,
+        baseUrl: settings.baseUrl,
+      }).then((aiTitle) => {
+        if (aiTitle && targetTaskId) {
+          updateTaskTitle(targetTaskId, aiTitle);
+        }
+      }).catch((err) => {
+        console.warn("Background AI title generation failed", err);
+      });
     } else if (state.messages.length === 0) {
       const fallbackTitle = text.slice(0, 30).trim() || (t("newTask") || "新任务");
       updateTaskTitle(targetTaskId, fallbackTitle);
