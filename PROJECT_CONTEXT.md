@@ -63,7 +63,7 @@ ReinAgent 架构全景
         ├── src/main.rs                 # Tauri 入口、窗口管理
         ├── src/lib.rs                  # 命令注册
         ├── src/terminal.rs             # 伪终端 (PTY) 会话管理与流转发
-        └── src/fs_cmd.rs               # 本地受控文件操作
+        └── src/fs_cmd.rs               # 异步受控文件与命令执行 (spawn_blocking 隔离防窗口卡死)
 ```
 
 ---
