@@ -9,14 +9,14 @@ import { TerminalPane } from "./components/terminal/TerminalPane";
 import { WorkspaceSidebar } from "./components/sidebar/WorkspaceSidebar";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { DEFAULT_SYSTEM_PROMPT } from "./lib/providers/runAgentTurn";
-import { resolveWorkspaceRoot } from "./lib/agent/workspace";
+import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
 import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
-  Terminal, PanelLeftClose, PanelLeft, Minus, Maximize2, X
+  Terminal, PanelLeftClose, PanelLeft, Minus, Maximize2, X, AlertTriangle
 } from "lucide-react";
 
 export default function App() {
@@ -112,7 +112,22 @@ export default function App() {
       ? 30
       : 20; // default 为 20 步
 
+  // 用户主目录：先读本地缓存保证首屏可用，再从 Tauri 后端拉取真实值刷新缓存（No-Fallback：拿不到则 UI 告警）
+  const [userHome, setUserHome] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem("reinagent-user-home");
+    } catch {
+      return null;
+    }
+  });
+  useEffect(() => {
+    initUserHome().then((home) => {
+      if (home) setUserHome(home);
+    });
+  }, []);
+
   const effectiveWorkspaceRoot = resolveWorkspaceRoot(selectedProject);
+  const isWorkspaceUnknown = !selectedProject && !userHome;
 
   const effectiveThinkingLevel =
     !isReasoningSupported || thinkingLevel === "off" || thinkingLevel === "default"
@@ -347,6 +362,14 @@ export default function App() {
             </button>
           </div>
         </div>
+
+        {/* 工作区未知告警条（No-Fallback：主目录不可得时如实告警，绝不编造路径） */}
+        {isWorkspaceUnknown && (
+          <div className="flex items-center gap-2 px-4 py-1.5 text-xs bg-[var(--warn-bg)] border-b border-[var(--warn-border)] text-[var(--warn-text)] flex-shrink-0">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            <span>{t("workspaceUnknown")}</span>
+          </div>
+        )}
 
         {/* Chat / Composer Area */}
         <div className="flex-1 flex flex-col overflow-hidden relative">

@@ -29,7 +29,7 @@
  */
 
 import { Type } from "typebox";
-import { resolveWorkspacePath, resolveWorkspaceRoot } from "./workspace";
+import { resolveWorkspacePath, resolveWorkspaceRoot } from "./workspace.ts";
 
 /**
  * 工具硬闸上限（导出供测试与上层消费）。

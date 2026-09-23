@@ -5,10 +5,13 @@
  * 2. 未指定项目 -> 使用用户主目录下的 `~/.ReinAgent/DefaultProject` 作为工作区文件夹；
  * 3. 相对路径决议 -> 统一通过 `resolveWorkspacePath` 解析为工作区下的绝对路径，
  *    彻底杜绝相对路径直接落入后端 `src-tauri` 目录的问题。
+ * 4. No-Fallback 铁律 -> 用户主目录必须来自真实来源（Tauri `path_home_dir` IPC 缓存
+ *    或 Node 环境变量），任何来源都拿不到时返回空串并要求 UI 明确告警，严禁编造路径。
  */
 
 /**
  * 获取系统默认工作区路径：~/.ReinAgent/DefaultProject
+ * 主目录未知时返回空串，调用方必须显式处理空值（UI 告警），不得当作可用路径使用。
  */
 export function getDefaultWorkspaceRoot(): string {
   // 1. 浏览器环境/前端无法直接读环境变量时，从 localStorage 中读取缓存或回退
@@ -27,8 +30,41 @@ export function getDefaultWorkspaceRoot(): string {
     }
   }
 
-  // 3. 通用 Unix 默认回退
-  return "/home/web3claw/.ReinAgent/DefaultProject";
+  // 3. 所有真实来源均不可用：返回空串。严禁编造任何默认路径。
+  return "";
+}
+
+/**
+ * 从 Tauri 后端拉取真实用户主目录并写入 `reinagent-user-home` 缓存。
+ * Web / 无头浏览器环境下后端不可达，返回 null（保留既有缓存，供桌面端使用过的场景）。
+ */
+export async function initUserHome(): Promise<string | null> {
+  if (typeof window === "undefined") return null;
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const home = await invoke<string>("path_home_dir");
+    if (home && typeof home === "string" && home.trim().length > 0) {
+      localStorage.setItem("reinagent-user-home", home.trim());
+      return home.trim();
+    }
+    console.warn("path_home_dir 返回了空主目录，工作区决议将标记为未知");
+    return null;
+  } catch (err) {
+    console.warn("path_home_dir 不可用（Web 环境或后端异常），保留既有 home 缓存", err);
+    return null;
+  }
+}
+
+/**
+ * 展开 `~` 开头的主目录简写。
+ * 主目录未知时抛出真实错误，严禁编造展开结果。
+ */
+function expandTildeHome(trimmed: string): string {
+  const userHome = getDefaultWorkspaceRoot().replace(/\/\.ReinAgent\/DefaultProject$/, "");
+  if (!userHome) {
+    throw new Error("无法展开 ~ 路径：用户主目录未知（未获取到真实 home）");
+  }
+  return normalizePath(trimmed.replace(/^~/, userHome));
 }
 
 /**
@@ -40,9 +76,7 @@ export function resolveWorkspaceRoot(project?: string | null): string {
     const trimmed = project.trim();
     // 支持 ~ 开头的主目录简写
     if (trimmed.startsWith("~/") || trimmed === "~") {
-      const defaultRoot = getDefaultWorkspaceRoot();
-      const userHome = defaultRoot.replace(/\/\.ReinAgent\/DefaultProject$/, "");
-      return normalizePath(trimmed.replace(/^~/, userHome));
+      return expandTildeHome(trimmed);
     }
     return normalizePath(trimmed);
   }
@@ -69,13 +103,14 @@ export function resolveWorkspacePath(inputPath: string, workspaceRoot: string): 
 
   // ~ 开头主目录简写
   if (trimmed.startsWith("~/") || trimmed === "~") {
-    const defaultRoot = getDefaultWorkspaceRoot();
-    const userHome = defaultRoot.replace(/\/\.ReinAgent\/DefaultProject$/, "");
-    return normalizePath(trimmed.replace(/^~/, userHome));
+    return expandTildeHome(trimmed);
   }
 
   // 相对路径：基于 workspaceRoot 拼接
   const root = normalizePath(workspaceRoot).replace(/\/+$/, "");
+  if (!root) {
+    throw new Error("工作区根目录未知，无法解析相对路径");
+  }
   const rel = trimmed.replace(/^\.\//, "");
   return normalizePath(`${root}/${rel}`);
 }

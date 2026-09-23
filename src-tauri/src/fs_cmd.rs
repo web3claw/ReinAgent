@@ -116,3 +116,20 @@ pub async fn fs_pick_folder(initial_dir: Option<String>) -> Result<Option<String
     .map_err(|e| e.to_string())?
 }
 
+/// 返回宿主真实的用户主目录，供前端决议 `~/.ReinAgent/DefaultProject` 默认工作区。
+/// 严格 No-Fallback：环境变量缺失时如实报错，严禁编造路径。
+#[tauri::command]
+pub async fn path_home_dir() -> Result<String, String> {
+    if let Ok(home) = std::env::var("USERPROFILE") {
+        if !home.trim().is_empty() {
+            return Ok(home);
+        }
+    }
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.trim().is_empty() {
+            return Ok(home);
+        }
+    }
+    Err("无法获取用户主目录：环境变量 USERPROFILE 与 HOME 均未设置".into())
+}
+

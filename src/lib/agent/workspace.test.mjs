@@ -78,3 +78,33 @@ test("5 · resolveWorkspacePath 对齐 ZCode：相对路径自动基于工作区
   assert.equal(resolveWorkspacePath("", workspaceRoot), workspaceRoot);
   assert.equal(resolveWorkspacePath("   ", workspaceRoot), workspaceRoot);
 });
+
+test("6 · No-Fallback：主目录来源全部缺失时返回空串，严禁编造路径", () => {
+  const prevHome = process.env.HOME;
+  const prevProfile = process.env.USERPROFILE;
+  delete process.env.HOME;
+  delete process.env.USERPROFILE;
+  try {
+    const root = getDefaultWorkspaceRoot();
+    assert.equal(root, "", "无任何真实来源时必须返回空串，不得使用默认路径兜底");
+    assert.ok(!root.includes("web3claw"), "严禁再出现历史硬编码的编造路径");
+  } finally {
+    if (prevHome !== undefined) process.env.HOME = prevHome;
+    if (prevProfile !== undefined) process.env.USERPROFILE = prevProfile;
+  }
+});
+
+test("7 · No-Fallback：主目录未知时 ~ 展开与相对路径解析必须抛真实错误", () => {
+  const prevHome = process.env.HOME;
+  const prevProfile = process.env.USERPROFILE;
+  delete process.env.HOME;
+  delete process.env.USERPROFILE;
+  try {
+    assert.throws(() => resolveWorkspaceRoot("~/Demo"), /主目录未知/);
+    assert.throws(() => resolveWorkspacePath("~/a.txt", "/tmp/ws"), /主目录未知/);
+    assert.throws(() => resolveWorkspacePath("a.txt", ""), /工作区根目录未知/);
+  } finally {
+    if (prevHome !== undefined) process.env.HOME = prevHome;
+    if (prevProfile !== undefined) process.env.USERPROFILE = prevProfile;
+  }
+});

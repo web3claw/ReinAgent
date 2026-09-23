@@ -226,6 +226,7 @@ ReinAgent 架构全景
 | `reinagent-task-msg-${id}` | `Message[]` | 各任务独立分片持久化的对话完整消息记录 |
 | `reinagent-custom-projects` | `ProjectItem[]` | 用户自定义添加的项目集合 |
 | `reinagent-user-projects` | `string[]` | 用户通过文件夹选择器添加的项目绝对路径集合 |
+| `reinagent-user-home` | `string` | 用户主目录缓存（由 Tauri `path_home_dir` 启动拉取写入，作为默认工作区决议的本地缓存来源） |
 | `reinagent-active-task-id` | `string \| null` | 当前活动的任务 ID（null 为草稿/首页） |
 | `reinagent-thinking-level` | `"off" \| "low" \| "medium" \| "high" \| "max"` | 用户选择的思考深度与步数档位（默认 "high"） |
 
@@ -289,8 +290,14 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 ### 1. 业务工作区决议规则（Workspace Resolution）
 - **有指定项目**：若当前任务选中了项目（或会话绑定了 Project），则工作区根目录 `workspaceRoot` 为该项目所指定的文件夹路径。
 - **无指定项目（默认回退）**：若任务未指定项目（或点击“不在项目中工作”），工作区根目录自动回退到用户主目录下的：
-  👉 `~/.ReinAgent/DefaultProject`（如 `/home/web3claw/.ReinAgent/DefaultProject`）。
+  👉 `~/.ReinAgent/DefaultProject`（如 Windows 下 `C:\Users\<user>\.ReinAgent\DefaultProject`）。
   - 若该目录不存在，首次文件写入或命令执行时由系统自动创建（`mkdir -p`）。
+- **用户主目录真实来源（No-Fallback，严禁编造路径）**：
+  - 前端 `getDefaultWorkspaceRoot()`（`src/lib/agent/workspace.ts`）的三级来源为：① `localStorage["reinagent-user-home"]` 缓存；② Node/Bun 测试环境的 `HOME` / `USERPROFILE` 环境变量；③ **全部缺失时返回空串，绝不返回任何编造的默认路径**（历史遗留的 `/home/web3claw/...` 硬编码兜底已彻底移除）。
+  - 应用启动时 `App.tsx` 调用 `initUserHome()`：经 Tauri IPC 命令 `path_home_dir`（`src-tauri/src/fs_cmd.rs`，优先读 `USERPROFILE`，其次 `HOME`，均缺失则真实报错）拉取宿主真实主目录，写入 `reinagent-user-home` 缓存；Web/无头环境下后端不可达时保留既有缓存并返回 null。
+  - **工作区未知告警条**：当未选项目且主目录不可得时，顶栏下方展示 `--warn-*` 主题色告警条（i18n 键 `workspaceUnknown`），明确告知文件与命令工具受限，严禁静默假兜底。
+  - 主目录未知时 `~` 展开与基于空根目录的相对路径解析（`resolveWorkspacePath` / `resolveWorkspaceRoot`）会**抛出真实错误**（“用户主目录未知”/“工作区根目录未知”），由工具层如实上报，绝不生成编造路径。
+  - 行为已由 `src/lib/agent/workspace.test.mjs` 用例 6/7 锁定（纳入 `bun run test:agent`）。
 
 ### 2. 路径决议策略（Path Policy）
 - **文件工具（`write_file` / `read_file` / `edit_file` / `list_dir`）**：
