@@ -121,6 +121,7 @@ export async function runTurn(deps) {
     onEvent,
     maxSteps,
     shouldStopAfterTurn,
+    thinkingLevel,
   } = deps;
 
   // ---- 入参前置校验（不满足即抛，绝不让它退化成库的静默降级）----
@@ -183,6 +184,7 @@ export async function runTurn(deps) {
     getApiKey: typeof getApiKey === "function" ? (provider) => getApiKey(provider) : undefined,
     initialState: {
       model,
+      thinkingLevel: thinkingLevel ?? "off",
       ...(isNonEmptyString(systemPrompt) ? { systemPrompt } : {}),
       // 拷贝一份，避免 Agent 反向污染调用方数组（库内部还会再 slice 一次，无副作用）。
       messages: messages.slice(),

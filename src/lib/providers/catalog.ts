@@ -24,7 +24,7 @@ export const PROVIDERS: ProviderMeta[] = [
   {
     id: "openai",
     name: "OpenAI",
-    defaultBaseUrl: "https://api.openai.com/v1",
+    defaultBaseUrl: "https://api.openai.com",
     defaultModelId: "gpt-4o",
     api: "openai-completions",
     models: [

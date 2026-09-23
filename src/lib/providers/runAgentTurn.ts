@@ -21,6 +21,7 @@ export interface RunAgentTurnParams {
   maxSteps?: number;
   workspaceRoot?: string;
   signal?: AbortSignal;
+  thinkingLevel?: import("../agent/agentRuntime").RunTurnDeps["thinkingLevel"];
   onEvent: (ev: AgentEvent, signal?: AbortSignal) => void | Promise<void>;
 }
 
@@ -38,7 +39,7 @@ async function getStreamFnForApi(api: string) {
 }
 
 export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnResult> {
-  const { source, config, messages, systemPrompt, signal, onEvent, maxSteps, workspaceRoot } = params;
+  const { source, config, messages, systemPrompt, signal, onEvent, maxSteps, workspaceRoot, thinkingLevel } = params;
 
   const tools = getTools(workspaceRoot ? { workspaceRoot } : undefined);
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
@@ -53,6 +54,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     maxSteps: maxSteps ?? DEFAULT_MAX_STEPS,
     signal,
     onEvent,
+    thinkingLevel,
   };
 
   if (source === "faux") {

@@ -1,5 +1,6 @@
 mod terminal;
 mod fs_cmd;
+mod provider_config;
 
 use terminal::TerminalState;
 
@@ -25,7 +26,9 @@ pub fn run() {
             fs_cmd::fs_write_file,
             fs_cmd::fs_list_dir,
             fs_cmd::fs_execute,
-            fs_cmd::fs_pick_folder
+            fs_cmd::fs_pick_folder,
+            provider_config::provider_config_load,
+            provider_config::provider_config_save
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

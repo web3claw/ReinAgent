@@ -112,6 +112,19 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+select {
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  appearance: none;
+  color: var(--text-primary);
+  background-color: var(--bg-card);
+}
+
+select option {
+  background-color: var(--bg-card);
+  color: var(--text-primary);
+}
+
 .app {
   display: flex;
   flex-direction: column;

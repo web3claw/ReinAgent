@@ -109,24 +109,40 @@ ReinAgent 架构全景
   - **自定义项目管理**：支持添加自定义项目、重命名（级联更新已有任务的项目归属）以及删除项目。
   - **顶栏清爽化**：移除了原有的全局「清空对话」按钮，避免打断当前任务或误清空多会话上下文。
 
-### 3. 双层胶囊输入框（LexicalComposer）与推理深度调度
-- **结构**：上下双层严格对齐胶囊形态，采用平滑圆角与自适应边框。
-- **上层**：项目工作区选择器，支持关键词搜索过滤、打开本地文件夹、远程连接切换以及“不在项目中工作”。
-- **下层**：Lexical 编辑区、`@` 触发上下文菜单、`/` 触发命令菜单、变更前确认模式（✋）、推理深度（off/low/medium/high/max）、发送/中止按钮。
-- **推理深度（ThinkingLevel）与最大步数（maxSteps）动态映射**：
-  - 用户在输入框底部选择的思考深度会动态转化为单轮执行最大步数限制并透传至 Agent 核心：
-    - `off`: 15 步
-    - `low`: 15 步
-    - `medium`: 25 步
-    - `high`: 35 步（系统默认档位，标有推荐标签）
-    - `max`: 50 步
-  - 默认设置与持久化：系统默认设为 `high`（35 步），并通过 `reinagent-thinking-level` 本地持久化保存用户偏好。
-  - 完整透传链路：`useAppStore` -> `App.tsx` -> `useConversation` -> `conversationController` -> `runAgentTurn` -> `agentRuntime.runTurn`。
-  - 下拉卡片式菜单交互：点击底栏 `🧠 高 ▾` 弹出精致卡片列表（`w-72`，半透明毛玻璃背景），清晰展示每个档位的标题、推荐标签、等宽步数徽标（如 `35 步`）以及场景与思考预期描述，支持中英文双语。
-- **步数硬闸触顶与一键「继续」机制**：
-  - 当单轮工具调用/思考循环达到步数上限时，`agentRuntime` 返回 `maxStepsReached: true`，状态机为末条助手消息标上 `truncatedBy: "maxSteps"`；
-  - `MessageItem` 在展示「已达最大步数，本次回复已停止。」提示的同时，右侧提供精致的「继续」胶囊按钮（带有 `Play` 图标）；
-  - 用户点击后自动发送“请继续执行未完成的步骤”，无缝衔接上一轮未完成的编码/任务流。
+### 3. 双层胶囊输入框（LexicalComposer）与推理等级调度
+- **下层**：Lexical 编辑区、`@` 触发上下文菜单、`/` 触发命令菜单、变更前确认模式（✋）、**模型快捷切换下拉菜单（Model Selector Dropdown）**、推理等级选择器、发送/中止按钮。
+- **模型快捷切换菜单（Model Selector Dropdown）与多任务独立模型记忆机制**：
+  - 点击底栏 `{服务商}/{模型名称}` 按钮弹出向上浮动的精致卡片菜单（与推理等级弹窗风格统一）；
+  - **动态聚合已启用的模型**：按服务商（如 DeepSeek、OpenAI、自定义等）分组展示其下 `enabled !== false` 的全部模型；
+  - **技术指标丰富呈现**：每一项展示模型名称、紧凑上下文窗口徽标（如 `1M`、`128K`）及 `[视觉]` 徽标；当前选中模型带有指示圆点与高亮；
+  - **即时切换与会话级状态隔离**：点击任意模型后，**仅切换当前对话会话使用的服务商与模型**，立即生效并联动推理等级；**绝不修改或覆盖“服务商设置”里的系统默认模型**（系统默认模型依然牢牢固定在设置页面中通过“设为系统默认”指定的模型上）。
+  - **任务级独立模型持久化与多窗口隔离（Task-Level Model Isolation & Persistence）**：
+    - `AppTask` 数据模型扩展可选字段 `providerId?: string; modelId?: string;`，伴随任务列表自动持久化于 `reinagent-tasks`；
+    - **多任务窗口完全隔离**：在具体任务窗口 A 切换模型时，触发 `updateTaskModel(activeTaskId, providerId, modelId)`，仅更新并持久化当前任务绑定的模型，其他任务窗口不受任何影响；
+    - **任务切换生命周期自动还原**：侧边栏切换任务激活时，若目标任务已保存专属模型则精准还原呈现；若目标任务尚未绑定特定模型，或切换至草稿态（`activeTaskId === null`），自动干净回退至系统全局默认配置；
+    - **草稿建任务无缝附着**：用户在草稿窗口切换特定模型后发送首条消息时，`createTask` 自动将当前选中的模型绑定给新创建的任务；
+    - **新建任务（`+`）彻底清空污染**：点击新建任务时，不仅清空消息时间线，同时将会话模型重置回全局系统默认模型，杜绝上一个任务的定制模型外溢。
+- **推理等级（EffortLevel / ThinkingLevel）与最大步数（maxSteps）动态映射**：
+  - **6 档标准等级支持**：对齐现代大模型规范，包含 `default`、`low`、`medium`、`high`、`xhigh`、`max` 6 档；
+  - **纯英文 UI 与首字母大写**：聊天窗口菜单使用纯英文展示（`Default`、`Low`、`Medium`、`High`、`XHigh`、`Max`），显示激活绿点 `●`、粗体高亮及 `{steps} steps` 徽章；
+  - **动态步数递增规则**：`Default` 为 20 步，`Low` 为 30 步，每级递增 10 步：
+    - `default`: 20 steps
+    - `low`: 30 steps
+    - `medium`: 40 steps
+    - `high`: 50 steps
+    - `xhigh`: 60 steps
+    - `max`: 70 steps
+  - **动态过滤与模型真实能力严格联动（No Fallback）**：
+    - 聊天窗口中，若当前模型声明了 `effort.supportedLevels`，**严格仅显示该模型声明支持的档位**，不支持的等级（包括未声明时的 `Default`）在列表中完全过滤隐藏，坚决不进行任何臆测兜底；例如 DeepSeek（支持 `["low", "high", "max"]`）的菜单中严格仅有 `Low`、`High`、`Max` 三项；
+    - 模型编辑弹窗（`ModelEditModal`）中，同样通过一排胶囊按钮展示支持的等级，并支持点击直接高亮并设为模型默认等级；若模型上游未声明 effort，可手动开启并从完整档位中选择；
+    - 当聊天窗口切换推理等级时，动态同步更新该模型的默认等级并实时写入 `provider_config.json`；
+  - **发送给大模型的实际透传机制**：
+    - 当选定具体等级（`low` / `medium` / `high` / `xhigh` / `max`）时，直接作为 `thinkingLevel`（在 OpenAI / DeepSeek 中对应 `reasoning_effort`）透传给后端 Agent 运行时；
+    - 当选定为 `default`（或 `off`）时，传给后端 `undefined`，由服务端以模型原生的默认推理能力执行。
+  - **步数硬闸触顶与一键「继续」机制**：
+    - 当单轮工具调用/思考循环达到当前等级的步数上限时，`agentRuntime` 返回 `maxStepsReached: true`，状态机为末条助手消息标上 `truncatedBy: "maxSteps"`；
+    - `MessageItem` 在展示「已达最大步数，本次回复已停止。」提示的同时，右侧提供精致的「继续」胶囊按钮（带有 `Play` 图标）；
+    - 用户点击后自动发送“请继续执行未完成的步骤”，无缝衔接上一轮未完成的编码/任务流。
 - **错误诊断加固与一键「重试（Retry）」机制**：
   - 对网络抖动/断连（`Connection error`、`failed to fetch`、`socket hang up`、`ECONNRESET` 等）精准识别并映射为友好的「网络错误：连接中断或无法连接服务，请检查网络或代理设置」；
   - `MessageItem` 报错栏右侧提供精致的红色「重试」（带 `RotateCw` 图标）按钮；
@@ -147,13 +163,55 @@ ReinAgent 架构全景
     - 支持展开/折叠项目查看其隶属的子任务，点击子任务直接跳转激活；
     - 全局 Tasks 分区专注聚合展示未关联具体项目的通用任务，主次结构层次分明。
 
+- **多模型服务商管理体系（深度对标 ZCode ModelProviderSection）**：
+  - **双栏现代交互布局**：
+    - **左侧服务商导航栏（ProviderNavigation）**：清晰划分“主流服务商（DeepSeek、OpenAI、Anthropic、Gemini、Ollama）”与“自定义服务商”分组，配备矢量专属 Logo 与状态指示圆点（🟢 已配置并启用 / ⚪ 未配置），右上角支持快捷“+ 添加服务商”；
+    - **右侧服务商详情面板（ProviderDetailCard）**：包含服务商总控开关（Switch）、名称行内重命名、API 端点（Base URL）自定义、**API 格式规范选择（深度对齐 ZCode 原生标准，包含 `Chat Completions (/chat/completions)`、`Anthropic Messages (/v1/messages)`、`Responses (/responses)` 与 `Google Generative AI (/models)`）**、密码显隐切换与官网获取 Key 快捷链接；
+  - **细粒度模型管理、动态刷新与元数据编辑体系（深度对齐 ZCode 视觉交互规范）**：
+    - **模型列表行视觉规范（完全对齐 ZCode）**：
+      - **上下文大小 Badge**：显示紧凑技术规格徽标（如 `1M`、`2M`、`128K`、`64K`、`32K` 等），采用等宽字体与深底细边框；
+      - **视觉能力 Badge（`[视觉]` / `[Vision]`）**：当模型支持图像输入（`supportsImage: true`）时呈现圆角胶囊徽标，自适应国际化；
+      - **模型连通性测通（🔌 `Unplug` 图标）**：点击针对该模型独立发起轻量级握手测试，测通后呈现延迟毫秒数，异常精准报警；
+      - **模型元数据编辑（✏️ `Pencil` 图标）**：打开 `ModelEditModal` 模态弹窗，支持可视化修改模型 ID、显示名称、上下文 Token 窗口（提供 32K/64K/128K/200K/1M/2M 快捷预设）、最大输出 Token 数及是否支持视觉输入；
+      - **模型删除（🗑️ `Trash2` 图标）**：支持清理不需要的模型，带二次确认提示，若删除的是当前默认模型自动安全回退；
+      - **启用/禁用 Switch 开关**：平滑动效 Switch 滑块组件（取代旧复选框），关闭后不出现在会话模型切换菜单中；
+    - **真实数据与无假兜底原则（No Fallback & Fail-Fast Rule，项目核心铁律）**：
+      - **严禁臆测兜底**：彻底拔除任何基于模型名称正则的硬编码猜测字典（如写死 DeepSeek 65.5K、写死各厂商窗口等）；
+      - **100% 真实解析官方 API**：在 `parseProviderRawModels` 中真实完整提取服务端返回的 `context_window`、`max_output_tokens`、`supports_images` / `supports_image` / `input_modalities`（是否包含 `image`）等权威元数据，准确高亮 `[视觉]` 徽章；
+      - **未提供即如实展示**：若上游服务商未提供某字段，严禁捏造假数据，UI 必须明确展示为“未提供”或空，并允许用户手动配置；
+      - **出错即时完整提示**：接口请求、网络异常或鉴权失败时，严禁静默降级或用旧数据掩盖，必须将完整错误文本即时反馈至界面；
+    - **动态远端模型刷新（对标 LiveAgent）**：在“添加模型”前配备“🔄 刷新模型列表”按钮，内置 `fetchProviderModels` 探测引擎，直接请求标准 `/v1/models`，去除任何 404 猜测与二次容错重试，严格真实报错（Fail-Fast）；
+    - **Base URL 统一剥离 `/v1` 与请求端自动补全规范（Base URL Normalization Rule）**：
+      - **存储与展示规范**：用户在服务商设置面板中输入或展示 Base URL 时，统一不带末尾的 `/v1`、末尾单斜杠或多余斜杠（例如 `http://192.168.3.27:8787`、`https://api.openai.com`）；
+      - **输入失焦与写盘强制清洗（`cleanBaseUrl`）**：若用户输入时带了 `/v1`、`/v1/`、`/` 或 `///`，在输入框失焦以及写入 `provider_config.json` 磁盘时，自动剥离清洗干净；
+      - **请求端自动追加 `/v1`（`ensureV1BaseUrl`）**：所有面向 OpenAI / Anthropic 兼容协议的网络请求（包括 Agent 聊天对话 `POST /v1/chat/completions`、模型列表刷新 `GET /v1/models`、连通性握手测试 `POST /v1/chat/completions` 以及会话标题后台生成），运行时底层自动补齐 `/v1`，彻底杜绝 `POST /chat/completions → 404` 路由缺失问题，且绝不重复拼接成 `/v1/v1`；
+    - **智能增量合并（`mergeFetchedModels`）**：
+      - 自动拉取远端模型列表并去重增量追加，新拉取到的模型**默认保持禁用状态（`enabled: false`）**，避免一次性刷新几十个模型撑满聊天栏选择器，由用户自主按需点亮；
+      - **手动添加模型**（`ModelEditModal`）时，初始开关保持 **`enabled: true`**；
+      - 已有模型的启用开关和自定义名称 100% 保持不变，同时用官方真实返回的最新规格指标补齐未配置项；
+    - **模型搜索与过滤**：支持通过 `🔍 搜索模型...` 输入框快速模糊过滤模型 ID 与名称；
+    - **主流服务商默认模型清空**：5 大主流预设服务商（DeepSeek、OpenAI、Anthropic、Gemini、Ollama）默认模型列表设为空（`models: []`），初始呈现空引导文案，由用户通过“🔄 刷新模型列表”自动探测拉取或“+ 添加模型”自定义；
+  - **向下兼容与后端磁盘持久化（对标 ZCode ~/.ReinAgent/provider_config.json）**：
+    - 多服务商完整配置由 Tauri/Rust 后端维护，直接独立持久化存储至宿主用户主目录下的 `~/.ReinAgent/provider_config.json`（避免浏览器 LocalStorage 容量限制或清理丢失）；
+    - 前端通过 Tauri IPC 命令 `provider_config_load` / `provider_config_save` 实时异步读写；
+    - 支持一键“设为默认”，自动将选中的服务商与模型映射回底层 `settings.json`（`provider`、`modelId`、`apiKey`、`baseUrl`），确保现有对话模型、代码生成与终端执行 100% 无缝衔接。
+
 ### 4. 顶栏操作与国际化
 - **中英文切换**：融合版 SVG 地球仪镂空刻字图标，根据当前语言动态镂空刻印 `中` 或 `EN`。
 - **亮暗主题**：全系统变量级 CSS 变量换肤，支持即时切换并持久化保存。
 
 ---
 
-## 五、状态存储键名速查（LocalStorage）
+## 五、状态存储速查
+
+### 1. 本地磁盘持久化配置（Tauri Backend / Home Directory）
+
+| 配置文件路径 | 类型 / 格式 | 用途说明 |
+| :--- | :--- | :--- |
+| `~/.ReinAgent/provider_config.json` | `ProviderItem[]` (JSON) | 多模型服务商持久化配置（包含各 Provider 的 Key、端点、模型列表等，由 Tauri `provider_config_load` / `provider_config_save` 读写） |
+| `~/.ReinAgent/settings.json` | `Settings` (JSON) | 运行期全局设置（含当前激活的默认服务商、模型 ID、API Key、Base URL 等） |
+
+### 2. 界面状态存储（LocalStorage）
 
 | 键名 (Key) | 类型 / 格式 | 用途说明 |
 | :--- | :--- | :--- |
@@ -181,6 +239,10 @@ ReinAgent 架构全景
 - **本地工作区**：`WORK_DIR="/tmp/reinagent"`
 - **Rust Target 目录**：`TARGET_DIR="/tmp/reinagent/target"`（通过 `export CARGO_TARGET_DIR="$TARGET_DIR"` 挂载）
 - **依赖隔离**：原生 Linux node_modules 安装在 `/tmp/reinagent/node_modules` 下。
+- **根目录 `node_modules` 软链接机制**：
+  - 工程根目录下的 `node_modules` 为指向 `/tmp/reinagent/node_modules` 的软链接（`ln -sfn /tmp/reinagent/node_modules node_modules`）；
+  - **核心作用**：仅供宿主 VS Code / 编辑器（TSServer / Language Server）进行模块语法高亮、TypeScript 类型推导与代码自动补全；
+  - **解耦影响**：若该软链接被删除或重命名（如 `node_modules.bak`），**不会影响任何编译与运行**（因 `run-linux.sh` 与构建脚本使用 `/tmp/reinagent/node_modules` 原生依赖），但会导致宿主编辑器出现找不到模块的红线警告并失去代码补全。如需恢复 IDE 提示，仅需重新建立指向 `/tmp/reinagent/node_modules` 的软链接即可。
 
 ### 2. 标准编译与验证命令
 ```bash
@@ -215,6 +277,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
    - 涉及系统级能力（终端 PTY、受控文件操作等）时，必须保留 Web Mock / Fallback 兼容层，保证在 Headless Chrome（无头自动化测试/截图回归）或普通浏览器中依然能完整渲染并正常调试。
 3. **Tailwind CSS v4 语义化主题 (Theme Styling Rule)**：
    - 严禁在组件中硬编码 Hex/RGB 颜色值；必须使用 `src/styles/global.css` 定义的 CSS 语义变量（如 `var(--bg)`、`var(--sidebar-bg)`、`var(--sidebar-text)`、`var(--border)`），确保跟随 `data-theme="dark|light"` 自动平滑换肤。
+   - **表单控件原生样式隔离（Form Controls Native Appearance Rule）**：在 Linux Webview（WebKit2GTK）环境下，原生 `<select>` 必须配置 `appearance-none` 并配合自定义 `ChevronDown` 箭头图标，全局绑定 `var(--bg-card)` 与 `var(--text-primary)`，杜绝因操作系统原生 GTK 白色控件覆盖导致的“白底白字不可读”问题。
 4. **Git 与工作区保护 (Workspace Discipline)**：
    - 未经用户明确许可或要求，**严禁自行调用 `git commit` 或 `git push`**。
    - 测试产物、截图、中间日志等临时文件必须存放于 `/tmp/`，严禁污染工程工作树。
@@ -242,7 +305,39 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 
 ---
 
-## 九、后续迭代方向推荐
+## 九、模型推理等级 (Reasoning Effort) 与聊天深度联动规范
+
+### 1. 真实元数据与 API 规范（No Fallback 铁律）
+- 服务端模型列表接口如果返回 `effort` 字段（如 `"effort": { "supported_levels": ["low", "high", "max"], "default_level": "high" }`）：
+  - `parseProviderRawModels` 完整真实提取 `supportedLevels` 与 `defaultLevel`，写入 `ModelItem.effort`；
+  - 若上游未提供，严格保留为 `undefined`，绝不凭模型名瞎猜或预设假数据；
+- `mergeFetchedModels` 增量更新时，真实同步服务端的 `effort`、`contextWindow`、`maxOutputTokens` 与 `supportsImage`。
+
+### 2. 模型编辑弹窗交互规范（Pill Button Group）
+- 在 `ModelEditModal.tsx` 中配置推理等级：
+  - **摒弃传统下拉框**，采用一排水平胶囊按钮组（`[ low ]` `[ high ]` `[ max ]`）；
+  - 点击哪个档位，哪个档位立即呈主题色（`var(--accent)`）高亮，并设置为该模型的 `defaultLevel`；
+  - 若模型来自 API 且未声明 `effort`，UI 明确标注“上游接口未声明支持推理等级 (未返回 effort)”，亦可由用户按需手动开启。
+
+### 3. 聊天窗口 (`LexicalComposer`) 联动与双向同步
+- **禁用与高亮判定**：
+  - 若当前选中的模型未配置 `effort` 或 `supportedLevels` 为空：聊天窗口底部的“推理深度”按钮呈**置灰禁用态（Disabled）**，鼠标悬停 Tooltip 提示“当前模型不支持调节推理等级”，点击不弹出菜单；
+  - 若当前模型支持 `effort`：按钮恢复高亮，下拉菜单中点亮该模型支持的档位，不支持的档位呈禁用置灰态；
+- **双向实时同步机制**：
+  - **聊天窗口 ➔ 模型配置写盘**：用户在聊天窗口切换推理深度时，调用 `updateModelEffortDefaultLevel` 实时将当前模型在 `provider_config.json` 中的 `defaultLevel` 设为所选等级；下次打开编辑弹窗时该等级自动高亮；
+  - **模型配置 ➔ 聊天窗口**：在编辑弹窗中保存了新默认等级时，若当前聊天窗口正在使用该模型，聊天窗口底部的推理深度立即联动更新为该等级；
+  - **模型切换自动联动**：用户切换模型时，若新模型支持 `effort` 且有 `defaultLevel`，聊天窗口自动切为该默认等级；若不支持则切为 `"off"`。
+
+### 4. 大模型请求透传机制（底层 HTTP Payload 装配）
+- 透传链路：`LexicalComposer / Store` ➔ `App.tsx` ➔ `useConversation` ➔ `conversationController` ➔ `runAgentTurn` ➔ `agentRuntime (Agent.initialState.thinkingLevel)` ➔ `pi-agent-core (agentLoop reasoning)` ➔ `pi-ai (streamFunction)`；
+- 底层适配器自动将 `reasoning` 映射为对应协议的真实 HTTP POST 请求体：
+  - OpenAI / DeepSeek 格式：自动添加 `"thinking": { "type": "enabled" }, "reasoning_effort": "high"`；
+  - Anthropic 格式：自动添加 `"thinking": { "type": "enabled", "budget_tokens": ... }`；
+  - Google 格式：自动添加 `"thinking_config": { ... }`。
+
+---
+
+## 十、后续迭代方向推荐
 
 1. **项目管理真正落地**：
    - 目前项目为 Mock 数据，需打通 Tauri 原生对话框（`dialog.open`）选择真实本地目录。

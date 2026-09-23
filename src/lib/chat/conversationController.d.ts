@@ -26,6 +26,7 @@ export interface ConversationControllerOptions {
     systemPrompt: string;
     maxSteps?: number;
     workspaceRoot?: string;
+    thinkingLevel?: import("../agent/agentRuntime").RunTurnDeps["thinkingLevel"];
   };
   /** AbortController 工厂（可注入以在测试中控制）。 */
   createAbortController?: () => AbortController;

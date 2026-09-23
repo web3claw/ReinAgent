@@ -1,4 +1,5 @@
 import type { ProviderConfig } from "../providers/modelFactory";
+import { ensureV1BaseUrl } from "../providers/modelFactory";
 import { getProviderMeta } from "../providers/catalog";
 
 const SESSION_TITLE_SYSTEM_PROMPT = `Generate a concise title for this coding session.
@@ -157,16 +158,8 @@ export async function generateSessionTitle(
         }
       }
     } else {
-      // 默认走 OpenAI 兼容协议 (DeepSeek, OpenAI, Ollama, Custom 等)
-      // 若 baseUrl 已包含 /v1 则直接接 /chat/completions，否则补全 /v1/chat/completions 或直接 /chat/completions
-      let endpoint: string;
-      if (rawBaseUrl.endsWith("/v1")) {
-        endpoint = `${rawBaseUrl}/chat/completions`;
-      } else if (rawBaseUrl.includes("api.deepseek.com")) {
-        endpoint = `${rawBaseUrl}/chat/completions`;
-      } else {
-        endpoint = `${rawBaseUrl}/v1/chat/completions`;
-      }
+      // 默认走 OpenAI 兼容协议 (DeepSeek, OpenAI, Ollama, Custom 等)：统一补全 /v1/chat/completions
+      const endpoint = `${ensureV1BaseUrl(rawBaseUrl)}/chat/completions`;
 
       response = await fetch(endpoint, {
         method: "POST",

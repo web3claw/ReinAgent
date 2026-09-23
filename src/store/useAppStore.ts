@@ -3,7 +3,7 @@ import { create } from "zustand";
 export type ThemeMode = "dark" | "light";
 export type LocaleMode = "zh-CN" | "en-US";
 export type ViewMode = "workbench" | "settings";
-export type ThinkingLevel = "off" | "low" | "medium" | "high" | "max";
+export type ThinkingLevel = "off" | "default" | "low" | "medium" | "high" | "xhigh" | "max";
 export type ApprovalMode = "always" | "suggest" | "auto";
 
 export interface AppTask {
@@ -13,6 +13,8 @@ export interface AppTask {
   updatedAt?: number;
   project: string | null;
   pinned?: boolean;
+  providerId?: string;
+  modelId?: string;
 }
 
 interface AppState {
@@ -44,9 +46,10 @@ interface AppState {
   setSelectedProject: (project: string | null) => void;
   addProject: (project: string) => void;
   removeProject: (project: string) => void;
-  createTask: (title?: string, project?: string | null) => string;
+  createTask: (title?: string, project?: string | null, providerId?: string, modelId?: string) => string;
   setActiveTaskId: (id: string | null) => void;
   updateTaskTitle: (id: string, title: string) => void;
+  updateTaskModel: (id: string, providerId: string, modelId: string) => void;
   deleteTask: (id: string) => void;
   toggleTaskPin: (id: string) => void;
   startNewTaskDraft: (project?: string | null) => void;
@@ -96,11 +99,19 @@ const getInitialTasks = (): AppTask[] => {
 const getInitialThinkingLevel = (): ThinkingLevel => {
   if (typeof window !== "undefined") {
     const saved = localStorage.getItem("reinagent-thinking-level");
-    if (saved === "off" || saved === "low" || saved === "medium" || saved === "high" || saved === "max") {
+    if (
+      saved === "off" ||
+      saved === "default" ||
+      saved === "low" ||
+      saved === "medium" ||
+      saved === "high" ||
+      saved === "xhigh" ||
+      saved === "max"
+    ) {
       return saved;
     }
   }
-  return "high";
+  return "default";
 };
 
 const getInitialActiveTaskId = (tasks: AppTask[]): string | null => {
@@ -199,14 +210,16 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
 
-  createTask: (title, project = null) => {
-    const newId = `task-${Date.now()}`;
+  createTask: (title, project = null, providerId, modelId) => {
+    const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newTask: AppTask = {
       id: newId,
       title: title || (typeof window !== "undefined" && localStorage.getItem("reinagent-locale") === "en-US" ? "New Task" : "新建任务"),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       project: project,
+      providerId: providerId,
+      modelId: modelId,
     };
     set((state) => {
       const nextTasks = [newTask, ...state.tasks];
@@ -237,6 +250,22 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const nextTasks = state.tasks.map((t) =>
         t.id === id ? { ...t, title, updatedAt: Date.now() } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  updateTaskModel: (id, providerId, modelId) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id ? { ...t, providerId, modelId, updatedAt: Date.now() } : t
       );
       if (typeof window !== "undefined") {
         try {

@@ -32,6 +32,7 @@
    - 运行与编译工作区：`/tmp/reinagent`
    - Rust 编译缓存目录：`TARGET_DIR="/tmp/reinagent/target"`（通过环境变量 `export CARGO_TARGET_DIR="$TARGET_DIR"` 指定）
    - 原生依赖路径：`/tmp/reinagent/node_modules`（在 `/tmp` 下执行 `bun install` 生成，避免网络盘软链接失败）
+   - 宿主软链接机制：根目录下 `node_modules -> /tmp/reinagent/node_modules` 软链接仅供 VS Code 等编辑器做类型高亮与补全；重命名或删除不影响实际构建与运行，但若需恢复 IDE 智能提示可随时建立此软链接。
 2. **源码同步机制**：
    - 每次编译或运行前，通过 `rsync` 将源码同步到 `/tmp/reinagent/`：
      ```bash
@@ -60,6 +61,11 @@
 4. **代码保护与提交纪律 (Commit Discipline)**：
    - 未经用户明确许可或确认，**严禁自行调用 `git commit` 或 `git push`**。
    - 调试产生的截图、日志、测试产物统一存放于 `/tmp/`，严禁提交或污染工作区。
+5. **拒绝臆测兜底与真实提示铁律 (No Fallback & Fail-Fast Rule)**：
+   - 严禁在代码中写死猜测性的模型上下文大小、Token 上限或是否支持多模态（严禁依据模型名做静态硬编码猜测或保留历史旧预设）；
+   - 必须 100% 完整解析服务端 API 返回的真实元数据（包括 `context_window`、`max_output_tokens`、`input_modalities` 等）；
+   - 若上游接口未返回某个指标，严禁捏造假数据伪装，UI 必须明确展示为未提供/未知，并提示用户；
+   - 网络异常、鉴权失败、解析错误等任何环节出问题时，严禁静默吞掉或使用假数据兜底掩盖，必须将完整真实的错误信息直接向用户提示告警。
 
 ---
 

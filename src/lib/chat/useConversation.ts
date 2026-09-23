@@ -35,6 +35,7 @@ export interface UseConversationOptions {
   systemPrompt?: string;
   maxSteps?: number;
   workspaceRoot?: string;
+  thinkingLevel?: import("../agent/agentRuntime").RunTurnDeps["thinkingLevel"];
 }
 
 export interface UseConversationResult {
@@ -79,13 +80,14 @@ export function useConversation(options: UseConversationOptions): UseConversatio
         // 签名与 conversationController.d.ts 期望的形状完全一致，故直接传引用。
         runAgentTurn,
         getOptions: () => {
-          const { source, config, systemPrompt, maxSteps, workspaceRoot } = optionsRef.current;
+          const { source, config, systemPrompt, maxSteps, workspaceRoot, thinkingLevel } = optionsRef.current;
           return {
             source,
             config,
             systemPrompt: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
             maxSteps,
             workspaceRoot,
+            thinkingLevel,
           };
         },
       }),

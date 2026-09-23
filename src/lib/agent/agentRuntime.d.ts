@@ -52,6 +52,8 @@ export interface RunTurnDeps {
   onEvent: (event: AgentEvent, signal?: AbortSignal) => void | Promise<void>;
   /** 可选步数硬闸（按完成的 turn 数计）。 */
   maxSteps?: number;
+  /** 可选的推理/思考等级。 */
+  thinkingLevel?: "off" | "default" | "low" | "medium" | "high" | "max" | "minimal" | "xhigh";
   /** 可选的自定义停止判据（与 `maxSteps` 同时给出时，两者任一为真即停）。 */
   shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext, signal?: AbortSignal) => boolean | Promise<boolean>;
 }

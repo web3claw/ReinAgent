@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Settings } from '../../lib/settings/store';
 import { SettingsStatus } from '../../lib/settings/useSettings';
 import { useTranslation } from '../../i18n';
-import { ProviderForm } from './ProviderForm';
+import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
 import { useAppStore } from '../../store/useAppStore';
 import {
   Settings as SettingsIcon,
@@ -70,7 +70,7 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
 
       {/* Content Area */}
       <div className="flex-1 overflow-y-auto p-8 flex justify-center">
-        <div className="max-w-3xl w-full">
+        <div className={`w-full transition-all duration-200 ${activeTab === 'provider' ? 'max-w-5xl' : 'max-w-3xl'}`}>
           {activeTab === 'general' && (
             <div className="space-y-6">
               <h2 className="text-xl font-semibold mb-6">{t('settingsGeneral')}</h2>
@@ -117,8 +117,10 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
 
           {activeTab === 'provider' && (
             <div className="space-y-6">
-              <h2 className="text-xl font-semibold mb-6">{t('settingsProvider')}</h2>
-              <ProviderForm settings={settings} status={status} onChange={onChange} />
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="text-xl font-semibold">{t('settingsProvider')}</h2>
+              </div>
+              <ModelProviderSettings settings={settings} status={status} onChange={onChange} />
             </div>
           )}
 

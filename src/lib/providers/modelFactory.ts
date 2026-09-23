@@ -6,28 +6,69 @@ export interface ProviderConfig {
   apiKey: string;
   modelId: string;
   baseUrl?: string;
+  hasEffort?: boolean;
+}
+
+/**
+ * 清洗 Base URL：去除首尾空格、末尾多余斜杠、末尾的 /v1（大小写不敏感）
+ * 例如：
+ * "http://192.168.3.27:8787/v1/" -> "http://192.168.3.27:8787"
+ * "http://192.168.3.27:8787///" -> "http://192.168.3.27:8787"
+ */
+export function cleanBaseUrl(raw: string | undefined | null): string {
+  if (typeof raw !== "string") return "";
+  let cleaned = raw.trim().replace(/\/+$/, "");
+  if (cleaned.toLowerCase().endsWith("/v1")) {
+    cleaned = cleaned.slice(0, -3).replace(/\/+$/, "");
+  }
+  return cleaned;
+}
+
+/**
+ * 确保 Base URL 带有标准 /v1 前缀（用于向服务端发起实际请求）
+ * 例如：
+ * "http://192.168.3.27:8787" -> "http://192.168.3.27:8787/v1"
+ * "http://192.168.3.27:8787/" -> "http://192.168.3.27:8787/v1"
+ * "http://192.168.3.27:8787/v1" -> "http://192.168.3.27:8787/v1"
+ */
+export function ensureV1BaseUrl(raw: string | undefined | null): string {
+  const cleaned = cleanBaseUrl(raw);
+  if (!cleaned) return "";
+  return `${cleaned}/v1`;
 }
 
 export function normalizeBaseUrl(raw: string | undefined): string | undefined {
-  if (typeof raw !== "string") return undefined;
-  const trimmed = raw.trim();
-  if (trimmed.length === 0) return undefined;
-  return trimmed.replace(/\/+$/, "");
+  const cleaned = cleanBaseUrl(raw);
+  return cleaned.length > 0 ? cleaned : undefined;
 }
 
 export function buildModel(config: ProviderConfig): Model<any> {
   const provider = config.provider || DEFAULT_PROVIDER;
   const meta = getProviderMeta(provider);
-  const baseUrl = normalizeBaseUrl(config.baseUrl) || meta.defaultBaseUrl;
+  const rawBaseUrl = normalizeBaseUrl(config.baseUrl) || meta.defaultBaseUrl;
   const modelId = config.modelId || meta.defaultModelId;
+
+  // 针对 OpenAI 兼容（openai-completions / openai-responses）和 Anthropic 协议，自动补全 /v1
+  let runtimeBaseUrl = rawBaseUrl;
+  if (meta.api === "openai-completions" || meta.api === "anthropic-messages") {
+    runtimeBaseUrl = ensureV1BaseUrl(rawBaseUrl);
+  }
+
+  const isReasoning =
+    typeof config.hasEffort === "boolean"
+      ? config.hasEffort
+      : (modelId.includes("r1") ||
+         modelId.includes("reasoner") ||
+         modelId.includes("o1") ||
+         modelId.includes("o3"));
 
   return {
     id: modelId,
     name: modelId,
     api: meta.api,
     provider: provider,
-    baseUrl,
-    reasoning: modelId.includes("r1") || modelId.includes("reasoner") || modelId.includes("o1") || modelId.includes("o3"),
+    baseUrl: runtimeBaseUrl,
+    reasoning: isReasoning,
     input: ["text", "image"],
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
     contextWindow: 128000,

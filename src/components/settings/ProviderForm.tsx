@@ -3,7 +3,7 @@ import { validateProviderConfig } from "../../lib/providers/modelFactory";
 import type { Settings } from "../../lib/settings/store";
 import type { SettingsStatus } from "../../lib/settings/useSettings";
 import { useTranslation } from "../../i18n";
-import { AlertTriangle, CheckCircle2, Server, Key, Cpu, Globe } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Server, Key, Cpu, Globe, ChevronDown } from "lucide-react";
 
 export function ProviderForm({
   settings,
@@ -63,17 +63,20 @@ export function ProviderForm({
             <Server className="w-3.5 h-3.5" />
             <span>{t("provider")}</span>
           </span>
-          <select
-            className="w-full px-3 py-2 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            value={settings.provider || "deepseek"}
-            onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
-          >
-            {PROVIDERS.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative w-full">
+            <select
+              className="w-full appearance-none pl-3 pr-9 py-2 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+              value={settings.provider || "deepseek"}
+              onChange={(e) => handleProviderChange(e.target.value as ProviderType)}
+            >
+              {PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id} className="bg-[var(--bg-card)] text-[var(--text-primary)]">
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)] opacity-70" />
+          </div>
         </label>
 
         {/* Model */}
@@ -82,17 +85,20 @@ export function ProviderForm({
             <Cpu className="w-3.5 h-3.5" />
             <span>{t("model")}</span>
           </span>
-          <select
-            className="w-full px-3 py-2 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)]"
-            value={settings.modelId}
-            onChange={(e) => onChange({ modelId: e.target.value })}
-          >
-            {currentProviderMeta.models.map((m) => (
-              <option key={m.id} value={m.id}>
-                {m.name} ({m.id})
-              </option>
-            ))}
-          </select>
+          <div className="relative w-full">
+            <select
+              className="w-full appearance-none pl-3 pr-9 py-2 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent)] cursor-pointer"
+              value={settings.modelId}
+              onChange={(e) => onChange({ modelId: e.target.value })}
+            >
+              {currentProviderMeta.models.map((m) => (
+                <option key={m.id} value={m.id} className="bg-[var(--bg-card)] text-[var(--text-primary)]">
+                  {m.name} ({m.id})
+                </option>
+              ))}
+            </select>
+            <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)] opacity-70" />
+          </div>
         </label>
 
         {/* API Key */}

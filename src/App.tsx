@@ -14,6 +14,7 @@ import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
 import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
+import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, PanelLeftClose, PanelLeft, Minus, Maximize2, X
 } from "lucide-react";
@@ -25,7 +26,7 @@ export default function App() {
     isSidebarOpen, toggleSidebar,
     currentView, setCurrentView,
     activeTaskId, setActiveTaskId,
-    createTask, updateTaskTitle,
+    createTask, updateTaskTitle, updateTaskModel,
     selectedProject, setSelectedProject,
     thinkingLevel,
   } = useAppStore();
@@ -33,33 +34,103 @@ export default function App() {
   const { t } = useTranslation();
   const { settings, status, update } = useSettings();
   
-  const isDemo = (settings?.apiKey || "").trim().length === 0;
-  const source = isDemo ? "faux" : (settings.provider || "deepseek");
-  const currentProviderMeta = getProviderMeta(settings.provider || "deepseek");
+  const [providers, setProviders] = useState<ProviderItem[]>([]);
+  useEffect(() => {
+    loadProvidersConfigFromDisk(settings).then(setProviders).catch(console.error);
+  }, [settings?.provider, settings?.modelId, currentView]);
+
+  // 会话级当前模型选择（初始跟随当前任务或系统默认，聊天框切换时仅修改当前任务模型，绝不覆盖系统默认模型）
+  const [sessionProviderId, setSessionProviderId] = useState<string>(settings.provider || "deepseek");
+  const [sessionModelId, setSessionModelId] = useState<string>(settings.modelId || "");
+
+  // 当系统默认设置更新时（例如用户在“服务商设置”中点击了“设为系统默认”）：
+  // 若当前处于草稿模式或当前任务未自定义模型，同步更新会话模型
+  const prevSettingsModelRef = useRef(settings.modelId);
+  const prevSettingsProviderRef = useRef(settings.provider);
+  useEffect(() => {
+    if (prevSettingsModelRef.current !== settings.modelId || prevSettingsProviderRef.current !== settings.provider) {
+      prevSettingsModelRef.current = settings.modelId;
+      prevSettingsProviderRef.current = settings.provider;
+
+      const currentTask = activeTaskId ? useAppStore.getState().tasks.find((t) => t.id === activeTaskId) : null;
+      if (!currentTask || (!currentTask.providerId && !currentTask.modelId)) {
+        setSessionProviderId(settings.provider || "deepseek");
+        setSessionModelId(settings.modelId || "");
+      }
+    }
+  }, [settings.provider, settings.modelId, activeTaskId]);
+
+  const activeProviderId = sessionProviderId || settings.provider || "deepseek";
+  const activeModelId = sessionModelId || settings.modelId || "";
+
+  const currentProvider = providers.find((p) => p.id === activeProviderId);
+  const currentModel: ModelItem | null = currentProvider?.models.find((m) => m.id === activeModelId) || null;
+  const isReasoningSupported = !!(currentModel?.effort && currentModel.effort.supportedLevels?.length > 0);
+
+  // 当切换模型或配置加载完成时，若模型支持 effort 且定义了 defaultLevel，自动切换全局 thinkingLevel
+  const prevModelIdRef = useRef<string>(activeModelId);
+  useEffect(() => {
+    const isModelChanged = prevModelIdRef.current !== activeModelId;
+    prevModelIdRef.current = activeModelId;
+
+    if (isReasoningSupported && currentModel?.effort) {
+      const supported = currentModel.effort.supportedLevels || [];
+      const currentLevel = useAppStore.getState().thinkingLevel;
+      // 如果模型发生切换，或者当前等级不在支持列表中，强制对齐到模型 defaultLevel 或支持的第一项
+      if (isModelChanged || !supported.includes(currentLevel as any)) {
+        const nextLevel =
+          (currentModel.effort.defaultLevel && supported.includes(currentModel.effort.defaultLevel))
+            ? currentModel.effort.defaultLevel
+            : supported[0] || "low";
+        useAppStore.getState().setThinkingLevel(nextLevel);
+      }
+    } else if (!isReasoningSupported) {
+      if (useAppStore.getState().thinkingLevel !== "off") {
+        useAppStore.getState().setThinkingLevel("off");
+      }
+    }
+  }, [activeModelId, isReasoningSupported, currentModel?.effort?.defaultLevel, currentModel?.effort?.supportedLevels]);
+
+  const activeApiKey = currentProvider?.apiKey ?? settings.apiKey ?? "";
+  const activeBaseUrl = currentProvider?.baseUrl ?? settings.baseUrl ?? "";
+  const isDemo = activeApiKey.trim().length === 0;
+  const source: import("./lib/providers/runAgentTurn").AgentSource = isDemo ? "faux" : (activeProviderId as any);
+  const currentProviderMeta = getProviderMeta(activeProviderId as any);
 
   const [focusTrigger, setFocusTrigger] = useState(0);
 
   const maxSteps =
     thinkingLevel === "max"
-      ? 50
+      ? 70
+      : thinkingLevel === "xhigh"
+      ? 60
       : thinkingLevel === "high"
-      ? 35
+      ? 50
       : thinkingLevel === "medium"
-      ? 25
-      : 15;
+      ? 40
+      : thinkingLevel === "low"
+      ? 30
+      : 20; // default 为 20 步
 
   const effectiveWorkspaceRoot = resolveWorkspaceRoot(selectedProject);
+
+  const effectiveThinkingLevel =
+    !isReasoningSupported || thinkingLevel === "off" || thinkingLevel === "default"
+      ? undefined
+      : thinkingLevel;
 
   const { state, send, stop, clear, loadState, isStreaming } = useConversation({
     source,
     config: {
-      provider: settings.provider,
-      apiKey: settings.apiKey,
-      modelId: settings.modelId,
-      baseUrl: settings.baseUrl,
+      provider: activeProviderId as any,
+      apiKey: activeApiKey,
+      modelId: activeModelId,
+      baseUrl: activeBaseUrl,
+      hasEffort: isReasoningSupported,
     },
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     maxSteps,
+    thinkingLevel: effectiveThinkingLevel,
     workspaceRoot: effectiveWorkspaceRoot,
   });
 
@@ -104,7 +175,19 @@ export default function App() {
     if (!activeTaskId) {
       // Draft mode (empty state)
       clear();
+      setSessionProviderId(settings.provider || "deepseek");
+      setSessionModelId(settings.modelId || "");
     } else {
+      // 还原该任务保存的模型配置（如果有），否则还原为系统默认
+      const taskObj = useAppStore.getState().tasks.find((t) => t.id === activeTaskId);
+      if (taskObj?.providerId && taskObj?.modelId) {
+        setSessionProviderId(taskObj.providerId);
+        setSessionModelId(taskObj.modelId);
+      } else {
+        setSessionProviderId(settings.provider || "deepseek");
+        setSessionModelId(settings.modelId || "");
+      }
+
       // Load saved messages for the active task
       try {
         const raw = localStorage.getItem(`reinagent-task-msg-${activeTaskId}`);
@@ -139,6 +222,8 @@ export default function App() {
       setSelectedProject(project);
     }
     clear();
+    setSessionProviderId(settings.provider || "deepseek");
+    setSessionModelId(settings.modelId || "");
     // Trigger auto-focus on the input box
     setFocusTrigger((c) => c + 1);
   };
@@ -150,7 +235,7 @@ export default function App() {
     if (!targetTaskId) {
       isPromotingDraftRef.current = true;
       const fallbackTitle = text.slice(0, 30).trim() || (t("newTask") || "新任务");
-      targetTaskId = createTask(fallbackTitle, selectedProject);
+      targetTaskId = createTask(fallbackTitle, selectedProject, sessionProviderId, sessionModelId);
       setActiveTaskId(targetTaskId);
 
       // Trigger AI session title generation or heuristic summarization in background sidecar
@@ -209,6 +294,15 @@ export default function App() {
     handleSend(text);
   };
 
+  const handleSelectModel = (nextProviderId: string, nextModelId: string) => {
+    // 仅切换当前聊天会话使用的服务商与模型，绝不修改覆盖“服务商设置”里的系统默认模型
+    setSessionProviderId(nextProviderId);
+    setSessionModelId(nextModelId);
+    if (activeTaskId) {
+      updateTaskModel(activeTaskId, nextProviderId, nextModelId);
+    }
+  };
+
   const hasMessages = state.messages.length > 0;
 
   return (
@@ -265,8 +359,12 @@ export default function App() {
                     isStreaming={isStreaming}
                     onSend={handleSend}
                     onStop={stop}
-                    providerName={currentProviderMeta.name}
-                    modelId={settings.modelId}
+                    providerId={activeProviderId}
+                    providerName={currentProvider?.name || currentProviderMeta.name}
+                    modelId={activeModelId}
+                    currentModel={currentModel}
+                    providers={providers}
+                    onSelectModel={handleSelectModel}
                     focusRequestTrigger={focusTrigger}
                   />
                 </div>
@@ -283,8 +381,12 @@ export default function App() {
                     isStreaming={isStreaming}
                     onSend={handleSend}
                     onStop={stop}
-                    providerName={currentProviderMeta.name}
-                    modelId={settings.modelId}
+                    providerId={activeProviderId}
+                    providerName={currentProvider?.name || currentProviderMeta.name}
+                    modelId={activeModelId}
+                    currentModel={currentModel}
+                    providers={providers}
+                    onSelectModel={handleSelectModel}
                     hasMessages={true}
                   />
                 </div>
