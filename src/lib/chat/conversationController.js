@@ -103,7 +103,7 @@ export function createConversationController(deps) {
     // 忙判定来自状态派生（唯一真相），而非 abortRef。
     if (getState().status === "streaming") return false;
 
-    const { source, config, systemPrompt } = getOptions();
+    const { source, config, systemPrompt, maxSteps, workspaceRoot } = getOptions();
 
     // 多轮上下文：历史 = 已完成消息（助手复用其权威 apiMessage）+ 本轮 user。
     const history = toApiMessages(getState());
@@ -125,6 +125,8 @@ export function createConversationController(deps) {
           config,
           messages: history,
           systemPrompt,
+          maxSteps,
+          workspaceRoot,
           signal: controller.signal,
           onEvent: (ev) => {
             if (isStale()) return;

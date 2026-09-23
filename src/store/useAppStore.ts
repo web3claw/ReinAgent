@@ -25,6 +25,7 @@ interface AppState {
   thinkingLevel: ThinkingLevel;
   approvalMode: ApprovalMode;
   selectedProject: string | null;
+  projects: string[];
   tasks: AppTask[];
   activeTaskId: string | null;
   setTheme: (theme: ThemeMode) => void;
@@ -41,6 +42,8 @@ interface AppState {
   setThinkingLevel: (level: ThinkingLevel) => void;
   setApprovalMode: (mode: ApprovalMode) => void;
   setSelectedProject: (project: string | null) => void;
+  addProject: (project: string) => void;
+  removeProject: (project: string) => void;
   createTask: (title?: string, project?: string | null) => string;
   setActiveTaskId: (id: string | null) => void;
   updateTaskTitle: (id: string, title: string) => void;
@@ -90,6 +93,48 @@ const getInitialTasks = (): AppTask[] => {
   return [];
 };
 
+const getInitialThinkingLevel = (): ThinkingLevel => {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("reinagent-thinking-level");
+    if (saved === "off" || saved === "low" || saved === "medium" || saved === "high" || saved === "max") {
+      return saved;
+    }
+  }
+  return "high";
+};
+
+const getInitialActiveTaskId = (tasks: AppTask[]): string | null => {
+  if (typeof window !== "undefined") {
+    const saved = localStorage.getItem("reinagent-active-task-id");
+    if (saved && tasks.some((t) => t.id === saved)) {
+      return saved;
+    }
+  }
+  return null;
+};
+
+const getInitialProjects = (): string[] => {
+  if (typeof window !== "undefined") {
+    try {
+      const saved = localStorage.getItem("reinagent-user-projects");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.filter((p) => typeof p === "string" && p.trim().length > 0);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load initial projects", e);
+    }
+  }
+  return [];
+};
+
+const initialTasks = getInitialTasks();
+const initialProjects = getInitialProjects();
+const initialActiveTaskId = getInitialActiveTaskId(initialTasks);
+const initialActiveTask = initialActiveTaskId ? initialTasks.find((t) => t.id === initialActiveTaskId) : null;
+
 export const useAppStore = create<AppState>((set) => ({
   theme: getInitialTheme(),
   locale: getInitialLocale(),
@@ -97,13 +142,62 @@ export const useAppStore = create<AppState>((set) => ({
   isSettingsOpen: false,
   isSidebarOpen: getInitialSidebarOpen(),
   currentView: "workbench",
-  thinkingLevel: "max",
+  thinkingLevel: getInitialThinkingLevel(),
   approvalMode: "suggest",
-  selectedProject: null,
-  tasks: getInitialTasks(),
-  activeTaskId: null,
+  selectedProject: initialActiveTask ? initialActiveTask.project : null,
+  projects: initialProjects,
+  tasks: initialTasks,
+  activeTaskId: initialActiveTaskId,
   setSelectedProject: (selectedProject) => set({ selectedProject }),
-  setActiveTaskId: (activeTaskId) => set({ activeTaskId }),
+  addProject: (project: string) => {
+    const trimmed = project.trim();
+    if (!trimmed) return;
+    set((state) => {
+      const nextProjects = state.projects.includes(trimmed)
+        ? state.projects
+        : [trimmed, ...state.projects];
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("reinagent-user-projects", JSON.stringify(nextProjects));
+        } catch (e) {
+          console.error("Failed to save projects", e);
+        }
+      }
+      return { projects: nextProjects, selectedProject: trimmed };
+    });
+  },
+  removeProject: (project: string) => {
+    set((state) => {
+      const nextProjects = state.projects.filter((p) => p !== project);
+      if (typeof window !== "undefined") {
+        try {
+          localStorage.setItem("reinagent-user-projects", JSON.stringify(nextProjects));
+        } catch (e) {
+          console.error("Failed to save projects", e);
+        }
+      }
+      return {
+        projects: nextProjects,
+        selectedProject: state.selectedProject === project ? null : state.selectedProject,
+      };
+    });
+  },
+  setActiveTaskId: (activeTaskId) => {
+    if (typeof window !== "undefined") {
+      if (activeTaskId) {
+        localStorage.setItem("reinagent-active-task-id", activeTaskId);
+      } else {
+        localStorage.removeItem("reinagent-active-task-id");
+      }
+    }
+    set((state) => {
+      const targetTask = activeTaskId ? state.tasks.find((t) => t.id === activeTaskId) : null;
+      return {
+        activeTaskId,
+        selectedProject: targetTask ? targetTask.project : state.selectedProject,
+      };
+    });
+  },
 
   createTask: (title, project = null) => {
     const newId = `task-${Date.now()}`;
@@ -119,16 +213,20 @@ export const useAppStore = create<AppState>((set) => ({
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+          localStorage.setItem("reinagent-active-task-id", newId);
         } catch (e) {
           console.error("Failed to save tasks", e);
         }
       }
-      return { tasks: nextTasks, activeTaskId: newId };
+      return { tasks: nextTasks, activeTaskId: newId, selectedProject: project };
     });
     return newId;
   },
 
   startNewTaskDraft: (project = null) => {
+    if (typeof window !== "undefined") {
+      localStorage.removeItem("reinagent-active-task-id");
+    }
     set({
       activeTaskId: null,
       selectedProject: project,
@@ -161,16 +259,20 @@ export const useAppStore = create<AppState>((set) => ({
     }
     set((state) => {
       const nextTasks = state.tasks.filter((t) => t.id !== id);
+      const isDeletingActive = state.activeTaskId === id;
       if (typeof window !== "undefined") {
         try {
           localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+          if (isDeletingActive) {
+            localStorage.removeItem("reinagent-active-task-id");
+          }
         } catch (e) {
           console.error("Failed to save tasks", e);
         }
       }
       return {
         tasks: nextTasks,
-        activeTaskId: state.activeTaskId === id ? null : state.activeTaskId,
+        activeTaskId: isDeletingActive ? null : state.activeTaskId,
       };
     });
   },
@@ -247,6 +349,11 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
   setCurrentView: (view) => set({ currentView: view }),
-  setThinkingLevel: (level) => set({ thinkingLevel: level }),
+  setThinkingLevel: (level) => {
+    if (typeof window !== "undefined") {
+      localStorage.setItem("reinagent-thinking-level", level);
+    }
+    set({ thinkingLevel: level });
+  },
   setApprovalMode: (mode) => set({ approvalMode: mode }),
 }));

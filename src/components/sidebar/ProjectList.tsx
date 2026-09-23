@@ -111,17 +111,25 @@ function formatRelativeTime(timestamp: number, locale: string): string {
 }
 
 export function ProjectList({
-  projects,
+  projects: propProjects = [],
   onNewTask,
   onAddProject,
 }: {
-  projects: ProjectGroup[];
+  projects?: ProjectGroup[];
   onNewTask?: (project?: string | null) => void;
   onAddProject?: () => void;
 }) {
   const { t, locale } = useTranslation();
+  const folderInputRef = useRef<HTMLInputElement>(null);
+
+  const userProjects = useAppStore((state) => state.projects);
+  const addProject = useAppStore((state) => state.addProject);
+  const removeProject = useAppStore((state) => state.removeProject);
+  const selectedProject = useAppStore((state) => state.selectedProject);
+  const setSelectedProject = useAppStore((state) => state.setSelectedProject);
+
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>(() =>
-    getSavedOpenGroups(projects)
+    getSavedOpenGroups(propProjects)
   );
   const [projectsExpanded, setProjectsExpanded] = useState<boolean>(getSavedProjectsSectionExpanded);
   const [tasksExpanded, setTasksExpanded] = useState<boolean>(getSavedTasksExpanded);
@@ -249,13 +257,44 @@ export function ProjectList({
     toggleTaskPin(taskId);
   };
 
-  const handleAddProject = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    onAddProject?.();
+  const handleOpenFolder = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const selected = await invoke<string | null>("fs_pick_folder", {
+        initialDir: selectedProject || null,
+      });
+      if (selected && typeof selected === "string" && selected.trim().length > 0) {
+        addProject(selected.trim());
+        setSelectedProject(selected.trim());
+        return;
+      }
+    } catch (err) {
+      console.warn("fs_pick_folder unavailable or failed, fallback to file input", err);
+      folderInputRef.current?.click();
+    }
   };
 
-  const formatDays = (days: number) => {
-    return locale === 'zh-CN' ? `${days}天` : `${days}d`;
+  const handleFallbackFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const firstFile = files[0];
+      const relPath = firstFile.webkitRelativePath || "";
+      const rootFolder = relPath.split("/")[0] || firstFile.name;
+      if (rootFolder) {
+        addProject(rootFolder);
+        setSelectedProject(rootFolder);
+      }
+    }
+    e.target.value = "";
+  };
+
+  const handleAddProject = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (onAddProject) {
+      onAddProject();
+    } else {
+      handleOpenFolder();
+    }
   };
 
   // Reorder dragging handlers
@@ -314,6 +353,29 @@ export function ProjectList({
       return timeB - timeA;
     });
 
+  // Consolidate userProjects and propProjects
+  const allProjectItems = [
+    ...userProjects.map((p) => {
+      const displayName = p.split(/[\\/]/).filter(Boolean).pop() || p;
+      const projectTasks = tasks.filter((t) => t.project === p || t.project === displayName);
+      return {
+        path: p,
+        displayName,
+        isUserProject: true,
+        tasks: projectTasks,
+      };
+    }),
+    ...propProjects
+      .filter((pg) => !userProjects.some((up) => up.endsWith(pg.name) || up === pg.name))
+      .map((pg) => ({
+        path: pg.name,
+        displayName: pg.name,
+        isUserProject: false,
+        tasks: tasks.filter((t) => t.project === pg.name),
+        children: pg.children,
+      })),
+  ];
+
   // Render Projects Section JSX
   const renderProjectsSection = () => (
     <div
@@ -363,61 +425,121 @@ export function ProjectList({
 
       {projectsExpanded && (
         <div className="flex flex-col w-full px-1 py-0.5 space-y-0.5">
-          {projects.length === 0 ? (
+          {allProjectItems.length === 0 ? (
             <div className="px-3 py-1.5 text-[var(--sidebar-text)] opacity-50 text-xs">
               {t('noProjects')}
             </div>
           ) : (
-            projects.map((project) => {
-              const isOpen = !!openGroups[project.name];
+            allProjectItems.map((project) => {
+              const isOpen = !!openGroups[project.path];
+              const isSelected = selectedProject === project.path || selectedProject === project.displayName;
+              const hasSubTasks = project.tasks.length > 0;
+
               return (
-                <div key={project.name} className="flex flex-col w-full">
-                  <div className="flex items-center w-full px-3 py-1.5 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md group">
+                <div key={project.path} className="flex flex-col w-full">
+                  <div
+                    onClick={() => {
+                      setSelectedProject(project.path);
+                      toggleGroup(project.path);
+                    }}
+                    className={`flex items-center w-full px-2.5 py-1.5 rounded-md transition-colors cursor-pointer group ${
+                      isSelected
+                        ? "bg-[var(--sidebar-hover)] text-[var(--sidebar-text-active)] font-medium"
+                        : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)]"
+                    }`}
+                  >
                     <button
                       type="button"
-                      onClick={() => toggleGroup(project.name)}
-                      className="flex items-center flex-1 min-w-0 text-left cursor-pointer outline-none select-none"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleGroup(project.path);
+                      }}
+                      className="p-0.5 mr-1 text-[var(--sidebar-text)] opacity-70 hover:opacity-100 cursor-pointer outline-none"
                     >
                       {isOpen ? (
-                        <ChevronDown className="w-4 h-4 mr-1 opacity-70 shrink-0" />
+                        <ChevronDown className="w-3.5 h-3.5" />
                       ) : (
-                        <ChevronRight className="w-4 h-4 mr-1 opacity-70 shrink-0" />
+                        <ChevronRight className="w-3.5 h-3.5" />
                       )}
-                      {isOpen ? (
-                        <FolderOpen className="w-4 h-4 mr-2 text-[var(--accent)] shrink-0" />
-                      ) : (
-                        <Folder className="w-4 h-4 mr-2 text-[var(--accent)] shrink-0" />
-                      )}
-                      <span className="truncate flex-1 text-left">{project.name}</span>
                     </button>
-
-                    {/* Project action: New task within this project */}
-                    <Tooltip title={t("newTask")} side="right">
-                      <button
-                        type="button"
-                        onClick={(e) => handleCreateTask(e, project.name)}
-                        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-[var(--surface-hover)] text-[var(--sidebar-text)] hover:text-[var(--sidebar-text-active)] transition-all cursor-pointer shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
+                    {isOpen ? (
+                      <FolderOpen className="w-4 h-4 mr-2 text-[var(--accent)] shrink-0" />
+                    ) : (
+                      <Folder className="w-4 h-4 mr-2 text-[var(--accent)] shrink-0" />
+                    )}
+                    <Tooltip title={project.path} side="right">
+                      <span className="truncate flex-1 text-left text-sm select-none">
+                        {project.displayName}
+                      </span>
                     </Tooltip>
+
+                    {/* Actions: New Task in project & Remove project */}
+                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <Tooltip title={t("newTask")} side="top">
+                        <button
+                          type="button"
+                          onClick={(e) => handleCreateTask(e, project.path)}
+                          className="p-1 rounded hover:bg-[var(--surface-hover)] text-[var(--sidebar-text)] hover:text-[var(--sidebar-text-active)] transition-all cursor-pointer shrink-0"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      </Tooltip>
+                      {project.isUserProject && (
+                        <Tooltip title={locale === "zh-CN" ? "移除项目" : "Remove Project"} side="top">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeProject(project.path);
+                              if (selectedProject === project.path) {
+                                setSelectedProject(null);
+                              }
+                            }}
+                            className="p-1 rounded hover:bg-red-500/15 text-[var(--sidebar-text)] hover:text-red-500 transition-all cursor-pointer shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </Tooltip>
+                      )}
+                    </div>
                   </div>
 
                   {isOpen && (
-                    <div className="flex flex-col w-full pl-8 pr-3">
-                      {project.children.map((child) => (
-                        <button
-                          key={child.name}
-                          className="flex items-center justify-between w-full py-1.5 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md text-sm"
+                    <div className="flex flex-col w-full pl-7 pr-2 py-0.5 space-y-0.5">
+                      {hasSubTasks ? (
+                        project.tasks.map((task) => {
+                          const isTaskActive = activeTaskId === task.id;
+                          return (
+                            <button
+                              key={task.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedProject(project.path);
+                                setActiveTaskId(task.id);
+                              }}
+                              className={`flex items-center justify-between w-full py-1 px-2 rounded-md transition-colors text-left text-xs ${
+                                isTaskActive
+                                  ? "bg-[var(--surface-hover)] text-[var(--sidebar-text-active)] font-medium"
+                                  : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)]"
+                              }`}
+                            >
+                              <span className="truncate mr-2 border-l-2 border-[var(--border)] pl-1.5 -ml-1">
+                                {task.title}
+                              </span>
+                              <span className="text-[10px] opacity-50 whitespace-nowrap shrink-0">
+                                {formatRelativeTime(task.createdAt, locale)}
+                              </span>
+                            </button>
+                          );
+                        })
+                      ) : (
+                        <div
+                          onClick={(e) => handleCreateTask(e, project.path)}
+                          className="py-1 px-2 text-[11px] text-[var(--sidebar-text)] opacity-50 hover:opacity-100 hover:text-[var(--sidebar-text-active)] cursor-pointer rounded transition-colors"
                         >
-                          <span className="truncate mr-2 border-l border-[var(--border)] pl-2 -ml-2">
-                            {child.name}
-                          </span>
-                          <span className="text-xs opacity-50 whitespace-nowrap">
-                            {formatDays(child.daysAgo)}
-                          </span>
-                        </button>
-                      ))}
+                          {locale === "zh-CN" ? "+ 在此项目新建任务" : "+ New task here"}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -638,6 +760,16 @@ export function ProjectList({
 
   return (
     <div className="flex flex-col gap-2 w-full text-sm">
+      <input
+        ref={folderInputRef}
+        type="file"
+        // @ts-expect-error webkitdirectory is standard for directory picker in chromium
+        webkitdirectory=""
+        directory=""
+        multiple
+        className="hidden"
+        onChange={handleFallbackFolderChange}
+      />
       {sectionOrder.map((sec) =>
         sec === "projects" ? renderProjectsSection() : renderTasksSection()
       )}

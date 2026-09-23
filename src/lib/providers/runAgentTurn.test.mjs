@@ -345,3 +345,23 @@ test("3 · 前置校验如实上抛：空转录 / 末条 assistant → reject �
     );
   }
 });
+
+// ===========================================================================
+// 5 · maxSteps 参数透传与行为化
+// ===========================================================================
+test("5 · maxSteps 显式透传：maxSteps=1 时 faux 在第 1 步中断且 maxStepsReached=true", async () => {
+  const PROMPT = "现在几点？";
+
+  const result = await runAgentTurn({
+    source: "faux",
+    config: { apiKey: "", modelId: "deepseek-flash" },
+    messages: [userMessage(PROMPT)],
+    systemPrompt: "sys",
+    maxSteps: 1,
+    onEvent: () => {},
+  });
+
+  assert.equal(result.reachedAgentEnd, true, "maxSteps 触顶时应优雅到达 agent_end");
+  assert.equal(result.maxStepsReached, true, "maxSteps=1 应触发 maxStepsReached=true");
+});
+

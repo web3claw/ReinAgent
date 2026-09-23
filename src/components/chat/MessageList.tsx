@@ -8,10 +8,11 @@ const STICK_TO_BOTTOM_PX = 120;
 export interface MessageListProps {
   messages: TimelineEntry[];
   onEditSend?: (newText: string) => void;
+  onRetry?: () => void;
 }
 
 /** 消息列表。新内容到达且用户本就贴在底部附近时自动滞底（S2 不引入虚拟滚动）。 */
-export function MessageList({ messages, onEditSend }: MessageListProps) {
+export function MessageList({ messages, onEditSend, onRetry }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const last = messages.length > 0 ? messages[messages.length - 1] : undefined;
@@ -69,7 +70,7 @@ export function MessageList({ messages, onEditSend }: MessageListProps) {
   return (
     <div className="message-list" ref={listRef}>
       {messages.map((message) => (
-        <MessageItem key={message.id} message={message} onEditSend={onEditSend} />
+        <MessageItem key={message.id} message={message} onEditSend={onEditSend} onRetry={onRetry} />
       ))}
       <div ref={endRef} />
     </div>

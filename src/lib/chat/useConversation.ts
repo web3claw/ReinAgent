@@ -33,6 +33,8 @@ export interface UseConversationOptions {
   source: AgentSource;
   config: ProviderConfig;
   systemPrompt?: string;
+  maxSteps?: number;
+  workspaceRoot?: string;
 }
 
 export interface UseConversationResult {
@@ -77,8 +79,14 @@ export function useConversation(options: UseConversationOptions): UseConversatio
         // 签名与 conversationController.d.ts 期望的形状完全一致，故直接传引用。
         runAgentTurn,
         getOptions: () => {
-          const { source, config, systemPrompt } = optionsRef.current;
-          return { source, config, systemPrompt: systemPrompt ?? DEFAULT_SYSTEM_PROMPT };
+          const { source, config, systemPrompt, maxSteps, workspaceRoot } = optionsRef.current;
+          return {
+            source,
+            config,
+            systemPrompt: systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+            maxSteps,
+            workspaceRoot,
+          };
         },
       }),
     [bridge],

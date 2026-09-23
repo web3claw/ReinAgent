@@ -32,6 +32,14 @@ export interface LexicalComposerProps {
   focusRequestTrigger?: number;
 }
 
+const THINKING_LEVELS_CONFIG = [
+  { level: "off", steps: 15, titleKey: "thinkingOff", descKey: "thinkingOffDesc" },
+  { level: "low", steps: 15, titleKey: "thinkingLow", descKey: "thinkingLowDesc" },
+  { level: "medium", steps: 25, titleKey: "thinkingMedium", descKey: "thinkingMediumDesc" },
+  { level: "high", steps: 35, titleKey: "thinkingHigh", descKey: "thinkingHighDesc" },
+  { level: "max", steps: 50, titleKey: "thinkingMax", descKey: "thinkingMaxDesc" },
+] as const;
+
 export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   isStreaming,
   onSend,
@@ -49,6 +57,8 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     setApprovalMode,
     selectedProject,
     setSelectedProject,
+    projects,
+    addProject,
   } = useAppStore();
 
   const [text, setText] = useState("");
@@ -173,10 +183,30 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
-  const availableProjects = MOCK_PROJECTS.map((p) => p.name);
+  // 合并全局已打开项目与预设项目
+  const availableProjects = Array.from(
+    new Set([...projects, ...MOCK_PROJECTS.map((p) => p.name)])
+  );
   const filteredProjects = availableProjects.filter((name) =>
     name.toLowerCase().includes(projectSearchQuery.toLowerCase().trim())
   );
+
+  const handleOpenFolder = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const selected = await invoke<string | null>("fs_pick_folder", {
+        initialDir: selectedProject || null,
+      });
+      if (selected && typeof selected === "string" && selected.trim().length > 0) {
+        addProject(selected.trim());
+        setSelectedProject(selected.trim());
+        return;
+      }
+    } catch (err) {
+      console.warn("fs_pick_folder unavailable or failed, fallback to file input", err);
+      folderInputRef.current?.click();
+    }
+  };
 
   const handleFolderChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -184,6 +214,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       const firstPath = files[0].webkitRelativePath;
       const folderName = firstPath ? firstPath.split("/")[0] : files[0].name;
       if (folderName) {
+        addProject(folderName);
         setSelectedProject(folderName);
       }
     }
@@ -371,23 +402,47 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
               <ChevronDown className="w-3 h-3 opacity-70" />
             </button>
             {showThinkingMenu && (
-              <div className="absolute bottom-full right-0 mb-2 w-32 rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
-                {(['off', 'low', 'medium', 'high', 'max'] as const).map((level) => (
-                  <button
-                    key={level}
-                    onClick={() => {
-                      setThinkingLevel?.(level);
-                      setShowThinkingMenu(false);
-                    }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface-hover)] text-[var(--text-primary)] cursor-pointer"
-                  >
-                    {level === 'off' ? t("thinkingOff") :
-                     level === 'low' ? t("thinkingLow") :
-                     level === 'medium' ? t("thinkingMedium") :
-                     level === 'high' ? t("thinkingHigh") :
-                     t("thinkingMax")}
-                  </button>
-                ))}
+              <div className="absolute bottom-full right-0 mb-2 w-72 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-1.5 text-xs z-50 flex flex-col gap-1 backdrop-blur-md">
+                <div className="px-2.5 py-1.5 text-[11px] font-medium text-[var(--text-dim)] border-b border-[var(--border)] mb-0.5 flex items-center justify-between">
+                  <span>{t("thinkingLevel")}</span>
+                  <span className="text-[10px] text-[var(--text-dim)]">思考预期与执行步数</span>
+                </div>
+                {THINKING_LEVELS_CONFIG.map(({ level, steps, titleKey, descKey }) => {
+                  const isSelected = thinkingLevel === level;
+                  return (
+                    <button
+                      key={level}
+                      type="button"
+                      onClick={() => {
+                        setThinkingLevel?.(level);
+                        setShowThinkingMenu(false);
+                      }}
+                      className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors cursor-pointer flex flex-col gap-0.5 ${
+                        isSelected
+                          ? "bg-[var(--surface-hover)] text-[var(--text)] border border-[var(--border)]"
+                          : "hover:bg-[var(--surface-hover)] text-[var(--text)] border border-transparent"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-medium">
+                          <span>{t(titleKey)}</span>
+                          {level === "high" && (
+                            <span className="text-[10px] px-1 py-0.2 rounded bg-amber-500/10 text-amber-500 font-normal">
+                              推荐
+                            </span>
+                          )}
+                          {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0 ml-0.5" />}
+                        </div>
+                        <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-[var(--surface-active)] text-[var(--text-dim)] border border-[var(--border)]">
+                          {steps} {t("stepsUnit")}
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-[var(--text-dim)] leading-tight">
+                        {t(descKey)}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -460,7 +515,9 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer select-none py-1 px-1.5 rounded-md hover:bg-[var(--surface-hover)] -ml-1"
           >
             <Folder className="w-3.5 h-3.5 opacity-80" />
-            <span className="font-normal">{selectedProject || t("selectProject")}</span>
+            <span className="font-normal">
+              {selectedProject || "DefaultProject"}
+            </span>
             <ChevronDown className="w-3 h-3 opacity-60 ml-0.5" />
           </button>
 
@@ -513,7 +570,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  folderInputRef.current?.click();
+                  handleOpenFolder();
                   setShowProjectMenu(false);
                 }}
                 className="w-full flex items-center gap-2 px-3 py-2 hover:bg-[var(--surface-hover)] text-[var(--text-primary)] transition-colors cursor-pointer text-left"

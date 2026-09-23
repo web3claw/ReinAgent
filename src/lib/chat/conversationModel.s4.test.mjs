@@ -173,6 +173,9 @@ test("错误映射：401 / 429 / 网络 三类输入 → 三类不同中文提�
   // 兜底：未知错误不返回空串。
   assert.ok(/请求失败/.test(diagnoseError("some weird failure")));
   assert.ok(/请求失败/.test(diagnoseError(undefined)));
+  // 识别 Connection error 与 failed to fetch
+  assert.ok(/网络错误/.test(diagnoseError("Connection error.")));
+  assert.ok(/网络错误/.test(diagnoseError("TypeError: failed to fetch")));
 });
 
 test("错误经模型收敛为可读文案（而非原始文本）", async () => {

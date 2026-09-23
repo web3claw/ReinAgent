@@ -9,6 +9,7 @@ import { TerminalPane } from "./components/terminal/TerminalPane";
 import { WorkspaceSidebar } from "./components/sidebar/WorkspaceSidebar";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { DEFAULT_SYSTEM_PROMPT } from "./lib/providers/runAgentTurn";
+import { resolveWorkspaceRoot } from "./lib/agent/workspace";
 import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
 import { getProviderMeta } from "./lib/providers/catalog";
@@ -26,6 +27,7 @@ export default function App() {
     activeTaskId, setActiveTaskId,
     createTask, updateTaskTitle,
     selectedProject, setSelectedProject,
+    thinkingLevel,
   } = useAppStore();
 
   const { t } = useTranslation();
@@ -37,6 +39,17 @@ export default function App() {
 
   const [focusTrigger, setFocusTrigger] = useState(0);
 
+  const maxSteps =
+    thinkingLevel === "max"
+      ? 50
+      : thinkingLevel === "high"
+      ? 35
+      : thinkingLevel === "medium"
+      ? 25
+      : 15;
+
+  const effectiveWorkspaceRoot = resolveWorkspaceRoot(selectedProject);
+
   const { state, send, stop, clear, loadState, isStreaming } = useConversation({
     source,
     config: {
@@ -46,6 +59,8 @@ export default function App() {
       baseUrl: settings.baseUrl,
     },
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    maxSteps,
+    workspaceRoot: effectiveWorkspaceRoot,
   });
 
   // Keep ref of current messages and activeTaskId to prevent closure races and empty overrides
@@ -159,6 +174,22 @@ export default function App() {
     return send(text);
   };
 
+  const handleRetry = () => {
+    const msgs = state.messages;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      if (msgs[i].role === "user") {
+        const hasToolsSinceUser = msgs.slice(i + 1).some((m) => m.role === "tool");
+        if (hasToolsSinceUser) {
+          handleSend(t("retryPrompt") || "请重试刚才失败的操作");
+        } else {
+          handleSend(msgs[i].text);
+        }
+        return;
+      }
+    }
+    handleSend(t("retryPrompt") || "请重试刚才失败的操作");
+  };
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
@@ -245,7 +276,7 @@ export default function App() {
             <div className="flex-1 overflow-y-auto min-h-0 relative">
               <div className="min-h-full flex flex-col justify-between">
                 <div className="w-full px-3 sm:px-4 md:px-6 pt-3 pb-36 flex-1">
-                  <MessageList messages={state.messages} onEditSend={handleSend} />
+                  <MessageList messages={state.messages} onEditSend={handleSend} onRetry={handleRetry} />
                 </div>
                 <div className="sticky bottom-0 w-full bg-[var(--bg)] px-3 sm:px-4 md:px-6 pb-2.5 pt-1 z-10 shrink-0">
                   <LexicalComposer

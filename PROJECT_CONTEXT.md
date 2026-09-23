@@ -109,10 +109,43 @@ ReinAgent 架构全景
   - **自定义项目管理**：支持添加自定义项目、重命名（级联更新已有任务的项目归属）以及删除项目。
   - **顶栏清爽化**：移除了原有的全局「清空对话」按钮，避免打断当前任务或误清空多会话上下文。
 
-### 3. 双层胶囊输入框（LexicalComposer）
+### 3. 双层胶囊输入框（LexicalComposer）与推理深度调度
 - **结构**：上下双层严格对齐胶囊形态，采用平滑圆角与自适应边框。
 - **上层**：项目工作区选择器，支持关键词搜索过滤、打开本地文件夹、远程连接切换以及“不在项目中工作”。
 - **下层**：Lexical 编辑区、`@` 触发上下文菜单、`/` 触发命令菜单、变更前确认模式（✋）、推理深度（off/low/medium/high/max）、发送/中止按钮。
+- **推理深度（ThinkingLevel）与最大步数（maxSteps）动态映射**：
+  - 用户在输入框底部选择的思考深度会动态转化为单轮执行最大步数限制并透传至 Agent 核心：
+    - `off`: 15 步
+    - `low`: 15 步
+    - `medium`: 25 步
+    - `high`: 35 步（系统默认档位，标有推荐标签）
+    - `max`: 50 步
+  - 默认设置与持久化：系统默认设为 `high`（35 步），并通过 `reinagent-thinking-level` 本地持久化保存用户偏好。
+  - 完整透传链路：`useAppStore` -> `App.tsx` -> `useConversation` -> `conversationController` -> `runAgentTurn` -> `agentRuntime.runTurn`。
+  - 下拉卡片式菜单交互：点击底栏 `🧠 高 ▾` 弹出精致卡片列表（`w-72`，半透明毛玻璃背景），清晰展示每个档位的标题、推荐标签、等宽步数徽标（如 `35 步`）以及场景与思考预期描述，支持中英文双语。
+- **步数硬闸触顶与一键「继续」机制**：
+  - 当单轮工具调用/思考循环达到步数上限时，`agentRuntime` 返回 `maxStepsReached: true`，状态机为末条助手消息标上 `truncatedBy: "maxSteps"`；
+  - `MessageItem` 在展示「已达最大步数，本次回复已停止。」提示的同时，右侧提供精致的「继续」胶囊按钮（带有 `Play` 图标）；
+  - 用户点击后自动发送“请继续执行未完成的步骤”，无缝衔接上一轮未完成的编码/任务流。
+- **错误诊断加固与一键「重试（Retry）」机制**：
+  - 对网络抖动/断连（`Connection error`、`failed to fetch`、`socket hang up`、`ECONNRESET` 等）精准识别并映射为友好的「网络错误：连接中断或无法连接服务，请检查网络或代理设置」；
+  - `MessageItem` 报错栏右侧提供精致的红色「重试」（带 `RotateCw` 图标）按钮；
+  - 点击重试智能判定：若当前回合已执行过工具，自动发送“请重试刚才失败的操作”无缝续接；若尚未执行工具，自动重发上一轮用户提示词。
+- **活动任务 ID 持久化与刷新恢复机制**：
+  - `activeTaskId` 实时写入 `reinagent-active-task-id` 本地持久化；
+  - 页面刷新（F5 / Ctrl+R）或开发期 Vite 热重载重挂载时，自动精准恢复刷新前正在进行中的任务并加载完整历史消息，绝不退回主页草稿态。
+
+- **原生文件夹选择与多项目管理（Native Folder Picker & Multi-project Management）**：
+  - **Linux Webview 局限性与根因解决**：在 Linux Webview 环境下，Web 原生的 `<input type="file" webkitdirectory>` 受沙箱限制无法直接选目录且不提供绝对路径。对齐 LiveAgent 规范，在 Rust 端（`src-tauri/src/fs_cmd.rs`）实现 `fs_pick_folder`，基于 `rfd` 调起原生 OS 文件夹选择对话框，直接获取并返回用户的系统绝对路径。
+  - **Web + Tauri 2 双模兼容**：在 Tauri 桌面端调用 `invoke("fs_pick_folder")`；在 Headless Chrome / 浏览器等 Web 环境下平滑回退至 `<input type="file" webkitdirectory>`，确保无头回归测试与 Web 调试全流程不崩。
+  - **路径自动持久化与工作区绑定**：
+    - 无论是从输入框胶囊顶部的“打开文件夹”，还是侧边栏 Projects 标题栏的“`+` 新建项目”，选中的文件夹绝对路径立即通过 `addProject(path)` 写入 `reinagent-user-projects` 本地持久化；
+    - 选中的路径立即设为当前任务的工作区，后续 Agent 文件读取、写入和命令终端执行完全限定在选定目录（或在未指定时 fallback 至 `~/.ReinAgent/DefaultProject`）。
+  - **侧边栏项目树与任务分层（对标 ZCode）**：
+    - 侧边栏 Projects 分区动态渲染用户打开的项目列表，显示简洁的项目文件夹名，并通过 Tooltip 展示完整绝对路径；
+    - 支持项目级快捷操作：悬停点击 `+` 在该项目下开启新任务，点击删除图标（`Trash2`）一键移除项目记录；
+    - 支持展开/折叠项目查看其隶属的子任务，点击子任务直接跳转激活；
+    - 全局 Tasks 分区专注聚合展示未关联具体项目的通用任务，主次结构层次分明。
 
 ### 4. 顶栏操作与国际化
 - **中英文切换**：融合版 SVG 地球仪镂空刻字图标，根据当前语言动态镂空刻印 `中` 或 `EN`。
@@ -134,7 +167,9 @@ ReinAgent 架构全景
 | `reinagent-tasks` | `AppTask[]` | 任务元数据列表（id, title, createdAt, updatedAt, project, pinned） |
 | `reinagent-task-msg-${id}` | `Message[]` | 各任务独立分片持久化的对话完整消息记录 |
 | `reinagent-custom-projects` | `ProjectItem[]` | 用户自定义添加的项目集合 |
+| `reinagent-user-projects` | `string[]` | 用户通过文件夹选择器添加的项目绝对路径集合 |
 | `reinagent-active-task-id` | `string \| null` | 当前活动的任务 ID（null 为草稿/首页） |
+| `reinagent-thinking-level` | `"off" \| "low" \| "medium" \| "high" \| "max"` | 用户选择的思考深度与步数档位（默认 "high"） |
 
 ---
 
@@ -186,7 +221,28 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 
 ---
 
-## 八、后续迭代方向推荐
+## 八、工作区与路径决议机制（对齐 ZCode 规范）
+
+### 1. 业务工作区决议规则（Workspace Resolution）
+- **有指定项目**：若当前任务选中了项目（或会话绑定了 Project），则工作区根目录 `workspaceRoot` 为该项目所指定的文件夹路径。
+- **无指定项目（默认回退）**：若任务未指定项目（或点击“不在项目中工作”），工作区根目录自动回退到用户主目录下的：
+  👉 `~/.ReinAgent/DefaultProject`（如 `/home/web3claw/.ReinAgent/DefaultProject`）。
+  - 若该目录不存在，首次文件写入或命令执行时由系统自动创建（`mkdir -p`）。
+
+### 2. 路径决议策略（Path Policy）
+- **文件工具（`write_file` / `read_file` / `edit_file` / `list_dir`）**：
+  - 前端工具层引入 `resolveWorkspacePath(inputPath, workspaceRoot)`，所有相对路径在发送给底层前，自动基于当前的 `workspaceRoot` 拼接为绝对路径；
+  - 绝对路径保持原样，支持跨目录绝对路径读写；
+  - 杜绝相对路径裸传导致文件落入 Tauri 默认进程 CWD（`src-tauri/`）的问题。
+- **命令行工具（`exec_command`）**：
+  - 若未指定 `cwd`，自动使用 `workspaceRoot` 作为默认执行目录；
+  - 若指定了相对路径的 `cwd`，自动基于 `workspaceRoot` 解析。
+- **Rust 后端双重防呆（`src-tauri/src/fs_cmd.rs`）**：
+  - 后端接收到路径时，如遇相对路径，同样基于 `~/.ReinAgent/DefaultProject` 进行安全解析与自动建目录，提供系统层双重保险。
+
+---
+
+## 九、后续迭代方向推荐
 
 1. **项目管理真正落地**：
    - 目前项目为 Mock 数据，需打通 Tauri 原生对话框（`dialog.open`）选择真实本地目录。
@@ -195,4 +251,5 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
    - 将各个任务的聊天消息序列保存到本地 Sqlite 或 JSON 存储中，点击不同任务时真正恢复历史对话记录。
 3. **Agent 工具执行沙箱**：
    - 完善 Rust 端的命令执行拦截与“变更前确认”审批流（ApprovalMode）。
+
 

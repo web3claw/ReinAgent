@@ -29,6 +29,14 @@ export interface CreateToolsOptions {
    * 注入固定时钟即可让测试完全不依赖真实当前时间。
    */
   now?: () => Date;
+  /**
+   * 当前工具集绑定的工作区根目录（绝对路径）。
+   */
+  workspaceRoot?: string;
+  /**
+   * 动态工作区根目录获取函数（当工作区在运行时切换时自动生效）。
+   */
+  getWorkspaceRoot?: () => string;
 }
 
 /**
@@ -74,5 +82,5 @@ export declare function createTools(options?: CreateToolsOptions): ToolList;
 /** 默认工具实例（模块加载时创建一次，时钟为真实系统时钟）。 */
 export declare const TOOLS: ToolList;
 
-/** 返回默认工具集的**浅拷贝**，防止外部改动内部注册表数组。 */
-export declare function getTools(): ToolList;
+/** 返回工具集的**浅拷贝**，防止外部改动内部注册表数组。若传入 options 则创建专属工具集。 */
+export declare function getTools(options?: CreateToolsOptions): ToolList;

@@ -574,3 +574,12 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
   assert.strictEqual(c[0], firstBefore, "浅拷贝：元素仍是同一批工具对象引用");
   assert.notStrictEqual(c, a, "仍是新数组");
 });
+
+test("9 · getTools({ workspaceRoot }) 针对指定工作区生成绑定工具集", async () => {
+  const customWorkspace = "/home/web3claw/CustomProject";
+  const customTools = getTools({ workspaceRoot: customWorkspace });
+  assert.ok(Array.isArray(customTools));
+  assert.equal(customTools.length, TOOLS.length);
+  // customTools 应是全新创建的工具实例
+  assert.notStrictEqual(customTools[2], TOOLS[2]);
+});

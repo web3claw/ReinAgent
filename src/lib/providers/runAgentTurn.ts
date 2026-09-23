@@ -18,6 +18,8 @@ export interface RunAgentTurnParams {
   config: ProviderConfig;
   messages: Message[];
   systemPrompt?: string;
+  maxSteps?: number;
+  workspaceRoot?: string;
   signal?: AbortSignal;
   onEvent: (ev: AgentEvent, signal?: AbortSignal) => void | Promise<void>;
 }
@@ -36,13 +38,19 @@ async function getStreamFnForApi(api: string) {
 }
 
 export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnResult> {
-  const { source, config, messages, systemPrompt, signal, onEvent } = params;
+  const { source, config, messages, systemPrompt, signal, onEvent, maxSteps, workspaceRoot } = params;
+
+  const tools = getTools(workspaceRoot ? { workspaceRoot } : undefined);
+  const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+  const effectiveSystemPrompt = workspaceRoot
+    ? `${prompt}\n\nCurrent workspace root: ${workspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
+    : prompt;
 
   const base = {
-    systemPrompt: systemPrompt || DEFAULT_SYSTEM_PROMPT,
+    systemPrompt: effectiveSystemPrompt,
     messages,
-    tools: getTools(),
-    maxSteps: DEFAULT_MAX_STEPS,
+    tools,
+    maxSteps: maxSteps ?? DEFAULT_MAX_STEPS,
     signal,
     onEvent,
   };

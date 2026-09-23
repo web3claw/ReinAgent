@@ -8,12 +8,16 @@ pnpm-debug.log*
 lerna-debug.log*
 
 node_modules
+node_modules.bak
 dist
 dist-ssr
 *.local
 
 # Local scratch / negative-test harnesses (contain machine-specific absolute paths)
 .neg-tmp-ui/
+
+# Agent workspace memory & scratch (per-machine, contains machine-specific state)
+.workbuddy/
 
 # Environment
 .env

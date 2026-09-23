@@ -2,7 +2,7 @@ import { memo, useState, useCallback } from "react";
 import type { TimelineEntry, ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { MarkdownText } from "./MarkdownText";
 import { ToolCallCard } from "./ToolCallCard";
-import { Copy, Check, Pencil, CornerDownLeft, X, ThumbsUp, ThumbsDown } from "lucide-react";
+import { Copy, Check, Pencil, CornerDownLeft, X, ThumbsUp, ThumbsDown, Play, RotateCw } from "lucide-react";
 import { useTranslation } from "../../i18n";
 
 /**
@@ -22,6 +22,7 @@ function isToolEntry(message: TimelineEntry): message is ToolTimelineEntry {
 export interface MessageItemProps {
   message: TimelineEntry;
   onEditSend?: (newText: string) => void;
+  onRetry?: () => void;
 }
 
 /**
@@ -31,7 +32,7 @@ export interface MessageItemProps {
  *   - 编辑状态：行内编辑框，带「取消」与「保存并发送」
  *   - 助手消息：居左、清晰 Markdown 渲染、流式光标、快捷复制动作栏
  */
-function MessageItemImpl({ message, onEditSend }: MessageItemProps) {
+function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -168,10 +169,36 @@ function MessageItemImpl({ message, onEditSend }: MessageItemProps) {
 
         {message.status === "stopped" ? <div className="msg-stopped mt-2">已停止</div> : null}
         {message.truncatedBy === "maxSteps" ? (
-          <div className="msg-max-steps mt-2">已达最大步数，本次回复已停止。</div>
+          <div className="msg-max-steps mt-2 flex items-center justify-between gap-3">
+            <span>{t("maxStepsReached") || "已达最大步数，本次回复已停止。"}</span>
+            {onEditSend && (
+              <button
+                type="button"
+                onClick={() => onEditSend(t("continuePrompt") || "请继续执行未完成的步骤")}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[var(--warn-bg)] hover:bg-[var(--surface-hover)] border border-[var(--warn-border)] text-[var(--warn-text)] cursor-pointer transition-all active:scale-95 shrink-0 shadow-sm"
+                title={t("continuePrompt") || "请继续执行未完成的步骤"}
+              >
+                <Play className="w-3 h-3 fill-current" />
+                <span>{t("continueTask") || "继续"}</span>
+              </button>
+            )}
+          </div>
         ) : null}
         {message.status === "error" ? (
-          <div className="msg-error mt-2">出错了：{message.error ?? "未知错误"}</div>
+          <div className="msg-error mt-2 flex items-center justify-between gap-3">
+            <span>出错了：{message.error ?? "未知错误"}</span>
+            {onRetry && (
+              <button
+                type="button"
+                onClick={onRetry}
+                className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium bg-[var(--danger-bg,rgba(239,68,68,0.1))] hover:bg-[var(--surface-hover)] border border-[var(--danger-border,rgba(239,68,68,0.3))] text-red-500 cursor-pointer transition-all active:scale-95 shrink-0 shadow-sm"
+                title={t("retryPrompt") || "请重试刚才失败的操作"}
+              >
+                <RotateCw className="w-3 h-3" />
+                <span>{t("retry") || "重试"}</span>
+              </button>
+            )}
+          </div>
         ) : null}
       </div>
 

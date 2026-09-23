@@ -37,8 +37,8 @@ export function diagnoseError(message) {
   if (/429|rate limit|too many requests/i.test(m)) {
     return "请求过于频繁（429）：请稍后重试。";
   }
-  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|socket hang up|network/i.test(m)) {
-    return "网络错误：无法连接服务，请检查网络或代理设置。";
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|failed to fetch|socket hang up|network|connection error/i.test(m)) {
+    return "网络错误：连接中断或无法连接服务，请检查网络或代理设置。";
   }
   // 补充：超时（smoke.mjs 用 timedOut 标记，UI 侧按文本判定）。
   if (/timeout|timed out|超时/i.test(m)) {

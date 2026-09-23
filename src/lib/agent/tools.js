@@ -29,6 +29,7 @@
  */
 
 import { Type } from "typebox";
+import { resolveWorkspacePath, resolveWorkspaceRoot } from "./workspace";
 
 /**
  * 工具硬闸上限（导出供测试与上层消费）。
@@ -320,6 +321,9 @@ export function createTools(options) {
   // 单一兜底：`?? {}` 同时兼顾 undefined 与显式 null（参数默认值只挡 undefined）。
   const opts = options ?? {};
   const now = typeof opts.now === "function" ? opts.now : () => new Date();
+  const getWorkspace = typeof opts.getWorkspaceRoot === "function"
+    ? opts.getWorkspaceRoot
+    : () => resolveWorkspaceRoot(opts.workspaceRoot);
 
   const getCurrentTime = {
     name: "get_current_time",
@@ -369,58 +373,65 @@ export function createTools(options) {
     ),
     /**
      * @param {string} _toolCallId 调用 id（本例不使用）。
-     * @param {{ expression: string }} params 已由库按 schema 校验的参数。
+     * @param {{ expression: string }} params 参数对象（已通过 TypeBox 校验）。
      * @returns {Promise<import("./tools.js").TextToolResult>}
      */
     execute: async (_toolCallId, params) => {
-      const expression = params.expression;
-      const result = evaluateExpression(expression);
-      return buildTextToolResult(String(result), { expression, result });
+      // 库会把 params 按 schema 塞进来，这里做防御性取值。
+      const expr = String(params?.expression ?? "");
+      const value = evaluateExpression(expr);
+      const resultText = String(value);
+      return buildTextToolResult(resultText, {
+        expression: expr,
+        result: value,
+      });
     },
   };
 
   const readFile = {
     name: "read_file",
     label: "读取文件",
-    description: "读取指定路径的文件内容。",
+    description: "读取指定路径的文件内容（支持绝对路径或相对于项目工作区的相对路径）。",
     parameters: Type.Object(
       {
-        path: Type.String({ description: "文件的路径" }),
+        path: Type.String({ description: "文件的路径（相对路径将自动相对于当前工作区根目录解析）" }),
       },
       { required: ["path"] },
     ),
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
-      const content = await invoke("fs_read_file", { path: params.path });
-      return buildTextToolResult(content, { path: params.path });
+      const targetPath = resolveWorkspacePath(params.path, getWorkspace());
+      const content = await invoke("fs_read_file", { path: targetPath });
+      return buildTextToolResult(content, { path: targetPath, requestedPath: params.path });
     },
   };
 
   const writeFile = {
     name: "write_file",
     label: "写入文件",
-    description: "将内容写入指定文件（全量覆盖，父目录若不存在会自动创建）。",
+    description: "将内容写入指定文件（全量覆盖，父目录若不存在会自动创建。支持绝对路径或相对于项目工作区的相对路径）。",
     parameters: Type.Object(
       {
-        path: Type.String({ description: "文件的路径" }),
+        path: Type.String({ description: "文件的路径（相对路径将自动相对于当前工作区根目录解析）" }),
         content: Type.String({ description: "要写入的文件完整文本内容" }),
       },
       { required: ["path", "content"] },
     ),
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
-      await invoke("fs_write_file", { path: params.path, content: params.content });
-      return buildTextToolResult(`Successfully written to ${params.path}`, { path: params.path });
+      const targetPath = resolveWorkspacePath(params.path, getWorkspace());
+      await invoke("fs_write_file", { path: targetPath, content: params.content });
+      return buildTextToolResult(`Successfully written to ${targetPath}`, { path: targetPath, requestedPath: params.path });
     },
   };
 
   const editFile = {
     name: "edit_file",
     label: "编辑文件块",
-    description: "精准替换文件中的特定代码或文本块（target 必须精确匹配文件中的现有片段）。",
+    description: "精准替换文件中的特定代码或文本块（target 必须精确匹配文件中的现有片段。支持绝对路径或相对于工作区的相对路径）。",
     parameters: Type.Object(
       {
-        path: Type.String({ description: "文件路径" }),
+        path: Type.String({ description: "文件路径（相对路径将自动相对于当前工作区根目录解析）" }),
         target: Type.String({ description: "待替换的原目标文本块（必须在文件中精确唯一出现）" }),
         replacement: Type.String({ description: "替换后的新文本内容" }),
       },
@@ -428,52 +439,55 @@ export function createTools(options) {
     ),
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
-      const oldContent = await invoke("fs_read_file", { path: params.path });
+      const targetPath = resolveWorkspacePath(params.path, getWorkspace());
+      const oldContent = await invoke("fs_read_file", { path: targetPath });
       const occurrences = oldContent.split(params.target).length - 1;
       if (occurrences === 0) {
-        throw new Error(`edit_file: target text not found in ${params.path}`);
+        throw new Error(`edit_file: target text not found in ${targetPath}`);
       }
       if (occurrences > 1) {
-        throw new Error(`edit_file: target text appears ${occurrences} times in ${params.path}, must be unique`);
+        throw new Error(`edit_file: target text appears ${occurrences} times in ${targetPath}, must be unique`);
       }
       const newContent = oldContent.replace(params.target, params.replacement);
-      await invoke("fs_write_file", { path: params.path, content: newContent });
-      return buildTextToolResult(`Successfully modified ${params.path}`, { path: params.path });
+      await invoke("fs_write_file", { path: targetPath, content: newContent });
+      return buildTextToolResult(`Successfully modified ${targetPath}`, { path: targetPath, requestedPath: params.path });
     },
   };
 
   const listDir = {
     name: "list_dir",
     label: "列出目录",
-    description: "列出指定目录下的文件和子目录列表。",
+    description: "列出指定目录下的文件和子目录列表（支持绝对路径或相对于工作区的相对路径，默认当前工作区）。",
     parameters: Type.Object(
       {
-        path: Type.String({ description: "目录路径，默认为当前目录 ." }),
+        path: Type.String({ description: "目录路径，默认为当前工作区目录 ." }),
       },
       { required: ["path"] },
     ),
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
-      const entries = await invoke("fs_list_dir", { path: params.path });
-      return buildTextToolResult(JSON.stringify(entries, null, 2), { path: params.path, entries });
+      const targetPath = resolveWorkspacePath(params.path || ".", getWorkspace());
+      const entries = await invoke("fs_list_dir", { path: targetPath });
+      return buildTextToolResult(JSON.stringify(entries, null, 2), { path: targetPath, entries, requestedPath: params.path });
     },
   };
 
   const execCommand = {
     name: "exec_command",
     label: "执行终端命令",
-    description: "在系统终端中执行 shell 命令行（支持 bash / sh 语法，例如 git status, ls 等）。",
+    description: "在系统终端中执行 shell 命令行（支持 bash / sh 语法，例如 git status, ls 等）。默认在当前项目工作区根目录下执行。",
     parameters: Type.Object(
       {
         command: Type.String({ description: "要执行的命令行内容" }),
-        cwd: Type.Optional(Type.String({ description: "执行命令的工作目录" })),
+        cwd: Type.Optional(Type.String({ description: "执行命令的工作目录（未指定时默认使用当前项目工作区根目录）" })),
       },
       { required: ["command"] },
     ),
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
-      const output = await invoke("fs_execute", { command: params.command, cwd: params.cwd || null });
-      return buildTextToolResult(output, { command: params.command });
+      const targetCwd = params.cwd ? resolveWorkspacePath(params.cwd, getWorkspace()) : getWorkspace();
+      const output = await invoke("fs_execute", { command: params.command, cwd: targetCwd });
+      return buildTextToolResult(output, { command: params.command, cwd: targetCwd });
     },
   };
 
@@ -486,9 +500,14 @@ export function createTools(options) {
 export const TOOLS = createTools();
 
 /**
- * 返回默认工具集的**浅拷贝**（防止外部改动内部注册表数组）。
- * @returns {import("./tools.js").ToolList} 新数组，元素为同一批工具对象引用。
+ * 返回工具集的**浅拷贝**（防止外部改动内部注册表数组）。
+ * 若传入 options（如绑定了特定 workspaceRoot），则通过 createTools(options) 创建专属工具集。
+ * @param {import("./tools.d.ts").CreateToolsOptions} [options] 工具集配置
+ * @returns {import("./tools.js").ToolList} 新数组，元素为工具对象引用。
  */
-export function getTools() {
+export function getTools(options) {
+  if (options && (options.now || options.workspaceRoot || options.getWorkspaceRoot)) {
+    return createTools(options);
+  }
   return TOOLS.slice();
 }

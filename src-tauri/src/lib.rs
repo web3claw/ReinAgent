@@ -24,7 +24,8 @@ pub fn run() {
             fs_cmd::fs_read_file,
             fs_cmd::fs_write_file,
             fs_cmd::fs_list_dir,
-            fs_cmd::fs_execute
+            fs_cmd::fs_execute,
+            fs_cmd::fs_pick_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

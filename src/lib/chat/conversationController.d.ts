@@ -19,8 +19,14 @@ export interface ConversationControllerOptions {
   setState: (updater: (prev: ChatState) => ChatState) => void;
   /** 发起一轮 agent 运行（库内部完整多轮循环；事件经 params.onEvent 回传）。 */
   runAgentTurn: (params: RunAgentTurnParams) => Promise<RunTurnResult>;
-  /** 读取当前数据源/配置/系统提示词。 */
-  getOptions: () => { source: AgentSource; config: ProviderConfig; systemPrompt: string };
+  /** 读取当前数据源/配置/系统提示词/最大步数/工作区根目录。 */
+  getOptions: () => {
+    source: AgentSource;
+    config: ProviderConfig;
+    systemPrompt: string;
+    maxSteps?: number;
+    workspaceRoot?: string;
+  };
   /** AbortController 工厂（可注入以在测试中控制）。 */
   createAbortController?: () => AbortController;
   /** 时钟（可注入以便确定性测试）。 */

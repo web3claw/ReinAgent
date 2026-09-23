@@ -214,9 +214,13 @@ body {
 }
 
 .msg-error {
-  margin-top: 6px;
+  margin-top: 8px;
   color: var(--danger);
   font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 /* ---------- 空状态 ---------- */
@@ -396,11 +400,15 @@ body {
 
 /* ---------- 已达最大步数标注（S7） ---------- */
 .msg-max-steps {
-  margin-top: 6px;
+  margin-top: 8px;
   font-size: 12px;
   color: var(--warn-text);
   border-left: 2px solid var(--warn-border);
   padding-left: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 /* ---------- Markdown（S5） ---------- */
