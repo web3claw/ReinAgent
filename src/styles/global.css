@@ -178,7 +178,7 @@ select option {
 /* ---------- 消息区 ---------- */
 .message-list {
   flex: 1 1 auto;
-  padding: 8px 2px;
+  padding: 8px 0;
   display: flex;
   flex-direction: column;
   gap: 16px;
@@ -687,4 +687,13 @@ select option {
   box-shadow: var(--capsule-shadow);
   border-radius: 16px;
   padding: 12px;
+}
+
+/* 对话问题导航条：隐藏内部滚动条（结构性样式） */
+.navigator-rail {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.navigator-rail::-webkit-scrollbar {
+  display: none;
 }

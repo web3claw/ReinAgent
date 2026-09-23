@@ -196,7 +196,24 @@ ReinAgent 架构全景
     - 前端通过 Tauri IPC 命令 `provider_config_load` / `provider_config_save` 实时异步读写；
     - 支持一键“设为默认”，自动将选中的服务商与模型映射回底层 `settings.json`（`provider`、`modelId`、`apiKey`、`baseUrl`），确保现有对话模型、代码生成与终端执行 100% 无缝衔接。
 
-### 4. 顶栏操作与国际化
+### 4. 对话问题导航条（ConversationNavigator，对齐 ZCode ConversationTurnNavigator）
+- **布局与显隐**：
+  - 覆盖式绝对定位（`absolute z-10`）浮于消息滚动区**左缘**（App.tsx 中 hasMessages 分支外层 `relative flex` 包装层承载），**不占布局空间**，不挤压 `max-w-2xl` 居中的消息内容；
+  - 显隐规则对齐 ZCode：用户提问 < 2 条或容器宽 < 864px 时整体隐藏（`NAVIGATOR_MIN_ITEMS` / `NAVIGATOR_MIN_VISIBLE_WIDTH`）；
+  - 上下留白 48px / 96px（下部额外避让吸底输入胶囊）。
+- **刻度粒度**：**每条用户提问一根刻度**（`role === "user"`），助手回复与工具调用不产生刻度，仅体现在悬停预览中；
+- **高度自适应规格（已确认）**：默认初始高度 **240px** 垂直居中；节点槽位 = 目标高度 ÷ 刻度数，双向钳制 **[10px, 24px]**（最小间距 10px 与 ZCode 刻度槽位 `h-2.5` 一致）；当 `刻度数 × 10 > 可用高度` 时锁定 10px 并进入**内部滚动**（`.navigator-rail` 隐藏滚动条）；
+- **交互**：
+  - **悬停**：Radix Tooltip（复用既有 `@radix-ui/react-tooltip` 依赖，Portal 防裁剪）弹出双段预览卡——用户提问预览 2 行 + 助手回复预览 3 行；220 字符 / 2 段截断（`truncatePreview`，纯文本不渲染 Markdown）；流式中显示「生成中…」，无回复显示「（尚无回复）」；
+  - **点击**：手动计算 `scrollTop` 平滑跳转（目标行距视口顶 16px 呼吸），`prefers-reduced-motion` 时退化为瞬时定位；跳离底部后 `MessageList` 现有贴底跟随（120px 阈值）自然解除，零侵入；
+  - **山峰衰减动效**：悬停时刻度短横线按距离呈山峰状放大（scaleX 2.6 / 1.7 / 1.25，opacity 1 / 0.86 / 0.72，远处 1 / 0.58），`motion-reduce` 兼容；
+- **active 高亮**：无 IntersectionObserver，scroll 事件（rAF 节流）+ 锚点内容坐标几何计算（`resolveActiveAnchor`：取首个与视口相交的刻度行 `[start_i, start_{i+1})`，无相交回退视口顶上方最近一条）；
+- **实现分层**：纯逻辑层 `src/lib/chat/conversationNavigatorHelpers.ts`（刻度构建 / 预览截断 / 自适应布局 / active 判定 / 山峰视觉，全部具名常量）+ 组件层 `src/components/chat/ConversationNavigator.tsx`；用户消息行由 `MessageItem` 打 `data-msg-id` 锚点；
+- **a11y**：`role="navigation"`、每刻度为 button（`aria-label` 跳转文案、`aria-current="location"`、`aria-posinset/setsize`）；
+- **i18n 键**：`turnNavigatorLabel`（对话问题导航 / Conversation query map）、`turnNavigatorJump`（含 `{index}` 占位）、`turnNavigatorEmptyReply`、`turnNavigatorRunning`；
+- **测试**：`conversationNavigatorHelpers.test.mjs` 17 用例（截断规则 / 刻度构建 / 布局映射表 / active 几何 / 山峰参数），已挂进 `bun run test:chat`。
+
+### 5. 顶栏操作与国际化
 - **中英文切换**：融合版 SVG 地球仪镂空刻字图标，根据当前语言动态镂空刻印 `中` 或 `EN`。
 - **亮暗主题**：全系统变量级 CSS 变量换肤，支持即时切换并持久化保存。
 

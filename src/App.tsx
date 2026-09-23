@@ -3,6 +3,7 @@ import "./styles/global.css";
 import { useConversation } from "./lib/chat/useConversation";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
+import { ConversationNavigator } from "./components/chat/ConversationNavigator";
 import { LexicalComposer } from "./components/chat/LexicalComposer";
 import { EmptyState } from "./components/chat/EmptyState";
 import { TerminalPane } from "./components/terminal/TerminalPane";
@@ -125,6 +126,9 @@ export default function App() {
       if (home) setUserHome(home);
     });
   }, []);
+
+  // 消息滚动容器 ref：承载对话问题导航条（ConversationNavigator）的锚点测量与跳转
+  const chatScrollRef = useRef<HTMLDivElement>(null);
 
   const effectiveWorkspaceRoot = resolveWorkspaceRoot(selectedProject);
   const isWorkspaceUnknown = !selectedProject && !userHome;
@@ -394,12 +398,13 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="flex-1 overflow-y-auto min-h-0 relative">
+            <div className="relative flex-1 min-h-0 flex">
+              <div ref={chatScrollRef} className="flex-1 overflow-y-auto min-h-0">
               <div className="min-h-full flex flex-col justify-between">
-                <div className="w-full px-3 sm:px-4 md:px-6 pt-3 pb-36 flex-1">
+                <div className="w-full px-4 sm:px-6 md:px-10 pt-3 pb-36 flex-1">
                   <MessageList messages={state.messages} onEditSend={handleSend} onRetry={handleRetry} />
                 </div>
-                <div className="sticky bottom-0 w-full bg-[var(--bg)] px-3 sm:px-4 md:px-6 pb-2.5 pt-1 z-10 shrink-0">
+                <div className="sticky bottom-0 w-full bg-[var(--bg)] px-4 sm:px-6 md:px-10 pb-2.5 pt-1 z-10 shrink-0">
                   <LexicalComposer
                     isStreaming={isStreaming}
                     onSend={handleSend}
@@ -414,6 +419,8 @@ export default function App() {
                   />
                 </div>
               </div>
+              </div>
+              <ConversationNavigator messages={state.messages} scrollRef={chatScrollRef} />
             </div>
           )}
         </div>

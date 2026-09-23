@@ -85,7 +85,7 @@ function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
   // ===================== 用户消息分支 =====================
   if (isUser) {
     return (
-      <div className="group/user-row flex flex-col items-end w-full">
+      <div className="group/user-row flex flex-col items-end w-full" data-msg-id={message.id}>
         {isEditing ? (
           // 编辑模式：行内编辑框
           <div className="w-full max-w-2xl bg-[var(--surface)] border border-[var(--border)] rounded-xl p-3 shadow-md flex flex-col gap-2">
