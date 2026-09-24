@@ -85,7 +85,7 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
       <ToolLayout
         toolId={entry.toolCallId}
         icon={<SquareTerminal className="size-4 shrink-0 text-foreground-subtle" />}
-        kindLabel={isRunning ? t("toolStatusRunning") : kindLabel}
+        kindLabel={kindLabel}
         primaryText={null}
         secondaryText={<code className="truncate font-sans">{command}</code>}
         hideSecondaryTextWhenOpen
@@ -135,7 +135,7 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
       <ToolLayout
         toolId={entry.toolCallId}
         icon={<Pencil className="size-4 shrink-0 text-foreground-subtle" />}
-        kindLabel={isRunning ? t("toolStatusRunning") : kindLabel}
+        kindLabel={kindLabel}
         primaryText={fileName ? <span className="truncate">{fileName}</span> : null}
         diffCount={
           diffStat ? (
@@ -200,7 +200,7 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
     <ToolLayout
       toolId={entry.toolCallId}
       icon={<Wrench className="size-4 shrink-0 text-foreground-subtle" />}
-      kindLabel={isRunning ? t("toolStatusRunning") : kindLabel}
+      kindLabel={kindLabel}
       primaryText={null}
       statusLabel={statusLabelNode}
       showStatusLabel

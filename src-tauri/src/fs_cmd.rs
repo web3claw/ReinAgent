@@ -1,6 +1,10 @@
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::io::Read;
+use std::time::Duration;
+#[cfg(target_os = "windows")]
+use std::os::windows::process::CommandExt;
+use std::process::{Command, Stdio};
 
 fn get_default_workspace() -> PathBuf {
     if let Ok(home) = std::env::var("HOME") {
@@ -45,6 +49,53 @@ pub async fn fs_write_file(path: String, content: String) -> Result<(), String> 
     .map_err(|e| e.to_string())?
 }
 
+/// 清理工作区白名单临时目录 `.reinagent-tmp/`（整目录递归删除，幂等）。
+/// 安防：目标必须是 workspace_root 下名为 `.reinagent-tmp` 的直接子目录。
+#[derive(serde::Serialize)]
+pub struct CleanTmpResult {
+    pub deleted_entries: u32,
+}
+
+fn count_tmp_entries(dir: &Path, count: &mut u32) {
+    if let Ok(entries) = fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            *count += 1;
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                count_tmp_entries(&entry.path(), count);
+            }
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn fs_clean_reinagent_tmp(
+    workspace_root: String,
+) -> Result<CleanTmpResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = resolve_path(&workspace_root);
+        let target = root.join(".reinagent-tmp");
+        // 白名单安防：目录名严格等于 .reinagent-tmp，拒绝空路径/根目录/越界目标。
+        if target.file_name().map(|n| n != ".reinagent-tmp").unwrap_or(true) {
+            return Err("清理目标必须是工作区下的 .reinagent-tmp 目录".into());
+        }
+        let meta = match fs::metadata(&target) {
+            // 目录不存在：幂等成功（无事可清）。
+            Err(_) => return Ok(CleanTmpResult { deleted_entries: 0 }),
+            Ok(m) => m,
+        };
+        if !meta.is_dir() {
+            return Err("清理目标不是目录".into());
+        }
+        let mut deleted_entries: u32 = 0;
+        count_tmp_entries(&target, &mut deleted_entries);
+        fs::remove_dir_all(&target)
+            .map_err(|e| format!("Failed to clean {}: {}", target.display(), e))?;
+        Ok(CleanTmpResult { deleted_entries })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn fs_list_dir(path: String) -> Result<Vec<String>, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -70,6 +121,8 @@ pub async fn fs_list_dir(path: String) -> Result<Vec<String>, String> {
 #[tauri::command]
 pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        const EXEC_TIMEOUT_SECS: u64 = 120;
+
         let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
         let flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
 
@@ -85,15 +138,64 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
         let mut cmd = Command::new(shell);
         cmd.arg(flag).arg(&command);
         cmd.current_dir(&exec_dir);
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
 
-        let output = cmd.output().map_err(|e| e.to_string())?;
-        let stdout = String::from_utf8_lossy(&output.stdout).to_string();
-        let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
 
-        if output.status.success() {
-            Ok(stdout)
-        } else {
-            Err(format!("Error (exit code {:?}):\n{}{}", output.status.code(), stdout, stderr))
+        // 输出读取放独立线程：进程未退出时也能持续收集，不会因管道缓冲写满而卡死子进程。
+        let mut stdout_pipe = child.stdout.take().expect("stdout piped");
+        let mut stderr_pipe = child.stderr.take().expect("stderr piped");
+        let stdout_reader = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = stdout_pipe.read_to_end(&mut buf);
+            buf
+        });
+        let stderr_reader = std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let _ = stderr_pipe.read_to_end(&mut buf);
+            buf
+        });
+
+        // 轮询等待 + 超时保护：挂起的命令（如管道空输入等待）超时后强杀整棵进程树。
+        let started = std::time::Instant::now();
+        let timeout = std::time::Duration::from_secs(EXEC_TIMEOUT_SECS);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break Some(status),
+                Ok(None) => {
+                    if started.elapsed() >= timeout {
+                        #[cfg(target_os = "windows")]
+                        {
+                            let pid = child.id();
+                            let _ = Command::new("taskkill")
+                                .args(["/PID", &pid.to_string(), "/T", "/F"])
+                                .creation_flags(0x08000000)
+                                .status();
+                        }
+                        #[cfg(not(target_os = "windows"))]
+                        {
+                            let _ = child.kill();
+                            let _ = child.wait();
+                        }
+                        break None;
+                    }
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                }
+                Err(e) => return Err(format!("Failed to wait for process: {}", e)),
+            }
+        };
+
+        let stdout = String::from_utf8_lossy(&stdout_reader.join().unwrap_or_default()).to_string();
+        let stderr = String::from_utf8_lossy(&stderr_reader.join().unwrap_or_default()).to_string();
+
+        match status {
+            Some(status) if status.success() => Ok(stdout),
+            Some(status) => Err(format!("Error (exit code {:?}):\n{}{}",
+                status.code(), stdout, stderr)),
+            // 超时被杀：如实告知并附已收集的部分输出（No-Fallback，不静默吞掉）。
+            None => Err(format!("命令执行超时（120 秒），已强制终止。\n{}{}",
+                stdout, stderr)),
         }
     })
     .await
