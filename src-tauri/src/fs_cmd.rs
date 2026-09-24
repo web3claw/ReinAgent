@@ -133,3 +133,93 @@ pub async fn path_home_dir() -> Result<String, String> {
     Err("无法获取用户主目录：环境变量 USERPROFILE 与 HOME 均未设置".into())
 }
 
+
+/// 文件预览切片（对齐 ZCode FileTextSlice 结构，供 PreviewPane 消费）。
+#[derive(serde::Serialize)]
+pub struct FileTextSlice {
+    pub path: String,
+    pub content: String,
+    pub offset: usize,
+    pub bytes_read: usize,
+    pub total_bytes: usize,
+    pub truncated: bool,
+    pub is_binary: bool,
+}
+
+/// 文件查看器单次读取上限（对齐 ZCode FILE_VIEWER_MAX_TEXT_BYTES = 256KB）。
+const FILE_VIEWER_MAX_TEXT_BYTES: usize = 256 * 1024;
+
+/// 二进制探测（对齐 ZCode fileService 口径）：NUL 字节即判定；控制字符占比 > 0.3 判定。
+fn looks_like_binary(bytes: &[u8]) -> bool {
+    let head = &bytes[..bytes.len().min(2048)];
+    if head.iter().any(|&b| b == 0) {
+        return true;
+    }
+    let sample_len = bytes.len().min(8192);
+    if sample_len == 0 {
+        return false;
+    }
+    let control = bytes[..sample_len]
+        .iter()
+        .filter(|&&b| b < 9 || (b > 13 && b < 32))
+        .count();
+    (control as f64) / (sample_len as f64) > 0.3
+}
+
+/// 读取文本文件切片：供右侧代码预览面板使用（严格 No-Fallback：读取/解析失败如实报错）。
+#[tauri::command]
+pub async fn fs_read_text_file(
+    path: String,
+    offset: Option<usize>,
+    length: Option<usize>,
+) -> Result<FileTextSlice, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        let meta = fs::metadata(&resolved)
+            .map_err(|e| format!("Failed to stat {}: {}", resolved.display(), e))?;
+        if meta.is_dir() {
+            return Err(format!("{} 是目录，不是文件", resolved.display()));
+        }
+        let total_bytes = meta.len() as usize;
+        let start = offset.unwrap_or(0);
+        if start >= total_bytes {
+            return Ok(FileTextSlice {
+                path: resolved.display().to_string(),
+                content: String::new(),
+                offset: start,
+                bytes_read: 0,
+                total_bytes,
+                truncated: false,
+                is_binary: false,
+            });
+        }
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file = fs::File::open(&resolved)
+            .map_err(|e| format!("Failed to open {}: {}", resolved.display(), e))?;
+        file.seek(SeekFrom::Start(start as u64))
+            .map_err(|e| format!("Failed to seek {}: {}", resolved.display(), e))?;
+        let requested = length.unwrap_or(FILE_VIEWER_MAX_TEXT_BYTES).min(FILE_VIEWER_MAX_TEXT_BYTES);
+        let read_len = requested.min(total_bytes - start);
+        let mut bytes = vec![0u8; read_len];
+        file.read_exact(&mut bytes)
+            .map_err(|e| format!("Failed to read {}: {}", resolved.display(), e))?;
+        let is_binary = looks_like_binary(&bytes);
+        let truncated = total_bytes - start > read_len;
+        let content = if is_binary {
+            String::new()
+        } else {
+            String::from_utf8_lossy(&bytes).into_owned()
+        };
+        Ok(FileTextSlice {
+            path: resolved.display().to_string(),
+            content,
+            offset: start,
+            bytes_read: read_len,
+            total_bytes,
+            truncated,
+            is_binary,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
