@@ -19,7 +19,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
 import { MarkdownText } from "./MarkdownText";
 import { useTranslation } from "../../i18n";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   buildUnifiedPatch,
   collectTurnFileChanges,
@@ -180,6 +180,7 @@ export interface TurnGroupViewProps {
    * 仅凭条目状态判 running 会导致状态条/思考块闪烁——以会话级流式状态兜住。
    */
   live?: boolean;
+  workspaceRoot?: string;
   onEditSend?: (newText: string) => void;
   onRetry?: () => void;
 }
@@ -188,7 +189,7 @@ export interface TurnGroupViewProps {
 function IntermediateText({ entry }: { entry: TimelineEntry }) {
   if (entry.role !== "assistant" || !entry.text) return null;
   return (
-    <div className="turn-intermediate-text text-[15px] font-semibold text-[var(--text)] leading-relaxed">
+    <div className="turn-intermediate-text text-[16px] font-[450] text-[var(--text)] leading-relaxed">
       <MarkdownText text={entry.text} />
     </div>
   );
@@ -197,10 +198,53 @@ function IntermediateText({ entry }: { entry: TimelineEntry }) {
 
 /** 文件更改摘要卡（对齐 ZCode ConversationFileSummaryPanel 的轻量宿主版）：
  * 数据由轮内 edit/write 条目客户端现算；审查 → 右侧面板 patch 模式；打开 → 文件预览。 */
-function TurnFileSummaryCard({ entries }: { entries: TimelineEntry[] }) {
+function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntry[]; workspaceRoot?: string }) {
   const { t } = useTranslation();
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   const [open, setOpen] = useState(true);
+  // 临时目录清理：idle → confirm（3 秒无操作回退）→ cleaning → done/error
+  const [cleanState, setCleanState] = useState<"idle" | "confirm" | "cleaning" | "done" | "error">("idle");
+  const [cleanMsg, setCleanMsg] = useState<string | null>(null);
+  const confirmTimerRef = useRef<number | null>(null);
+
+  const handleCleanup = async () => {
+    if (cleanState === "idle") {
+      setCleanState("confirm");
+      confirmTimerRef.current = window.setTimeout(() => setCleanState("idle"), 3000);
+      return;
+    }
+    if (confirmTimerRef.current) {
+      window.clearTimeout(confirmTimerRef.current);
+      confirmTimerRef.current = null;
+    }
+    setCleanState("cleaning");
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const res = await invoke<{ deleted_entries: number }>("fs_clean_reinagent_tmp", {
+        workspaceRoot: workspaceRoot ?? "",
+      });
+      setCleanState("done");
+      setCleanMsg(t("tmpCleanDone").replace("{count}", String(res.deleted_entries)));
+    } catch (err) {
+      setCleanState("error");
+      setCleanMsg(err instanceof Error ? err.message : String(err));
+    }
+    window.setTimeout(() => {
+      setCleanState("idle");
+      setCleanMsg(null);
+    }, 3000);
+  };
+
+  const cleanupLabel =
+    cleanState === "confirm"
+      ? t("tmpCleanConfirm")
+      : cleanState === "cleaning"
+        ? t("tmpCleanBusy")
+        : cleanState === "done"
+          ? cleanMsg
+          : cleanState === "error"
+            ? cleanMsg
+            : t("tmpCleanButton");
 
   // 同一文件在一轮内被多次编辑时按路径聚合：original 取第一次编辑前、final 取最后一次编辑后，
   // 只显示净变更（对齐 ZCode taskChangeSummary 的按路径合并语义）。
@@ -266,6 +310,18 @@ function TurnFileSummaryCard({ entries }: { entries: TimelineEntry[] }) {
         >
           ↩ {t("turnFileSummaryUndo")}
         </span>
+        <button
+          type="button"
+          className={`turn-file-summary-action ${cleanState === "confirm" || cleanState === "error" ? "text-[var(--danger)] border-[var(--danger)]" : ""} ${cleanState === "done" ? "opacity-70" : ""}`}
+          disabled={cleanState === "cleaning"}
+          title={t("tmpCleanButton")}
+          onClick={(event) => {
+            event.stopPropagation();
+            void handleCleanup();
+          }}
+        >
+          {cleanState === "error" ? cleanMsg : cleanupLabel}
+        </button>
       </button>
       {open && (
         <div className="turn-file-summary-rows">
@@ -312,7 +368,7 @@ function TurnFileSummaryCard({ entries }: { entries: TimelineEntry[] }) {
   );
 }
 
-export function TurnGroupView({ group, liveNowMs, live = false, onEditSend, onRetry }: TurnGroupViewProps) {
+export function TurnGroupView({ group, liveNowMs, live = false, workspaceRoot, onEditSend, onRetry }: TurnGroupViewProps) {
   const { t, locale } = useTranslation();
   // 用户只折叠/展开「已完成」的轮次；运行中强制展开且不可收起（userToggle 仅完成态生效）。
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
@@ -424,7 +480,8 @@ export function TurnGroupView({ group, liveNowMs, live = false, onEditSend, onRe
         <MessageItem message={lastAssistant} onEditSend={onEditSend} onRetry={onRetry} />
       ) : null}
 
-      <TurnFileSummaryCard entries={group.activity} />
+      {/* 文件更改摘要卡：仅在整轮结束后显示（对齐 ZCode —— 编辑过程中看各工具卡，跑完出汇总） */}
+      {!isTurnRunning && <TurnFileSummaryCard entries={group.activity} workspaceRoot={workspaceRoot} />}
     </div>
   );
 }

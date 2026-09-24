@@ -401,7 +401,7 @@ export default function App() {
             <div className="relative flex-1 min-h-0 flex">
               <div ref={chatScrollRef} className="flex-1 overflow-y-auto min-h-0">
               <div className="min-h-full flex flex-col justify-between">
-                <div className="w-full px-4 sm:px-6 md:px-10 pt-3 pb-36 flex-1">
+                <div className="w-full px-6 sm:px-8 md:px-12 pt-3 pb-36 flex-1">
                   <MessageList
                     messages={state.messages}
                     isStreaming={isStreaming}
@@ -409,7 +409,7 @@ export default function App() {
                     onRetry={handleRetry}
                   />
                 </div>
-                <div className="sticky bottom-0 w-full bg-[var(--bg)] px-4 sm:px-6 md:px-10 pb-2.5 pt-1 z-10 shrink-0">
+                <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">
                   <LexicalComposer
                     isStreaming={isStreaming}
                     onSend={handleSend}

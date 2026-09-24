@@ -10,12 +10,14 @@ export interface MessageListProps {
   messages: TimelineEntry[];
   /** Agent 循环是否仍在流式（用于把最后一轮钉在「工作中」，消除轮间空窗闪烁）。 */
   isStreaming?: boolean;
+  /** 会话工作区根目录（传给文件更改摘要卡的临时目录清理）。 */
+  workspaceRoot?: string;
   onEditSend?: (newText: string) => void;
   onRetry?: () => void;
 }
 
 /** 消息列表。新内容到达且用户本就贴在底部附近时自动滞底（S2 不引入虚拟滚动）。 */
-export function MessageList({ messages, isStreaming = false, onEditSend, onRetry }: MessageListProps) {
+export function MessageList({ messages, isStreaming = false, workspaceRoot, onEditSend, onRetry }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
   const last = messages.length > 0 ? messages[messages.length - 1] : undefined;
@@ -88,6 +90,7 @@ export function MessageList({ messages, isStreaming = false, onEditSend, onRetry
           group={turn}
           live={isStreaming && index === turns.length - 1}
           liveNowMs={liveNowMs}
+          workspaceRoot={workspaceRoot}
           onEditSend={onEditSend}
           onRetry={onRetry}
         />

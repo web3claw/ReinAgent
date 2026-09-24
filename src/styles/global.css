@@ -114,7 +114,7 @@ body,
 body {
   background: var(--bg);
   color: var(--text);
-  font-size: 14px;
+  font-size: 16px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
@@ -151,14 +151,14 @@ select option {
 }
 
 .topbar-title {
-  font-size: 16px;
+  font-size: 18px;
   font-weight: 600;
   margin: 0;
   letter-spacing: 0.3px;
 }
 
 .badge {
-  font-size: 12px;
+  font-size: 14px;
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid var(--border);
@@ -179,7 +179,7 @@ select option {
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
   color: var(--warn-text);
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -199,7 +199,7 @@ select option {
 }
 
 .msg-role {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 
@@ -237,7 +237,7 @@ select option {
 .msg-error {
   margin-top: 8px;
   color: var(--danger);
-  font-size: 13px;
+  font-size: 15px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -325,7 +325,7 @@ select option {
   color: var(--text-dim);
   border: 1px solid var(--border);
   padding: 4px 10px;
-  font-size: 13px;
+  font-size: 15px;
   border-radius: 999px;
 }
 
@@ -353,12 +353,12 @@ select option {
 
 .settings-title {
   margin: 0;
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
 }
 
 .settings-persist {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 
@@ -372,7 +372,7 @@ select option {
   background: var(--warn-bg);
   border: 1px solid var(--warn-border);
   color: var(--warn-text);
-  font-size: 13px;
+  font-size: 15px;
 }
 
 .field {
@@ -382,7 +382,7 @@ select option {
 }
 
 .field-label {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 
@@ -392,7 +392,7 @@ select option {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 7px 10px;
-  font-size: 13px;
+  font-size: 15px;
   outline: none;
 }
 
@@ -406,14 +406,14 @@ select option {
 }
 
 .field-error {
-  font-size: 12px;
+  font-size: 14px;
   color: var(--warn-text);
 }
 
 /* ---------- 已停止标注（S4） ---------- */
 .msg-stopped {
   margin-top: 6px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
   border-left: 2px solid var(--border);
   padding-left: 8px;
@@ -422,7 +422,7 @@ select option {
 /* ---------- 已达最大步数标注（S7） ---------- */
 .msg-max-steps {
   margin-top: 8px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--warn-text);
   border-left: 2px solid var(--warn-border);
   padding-left: 8px;
@@ -547,7 +547,7 @@ select option {
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 12.5px;
+  font-size: 14.5px;
   line-height: 1.5;
   color: var(--text-dim);
 }
@@ -584,7 +584,7 @@ select option {
 .tool-args {
   margin-top: 2px;
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
   white-space: nowrap;
   overflow: hidden;
@@ -593,7 +593,7 @@ select option {
 
 .tool-pending {
   margin-top: 2px;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 
@@ -604,7 +604,7 @@ select option {
 
 .tool-details > summary {
   cursor: pointer;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
   user-select: none;
 }
@@ -616,7 +616,7 @@ select option {
   border: 1px solid var(--border);
   border-radius: 8px;
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
-  font-size: 12px;
+  font-size: 14px;
   white-space: pre-wrap;
   word-break: break-word;
   max-height: 240px;
@@ -725,7 +725,7 @@ select option {
   border-bottom: 1px solid var(--border);
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
   text-align: left;
 }
@@ -765,7 +765,8 @@ select option {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 12px;
+  font-size: calc(15px * var(--zone-font-scale, 1));
+  font-weight: 450;
   color: var(--text-dim);
 }
 .thinking-duration {
@@ -774,19 +775,17 @@ select option {
 .thinking-body {
   margin: 6px 0 0 2px;
   padding-left: 12px;
-  padding-right: 4px;
   border-left: 2px solid var(--border);
-  max-height: 320px;
+  max-height: 240px;
   overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-gutter: stable;
 }
-/* 思考正文：Markdown 渲染（对齐 LiveAgent），沿用暗色弱化层级 */
+/* 思考正文：Markdown 渲染，最暗文字层（对齐 ZCode text-foreground-subtlest） */
 .thinking-text {
-  font-size: 12px;
-  line-height: 1.6;
+  font-size: calc(15px * var(--zone-font-scale, 1));
+  line-height: 20px;
   color: var(--text-dim);
-  opacity: 0.85;
 }
 
 /* ---------- 工具卡类型化扩展（文件 chip / diff 统计 / 终端卡） ---------- */
@@ -818,7 +817,7 @@ select option {
 }
 .tool-file-name {
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
-  font-size: 11.5px;
+  font-size: 13.5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -826,7 +825,7 @@ select option {
 .tool-diff {
   display: inline-flex;
   gap: 6px;
-  font-size: 11.5px;
+  font-size: 13.5px;
   flex: 0 0 auto;
 }
 .diff-added {
@@ -848,7 +847,7 @@ select option {
   border: 1px solid var(--border);
   border-radius: 8px;
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text);
   white-space: pre-wrap;
   word-break: break-word;
@@ -858,12 +857,12 @@ select option {
   padding-top: 8px;
   border-top: 1px solid var(--border);
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
-  font-size: 12px;
-  line-height: 1.55;
+  font-size: var(--text-ui-base);
+  line-height: 20px;
   color: var(--text-secondary);
   white-space: pre-wrap;
   word-break: break-word;
-  max-height: 130px;
+  max-height: 100px;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -884,7 +883,7 @@ select option {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
-  font-size: 11.5px;
+  font-size: 13.5px;
   color: var(--text);
   direction: rtl;
   text-align: left;
@@ -906,7 +905,7 @@ select option {
   border: 1px solid var(--border);
   border-radius: 8px;
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
-  font-size: 12px;
+  font-size: 14px;
   line-height: 1.55;
 }
 .diff-line {
@@ -962,7 +961,7 @@ select option {
   background: var(--bg-sunken);
   border: 1px solid var(--border);
   border-radius: 6px;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-secondary);
 }
 .explore-children {
@@ -977,7 +976,7 @@ select option {
   min-width: 0;
   padding: 3px 0 3px 10px;
   border-left: 2px solid var(--border);
-  font-size: 12px;
+  font-size: 14px;
   color: var(--text-dim);
 }
 .explore-child-kind {
@@ -997,7 +996,7 @@ select option {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11px;
+  font-size: 13px;
   color: var(--text-dim);
   opacity: 0.7;
 }
@@ -1021,12 +1020,13 @@ select option {
   --color-popover-foreground: var(--text);
   --color-diff-added: var(--diff-added);
   --color-diff-removed: var(--diff-removed);
-  --text-ui-base: 13px;
-  --text-ui-sm: 12px;
-  --text-ui-xs: 11px;
-  --text-ui-lg: 14px;
-  --text-ui-xl: 16px;
-  --text-ui-caption: 11px;
+  --ui-font-size: 16px;
+  --text-ui-xl: calc(var(--ui-font-size) + 4px);
+  --text-ui-lg: calc(var(--ui-font-size) + 2px);
+  --text-ui-base: var(--ui-font-size);
+  --text-ui-caption: calc(var(--ui-font-size) - 1px);
+  --text-ui-sm: calc(var(--ui-font-size) - 2px);
+  --text-ui-xs: calc(var(--ui-font-size) - 4px);
 }
 
 
@@ -1043,7 +1043,7 @@ select option {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: 12.5px;
+  font-size: 14.5px;
   text-align: left;
 }
 .turn-file-summary-title {
@@ -1066,7 +1066,7 @@ select option {
   min-width: 0;
   padding: 6px 8px;
   border-radius: 6px;
-  font-size: 12.5px;
+  font-size: 14.5px;
   color: var(--text-dim);
 }
 .turn-file-summary-row:hover {
@@ -1082,7 +1082,7 @@ select option {
   border-radius: 4px;
   background: var(--brand-dim);
   color: var(--brand);
-  font-size: 10.5px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 .turn-file-summary-name {
@@ -1100,14 +1100,14 @@ select option {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 11.5px;
+  font-size: 13.5px;
   color: var(--text-dim);
   opacity: 0.75;
 }
 .turn-file-summary-row .tool-diff {
   flex: 0 0 auto;
   gap: 6px;
-  font-size: 12px;
+  font-size: 14px;
 }
 .turn-file-summary-action {
   flex: 0 0 auto;
@@ -1116,7 +1116,7 @@ select option {
   border-radius: 6px;
   background: transparent;
   cursor: pointer;
-  font-size: 11.5px;
+  font-size: 13.5px;
   color: var(--text-secondary);
 }
 .turn-file-summary-action:hover {
@@ -1156,4 +1156,14 @@ select option {
 @keyframes gradient-flow {
   0% { background-position: 0% 0%; }
   100% { background-position: -300% 0%; }
+}
+
+@theme {
+  --text-xs: 14px;
+  --text-xs--line-height: 1.5;
+  --text-sm: 16px;
+  --text-sm--line-height: 1.6;
+  --text-base: 18px;
+  --text-base--line-height: 1.7;
+  --text-lg: 20px;
 }

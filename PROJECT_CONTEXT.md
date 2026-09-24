@@ -407,7 +407,8 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 | 9 | streamSimple 修复 | 修复误用裸 `stream` 导致思考被显式禁用的事故（详见 九.4） | `runAgentTurn.ts` |
 | 10 | 推理能力乐观兜底 | 无 effort 元数据模型视为支持思考（档位 Default/Low/Medium/High，可 off）；已声明模型仍严格按元数据过滤 | `App.tsx`、`LexicalComposer.tsx`、`modelFactory.ts` |
 | 11 | 右侧代码/变更预览面板（PreviewPane 完整移植） | 编辑/写入卡审查 → patch 模式（Shiki 高亮 diff）；读取卡 → 文件行号预览（Rust `fs_read_text_file` 256KB 截断+二进制探测）；`@pierre/diffs` + `shiki` 已引入；Media/PDF/PPTX/Office 为诚实降级 stub | `src/preview/**`（约 40 文件）、`fs_cmd.rs`、`CodeViewerPaneHost.tsx` |
-| 12 | 文件更改摘要卡 | 轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2） | `TurnGroupView.tsx`（TurnFileSummaryCard） |
+| 12 | 文件更改摘要卡 | 轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；**仅在整轮结束后显示**（编辑过程中看各工具卡，对齐 ZCode 时机）；同文件多次编辑按路径聚合为净变更，净零文件过滤；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2）；header 附**「清理临时目录」**按钮（行内二次确认 → `fs_clean_reinagent_tmp`） | `TurnGroupView.tsx`（TurnFileSummaryCard） |
+| 13 | 临时文件目录约定（B+C 组合） | 系统提示词约定：一次性脚本/分析产物必须放 `<工作区>/.reinagent-tmp/`（视为可丢弃）；Rust `fs_clean_reinagent_tmp` 白名单清理（目录名严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈） | `runAgentTurn.ts`、`fs_cmd.rs`、`TurnGroupView.tsx` |
 
 ### 2. 未实现（Gap 清单，按主题分组）
 
@@ -415,6 +416,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - [x] diff 视图 / 代码块的 **Shiki 语法高亮** —— 已随 PreviewPane 移植引入（`shiki@^4` + `@pierre/diffs`，工具卡内联 diff 视图仍为单色形态）
 - [ ] **PPTX / PDF / Office / 媒体预览引擎**（PreviewPane 模式壳已移植，渲染引擎未引入，激活时如实显示「不可用」）
 - [ ] 流式「正在思考」**扫光动画（shimmer）**（LiveAgent/ZCode 用 CSS 渐变动画表达运行态，替代旋转图标）
+- [x] 临时文件目录约定 + 白名单清理（B+C 组合，2026-09-24 落地）
 - [ ] **`<think>...</think>` 内嵌标签解析兜底**（Ollama 式网关把思考内联在 content 里；LiveAgent 有 `inlineThinkTagStream` 归一化；WorkBuddy 实测走原生 `reasoning_content`，暂无需求）
 
 **工具卡类**：

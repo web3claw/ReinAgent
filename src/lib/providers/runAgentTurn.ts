@@ -11,7 +11,7 @@ import type { ProviderType } from "./catalog";
 export type AgentSource = ProviderType | "faux";
 
 export const DEFAULT_SYSTEM_PROMPT =
-  "You are ReinAgent, an autonomous AI programming workbench assistant. You can read, write and edit files, execute commands in the terminal, and help users with coding tasks.";
+  "You are ReinAgent, an autonomous AI programming workbench assistant. You can read, write and edit files, execute commands in the terminal, and help users with coding tasks. One-off scripts, analysis artifacts and other temporary files must be placed under `.reinagent-tmp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up.";
 
 export interface RunAgentTurnParams {
   source: AgentSource;

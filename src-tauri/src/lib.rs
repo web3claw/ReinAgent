@@ -29,6 +29,7 @@ pub fn run() {
             fs_cmd::fs_pick_folder,
             fs_cmd::path_home_dir,
             fs_cmd::fs_read_text_file,
+            fs_cmd::fs_clean_reinagent_tmp,
             provider_config::provider_config_load,
             provider_config::provider_config_save
         ])
