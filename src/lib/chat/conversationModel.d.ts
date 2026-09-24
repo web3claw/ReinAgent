@@ -59,6 +59,16 @@ export interface ChatMessage {
    * 孤儿 toolResult → 下一次请求 400）。
    */
   truncatedBy?: "maxSteps";
+
+  // ---- 回合工时打点（纯展示 / 遥测字段，绝不参与 toApiMessages）----
+  /** 条目开始时间戳（assistant：beginAssistant / message_start；tool：tool_execution_start）。 */
+  startedAt?: number;
+  /** 条目结束时间戳（finish / turn_end / tool_execution_end 落地）。 */
+  endedAt?: number;
+  /** 首个 thinking_delta 到达时间（思考跨度起点）。 */
+  thinkingStartedAt?: number;
+  /** 思考时长（首个 text_delta 或 thinking_end 时冻结）。 */
+  thinkingDurationMs?: number;
 }
 
 /**
@@ -103,17 +113,17 @@ export function restoreState(messages: TimelineEntry[]): ChatState;
 
 export function appendUser(state: ChatState, text: string): ChatState;
 
-export function beginAssistant(state: ChatState): ChatState;
+export function beginAssistant(state: ChatState, nowMs?: number): ChatState;
 
-export function applyEvent(state: ChatState, ev: AssistantMessageEvent): ChatState;
+export function applyEvent(state: ChatState, ev: AssistantMessageEvent, nowMs?: number): ChatState;
 
 /** 应用一个库事件（pi-agent-core `AgentEvent`）→ 时间线。收敛点只能是 agent_end。 */
-export function applyLibraryEvent(state: ChatState, ev: AgentEvent): ChatState;
+export function applyLibraryEvent(state: ChatState, ev: AgentEvent, nowMs?: number): ChatState;
 
-export function finish(state: ChatState, finalMessage?: AssistantMessage, error?: string): ChatState;
+export function finish(state: ChatState, finalMessage?: AssistantMessage, error?: string, nowMs?: number): ChatState;
 
 /** 用户主动中止：回 idle、保留已生成文本、标注「已停止」、不进入 error。 */
-export function finishAborted(state: ChatState): ChatState;
+export function finishAborted(state: ChatState, nowMs?: number): ChatState;
 
 /** 步数硬闸触顶：给最后一条助手条目打「已达最大步数」纯展示标注（不改 status）。 */
 export function noteMaxSteps(state: ChatState): ChatState;

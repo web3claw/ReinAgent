@@ -78,8 +78,9 @@ export function appendUser(state, text) {
 /**
  * 开始一条助手消息（进入 streaming）。若已在 streaming 则视为非法，原样返回。
  * @param {import("./conversationModel").ChatState} state
+ * @param {number=} nowMs 当前时间戳（回合工时打点起点；缺省取系统时钟）
  */
-export function beginAssistant(state) {
+export function beginAssistant(state, nowMs) {
   if (state.status === "streaming") return state;
   const seq = nextSeq(state);
   const message = {
@@ -88,6 +89,8 @@ export function beginAssistant(state) {
     text: "",
     thinking: "",
     status: "streaming",
+    // 回合工时打点：仅展示用，绝不参与 toApiMessages。
+    startedAt: typeof nowMs === "number" ? nowMs : Date.now(),
   };
   return {
     messages: [...state.messages, message],
@@ -139,8 +142,9 @@ function thinkingOfMessage(message) {
  * @param {import("./conversationModel").ChatState} state
  * @param {import("@earendil-works/pi-ai").AssistantMessageEvent} ev
  */
-export function applyEvent(state, ev) {
+export function applyEvent(state, ev, nowMs) {
   if (state.status !== "streaming") return state;
+  const at = typeof nowMs === "number" ? nowMs : Date.now();
 
   switch (ev.type) {
     case "start":
@@ -154,7 +158,12 @@ export function applyEvent(state, ev) {
       if (index === -1) return state;
       const messages = state.messages.slice();
       // 关键：累积必须用 ev.delta，绝不能用 ev.partial。
-      messages[index] = { ...messages[index], text: messages[index].text + ev.delta };
+      const entry = { ...messages[index], text: messages[index].text + ev.delta };
+      // 思考时长冻结：首个正文增量到达即封口思考跨度（仅首个思考段计）。
+      if (entry.thinkingDurationMs === undefined && entry.thinkingStartedAt !== undefined) {
+        entry.thinkingDurationMs = Math.max(0, at - entry.thinkingStartedAt);
+      }
+      messages[index] = entry;
       return { ...state, messages };
     }
 
@@ -169,13 +178,32 @@ export function applyEvent(state, ev) {
       const index = lastAssistantIndex(state.messages);
       if (index === -1) return state;
       const messages = state.messages.slice();
-      // 思考累积到独立字段：S2 不渲染，但不丢弃（S5 可能要用）。
-      messages[index] = { ...messages[index], thinking: messages[index].thinking + ev.delta };
+      const entry = { ...messages[index] };
+      // 思考起点打点：首个思考增量到达时记录（仅首个思考段）。
+      if (entry.thinkingStartedAt === undefined) {
+        entry.thinkingStartedAt = at;
+      }
+      // 思考累积到独立字段：渲染由 ThinkingBlock 负责。
+      entry.thinking = entry.thinking + ev.delta;
+      messages[index] = entry;
       return { ...state, messages };
     }
 
-    case "thinking_end":
+    case "thinking_end": {
+      const index = lastAssistantIndex(state.messages);
+      if (index === -1) return state;
+      const entry = state.messages[index];
+      // 思考结束即封口时长（正文可能迟迟不来或根本不来）。
+      if (entry.thinkingStartedAt !== undefined && entry.thinkingDurationMs === undefined) {
+        const messages = state.messages.slice();
+        messages[index] = {
+          ...entry,
+          thinkingDurationMs: Math.max(0, at - entry.thinkingStartedAt),
+        };
+        return { ...state, messages };
+      }
       return state;
+    }
 
     case "toolcall_start":
     case "toolcall_delta":
@@ -210,19 +238,20 @@ export function applyEvent(state, ev) {
  * @param {import("@earendil-works/pi-ai").AssistantMessage=} finalMessage
  * @param {string=} error 原始错误文本（会经 diagnoseError 映射）
  */
-export function finish(state, finalMessage, error) {
+export function finish(state, finalMessage, error, nowMs) {
   if (state.status !== "streaming") return state;
+  const at = typeof nowMs === "number" ? nowMs : Date.now();
 
   if (error !== undefined) {
     const readable = diagnoseError(error);
     return {
-      ...patchLastAssistant(state, { status: "error", error: readable }),
+      ...patchLastAssistant(state, { status: "error", error: readable, endedAt: at }),
       status: "error",
       error: readable,
     };
   }
 
-  const patch = { status: "done" };
+  const patch = { status: "done", endedAt: at };
   if (finalMessage) {
     patch.text = textOfMessage(finalMessage);
     patch.thinking = thinkingOfMessage(finalMessage);
@@ -239,9 +268,14 @@ export function finish(state, finalMessage, error) {
  * @param {import("./conversationModel").ChatState} state
  * @returns {import("./conversationModel").ChatState}
  */
-export function finishAborted(state) {
+export function finishAborted(state, nowMs) {
   if (state.status !== "streaming") return state;
-  return { ...patchLastAssistant(state, { status: "stopped" }), status: "idle", error: undefined };
+  const at = typeof nowMs === "number" ? nowMs : Date.now();
+  return {
+    ...patchLastAssistant(state, { status: "stopped", endedAt: at }),
+    status: "idle",
+    error: undefined,
+  };
 }
 
 /**
@@ -333,8 +367,9 @@ function toolCallBlocks(message) {
  * @param {import("@earendil-works/pi-agent-core").AgentEvent} ev
  * @returns {import("./conversationModel").ChatState}
  */
-export function applyLibraryEvent(state, ev) {
+export function applyLibraryEvent(state, ev, nowMs) {
   if (ev === null || typeof ev !== "object") return state;
+  const at = typeof nowMs === "number" ? nowMs : Date.now();
 
   switch (ev.type) {
     case "agent_start":
@@ -358,6 +393,7 @@ export function applyLibraryEvent(state, ev) {
         text: "",
         thinking: "",
         status: "streaming",
+        startedAt: at,
       };
       // 同时把顶层状态推进到 streaming，使随后的 `applyEvent` 能生效。
       return {
@@ -373,7 +409,7 @@ export function applyLibraryEvent(state, ev) {
       // 原样委托给 `applyEvent`，让「从 text_delta 的 ev.delta 累积」的既有逻辑继续生效。
       const inner = ev.assistantMessageEvent;
       if (!inner || typeof inner !== "object") return state;
-      return applyEvent(state, inner);
+      return applyEvent(state, inner, at);
     }
 
     case "tool_execution_start": {
@@ -395,6 +431,8 @@ export function applyLibraryEvent(state, ev) {
         resultText: "",
         isError: false,
         details: undefined,
+        // 工具耗时打点（仅展示用）。
+        startedAt: at,
         // ★ 权威 ToolResultMessage 在 turn_end 才拿得到（见下）。
         apiMessage: undefined,
       };
@@ -413,6 +451,7 @@ export function applyLibraryEvent(state, ev) {
         resultText: textOfToolContent(result),
         isError: Boolean(ev.isError),
         details: result && typeof result === "object" ? result.details : undefined,
+        endedAt: at,
       };
       return { ...state, messages };
     }
@@ -429,6 +468,7 @@ export function applyLibraryEvent(state, ev) {
           text: textOfMessage(message),
           thinking: thinkingOfMessage(message),
           apiMessage: message,
+          endedAt: at,
         });
       }
       // ② 用权威 ToolResultMessage 回填对应工具条目（按 toolCallId 配对）。
@@ -461,13 +501,13 @@ export function applyLibraryEvent(state, ev) {
       const messages = Array.isArray(ev.messages) ? ev.messages : [];
       const last = messages[messages.length - 1];
       if (last && last.role === "assistant") {
-        if (last.stopReason === "aborted") return finishAborted(state);
+        if (last.stopReason === "aborted") return finishAborted(state, at);
         if (last.stopReason === "error") {
-          return finish(state, undefined, last.errorMessage ? last.errorMessage : "请求失败");
+          return finish(state, undefined, last.errorMessage ? last.errorMessage : "请求失败", at);
         }
       }
       // 正常结束：收敛为 idle，保留已累积文本与 turn_end 落地的 apiMessage。
-      return finish(state, undefined);
+      return finish(state, undefined, undefined, at);
     }
 
     default:

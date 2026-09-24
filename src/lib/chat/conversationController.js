@@ -74,7 +74,7 @@ export function createConversationController(deps) {
     controller.abort();
     // 立即收敛为「已停止」：保留已生成文本、回 idle、不进入 error。
     // （随后 aborted 事件会再次命中 finishAborted，但此时已非 streaming，会被安全忽略。）
-    setState((prev) => finishAborted(prev));
+    setState((prev) => finishAborted(prev, now()));
   }
 
   /** 清空会话：中断在途轮次并重置状态。 */
@@ -109,7 +109,7 @@ export function createConversationController(deps) {
     const history = toApiMessages(getState());
     history.push({ role: "user", content: text, timestamp: now() });
 
-    setState((prev) => beginAssistant(appendUser(prev, text)));
+    setState((prev) => beginAssistant(appendUser(prev, text), now()));
 
     const controller = createAbortController();
     abortRef = controller;
@@ -131,7 +131,7 @@ export function createConversationController(deps) {
           thinkingLevel,
           onEvent: (ev) => {
             if (isStale()) return;
-            setState((prev) => applyLibraryEvent(prev, ev));
+            setState((prev) => applyLibraryEvent(prev, ev, now()));
           },
         });
 
@@ -142,11 +142,11 @@ export function createConversationController(deps) {
         if (isStale()) return;
         if (result && result.reachedAgentEnd === false) {
           if (result.aborted || result.stopReason === "aborted") {
-            setState((prev) => finishAborted(prev));
+            setState((prev) => finishAborted(prev, now()));
           } else if (result.errorMessage) {
-            setState((prev) => finish(prev, undefined, result.errorMessage));
+            setState((prev) => finish(prev, undefined, result.errorMessage, now()));
           } else {
-            setState((prev) => finish(prev, undefined));
+            setState((prev) => finish(prev, undefined, undefined, now()));
           }
         }
 
@@ -166,10 +166,10 @@ export function createConversationController(deps) {
         const aborted =
           controller.signal.aborted || (err instanceof Error && err.name === "AbortError");
         if (aborted) {
-          setState((prev) => finishAborted(prev));
+          setState((prev) => finishAborted(prev, now()));
         } else {
           const message = err instanceof Error ? err.message : String(err);
-          setState((prev) => finish(prev, undefined, message));
+          setState((prev) => finish(prev, undefined, message, now()));
         }
       } finally {
         // 仅当自己仍是当前轮次（未被新一轮取代）时才清空，避免覆盖新一轮的句柄。
