@@ -507,29 +507,148 @@ export function ProjectList({
                   {isOpen && (
                     <div className="flex flex-col w-full pl-7 pr-2 py-0.5 space-y-0.5">
                       {hasSubTasks ? (
-                        project.tasks.map((task) => {
+                        [...project.tasks]
+                          .sort((a, b) => Number(!!b.pinned) - Number(!!a.pinned))
+                          .map((task) => {
                           const isTaskActive = activeTaskId === task.id;
+                          const isRenaming = renamingTaskId === task.id;
+                          const isConfirmingDelete = pendingDeleteTaskId === task.id;
+                          const isPinned = !!task.pinned;
+
+                          if (isRenaming) {
+                            return (
+                              <div
+                                key={task.id}
+                                className="flex items-center gap-1 w-full px-2 py-1 rounded-md bg-[var(--sidebar-hover)] border border-[var(--brand)]"
+                              >
+                                <input
+                                  ref={renameInputRef}
+                                  type="text"
+                                  value={renameDraftTitle}
+                                  onChange={(e) => setRenameDraftTitle(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === "Enter") {
+                                      e.preventDefault();
+                                      handleSaveRename(task.id);
+                                    } else if (e.key === "Escape") {
+                                      setRenamingTaskId(null);
+                                    }
+                                  }}
+                                  onBlur={() => handleSaveRename(task.id)}
+                                  className="flex-1 bg-transparent text-sm text-[var(--sidebar-text-active)] outline-none min-w-0"
+                                />
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    handleSaveRename(task.id);
+                                  }}
+                                  className="p-1 rounded text-emerald-500 hover:bg-[var(--surface-hover)]"
+                                  title={t("save")}
+                                >
+                                  <Check className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.preventDefault();
+                                    setRenamingTaskId(null);
+                                  }}
+                                  className="p-1 rounded text-[var(--sidebar-text)] hover:text-red-500"
+                                  title={t("cancel")}
+                                >
+                                  <X className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            );
+                          }
+
                           return (
-                            <button
+                            <div
                               key={task.id}
-                              type="button"
                               onClick={() => {
                                 setSelectedProject(project.path);
                                 setActiveTaskId(task.id);
                               }}
-                              className={`flex items-center justify-between w-full py-1 px-2 rounded-md transition-colors text-left text-xs ${
+                              className={`group/proj-task flex items-center justify-between w-full py-1 px-2 rounded-md transition-colors text-left text-xs cursor-pointer ${
                                 isTaskActive
                                   ? "bg-[var(--surface-hover)] text-[var(--sidebar-text-active)] font-medium"
                                   : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)]"
                               }`}
                             >
+                              <div className="flex items-center shrink-0 mr-1">
+                                <Tooltip title={isPinned ? t("unpin") : t("pin")} side="top">
+                                  <button
+                                    type="button"
+                                    onClick={(e) => handleTogglePinTask(e, task.id)}
+                                    className={`p-0.5 rounded transition-colors ${
+                                      isPinned
+                                        ? "text-[var(--brand)] opacity-90 hover:opacity-100"
+                                        : "opacity-0 group-hover/proj-task:opacity-60 hover:!opacity-100 text-[var(--sidebar-text)]"
+                                    }`}
+                                  >
+                                    <Pin
+                                      className={`w-3 h-3 transition-transform ${
+                                        isPinned ? "rotate-45 fill-current" : ""
+                                      }`}
+                                    />
+                                  </button>
+                                </Tooltip>
+                              </div>
                               <span className="truncate mr-2 border-l-2 border-[var(--border)] pl-1.5 -ml-1">
                                 {task.title}
                               </span>
-                              <span className="text-[10px] opacity-50 whitespace-nowrap shrink-0">
-                                {formatRelativeTime(task.createdAt, locale)}
-                              </span>
-                            </button>
+                              <div className="flex items-center gap-1 shrink-0">
+                                {!isConfirmingDelete && (
+                                  <span className="text-[13px] opacity-60 whitespace-nowrap group-hover/proj-task:hidden">
+                                    {formatRelativeTime(task.createdAt, locale)}
+                                  </span>
+                                )}
+                                {isConfirmingDelete ? (
+                                  <div className="flex items-center gap-1">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => handleDeleteTaskClick(e, task.id)}
+                                      className="px-2 py-0.5 rounded-md text-[11px] font-medium bg-red-500 hover:bg-red-600 text-white transition-all"
+                                    >
+                                      {t("confirm")}
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setPendingDeleteTaskId(null);
+                                      }}
+                                      className="p-0.5 rounded text-[var(--sidebar-text)] hover:text-red-500"
+                                      title={t("cancel")}
+                                    >
+                                      <X className="w-3 h-3" />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <div className="hidden group-hover/proj-task:flex items-center gap-0.5">
+                                    <Tooltip title={t("rename")} side="top">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleStartRename(e, task)}
+                                        className="p-0.5 rounded hover:bg-[var(--surface-hover)] text-[var(--sidebar-text)] hover:text-[var(--sidebar-text-active)] transition-colors"
+                                      >
+                                        <Edit2 className="w-3 h-3" />
+                                      </button>
+                                    </Tooltip>
+                                    <Tooltip title={t("delete")} side="top">
+                                      <button
+                                        type="button"
+                                        onClick={(e) => handleDeleteTaskClick(e, task.id)}
+                                        className="p-0.5 rounded hover:bg-red-500/15 text-[var(--sidebar-text)] hover:text-red-500 transition-colors"
+                                      >
+                                        <Trash2 className="w-3 h-3" />
+                                      </button>
+                                    </Tooltip>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
                           );
                         })
                       ) : (
@@ -759,7 +878,7 @@ export function ProjectList({
   );
 
   return (
-    <div className="flex flex-col gap-2 w-full text-sm">
+    <div className="flex flex-col gap-4 w-full text-sm">
       <input
         ref={folderInputRef}
         type="file"
