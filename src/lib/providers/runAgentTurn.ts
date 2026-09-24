@@ -25,17 +25,25 @@ export interface RunAgentTurnParams {
   onEvent: (ev: AgentEvent, signal?: AbortSignal) => void | Promise<void>;
 }
 
+/**
+ * 取各协议的流式入口。必须用 `streamSimple`（而非裸 `stream`）：
+ * `streamSimple` 负责把会话层的 `reasoning`（思考等级）钳制变换为 `reasoningEffort`，
+ * 并按协议组装思考开关（如 DeepSeek `thinking: {type: "enabled"}`）。
+ * 裸 `stream` 只认已变换好的 `reasoningEffort` —— 传 `reasoning` 会被无视，
+ * 且对 DeepSeek 等协议会落入「显式禁用思考」分支（thinking: disabled），
+ * 导致模型永远不输出思考过程。
+ */
 async function getStreamFnForApi(api: string) {
   if (api === "anthropic-messages") {
     const mod = await import("@earendil-works/pi-ai/api/anthropic-messages");
-    return mod.stream;
+    return mod.streamSimple ?? mod.stream;
   }
   if (api === "google-generative-ai") {
     const mod = await import("@earendil-works/pi-ai/api/google-generative-ai");
-    return mod.stream;
+    return mod.streamSimple ?? mod.stream;
   }
   const mod = await import("@earendil-works/pi-ai/api/openai-completions");
-  return mod.stream;
+  return mod.streamSimple ?? mod.stream;
 }
 
 export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnResult> {
