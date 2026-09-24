@@ -54,13 +54,10 @@ export function buildModel(config: ProviderConfig): Model<any> {
     runtimeBaseUrl = ensureV1BaseUrl(rawBaseUrl);
   }
 
-  const isReasoning =
-    typeof config.hasEffort === "boolean"
-      ? config.hasEffort
-      : (modelId.includes("r1") ||
-         modelId.includes("reasoner") ||
-         modelId.includes("o1") ||
-         modelId.includes("o3"));
+  // 推理能力（对齐 LiveAgent 乐观兜底）：优先取真实元数据（模型 effort 声明），
+  // 未声明时乐观视为支持（请求带 reasoning_effort，服务端不支持时会自行忽略）。
+  // 铁律红线仍在：上下文大小 / Token 上限 / 多模态严禁按名猜测——推理档位不在此列。
+  const isReasoning = config.hasEffort !== false;
 
   return {
     id: modelId,
