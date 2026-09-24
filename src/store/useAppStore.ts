@@ -53,6 +53,21 @@ interface AppState {
   deleteTask: (id: string) => void;
   toggleTaskPin: (id: string) => void;
   startNewTaskDraft: (project?: string | null) => void;
+  /** 右侧代码/变更预览面板（ZCode PreviewPane 移植）的打开状态 */
+  codeViewerSource:
+    | { type: "file"; title: string; path: string }
+    | { type: "text"; title: string; content: string; language: string; path?: string }
+    | { type: "patch"; title: string; path: string; patch: string }
+    | { type: "multi-file-diff"; title: string; path?: string }
+    | null;
+  openCodeViewer: (
+    source:
+      | { type: "file"; title: string; path: string }
+      | { type: "text"; title: string; content: string; language: string; path?: string }
+      | { type: "patch"; title: string; path: string; patch: string }
+      | { type: "multi-file-diff"; title: string; path?: string }
+  ) => void;
+  closeCodeViewer: () => void;
 }
 
 const getInitialTheme = (): ThemeMode => {
@@ -151,6 +166,7 @@ export const useAppStore = create<AppState>((set) => ({
   locale: getInitialLocale(),
   isTerminalOpen: false,
   isSettingsOpen: false,
+  codeViewerSource: null,
   isSidebarOpen: getInitialSidebarOpen(),
   currentView: "workbench",
   thinkingLevel: getInitialThinkingLevel(),
@@ -358,6 +374,8 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
 
+  openCodeViewer: (source) => set({ codeViewerSource: source }),
+  closeCodeViewer: () => set({ codeViewerSource: null }),
   setTerminalOpen: (open) => set({ isTerminalOpen: open }),
   toggleTerminal: () => set((s) => ({ isTerminalOpen: !s.isTerminalOpen })),
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),

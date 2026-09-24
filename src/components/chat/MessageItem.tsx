@@ -157,10 +157,6 @@ function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
   // ===================== 助手消息分支 =====================
   return (
     <div className="group/assistant-row flex flex-col items-start w-full">
-      <div className="flex items-center gap-2 mb-1.5 text-xs text-[var(--text-dim)] font-medium">
-        <span className="text-[var(--text)] font-semibold">ReinAgent</span>
-      </div>
-
       <div className="w-full text-sm text-[var(--text)] leading-relaxed">
         <div className="md">
           <MarkdownText text={message.text} />

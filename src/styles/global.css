@@ -33,6 +33,10 @@
   --capsule-bg: #282b36;
   --capsule-border: #383d4c;
   --capsule-shadow: 0 4px 24px rgba(0,0,0,0.3);
+  --diff-added: #4ade80;
+  --diff-removed: #f87171;
+  --diff-added-bg: rgba(74, 222, 128, 0.12);
+  --diff-removed-bg: rgba(248, 113, 113, 0.13);
   --chip-bg: #1e2028;
   --chip-border: #2c313d;
   --chip-hover: #262830;
@@ -79,6 +83,10 @@
   --capsule-bg: #ffffff;
   --capsule-border: #d1d7e2;
   --capsule-shadow: 0 4px 24px rgba(0,0,0,0.08);
+  --diff-added: #16a34a;
+  --diff-removed: #dc2626;
+  --diff-added-bg: rgba(22, 163, 74, 0.12);
+  --diff-removed-bg: rgba(220, 38, 38, 0.10);
   --chip-bg: #ffffff;
   --chip-border: #e2e8f0;
   --chip-hover: #f1f5f9;
@@ -696,4 +704,456 @@ select option {
 }
 .navigator-rail::-webkit-scrollbar {
   display: none;
+}
+
+/* ---------- 回合工作状态条（对齐 ZCode AssistantHistoryStatus） ---------- */
+.turn-group {
+  display: flex;
+  flex-direction: column;
+}
+.turn-header-row {
+  margin: 2px 0 10px;
+}
+.turn-header-trigger {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 0 0 6px;
+  margin-bottom: 8px;
+  border: none;
+  border-bottom: 1px solid var(--border);
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
+  text-align: left;
+}
+.turn-header-trigger:disabled {
+  cursor: default;
+}
+.turn-header-label {
+  font-weight: 500;
+}
+.turn-header-row[data-state="running"] .turn-header-label {
+  color: var(--accent);
+}
+.turn-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 12px;
+}
+.turn-assistant-activity {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.turn-intermediate-text {
+  margin: 0 0 2px 2px;
+}
+
+/* ---------- 思考块（对齐 ZCode Reasoning） ---------- */
+.thinking-block {
+  margin-left: 2px;
+}
+.thinking-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.thinking-duration {
+  opacity: 0.85;
+}
+.thinking-body {
+  margin: 6px 0 0 2px;
+  padding-left: 12px;
+  padding-right: 4px;
+  border-left: 2px solid var(--border);
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+/* 思考正文：Markdown 渲染（对齐 LiveAgent），沿用暗色弱化层级 */
+.thinking-text {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-dim);
+  opacity: 0.85;
+}
+
+/* ---------- 工具卡类型化扩展（文件 chip / diff 统计 / 终端卡） ---------- */
+.tool-kind-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+.tool-kind {
+  flex: 0 0 auto;
+  font-weight: 500;
+  color: var(--text-dim);
+}
+.tool-kind[data-running] {
+  color: var(--accent);
+}
+.tool-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  max-width: 320px;
+  padding: 1px 6px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+}
+.tool-file-name {
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-size: 11.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.tool-diff {
+  display: inline-flex;
+  gap: 6px;
+  font-size: 11.5px;
+  flex: 0 0 auto;
+}
+.diff-added {
+  color: var(--diff-added);
+}
+.diff-removed {
+  color: var(--diff-removed);
+}
+.exec-body {
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.exec-cmd {
+  margin: 0;
+  padding: 6px 8px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-size: 12px;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.exec-output {
+  margin: 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 130px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.tool-card[data-status="error"] .tool-kind {
+  color: var(--danger);
+}
+
+/* 纯文本回复的状态条（无可折叠内容，不显示箭头） */
+.turn-header-static {
+  cursor: default;
+}
+
+/* ---------- 终端命令摘要（header 内联，收起即可见命令） ---------- */
+.tool-cmd-inline {
+  min-width: 0;
+  max-width: 340px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-size: 11.5px;
+  color: var(--text);
+  direction: rtl;
+  text-align: left;
+}
+
+/* ---------- 编辑/写入 diff 视图（对齐 ZCode EditInlineDiffContent 的轻量形态） ---------- */
+.diff-wrap {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.diff-view {
+  max-height: 240px;
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 6px 0;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  font-size: 12px;
+  line-height: 1.55;
+}
+.diff-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0 8px;
+}
+.diff-line-added {
+  background: var(--diff-added-bg);
+}
+.diff-line-removed {
+  background: var(--diff-removed-bg);
+}
+.diff-line-num {
+  flex: 0 0 auto;
+  min-width: 2em;
+  text-align: right;
+  color: var(--text-dim);
+  opacity: 0.6;
+  user-select: none;
+}
+.diff-line-sign {
+  flex: 0 0 auto;
+  width: 1ch;
+  user-select: none;
+}
+.diff-line-added .diff-line-sign {
+  color: var(--diff-added);
+}
+.diff-line-removed .diff-line-sign {
+  color: var(--diff-removed);
+}
+.diff-line-text {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text);
+}
+
+/* ---------- 「查阅」聚合卡（对齐 ZCode ExploreToolCallBlock） ---------- */
+.tool-head-toggle {
+  width: 100%;
+  cursor: pointer;
+  border: none;
+  background: transparent;
+  text-align: left;
+  padding: 0;
+}
+.explore-bucket {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.explore-children {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+}
+.explore-child {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 3px 0 3px 10px;
+  border-left: 2px solid var(--border);
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.explore-child-kind {
+  flex: 0 0 auto;
+  color: var(--text-dim);
+}
+.explore-child-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
+  color: var(--text);
+}
+.explore-child-dir {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: var(--text-dim);
+  opacity: 0.7;
+}
+
+/* ---------- ZCode PreviewPane 移植的 token 桥接 ----------
+   移植组件使用 ZCode 语义工具类（bg-panel/text-foreground-subtle 等），
+   这里通过 @theme inline 映射到宿主语义变量，跟随 data-theme 换肤。 */
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-foreground-subtle: var(--text-secondary);
+  --color-foreground-subtlest: var(--text-dim);
+  --color-border: var(--border);
+  --color-panel: var(--bg-elev);
+  --color-card: var(--bg-card);
+  --color-surface: var(--surface);
+  --color-surface-hover: var(--surface-hover);
+  --color-hover: var(--bg-hover);
+  --color-input: var(--border);
+  --color-popover: var(--bg-elev);
+  --color-popover-foreground: var(--text);
+  --color-diff-added: var(--diff-added);
+  --color-diff-removed: var(--diff-removed);
+  --text-ui-base: 13px;
+  --text-ui-sm: 12px;
+  --text-ui-xs: 11px;
+  --text-ui-lg: 14px;
+  --text-ui-xl: 16px;
+  --text-ui-caption: 11px;
+}
+
+
+/* ---------- 文件更改摘要卡（对齐 ZCode ConversationFileSummaryPanel 布局） ---------- */
+.turn-file-summary {
+  margin: 10px 0 2px;
+}
+.turn-file-summary-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0 2px 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12.5px;
+  text-align: left;
+}
+.turn-file-summary-title {
+  font-weight: 500;
+  color: var(--text);
+}
+.turn-file-summary-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 4px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+.turn-file-summary-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 6px 8px;
+  border-radius: 6px;
+  font-size: 12.5px;
+  color: var(--text-dim);
+}
+.turn-file-summary-row:hover {
+  background: var(--surface-hover);
+}
+.turn-file-summary-badge {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  background: var(--brand-dim);
+  color: var(--brand);
+  font-size: 10.5px;
+  font-weight: 600;
+}
+.turn-file-summary-name {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 550;
+  color: var(--text);
+}
+.turn-file-summary-dir {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  opacity: 0.75;
+}
+.turn-file-summary-row .tool-diff {
+  flex: 0 0 auto;
+  gap: 6px;
+  font-size: 12px;
+}
+.turn-file-summary-action {
+  flex: 0 0 auto;
+  padding: 2px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+.turn-file-summary-action:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+
+/* ---------- ZCode 工具卡运行态扫光（animated-gradient-text） ---------- */
+:root, [data-theme="dark"] {
+  --animated-gradient-text-strong: rgba(255, 255, 255, 1);
+  --animated-gradient-text-soft: rgba(255, 255, 255, 0.2);
+}
+[data-theme="light"] {
+  --animated-gradient-text-strong: rgba(10, 10, 10, 1);
+  --animated-gradient-text-soft: rgba(10, 10, 10, 0.22);
+}
+.animated-gradient-text {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--animated-gradient-text-strong) 0%,
+    var(--animated-gradient-text-strong) 34%,
+    var(--animated-gradient-text-soft) 50%,
+    var(--animated-gradient-text-strong) 66%,
+    var(--animated-gradient-text-strong) 100%
+  );
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-flow 4s linear infinite;
+  will-change: background-position;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+@keyframes gradient-flow {
+  0% { background-position: 0% 0%; }
+  100% { background-position: -300% 0%; }
 }

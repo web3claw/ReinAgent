@@ -4,6 +4,7 @@ import { useConversation } from "./lib/chat/useConversation";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
 import { ConversationNavigator } from "./components/chat/ConversationNavigator";
+import { CodeViewerPaneHost } from "./preview/CodeViewerPaneHost";
 import { LexicalComposer } from "./components/chat/LexicalComposer";
 import { EmptyState } from "./components/chat/EmptyState";
 import { TerminalPane } from "./components/terminal/TerminalPane";
@@ -66,7 +67,10 @@ export default function App() {
 
   const currentProvider = providers.find((p) => p.id === activeProviderId);
   const currentModel: ModelItem | null = currentProvider?.models.find((m) => m.id === activeModelId) || null;
-  const isReasoningSupported = !!(currentModel?.effort && currentModel.effort.supportedLevels?.length > 0);
+  // 推理能力兜底（对齐 LiveAgent）：未声明 effort 元数据的模型乐观视为支持思考
+  // （等级选择器可用、默认档位走全局 thinkingLevel、可切 off 关闭）。
+  // 思考内容仍然只渲染服务端真实流下来的，绝不伪造。
+  const isReasoningSupported = true;
 
   // 当切换模型或配置加载完成时，若模型支持 effort 且定义了 defaultLevel，自动切换全局 thinkingLevel
   const prevModelIdRef = useRef<string>(activeModelId);
@@ -84,10 +88,6 @@ export default function App() {
             ? currentModel.effort.defaultLevel
             : supported[0] || "low";
         useAppStore.getState().setThinkingLevel(nextLevel);
-      }
-    } else if (!isReasoningSupported) {
-      if (useAppStore.getState().thinkingLevel !== "off") {
-        useAppStore.getState().setThinkingLevel("off");
       }
     }
   }, [activeModelId, isReasoningSupported, currentModel?.effort?.defaultLevel, currentModel?.effort?.supportedLevels]);
@@ -402,7 +402,12 @@ export default function App() {
               <div ref={chatScrollRef} className="flex-1 overflow-y-auto min-h-0">
               <div className="min-h-full flex flex-col justify-between">
                 <div className="w-full px-4 sm:px-6 md:px-10 pt-3 pb-36 flex-1">
-                  <MessageList messages={state.messages} onEditSend={handleSend} onRetry={handleRetry} />
+                  <MessageList
+                    messages={state.messages}
+                    isStreaming={isStreaming}
+                    onEditSend={handleSend}
+                    onRetry={handleRetry}
+                  />
                 </div>
                 <div className="sticky bottom-0 w-full bg-[var(--bg)] px-4 sm:px-6 md:px-10 pb-2.5 pt-1 z-10 shrink-0">
                   <LexicalComposer
@@ -432,6 +437,9 @@ export default function App() {
           </div>
         )}
       </div>
+
+      {/* 右侧代码/变更预览面板（ZCode PreviewPane 移植） */}
+      <CodeViewerPaneHost workspacePath={effectiveWorkspaceRoot || undefined} />
     </div>
   );
 }
