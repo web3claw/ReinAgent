@@ -9,6 +9,7 @@ import { PlatformProvider } from "./hooks/usePlatform";
 import { PreviewPane } from "./PreviewPane";
 import { previewPlatform } from "./previewPlatform";
 import type { CodeViewerSource } from "./lib/codeViewer";
+import { resolveWorkspacePath } from "../lib/agent/workspace";
 import { useAppStore } from "../store/useAppStore";
 
 type CodeViewerSourceInput = Extract<
@@ -20,13 +21,21 @@ function buildSource(
   input: NonNullable<CodeViewerSourceInput>,
   workspacePath?: string
 ): CodeViewerSource {
+  // 工具参数里的路径可能是相对路径：按会话工作区根目录解析成绝对路径，
+  // 与 Agent 写入文件时使用的解析保持一致（否则后端会兜底拼到 DefaultProject）。
+  const resolvePath = (rawPath?: string): string | undefined => {
+    if (!rawPath) return undefined;
+    if (!workspacePath) return rawPath;
+    return resolveWorkspacePath(rawPath, workspacePath);
+  };
+  const resolvedPath = resolvePath(input.path);
   if (input.type === "text") {
     return {
       type: "text",
       title: input.title,
       content: input.content,
       language: input.language as BundledLanguage,
-      ...(input.path ? { path: input.path } : {}),
+      ...(resolvedPath ? { path: resolvedPath } : {}),
       ...(workspacePath ? { workspacePath } : {}),
     };
   }
@@ -34,7 +43,7 @@ function buildSource(
     return {
       type: "file",
       title: input.title,
-      path: input.path,
+      path: resolvedPath ?? input.path,
       ...(workspacePath ? { workspacePath } : {}),
     };
   }
@@ -46,7 +55,7 @@ function buildSource(
     title: input.title,
     content: fallbackText,
     language: "diff",
-    ...(input.path ? { path: input.path } : {}),
+    ...(resolvedPath ? { path: resolvedPath } : {}),
     ...(workspacePath ? { workspacePath } : {}),
   };
 }
