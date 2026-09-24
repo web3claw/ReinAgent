@@ -1,7 +1,7 @@
 /**
  * tools —— ReinAgent 的工具注册表与硬闸（S7-3）。
  * =====================================================================
- * 本模块提供 A1 决策定的 **两个零副作用工具**（`get_current_time` / `calculate`），
+ * 本模块提供文件与命令类工具（`read_file` / `write_file` / `edit_file` / `list_dir` / `exec_command`）。
  * 以及「工具结果 8KB 限长」这一安全边界（规格 §6）与 `DEFAULT_MAX_STEPS` 步数上限。
  *
  * 与库的分工（务必遵守，别重复实现）：
@@ -21,7 +21,6 @@
  *   `node:fs/promises`，Vite 打包失败且报错指向 aws-sdk，极难定位。
  *   `typebox` 本身零依赖、ESM、可安全进浏览器 bundle。
  *
- * 性能纪律：`calculate` 的求值器是**手写递归下降**（单趟线性、无回溯正则），
  *   并用「长度上限 256 + 括号深度上限 32」双重硬闸保证绝不栈溢出、耗时毫秒级。
  *
  * 类型声明见同目录 `tools.d.ts`；编译期形状证明见 `tools.types.ts`；
@@ -34,13 +33,9 @@ import { resolveWorkspacePath, resolveWorkspaceRoot } from "./workspace.ts";
 /**
  * 工具硬闸上限（导出供测试与上层消费）。
  * - `maxResultBytes`：工具**返回给模型的文本内容**的 UTF-8 字节上限（安全边界 §6）。
- * - `maxExpressionLength`：`calculate` 表达式字符数上限（超长直接抛错，**不进求值器**）。
- * - `maxParenDepth`：`calculate` 括号嵌套深度上限（超深直接抛错）。
  */
 export const TOOL_LIMITS = Object.freeze({
   maxResultBytes: 8192,
-  maxExpressionLength: 256,
-  maxParenDepth: 32,
 });
 
 /**
@@ -94,7 +89,7 @@ function utf8SafeSlice(bytes, maxBytes) {
  *
  * ⚠️ 边界说明：截断只保护「工具返回给模型的内容」。工具**入参不做截断** ——
  *    改动入参会破坏 toolCall 与 toolResult 的配对语义；入参保护由各工具自己的
- *    限额承担（如 `calculate` 的 `maxExpressionLength`）。
+ *    校验逻辑承担（如 edit_file 的 target 唯一性检查）。
  *
  * @param {string} text 原始结果文本。
  * @param {Record<string, unknown>} [details] 追加到 `details` 的业务字段。
@@ -133,179 +128,6 @@ export function buildTextToolResult(text, details = {}) {
 // ---------------------------------------------------------------------------
 
 const WHITESPACE = new Set([" ", "\t", "\n", "\r"]);
-
-/**
- * 对一个受限算术表达式求值（手写递归下降，**禁止** `eval` / `new Function`）。
- *
- * 文法（只允许这些，其它任何字符一律抛错）：
- *   expr    := term (('+' | '-') term)*
- *   term    := factor (('*' | '/') factor)*
- *   factor  := '-' factor | primary
- *   primary := number | '(' expr ')'
- *   number  := digit+ ('.' digit+)?
- *
- * 特性：单趟线性扫描（无回溯正则），`(maxExpressionLength, maxParenDepth)` 双重硬闸
- * 保证不会栈溢出；除零或非有限结果均抛错（绝不返回 `Infinity` / `NaN`）。
- *
- * @param {unknown} expression 待求值表达式（应为字符串）。
- * @returns {number} 求值结果（有限数）。
- * @throws {TypeError} `expression` 非字符串时。
- * @throws {Error} 超长 / 超深 / 非法字符 / 括号不配对 / 除零 / 非有限结果时。
- */
-function evaluateExpression(expression) {
-  if (typeof expression !== "string") {
-    throw new TypeError("calculate: expression 必须是字符串。");
-  }
-  if (expression.length > TOOL_LIMITS.maxExpressionLength) {
-    throw new Error(
-      `calculate: 表达式过长（${expression.length} 字符，上限 ${TOOL_LIMITS.maxExpressionLength}）。`,
-    );
-  }
-
-  const src = expression;
-  let pos = 0;
-  let parenDepth = 0;
-
-  /** 跳过空白字符（不改动非空白字符的语义）。 */
-  function skipWhitespace() {
-    while (pos < src.length && WHITESPACE.has(src[pos])) {
-      pos += 1;
-    }
-  }
-
-  /** 解析数值字面量 `digit+ ('.' digit+)?`。 */
-  function parseNumber() {
-    const start = pos;
-    let sawDigit = false;
-    let sawDot = false;
-    while (pos < src.length) {
-      const ch = src[pos];
-      if (ch >= "0" && ch <= "9") {
-        sawDigit = true;
-        pos += 1;
-        continue;
-      }
-      if (ch === ".") {
-        if (sawDot) {
-          break; // 第二个小数点 → 结束本字面量，交由上层报「意外字符」。
-        }
-        const next = src[pos + 1];
-        if (!(next >= "0" && next <= "9")) {
-          break; // 孤立的小数点不构成字面量。
-        }
-        sawDot = true;
-        pos += 1;
-        continue;
-      }
-      break;
-    }
-    if (!sawDigit) {
-      const bad = pos < src.length ? JSON.stringify(src[pos]) : "<表达式末尾>";
-      throw new Error(`calculate: 位置 ${start} 处期望数字字面量，实际 ${bad}。`);
-    }
-    const token = src.slice(start, pos);
-    const value = Number(token);
-    if (!Number.isFinite(value)) {
-      throw new Error(`calculate: 数值字面量 "${token}" 不是有限数。`);
-    }
-    return value;
-  }
-
-  /** primary := number | '(' expr ')' */
-  function parsePrimary() {
-    skipWhitespace();
-    if (pos >= src.length) {
-      throw new Error("calculate: 表达式意外结束。");
-    }
-    const ch = src[pos];
-    if (ch === "(") {
-      parenDepth += 1;
-      if (parenDepth > TOOL_LIMITS.maxParenDepth) {
-        throw new Error(`calculate: 括号嵌套过深（超过 ${TOOL_LIMITS.maxParenDepth} 层）。`);
-      }
-      pos += 1;
-      const value = parseExpr();
-      skipWhitespace();
-      if (src[pos] !== ")") {
-        throw new Error(`calculate: 位置 ${pos} 处缺少右括号 ")"。`);
-      }
-      pos += 1;
-      parenDepth -= 1;
-      return value;
-    }
-    if (ch >= "0" && ch <= "9") {
-      return parseNumber();
-    }
-    throw new Error(`calculate: 位置 ${pos} 处出现非法字符 ${JSON.stringify(ch)}。`);
-  }
-
-  /** factor := '-' factor | primary （仅一元负号，不含一元正号）。 */
-  function parseFactor() {
-    skipWhitespace();
-    if (src[pos] === "-") {
-      pos += 1;
-      return -parseFactor();
-    }
-    return parsePrimary();
-  }
-
-  /** term := factor (('*' | '/') factor)* */
-  function parseTerm() {
-    let value = parseFactor();
-    for (; ;) {
-      skipWhitespace();
-      const ch = src[pos];
-      if (ch === "*") {
-        pos += 1;
-        value *= parseFactor();
-      } else if (ch === "/") {
-        pos += 1;
-        const divisor = parseFactor();
-        if (divisor === 0) {
-          throw new Error("calculate: 除以零。");
-        }
-        value /= divisor;
-      } else {
-        break;
-      }
-    }
-    return value;
-  }
-
-  /** expr := term (('+' | '-') term)* */
-  function parseExpr() {
-    let value = parseTerm();
-    for (; ;) {
-      skipWhitespace();
-      const ch = src[pos];
-      if (ch === "+") {
-        pos += 1;
-        value += parseTerm();
-      } else if (ch === "-") {
-        pos += 1;
-        value -= parseTerm();
-      } else {
-        break;
-      }
-    }
-    return value;
-  }
-
-  skipWhitespace();
-  if (pos >= src.length) {
-    throw new Error("calculate: 表达式为空。");
-  }
-  const value = parseExpr();
-  skipWhitespace();
-  if (pos < src.length) {
-    throw new Error(`calculate: 位置 ${pos} 处出现意外字符 ${JSON.stringify(src[pos])}。`);
-  }
-  if (!Number.isFinite(value)) {
-    throw new Error("calculate: 结果不是有限数（溢出或未定义）。");
-  }
-  return value;
-}
-
 // ---------------------------------------------------------------------------
 // 工具定义
 // ---------------------------------------------------------------------------
@@ -324,69 +146,6 @@ export function createTools(options) {
   const getWorkspace = typeof opts.getWorkspaceRoot === "function"
     ? opts.getWorkspaceRoot
     : () => resolveWorkspaceRoot(opts.workspaceRoot);
-
-  const getCurrentTime = {
-    name: "get_current_time",
-    label: "获取当前时间",
-    description:
-      "获取当前的本地日期与时间。无参数。返回人类可读的本地时间、ISO 8601 时间以及时区偏移。",
-    parameters: Type.Object({}),
-    /**
-     * @param {string} _toolCallId 调用 id（本例不使用）。
-     * @returns {Promise<import("./tools.js").TextToolResult>}
-     */
-    execute: async (_toolCallId) => {
-      const date = now();
-      const iso = date.toISOString();
-      const pad2 = (n) => String(n).padStart(2, "0");
-      const local =
-        `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())} ` +
-        `${pad2(date.getHours())}:${pad2(date.getMinutes())}:${pad2(date.getSeconds())}`;
-      // getTimezoneOffset() 返回「UTC - 本地」的分钟数（西为负），取反得到「本地位于 UTC 东侧」的分钟数。
-      const timeZoneOffsetMinutes = -date.getTimezoneOffset();
-      const sign = timeZoneOffsetMinutes >= 0 ? "+" : "-";
-      const absOffset = Math.abs(timeZoneOffsetMinutes);
-      const offsetText = `${sign}${pad2(Math.floor(absOffset / 60))}:${pad2(absOffset % 60)}`;
-      const text = `当前本地时间：${local}（UTC${offsetText}）\nISO 时间：${iso}`;
-
-      return buildTextToolResult(text, {
-        iso,
-        local,
-        timeZoneOffsetMinutes,
-      });
-    },
-  };
-
-  const calculate = {
-    name: "calculate",
-    label: "计算表达式",
-    description:
-      "对一个算术表达式精确求值。只支持十进制数值、四则运算 + - * /、圆括号与一元负号；" +
-      "不支持变量、函数或其它字符。除以零会报错。",
-    parameters: Type.Object(
-      {
-        expression: Type.String({
-          description: '要计算的算术表达式，例如 "(3+4)*5" 或 "1234 * 5678"。',
-        }),
-      },
-      { required: ["expression"] },
-    ),
-    /**
-     * @param {string} _toolCallId 调用 id（本例不使用）。
-     * @param {{ expression: string }} params 参数对象（已通过 TypeBox 校验）。
-     * @returns {Promise<import("./tools.js").TextToolResult>}
-     */
-    execute: async (_toolCallId, params) => {
-      // 库会把 params 按 schema 塞进来，这里做防御性取值。
-      const expr = String(params?.expression ?? "");
-      const value = evaluateExpression(expr);
-      const resultText = String(value);
-      return buildTextToolResult(resultText, {
-        expression: expr,
-        result: value,
-      });
-    },
-  };
 
   const readFile = {
     name: "read_file",
@@ -491,7 +250,7 @@ export function createTools(options) {
     },
   };
 
-  return [getCurrentTime, calculate, readFile, writeFile, editFile, listDir, execCommand];
+  return [readFile, writeFile, editFile, listDir, execCommand];
 }
 
 /**

@@ -154,14 +154,14 @@ test("陈旧流隔离（工具事件）：旧轮晚到的 toolcall_end / 工具�
         assistantMessageEvent: {
           type: "toolcall_end",
           contentIndex: 0,
-          toolCall: { id: "stale-call", name: "get_current_time", arguments: {} },
+          toolCall: { id: "stale-call", name: "list_dir", arguments: {} },
         },
       });
-      calls[0].emit({ type: "tool_execution_start", toolCallId: "stale-call", toolName: "get_current_time", args: {} });
+      calls[0].emit({ type: "tool_execution_start", toolCallId: "stale-call", toolName: "list_dir", args: {} });
       calls[0].emit({
         type: "tool_execution_end",
         toolCallId: "stale-call",
-        toolName: "get_current_time",
+        toolName: "list_dir",
         result: { content: [{ type: "text", text: "STALE-RESULT" }], details: {} },
         isError: false,
       });
@@ -170,7 +170,7 @@ test("陈旧流隔离（工具事件）：旧轮晚到的 toolcall_end / 工具�
         message: {
           role: "toolResult",
           toolCallId: "stale-call",
-          toolName: "get_current_time",
+          toolName: "list_dir",
           content: [{ type: "text", text: "STALE-RESULT" }],
           isError: false,
         },

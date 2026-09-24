@@ -10,6 +10,7 @@ import { HoverCard } from "radix-ui";
 import type { ContextUsageData } from "../../lib/chat/contextUsage";
 import { formatCompactTokens } from "../../lib/chat/contextUsage";
 import { useTranslation, type TranslationKey } from "../../i18n";
+import { useAppStore } from "../../store/useAppStore";
 
 const TONE_OPS = [100, 78, 58, 42, 28];
 
@@ -30,6 +31,7 @@ function ringColor(pct: number): string {
 
 export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
   const { t, locale } = useTranslation();
+  const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   const pct = Math.min(100, Math.max(0, data.percent));
   const usedText = formatCompactTokens(data.used, locale);
   const totalText = formatCompactTokens(data.total, locale);
@@ -68,8 +70,8 @@ export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
         >
           {/* 标题行 */}
           <div className="flex items-center justify-between mb-2">
-            <span className="text-[13px] font-medium text-[var(--text)]">{t("contextUsageTitle")}</span>
-            <span className="font-mono text-xs text-[var(--text-secondary)]">
+            <span className="text-[15px] font-medium text-[var(--text)]">{t("contextUsageTitle")}</span>
+            <span className="font-mono text-[14px] text-[var(--text-secondary)]">
               {usedText}/{totalText}（{pct.toFixed(1)}%）
             </span>
           </div>
@@ -92,21 +94,49 @@ export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
           </div>
 
           {/* 分类明细行：彩点 + 名称 + 百分比 */}
-          <div className="mt-2 flex flex-col gap-1">
-            {sorted.map((cat, rank) => (
-              <div key={cat.key} className="flex items-center justify-between gap-2 text-xs">
-                <span className="flex items-center gap-1.5 min-w-0">
-                  <span
-                    className="w-2 h-2 rounded-sm shrink-0 border border-[var(--border)]"
-                    style={{ backgroundColor: tone(rank) }}
-                  />
-                  <span className="truncate text-[var(--text-secondary)]">{t(cat.labelKey as TranslationKey)}</span>
-                </span>
-                <span className="font-mono tabular-nums text-[var(--text-secondary)]">
-                  {cat.percent.toFixed(1)}%
-                </span>
-              </div>
-            ))}
+          <div className="mt-2 flex flex-col gap-2">
+            {sorted.map((cat, rank) => {
+              const clickable = typeof cat.buildContent === "function";
+              const RowTag = (clickable ? "button" : "div") as "button";
+              return (
+                <RowTag
+                  key={cat.key}
+                  {...(clickable
+                    ? {
+                        type: "button" as const,
+                        onClick: () => {
+                          const content = cat.buildContent!();
+                          const type = cat.key === "systemTools" ? "json" : "markdown";
+                          openCodeViewer({
+                            type: "text",
+                            title: `${t("contextUsageTitle")} · ${t(cat.labelKey as TranslationKey)}`,
+                            content,
+                            language: cat.language ?? type,
+                          });
+                        },
+                      }
+                    : {})}
+                  className={`flex items-center justify-between gap-2 text-[15px] w-full text-left ${
+                    clickable ? "cursor-pointer rounded-md px-1 -mx-1 hover:bg-[var(--surface-hover)]" : ""
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 min-w-0">
+                    <span
+                      className="w-2 h-2 rounded-sm shrink-0 border border-[var(--border)]"
+                      style={{ backgroundColor: tone(rank) }}
+                    />
+                    <span
+                      className={`truncate ${clickable ? "text-[var(--text)]" : "text-[var(--text-secondary)]"}`}
+                    >
+                      {t(cat.labelKey as TranslationKey)}
+                    </span>
+                  </span>
+                  <span className="font-mono tabular-nums text-[var(--text-secondary)]">
+                    {cat.percent.toFixed(1)}%
+                  </span>
+                </RowTag>
+              );
+            })}
           </div>
         </HoverCard.Content>
       </HoverCard.Portal>

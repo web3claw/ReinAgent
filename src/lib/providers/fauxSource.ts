@@ -28,7 +28,7 @@ const FAUX_TOKEN_SIZE = { min: 1, max: 4 };
 const FAUX_TOOL_CALL_ID = "faux-call-1";
 
 /** 演示模式下调用的工具名（与 `tools.js` 注册的 `get_current_time` 对齐）。 */
-const FAUX_TOOL_NAME = "get_current_time";
+const FAUX_TOOL_NAME = "list_dir";
 
 let fauxModule: Promise<FauxModule> | null = null;
 let fauxCore: Promise<FauxCore> | null = null;

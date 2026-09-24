@@ -378,7 +378,7 @@ test("9 · ★ maxSteps 行为化：显式步数硬闸真被消费（=1 中断 v
 
   // 两步脚本：第 1 步发起工具调用，第 2 步给出最终文本。
   const script = () => [
-    faux.fauxAssistantMessage([faux.fauxToolCall("get_current_time", {}, { id: "s1" })]),
+    faux.fauxAssistantMessage([faux.fauxToolCall("list_dir", { path: "." }, { id: "s1" })]),
     faux.fauxAssistantMessage([faux.fauxText(FINAL)]),
   ];
 

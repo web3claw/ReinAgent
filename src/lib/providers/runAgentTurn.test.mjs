@@ -154,7 +154,7 @@ test("1 · faux 分支端到端：工具闭环（M4）+ 演示正文 == buildDem
   assert.ok(toolCallAssistant, "应存在一条带 toolCall 的 assistant（faux 首轮发起工具调用）");
 
   const toolCall = toolCallAssistant.content.find((b) => b && b.type === "toolCall");
-  assert.equal(toolCall.name, "get_current_time", "调用的工具名应为 get_current_time");
+  assert.equal(toolCall.name, "list_dir", "调用的工具名应为 list_dir");
   assert.equal(toolCall.id, "faux-call-1", "工具调用 id 应为固定的 faux-call-1（确定性）");
 
   const callIndex = result.messages.indexOf(toolCallAssistant);
@@ -162,10 +162,10 @@ test("1 · faux 分支端到端：工具闭环（M4）+ 演示正文 == buildDem
   const toolResult = result.messages.slice(callIndex + 1).find((m) => m.role === "toolResult");
   assert.ok(toolResult, "toolCall 之后应跟随一条 toolResult（证明库执行了被注入的工具）");
   assert.equal(toolResult.toolCallId, toolCall.id, "toolResult.toolCallId 必须与 toolCall.id 配对");
-  assert.notEqual(
+  assert.equal(
     toolResult.isError,
     true,
-    "工具结果不得为 isError —— 唯有 getTools() 真被注入且 get_current_time 执行成功才会如此",
+    "Node 下无 Tauri，list_dir 的 execute 应如实报错（getTools 已注入的证据）",
   );
 
   // ---- 正文 == buildDemoReply(prompt)（镜像 fauxSource.ts 的合成回复模板）----

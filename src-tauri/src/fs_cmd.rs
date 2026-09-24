@@ -49,8 +49,8 @@ pub async fn fs_write_file(path: String, content: String) -> Result<(), String> 
     .map_err(|e| e.to_string())?
 }
 
-/// 清理工作区白名单临时目录 `.reinagent-tmp/`（整目录递归删除，幂等）。
-/// 安防：目标必须是 workspace_root 下名为 `.reinagent-tmp` 的直接子目录。
+/// 清理工作区白名单临时目录 `<workspace>/.ReinAgent/temp/`（整目录递归删除，幂等）。
+/// 安防：目标路径必须严格等于 workspace_root/.ReinAgent/temp 两级，拒绝越界。
 #[derive(serde::Serialize)]
 pub struct CleanTmpResult {
     pub deleted_entries: u32,
@@ -73,10 +73,13 @@ pub async fn fs_clean_reinagent_tmp(
 ) -> Result<CleanTmpResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let root = resolve_path(&workspace_root);
-        let target = root.join(".reinagent-tmp");
-        // 白名单安防：目录名严格等于 .reinagent-tmp，拒绝空路径/根目录/越界目标。
-        if target.file_name().map(|n| n != ".reinagent-tmp").unwrap_or(true) {
-            return Err("清理目标必须是工作区下的 .reinagent-tmp 目录".into());
+        let target = root.join(".ReinAgent").join("temp");
+        // 白名单安防：路径必须严格等于 root/.ReinAgent/temp（两级均固定），拒绝越界。
+        if target.file_name().map(|n| n != "temp").unwrap_or(true) {
+            return Err("清理目标必须是工作区下的 .ReinAgent/temp 目录".into());
+        }
+        if target.parent().map(|p| p.file_name().map(|n| n != ".ReinAgent").unwrap_or(true)).unwrap_or(true) {
+            return Err("清理目标必须是工作区下的 .ReinAgent/temp 目录".into());
         }
         let meta = match fs::metadata(&target) {
             // 目录不存在：幂等成功（无事可清）。

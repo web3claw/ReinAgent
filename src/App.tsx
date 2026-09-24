@@ -176,6 +176,41 @@ export default function App() {
     const output = Number(usage?.output ?? 0);
     const used = input + cacheRead + output;
     const hitRate = input + cacheRead > 0 ? cacheRead / (input + cacheRead) : undefined;
+    // 明细行点击查看真实内容：懒构建（点开才算），与请求实际发送的内容一致（No-Fallback）。
+    const buildMessagesExport = (): string => {
+      const parts: string[] = [];
+      for (const m of state.messages) {
+        if (m.role === "tool") {
+          parts.push(`### 工具调用：${m.toolName ?? "unknown"}（${m.status}）`);
+          const argsText = m.args ? JSON.stringify(m.args) : "";
+          if (argsText) parts.push("\u0060\u0060\u0060json\n" + argsText + "\n\u0060\u0060\u0060");
+          if (m.resultText) parts.push("结果：\n\u0060\u0060\u0060\n" + m.resultText + "\n\u0060\u0060\u0060");
+          parts.push("");
+          continue;
+        }
+        const roleLabel = m.role === "user" ? "用户" : "助手";
+        parts.push(`### [${roleLabel}]`);
+        if (m.thinking) parts.push("> 思考：\n> " + m.thinking.split("\n").join("\n> "));
+        if (m.text) parts.push(m.text);
+        parts.push("");
+      }
+      return parts.join("\n");
+    };
+    const buildSystemPromptExport = (): string =>
+      DEFAULT_SYSTEM_PROMPT +
+      (effectiveWorkspaceRoot
+        ? `\n\nCurrent workspace root: ${effectiveWorkspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
+        : "");
+    const buildToolsExport = (): string => {
+      const tools = getTools({ workspaceRoot: effectiveWorkspaceRoot });
+      return tools
+        .map((tool: { name?: string; description?: string; inputSchema?: unknown }) => {
+          const schema = tool.inputSchema ? JSON.stringify(tool.inputSchema, null, 2) : "{}";
+          return `## ${tool.name ?? "?"}\n\n${tool.description ?? ""}\n\n\u0060\u0060\u0060json\n${schema}\n\u0060\u0060\u0060`;
+        })
+        .join("\n\n---\n\n");
+    };
+
     return buildContextUsageData({
       used,
       total: currentModel?.contextWindow,
@@ -183,6 +218,11 @@ export default function App() {
       messages: state.messages,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       toolsJson: JSON.stringify(getTools({ workspaceRoot: effectiveWorkspaceRoot })),
+      categoryContent: {
+        messages: { buildContent: buildMessagesExport, language: "markdown" },
+        systemPrompt: { buildContent: buildSystemPromptExport, language: "markdown" },
+        systemTools: { buildContent: buildToolsExport, language: "json" },
+      },
     });
   }, [state.messages, currentModel, effectiveWorkspaceRoot]);
 

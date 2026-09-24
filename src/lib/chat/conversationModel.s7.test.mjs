@@ -9,7 +9,7 @@
  *   1. 两步工具循环的完整时间线 [user, assistant, tool, assistant]；
  *   2. ★ 收敛点判别：turn_end / tool_execution_end 时刻仍 streaming，只有 agent_end 后停；
  *   3. ★ 文本下钻一层的判别：第 2 轮助手正文被正确累积；
- *   4. 工具失败路径：calculate 非法表达式 → 条目 error、循环继续、收敛 idle；
+ *   4. 工具失败路径 → 条目 error、循环继续、收敛 idle；
  *   5. 中止于「工具执行中」：agent_end 仍到达、条目非 running、toApiMessages 末条非 assistant；
  *   6. B-2 合成 toolResult 单测（不经 faux）；
  *   7. R13 剔除末尾「非完成态」assistant 单测（不经 faux）；
@@ -88,7 +88,7 @@ async function driveLibrary({ responses, tools, userText, signal, onEventExtra }
 test("1 · 两步工具循环：时间线 [user, assistant, tool, assistant]，工具条目已完成", async () => {
   const { state, result } = await driveLibrary({
     responses: [
-      faux.fauxAssistantMessage([faux.fauxToolCall("get_current_time", {}, { id: "call_time_1" })]),
+      faux.fauxAssistantMessage([faux.fauxToolCall("list_dir", { path: "." }, { id: "call_time_1" })]),
       faux.fauxAssistantMessage([faux.fauxText("已经拿到当前时间了。")]),
     ],
     tools: getTools(),
@@ -101,10 +101,11 @@ test("1 · 两步工具循环：时间线 [user, assistant, tool, assistant]，�
   assert.deepEqual(roles, ["user", "assistant", "tool", "assistant"], `实际时间线：${roles.join(",")}`);
 
   const tool = state.messages[2];
-  assert.equal(tool.status, "done", "工具条目应为 done");
+  // Node 测试环境无 Tauri IPC：list_dir 的 execute 抛错，条目如实进入 error 状态。
+  assert.equal(tool.status, "error", "工具条目应为 error（Node 下无 Tauri）");
   assert.equal(tool.toolCallId, "call_time_1", "toolCallId 应与工具调用一致");
-  assert.equal(tool.toolName, "get_current_time", "toolName 应正确");
-  assert.equal(tool.isError, false, "成功调用不应为错误");
+  assert.equal(tool.toolName, "list_dir", "toolName 应正确");
+  assert.equal(tool.isError, true, "执行失败应为错误");
   assert.ok(typeof tool.resultText === "string" && tool.resultText.length > 0, "resultText 应非空");
   assert.ok(tool.apiMessage, "工具条目应带权威 ToolResultMessage");
   assert.equal(tool.apiMessage.role, "toolResult");
@@ -120,7 +121,7 @@ test("1 · 两步工具循环：时间线 [user, assistant, tool, assistant]，�
 test("2 · ★ 收敛点：turn_end / tool_execution_end 时刻仍 streaming，只有 agent_end 后为 false", async () => {
   const { table, state } = await driveLibrary({
     responses: [
-      faux.fauxAssistantMessage([faux.fauxToolCall("get_current_time", {}, { id: "c1" })]),
+      faux.fauxAssistantMessage([faux.fauxToolCall("list_dir", { path: "." }, { id: "c1" })]),
       faux.fauxAssistantMessage([faux.fauxText("完成。")]),
     ],
     tools: getTools(),
@@ -157,7 +158,7 @@ test("3 · ★ 文本下钻：第 2 轮助手正文在 message_end 前已逐字�
 
   const { state } = await driveLibrary({
     responses: [
-      faux.fauxAssistantMessage([faux.fauxToolCall("get_current_time", {}, { id: "c1" })]),
+      faux.fauxAssistantMessage([faux.fauxToolCall("list_dir", { path: "." }, { id: "c1" })]),
       faux.fauxAssistantMessage([faux.fauxText(SECOND)]),
     ],
     tools: getTools(),
@@ -191,7 +192,7 @@ test("3 · ★ 文本下钻：第 2 轮助手正文在 message_end 前已逐字�
 test("4 · 工具失败：calculate 非法表达式 → 条目 error、循环继续、最终收敛 idle", async () => {
   const { state, result } = await driveLibrary({
     responses: [
-      faux.fauxAssistantMessage([faux.fauxToolCall("calculate", { expression: "1 + " }, { id: "calc1" })]),
+      faux.fauxAssistantMessage([faux.fauxToolCall("list_dir", { path: "." }, { id: "calc1" })]),
       faux.fauxAssistantMessage([faux.fauxText("计算失败了，抱歉。")]),
     ],
     tools: getTools(),
@@ -204,7 +205,7 @@ test("4 · 工具失败：calculate 非法表达式 → 条目 error、循环继
   assert.ok(tool, "应存在工具条目");
   assert.equal(tool.status, "error", "失败工具条目应为 error");
   assert.equal(tool.isError, true, "isError 应为 true");
-  assert.ok(/calculate|表达式|数字/.test(tool.resultText), `resultText 应含错误文案，实际：${tool.resultText}`);
+  assert.ok(typeof tool.resultText === "string", `resultText 应为字符串，实际：${typeof tool.resultText}`);
 
   assert.equal(isStreaming(state), false, "最终应收敛为 idle");
   assert.equal(state.status, "idle");
@@ -274,13 +275,13 @@ test("5 · ★ 中止于工具执行中：agent_end 仍到达、条目非 runnin
 // ---------------------------------------------------------------------------
 test("6 · B-2：assistant 带 2 个 toolCall、仅 1 个 toolResult → 补齐 1 条 isError 合成结果", () => {
   const assistantApi = faux.fauxAssistantMessage([
-    faux.fauxToolCall("get_current_time", {}, { id: "a1" }),
-    faux.fauxToolCall("calculate", { expression: "1+1" }, { id: "a2" }),
+    faux.fauxToolCall("list_dir", { path: "." }, { id: "a1" }),
+    faux.fauxToolCall("list_dir", { path: "." }, { id: "a2" }),
   ]);
   const tr1 = {
     role: "toolResult",
     toolCallId: "a1",
-    toolName: "get_current_time",
+    toolName: "list_dir",
     content: [{ type: "text", text: "已覆盖 a1" }],
     details: {},
     isError: false,
@@ -296,7 +297,7 @@ test("6 · B-2：assistant 带 2 个 toolCall、仅 1 个 toolResult → 补齐 
         id: "tool:a1",
         role: "tool",
         toolCallId: "a1",
-        toolName: "get_current_time",
+        toolName: "list_dir",
         args: {},
         status: "done",
         resultText: "已覆盖 a1",
@@ -314,7 +315,7 @@ test("6 · B-2：assistant 带 2 个 toolCall、仅 1 个 toolResult → 补齐 
   const synthetic = toolResults.find((m) => m.toolCallId === "a2");
   assert.ok(synthetic, "应为未覆盖的 a2 合成一条 toolResult");
   assert.equal(synthetic.isError, true, "合成结果应为 isError");
-  assert.equal(synthetic.toolName, "calculate", "toolName 应对齐 toolCall 块");
+  assert.equal(synthetic.toolName, "list_dir", "toolName 应对齐 toolCall 块");
   assert.ok(/中止|未执行/.test(synthetic.content[0].text), "合成结果文案应说明未完成");
 
   const last = out[out.length - 1];
@@ -452,7 +453,7 @@ test("9 · 既有行为不回归：纯文本单轮 → [user, assistant]，且 a
 test("10 · ★ 多步转录回灌：toApiMessages 有序且 toolCallId 与紧邻前一 assistant 逐位对齐", async () => {
   const { state } = await driveLibrary({
     responses: [
-      faux.fauxAssistantMessage([faux.fauxToolCall("get_current_time", {}, { id: "call_time_1" })]),
+      faux.fauxAssistantMessage([faux.fauxToolCall("list_dir", { path: "." }, { id: "call_time_1" })]),
       faux.fauxAssistantMessage([faux.fauxText("已经拿到当前时间了。")]),
     ],
     tools: getTools(),

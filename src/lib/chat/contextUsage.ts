@@ -13,6 +13,13 @@ export interface ContextUsageCategory {
   percent: number;
   /** 类别字符数（0 = 上下文中无此类内容，如实显示 0.0%） */
   chars?: number;
+  /**
+   * 懒构建该类别的真实内容文本（点击明细行在右侧面板查看）。
+   * 无内容的类别不提供此字段 → 行不可点击。
+   */
+  buildContent?: () => string;
+  /** 预览面板的语言标注（Shiki 高亮用） */
+  language?: string;
 }
 
 export interface ContextUsageData {
@@ -51,6 +58,8 @@ export function buildContextUsageData(params: {
   systemPrompt: string;
   /** 系统工具 schema JSON 文本 */
   toolsJson: string;
+  /** 各类别的真实内容懒构建（点击明细行在右侧面板查看；无内容不传 → 行不可点击） */
+  categoryContent?: Record<string, { buildContent: () => string; language?: string }>;
 }): ContextUsageData | null {
   const used = Number(params.used ?? 0);
   const total = Number(params.total ?? 0);
@@ -81,6 +90,7 @@ export function buildContextUsageData(params: {
     labelKey: c.labelKey,
     percent: c.chars > 0 ? Math.max(0.1, (c.chars / totalChars) * 100) : 0,
     chars: c.chars,
+    ...(params.categoryContent?.[c.key] ?? {}),
   }));
 
   return {

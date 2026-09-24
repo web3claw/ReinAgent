@@ -67,7 +67,6 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
         write_file: "写入",
         edit_file: "编辑",
         exec_command: "终端",
-        calculate: "计算",
       };
       return known[entry.toolName] ?? entry.toolName;
     },
@@ -192,7 +191,7 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
     );
   }
 
-  // ---- 通用兜底（calculate / 未知工具等）：参数摘要 + 结果折叠 ----
+  // ---- 通用兜底（未知工具等）：参数摘要 + 结果折叠 ----
   const argsText = formatToolArgs(entry.args);
   const hasResult = entry.resultText.length > 0;
 

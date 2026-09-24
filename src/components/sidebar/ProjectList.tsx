@@ -605,7 +605,7 @@ export function ProjectList({
                                   </span>
                                 )}
                                 {isConfirmingDelete ? (
-                                  <div className="flex items-center gap-1">
+                                  <div className="flex items-center gap-1" data-delete-confirm-btn="true">
                                     <button
                                       type="button"
                                       onClick={(e) => handleDeleteTaskClick(e, task.id)}
