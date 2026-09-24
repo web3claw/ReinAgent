@@ -1,10 +1,11 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import "./styles/global.css";
 import { useConversation } from "./lib/chat/useConversation";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
 import { ConversationNavigator } from "./components/chat/ConversationNavigator";
 import { CodeViewerPaneHost } from "./preview/CodeViewerPaneHost";
+import { SessionStatsBar } from "./components/chat/SessionStatsBar";
 import { LexicalComposer } from "./components/chat/LexicalComposer";
 import { EmptyState } from "./components/chat/EmptyState";
 import { TerminalPane } from "./components/terminal/TerminalPane";
@@ -16,6 +17,8 @@ import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
 import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
+import { buildContextUsageData } from "./lib/chat/contextUsage";
+import { getTools } from "./lib/agent/tools";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, PanelLeftClose, PanelLeft, Minus, Maximize2, X, AlertTriangle
@@ -130,8 +133,12 @@ export default function App() {
   // 消息滚动容器 ref：承载对话问题导航条（ConversationNavigator）的锚点测量与跳转
   const chatScrollRef = useRef<HTMLDivElement>(null);
 
+
   const effectiveWorkspaceRoot = resolveWorkspaceRoot(selectedProject);
   const isWorkspaceUnknown = !selectedProject && !userHome;
+
+
+
 
   const effectiveThinkingLevel =
     !isReasoningSupported || thinkingLevel === "off" || thinkingLevel === "default"
@@ -154,6 +161,74 @@ export default function App() {
   });
 
   // Keep ref of current messages and activeTaskId to prevent closure races and empty overrides
+  // 上下文容量：真实 usage（最后一条 assistant apiMessage）+ 模型声明 contextWindow + 字符估算分类
+  const contextUsage = useMemo(() => {
+    const lastAssistantApi = [...state.messages]
+      .reverse()
+      .find((m) => m.role === "assistant" && m.apiMessage)?.apiMessage as
+      | { usage?: { input?: number; output?: number; cacheRead?: number } }
+      | undefined;
+    const usage = lastAssistantApi?.usage;
+    // pi-ai 口径：input = prompt_tokens − cached（不含缓存命中部分）。
+    // 上下文实际消耗 = input + cacheRead + output；命中率 = cacheRead / (input + cacheRead)。
+    const input = Number(usage?.input ?? 0);
+    const cacheRead = Number(usage?.cacheRead ?? 0);
+    const output = Number(usage?.output ?? 0);
+    const used = input + cacheRead + output;
+    const hitRate = input + cacheRead > 0 ? cacheRead / (input + cacheRead) : undefined;
+    return buildContextUsageData({
+      used,
+      total: currentModel?.contextWindow,
+      hitRate,
+      messages: state.messages,
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      toolsJson: JSON.stringify(getTools({ workspaceRoot: effectiveWorkspaceRoot })),
+    });
+  }, [state.messages, currentModel, effectiveWorkspaceRoot]);
+
+  // 会话统计：轮数 / 工具步数 / LLM 与工具累计耗时 / token 用量（真实 usage 累加）
+  const sessionStats = useMemo(() => {
+    let turns = 0;
+    let steps = 0;
+    let llmMs = 0;
+    let toolMs = 0;
+    let input = 0;
+    let output = 0;
+    let cacheReadTokens = 0;
+    const now = Date.now();
+
+    for (const m of state.messages) {
+      if (m.role === "user") turns += 1;
+      const started = m.startedAt;
+      const running = m.status === "streaming" || m.status === "running";
+      const end = m.endedAt ?? (running ? now : undefined);
+      const duration = started !== undefined ? Math.max(0, (end ?? now) - started) : 0;
+      if (m.role === "assistant") llmMs += duration;
+      if (m.role === "tool") {
+        steps += 1;
+        toolMs += duration;
+      }
+      if (m.role === "assistant" && m.apiMessage) {
+        const usage = (m.apiMessage as { usage?: { input?: number; output?: number; cacheRead?: number } }).usage;
+        input += Number(usage?.input ?? 0);
+        output += Number(usage?.output ?? 0);
+        cacheReadTokens += Number(usage?.cacheRead ?? 0);
+      }
+    }
+
+    return {
+      turns,
+      steps,
+      contextPercent: contextUsage?.percent ?? 0,
+      llmMs,
+      toolMs,
+      inputTokens: input,
+      outputTokens: output,
+      cacheReadTokens,
+      hitRate: input + cacheReadTokens > 0 ? cacheReadTokens / (input + cacheReadTokens) : undefined,
+    };
+  }, [state.messages, contextUsage]);
+
   const currentMessagesRef = useRef(state.messages);
   currentMessagesRef.current = state.messages;
 
@@ -393,6 +468,7 @@ export default function App() {
                     providers={providers}
                     onSelectModel={handleSelectModel}
                     focusRequestTrigger={focusTrigger}
+                    contextUsage={contextUsage}
                   />
                 </div>
               </div>
@@ -421,6 +497,7 @@ export default function App() {
                     providers={providers}
                     onSelectModel={handleSelectModel}
                     hasMessages={true}
+                    contextUsage={contextUsage}
                   />
                 </div>
               </div>
@@ -429,6 +506,9 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* 会话统计行（对齐 LiveAgent 底部统计条）：轮数/步数 | 上下文 | LLM/工具耗时 | token 用量与命中率 */}
+        <SessionStatsBar stats={sessionStats} />
 
         {/* Terminal Pane */}
         {isTerminalOpen && (
@@ -440,6 +520,7 @@ export default function App() {
 
       {/* 右侧代码/变更预览面板（ZCode PreviewPane 移植） */}
       <CodeViewerPaneHost workspacePath={effectiveWorkspaceRoot || undefined} />
+
     </div>
   );
 }

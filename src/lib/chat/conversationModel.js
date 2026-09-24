@@ -27,11 +27,22 @@ export function initialState() {
  */
 export function restoreState(messages) {
   const list = Array.isArray(messages) ? messages : [];
+  // 恢复时消毒残留的「进行中」状态：流式/执行中的条目一旦经历重启或切换，
+  // 其执行早已中断——标记为 stopped 并补 endedAt（用当前时间），
+  // 否则统计里会按「开始到现在」累计出数小时的假耗时，状态条也会永远显示工作中。
+  const now = Date.now();
+  const sanitized = list.map((m) => {
+    if (!m || typeof m !== "object") return m;
+    if (m.status === "streaming" || m.status === "running") {
+      return { ...m, status: "stopped", endedAt: m.endedAt ?? now };
+    }
+    return m;
+  });
   return {
-    messages: list,
+    messages: sanitized,
     status: "idle",
     error: undefined,
-    nextMessageSeq: list.length,
+    nextMessageSeq: sanitized.length,
   };
 }
 

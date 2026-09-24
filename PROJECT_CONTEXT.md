@@ -408,9 +408,15 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 | 10 | 推理能力乐观兜底 | 无 effort 元数据模型视为支持思考（档位 Default/Low/Medium/High，可 off）；已声明模型仍严格按元数据过滤 | `App.tsx`、`LexicalComposer.tsx`、`modelFactory.ts` |
 | 11 | 右侧代码/变更预览面板（PreviewPane 完整移植） | 编辑/写入卡审查 → patch 模式（Shiki 高亮 diff）；读取卡 → 文件行号预览（Rust `fs_read_text_file` 256KB 截断+二进制探测）；`@pierre/diffs` + `shiki` 已引入；Media/PDF/PPTX/Office 为诚实降级 stub | `src/preview/**`（约 40 文件）、`fs_cmd.rs`、`CodeViewerPaneHost.tsx` |
 | 12 | 文件更改摘要卡 | 轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；**仅在整轮结束后显示**（编辑过程中看各工具卡，对齐 ZCode 时机）；同文件多次编辑按路径聚合为净变更，净零文件过滤；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2）；header 附**「清理临时目录」**按钮（行内二次确认 → `fs_clean_reinagent_tmp`） | `TurnGroupView.tsx`（TurnFileSummaryCard） |
+| 13.4 | 会话统计行（SessionStatsBar，对齐 LiveAgent 底部统计条） | 底栏下一行等宽小字：`N 轮 · M 步 | 上下文 P% | LLM/工具 耗时 | 输入/输出 tok · 命中 %`；耗时来自时间打点累计（流式段按当前时刻实算）；命中率 = 累计 cacheRead /（累计 input + cacheRead）（全会话口径，修复只取末条的 0%/100% 跳变）；居中、13px、亮色 | `SessionStatsBar.tsx`、`App.tsx` |
+| 13.5 | 上下文容量面板 | 触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 命中率行（≥78% 显示）；已用取真实 usage（input+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；**不含剩余额度**（用户确认排除） | `contextUsage.ts`、`ContextUsageIndicator.tsx`、`LexicalComposer.tsx`、`App.tsx` |
 | 13 | 临时文件目录约定（B+C 组合） | 系统提示词约定：一次性脚本/分析产物必须放 `<工作区>/.reinagent-tmp/`（视为可丢弃）；Rust `fs_clean_reinagent_tmp` 白名单清理（目录名严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈） | `runAgentTurn.ts`、`fs_cmd.rs`、`TurnGroupView.tsx` |
 
 ### 2. 未实现（Gap 清单，按主题分组）
+
+**修复记录（2026-09-24）**：
+- 恢复消毒：`restoreState` 将残留的 streaming/running 条目标记为 stopped 并补 `endedAt`——消除重启后「执行中」僵尸条目导致的统计爆炸（如 LLM 9h17m）与状态条永久工作中；
+- 命中率口径修正：pi-ai 的 `input` 不含缓存命中部分，命中率 = 累计 `cacheRead / (input + cacheRead)`；容量 used = input + cacheRead + output。
 
 **渲染增强类**：
 - [x] diff 视图 / 代码块的 **Shiki 语法高亮** —— 已随 PreviewPane 移植引入（`shiki@^4` + `@pierre/diffs`，工具卡内联 diff 视图仍为单色形态）

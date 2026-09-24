@@ -35,6 +35,8 @@
   --capsule-shadow: 0 4px 24px rgba(0,0,0,0.3);
   --diff-added: #4ade80;
   --diff-removed: #f87171;
+  --status-ok: #4ade80;
+  --status-warn: #eab308;
   --diff-added-bg: rgba(74, 222, 128, 0.12);
   --diff-removed-bg: rgba(248, 113, 113, 0.13);
   --chip-bg: #1e2028;
@@ -85,6 +87,8 @@
   --capsule-shadow: 0 4px 24px rgba(0,0,0,0.08);
   --diff-added: #16a34a;
   --diff-removed: #dc2626;
+  --status-ok: #16a34a;
+  --status-warn: #ca8a04;
   --diff-added-bg: rgba(22, 163, 74, 0.12);
   --diff-removed-bg: rgba(220, 38, 38, 0.10);
   --chip-bg: #ffffff;

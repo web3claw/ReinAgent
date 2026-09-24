@@ -1,5 +1,7 @@
 import React, { useRef, useState, useEffect } from "react";
 import { useTranslation } from "../../i18n";
+import { ContextUsageIndicator } from "./ContextUsageIndicator";
+import type { ContextUsageData } from "../../lib/chat/contextUsage";
 import { useAppStore } from "../../store/useAppStore";
 import {
   ArrowUp,
@@ -40,6 +42,8 @@ export interface LexicalComposerProps {
   onSelectModel?: (providerId: string, modelId: string) => void;
   hasMessages?: boolean;
   focusRequestTrigger?: number;
+  /** 上下文容量指示器数据（真实 usage + 模型 contextWindow；无数据不显示） */
+  contextUsage?: ContextUsageData | null;
 }
 
 interface ThinkingOption {
@@ -59,6 +63,7 @@ const THINKING_OPTIONS: ThinkingOption[] = [
 
 export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   isStreaming,
+  contextUsage,
   onSend,
   onStop,
   providerId = "deepseek",
@@ -392,8 +397,9 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </div>
         </div>
 
-        {/* 右侧：模型选择、思考深度、发送按钮 */}
+        {/* 右侧：上下文容量、模型选择、思考深度、发送按钮 */}
         <div className="flex items-center gap-2">
+          {contextUsage && <ContextUsageIndicator data={contextUsage} />}
           {/* Model Selector Dropdown */}
           <div className="relative">
             <button
@@ -405,7 +411,6 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
               }}
               className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--surface-hover)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
             >
-              <span className="w-2 h-2 rounded-full border border-current opacity-60 inline-block mr-0.5" />
               <span>{providerName}/{currentModel?.name || modelId}</span>
               <ChevronDown className="w-3 h-3 opacity-70" />
             </button>
