@@ -213,7 +213,22 @@ ReinAgent 架构全景
 - **i18n 键**：`turnNavigatorLabel`（对话问题导航 / Conversation query map）、`turnNavigatorJump`（含 `{index}` 占位）、`turnNavigatorEmptyReply`、`turnNavigatorRunning`；
 - **测试**：`conversationNavigatorHelpers.test.mjs` 17 用例（截断规则 / 刻度构建 / 布局映射表 / active 几何 / 山峰参数），已挂进 `bun run test:chat`。
 
-### 5. 顶栏操作与国际化
+### 5. 回合工作状态展示（对齐 ZCode ConversationTurnGroup / Reasoning / ToolCallBlocks）
+- **时间打点（数据层）**：`ChatMessage` 扩展纯展示字段 `startedAt` / `endedAt`（assistant 轮与工具条目）、`thinkingStartedAt` / `thinkingDurationMs`（首个 thinking_delta 起点 → 首个 text_delta / thinking_end 冻结）；由 `conversationController` 的注入时钟（`deps.now`）传入 `beginAssistant` / `applyEvent` / `applyLibraryEvent` / `finish` / `finishAborted`（新增可选 `nowMs` 参数）。**绝不参与 `toApiMessages`**；
+- **按轮分组**：`groupTurns(messages)`（`src/lib/chat/turnActivity.ts`）——user 消息开轮至下一条 user 前；轮工时 = 最早 startedAt → 最晚 endedAt（运行中 = now 现算）；MessageList 按轮渲染并持有 1 秒 `setInterval` live tick（仅存在运行中轮时启动，对齐 ZCode 不用 rAF）；
+- **运行中判定含会话级兜底**（2026-09-24 修复闪烁）：多步工具循环的轮与轮之间存在瞬态空窗（上一轮条目已 done、下一轮未建条目），仅凭条目状态判 running 会让状态条/思考块「展开→收缩→展开」闪烁——现由 App 透传 `isStreaming`，将**流式中的最后一轮**钉在 running（`live` prop），整个 Agent 循环期间状态条恒为「工作中」、思考块恒展开，循环结束才统一翻转折叠；
+- **回合工作状态条（TurnGroupView）**：三态文案——运行中「工作中 {时长}」（**锁定展开、按钮 disabled、不渲染箭头**）/ 完成「已工作 {时长}」（**默认折叠、可展开**，运行→完成自动翻转折叠）/ 中止「已停止」；**历史消息无打点时如实显示「已处理」，绝不伪造时长（No-Fallback）**；时长格式化 `formatWorkDuration`（`Math.max(1, round)` 整秒、最多两段最靠前非零单位，中文「3 分 48 秒」/ 英文「3m 48s」）；
+- **折叠体内容**：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本（非末条 assistant 的正文，暗色渲染）；**最终回复正文（轮内最后一条 assistant）始终外显**；
+- **思考块（ThinkingBlock）**：header「思考 · 持续了 N 秒」（整秒向上取整；无打点如实显示「持续了几秒」）+ 流式「正在思考」；默认收起；正文最暗文字层（`--text-dim` + 透明度）+ 左导线缩进 + 限高 240px 滚动 + `whitespace-pre-wrap` 纯文本；
+- **「查阅」聚合卡（对齐 ZCode ExploreToolCallBlock）**：轮内**连续**的查阅族工具（`list_dir` 列表 / `read_file` 文件读取，`EXPLORE_TOOL_NAMES`）聚合为一张卡——header = 搜索图标 + 「查阅」+ 分类计数徽标（`N 列表 · N 文件`，仅非零项）+ 状态词 + 折叠箭头；**列表调用不渲染文件数组输出**，展开体只保留单行摘要（列表 → 目录路径；读文件 → 文件名 chip + 目录暗色路径），信息取舍与 ZCode 一致；`buildActivityItems` 把轮内活动切分为普通条目与连续查阅组；
+- **工具卡类型化**：header = 类型图标（read/list/write/edit/exec/calc → lucide 图标）+ 类型标签（`toolKindLabel`：读取/查阅/写入/编辑/终端/计算，**未知工具如实回退原名，不臆测分类**）+ 文件 chip（`toolArgPath` 取 basename，title 全路径）/ 终端命令内联摘要（收起即可见命令，`tool-cmd-inline` 尾部截断）+ `+N/－N` diff 统计（LCS 精确口径；绿 `--diff-added` / 红 `--diff-removed` 主题变量）+ 状态词（执行中/已执行/执行失败，i18n）；
+- **终端卡（exec_command）**：`$ 命令`（mono、限高折行）+ 输出区**吸底-冻结引擎**（移植 ZCode ExecuteOutput：运行中每帧贴底；用户上滚 → 冻结跟随保留阅读位；滚回底部 → 恢复跟随；`hasStreamed` 守卫防静态结果误判）；输出区限高 120px 滚动，无输出如实显示「没有输出。」；
+- **编辑/写入卡 diff 视图**：展开为逐行 diff（`computeToolDiffLines` → `computeLineDiff` 行级 LCS，零依赖，`DIFF_MAX_LINES=500` 上限保护）——行号跨增删连续计数 + `+`/`−` 符号列 + 增行绿底（`--diff-added-bg`）/ 删行红底（`--diff-removed-bg`）+ mono 限高 240px 滚动；`write_file` 视为全新增；失败附错误信息；语法高亮（Shiki）暂不引入（ZCode 亦需异步分帧防掉帧，后续单独评估）；保留失败默认展开、运行中无结果不渲染空折叠、`React.memo`；
+- **a11y**：状态条为 button（运行中 disabled）+ `aria-expanded`；工具卡 `aria-label` / `aria-busy`；
+- **i18n 键**：`turnWorking`/`turnWorked`/`turnWorkedNoDuration`/`turnStopped`（含 `{duration}` 占位）、`thinkingLabel`/`thinkingLive`/`thinkingFewSeconds`/`thinkingSeconds`（`{seconds}` 占位）、`toolStatusRunning`/`toolStatusDone`/`toolStatusFailed`/`toolPending`/`toolNoOutput`/`toolResult`；
+- **测试**：`turnActivity.test.mjs` 15 用例（切轮、无 user 历史兼容、运行/完成工时聚合、四态判定、时长格式化、diff 口径、工具分类回退），已挂进 `bun run test:chat`。
+
+### 6. 顶栏操作与国际化
 - **中英文切换**：融合版 SVG 地球仪镂空刻字图标，根据当前语言动态镂空刻印 `中` 或 `EN`。
 - **亮暗主题**：全系统变量级 CSS 变量换肤，支持即时切换并持久化保存。
 
@@ -344,13 +359,16 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - 若模型来自 API 且未声明 `effort`，UI 明确标注“上游接口未声明支持推理等级 (未返回 effort)”，亦可由用户按需手动开启。
 
 ### 3. 聊天窗口 (`LexicalComposer`) 联动与双向同步
-- **禁用与高亮判定**：
-  - 若当前选中的模型未配置 `effort` 或 `supportedLevels` 为空：聊天窗口底部的“推理深度”按钮呈**置灰禁用态（Disabled）**，鼠标悬停 Tooltip 提示“当前模型不支持调节推理等级”，点击不弹出菜单；
-  - 若当前模型支持 `effort`：按钮恢复高亮，下拉菜单中点亮该模型支持的档位，不支持的档位呈禁用置灰态；
+- **推理能力乐观兜底（对齐 LiveAgent，2026-09-24 修订）**：
+  - **未声明 `effort` 元数据的模型乐观视为支持思考**：推理深度按钮恒可用（不再置灰禁用），下拉提供通用档位 `Default / Low / Medium / High`（不含 xhigh / max——这两档需要模型显式映射，未知模型不发）；`buildModel` 的 `reasoning` 同步兜底为 true → 请求带 `reasoning_effort`（服务端不支持时会自行忽略）；动机：实测 WorkBuddy 网关（192.168.3.27:8787）`hy4-preview` / `glm-5.3-flash` 默认输出 `reasoning_content`、`deepseek-v4.1-flash` 带 `reasoning_effort` 才思考，而其 `/v1/models` 不返回任何 effort 字段——严格门槛会让这类模型永远无法显示思考；
+  - 声明了 `effort.supportedLevels` 的模型仍**严格按声明过滤**档位（不臆测加档）；
+  - **已知网关怪癖**：`glm-5.3-flash` 带 `reasoning_effort` 参数反而不思考（默认参数才思考）——该网关对参数语义解析异常，遇到时切 off 或换模型；
+  - 思考内容仍然**只渲染服务端真实流下来的** `reasoning_content`，绝不伪造；
+- **禁用与高亮判定（历史行为，已被乐观兜底取代）**：~~未声明 effort 的模型按钮置灰禁用~~；声明了 effort 的模型，下拉菜单中点亮该模型支持的档位，不支持的档位呈禁用置灰态；
 - **双向实时同步机制**：
   - **聊天窗口 ➔ 模型配置写盘**：用户在聊天窗口切换推理深度时，调用 `updateModelEffortDefaultLevel` 实时将当前模型在 `provider_config.json` 中的 `defaultLevel` 设为所选等级；下次打开编辑弹窗时该等级自动高亮；
   - **模型配置 ➔ 聊天窗口**：在编辑弹窗中保存了新默认等级时，若当前聊天窗口正在使用该模型，聊天窗口底部的推理深度立即联动更新为该等级；
-  - **模型切换自动联动**：用户切换模型时，若新模型支持 `effort` 且有 `defaultLevel`，聊天窗口自动切为该默认等级；若不支持则切为 `"off"`。
+  - **模型切换自动联动**：用户切换模型时，若新模型支持 `effort` 且有 `defaultLevel`，聊天窗口自动切为该默认等级；未声明 effort 的模型沿用当前全局等级（默认 high），**不再强制切 off**。
 
 ### 4. 大模型请求透传机制（底层 HTTP Payload 装配）
 - 透传链路：`LexicalComposer / Store` ➔ `App.tsx` ➔ `useConversation` ➔ `conversationController` ➔ `runAgentTurn` ➔ `agentRuntime (Agent.initialState.thinkingLevel)` ➔ `pi-agent-core (agentLoop reasoning)` ➔ `pi-ai (streamFunction)`；
@@ -358,17 +376,65 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - OpenAI / DeepSeek 格式：自动添加 `"thinking": { "type": "enabled" }, "reasoning_effort": "high"`；
   - Anthropic 格式：自动添加 `"thinking": { "type": "enabled", "budget_tokens": ... }`；
   - Google 格式：自动添加 `"thinking_config": { ... }`。
+- **⚠️ 必须使用 `streamSimple` 而非裸 `stream`（runAgentTurn 的 getStreamFnForApi）**：pi-ai 各协议适配器导出两个入口——`streamSimple` 负责把会话层 `reasoning`（思考等级）钳制变换为 `reasoningEffort` 并组装思考开关；裸 `stream` 只认已变换好的 `reasoningEffort`，直接传 `reasoning` 会被无视，且对 DeepSeek 等协议会落入「显式禁用思考」分支（发出 `thinking: {type: "disabled"}`），导致模型永远不输出思考过程。历史事故：2026-09-24 曾因误用裸 `stream` 导致所有模型思考不显示（已修复）。排查手段：劫持 `globalThis.fetch` 捕获实际请求体，检查 `thinking` / `reasoning_effort` 字段。
 
 ---
 
-## 十、后续迭代方向推荐
+## 十、后续迭代方向推荐（2026-09-24 刷新）
 
-1. **项目管理真正落地**：
-   - 目前项目为 Mock 数据，需打通 Tauri 原生对话框（`dialog.open`）选择真实本地目录。
-   - 读取真实目录生成文件树（结合 ZCode `WorkspaceSidebarItem` 的树形渲染逻辑）。
-2. **多会话持久化与导出**：
-   - 将各个任务的聊天消息序列保存到本地 Sqlite 或 JSON 存储中，点击不同任务时真正恢复历史对话记录。
-3. **Agent 工具执行沙箱**：
-   - 完善 Rust 端的命令执行拦截与“变更前确认”审批流（ApprovalMode）。
+1. **项目管理深化**：原生目录选择（`fs_pick_folder`）与工作区决议已落地；**目录文件树渲染**（结合 ZCode `WorkspaceSidebarItem` 树形逻辑）尚未实现。
+2. **对话持久化升级**：当前按任务分片存于 localStorage（`reinagent-task-msg-*`），有容量配额与 WebView2 数据清理丢失风险——应迁移至 `~/.ReinAgent/` 下 Sqlite 或 JSON 文件存储（服务商配置已走该通道，模式可复用）。
+3. **Agent 工具执行沙箱**：完善 Rust 端命令执行拦截与「变更前确认」审批流（ApprovalMode）。
+4. **推理能力元数据整改（铁律整改项）**：`modelFactory` 仍写死 `contextWindow: 128000 / maxTokens: 8192`，应解析上游 `/v1/models` 的 `context_length` / `max_tokens` 真实字段（WorkBuddy 网关已实测返回这两个字段）。
+5. 其余聊天窗口未实现项见 **十一、聊天窗口 ZCode 对标实现状态清单**。
+
+---
+
+## 十一、聊天窗口 ZCode 对标实现状态清单（截至 2026-09-24）
+
+### 1. 已实现（全部通过 99 项单测 + 浏览器运行态实测）
+
+| # | 功能 | 要点 | 关键文件 |
+| :--- | :--- | :--- | :--- |
+| 1 | 回合工作状态条 | 「工作中 X 秒」（运行中锁定展开+每秒计时）/「已工作 X 秒」（完成折叠）/「已停止」/「已处理」（历史无打点 No-Fallback）；时长格式化最多两段非零单位 | `TurnGroupView.tsx`、`turnActivity.ts` |
+| 2 | 思考块三态折叠 | 流式默认展开+吸底跟随 → 整轮完成自动收一行；用户点击优先；Markdown 渲染 + 320px 限高 + 左导线 | `ThinkingBlock.tsx` |
+| 3 | 工具卡类型化 header | 类型图标/标签（未知工具回退原名）+ 文件 chip + 命令内联摘要 + `+N/−N`（LCS 精确口径）+ 状态词 | `ToolCallCard.tsx` |
+| 4 | 终端卡 | `$` 命令区（mono 限高折行）+ 输出区**吸底-冻结引擎**（上滚冻结/回底恢复）+「没有输出。」 | `ToolCallCard.tsx` |
+| 5 | 编辑/写入 diff 视图 | 行级 LCS diff（零依赖，500 行上限）+ 行号跨增删连续计数 + 增行绿底/删行红底 + 240px 滚动 | `ToolCallCard.tsx`、`turnActivity.ts` |
+| 6 | 「查阅」聚合卡 | 轮内连续 list_dir/read_file 聚合；header 分类计数徽标（N 列表 · N 文件）；**列表不渲染数组输出**，展开仅单行摘要 | `TurnGroupView.tsx` |
+| 7 | 对话问题导航条 | 用户提问粒度刻度 + Radix Tooltip 预览 + 平滑跳转 + 山峰衰减动效 + 自适应高度（240px/10~24px） | `ConversationNavigator.tsx` |
+| 8 | 时间打点数据层 | assistant/tool 条目 `startedAt/endedAt`、`thinkingStartedAt/thinkingDurationMs`；注入时钟贯通状态机；不参与 toApiMessages | `conversationModel.js/.d.ts` |
+| 9 | streamSimple 修复 | 修复误用裸 `stream` 导致思考被显式禁用的事故（详见 九.4） | `runAgentTurn.ts` |
+| 10 | 推理能力乐观兜底 | 无 effort 元数据模型视为支持思考（档位 Default/Low/Medium/High，可 off）；已声明模型仍严格按元数据过滤 | `App.tsx`、`LexicalComposer.tsx`、`modelFactory.ts` |
+| 11 | 右侧代码/变更预览面板（PreviewPane 完整移植） | 编辑/写入卡审查 → patch 模式（Shiki 高亮 diff）；读取卡 → 文件行号预览（Rust `fs_read_text_file` 256KB 截断+二进制探测）；`@pierre/diffs` + `shiki` 已引入；Media/PDF/PPTX/Office 为诚实降级 stub | `src/preview/**`（约 40 文件）、`fs_cmd.rs`、`CodeViewerPaneHost.tsx` |
+| 12 | 文件更改摘要卡 | 轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2） | `TurnGroupView.tsx`（TurnFileSummaryCard） |
+
+### 2. 未实现（Gap 清单，按主题分组）
+
+**渲染增强类**：
+- [x] diff 视图 / 代码块的 **Shiki 语法高亮** —— 已随 PreviewPane 移植引入（`shiki@^4` + `@pierre/diffs`，工具卡内联 diff 视图仍为单色形态）
+- [ ] **PPTX / PDF / Office / 媒体预览引擎**（PreviewPane 模式壳已移植，渲染引擎未引入，激活时如实显示「不可用」）
+- [ ] 流式「正在思考」**扫光动画（shimmer）**（LiveAgent/ZCode 用 CSS 渐变动画表达运行态，替代旋转图标）
+- [ ] **`<think>...</think>` 内嵌标签解析兜底**（Ollama 式网关把思考内联在 content 里；LiveAgent 有 `inlineThinkTagStream` 归一化；WorkBuddy 实测走原生 `reasoning_content`，暂无需求）
+
+**工具卡类**：
+- [ ] 查阅卡**搜索类 bucket**（当前无搜索工具；加入后自动扩展 N 搜索 徽标）
+- [ ] **多文件编辑子卡**（ZCode 多文件 edit 每文件独立展开块；ReinAgent edit 为单文件模型）
+- [x] 文件 chip **点击打开代码查看器** —— 已实现（编辑/写入/读取卡 header 点击 → 右侧 PreviewPane；撤销真回滚待 Rust 写入日志，gating 关闭）
+- [ ] 工具卡展开态**跨重挂载记忆**（ZCode 用模块级 `toolLayoutOpenState: Map<toolId, boolean>`）
+
+**回合/时间线类**：
+- [ ] **多段回合独立折叠**（ZCode 每个 assistant 段独立 Collapsible；ReinAgent 一轮一个头）
+- [ ] **权威工时**（ZCode TurnHeaderRow `activeMs` 排除权限/输入/校验等待；ReinAgent 全按墙钟）
+- [ ] 运行中段尾 **ChatLoading 转圈 + API 重试计数**
+- [ ] 长会话**虚拟滚动**（ZCode 用 @tanstack/react-virtual）与历史**分页 hydration**
+
+**元数据与持久化类**：
+- [ ] `context_length` / `max_tokens` 真实元数据解析（替代 `modelFactory` 写死 128000/8192，见 十.4 铁律整改项）
+- [ ] 对话持久化升级 Sqlite / `~/.ReinAgent/` JSON（见 十.2）
+- [ ] 查阅卡目录文件树渲染（见 十.1）
+
+**基础设施类**：
+- [ ] worktree 多 agent 并行 + Vite 端口参数化（用户已决策暂用分支方案，见记忆）
 
 
