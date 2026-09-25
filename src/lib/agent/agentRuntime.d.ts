@@ -13,7 +13,7 @@
  * 本文件里的 import **全部是 `import type`**（编译期即被擦除），从桶文件取类型允许且安全。
  */
 
-import type { AgentEvent, AgentMessage, AgentTool, ShouldStopAfterTurnContext, StreamFn } from "@earendil-works/pi-agent-core";
+import type { AgentEvent, AgentMessage, AgentTool, BeforeToolCallContext, ShouldStopAfterTurnContext, StreamFn } from "@earendil-works/pi-agent-core";
 import type { Model } from "@earendil-works/pi-ai";
 import type { ProviderStreamFn } from "./streamFnAdapter";
 
@@ -56,6 +56,15 @@ export interface RunTurnDeps {
   thinkingLevel?: "off" | "default" | "low" | "medium" | "high" | "max" | "minimal" | "xhigh";
   /** 可选的自定义停止判据（与 `maxSteps` 同时给出时，两者任一为真即停）。 */
   shouldStopAfterTurn?: (context: ShouldStopAfterTurnContext, signal?: AbortSignal) => boolean | Promise<boolean>;
+  /**
+   * 可选的工具执行前钩子（直通 pi-agent-core `AgentOptions.beforeToolCall`）。
+   * 在参数校验后、执行前调用；可 await（循环挂起等待，不中止）；返回
+   * `{ block: true, reason? }` 会产生错误工具结果。钩子需自行尊重 abort signal。
+   */
+  beforeToolCall?: (
+    context: BeforeToolCallContext,
+    signal?: AbortSignal,
+  ) => Promise<{ block?: boolean; reason?: string; terminate?: boolean } | undefined>;
 }
 
 /** `runTurn` 的返回值：转录快照 + 本次运行如何结束的可断言事实。 */

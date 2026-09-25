@@ -17,7 +17,7 @@ import { diagnoseError, isAbortReason } from "./errors.js";
 
 /** @returns {import("./conversationModel").ChatState} */
 export function initialState() {
-  return { messages: [], status: "idle", error: undefined, nextMessageSeq: 0 };
+  return { messages: [], status: "idle", error: undefined, nextMessageSeq: 0, pendingApproval: null };
 }
 
 /**
@@ -43,7 +43,19 @@ export function restoreState(messages) {
     status: "idle",
     error: undefined,
     nextMessageSeq: sanitized.length,
+    // 审批挂起是纯内存态：恢复/切换会话时一律清空（被挂起的轮次本身也已中断）。
+    pendingApproval: null,
   };
+}
+
+/**
+ * 设置或清除当前的待审批请求（审批卡渲染的数据源）。
+ * `req` 为 null/undefined 表示清除。仅在流式中有意义；随 finish/finishAborted 清空。
+ * @param {import("./conversationModel").ChatState} state
+ * @param {import("./conversationModel").PendingApproval | null} req
+ */
+export function withPendingApproval(state, req) {
+  return { ...state, pendingApproval: req ?? null };
 }
 
 /**
@@ -259,6 +271,7 @@ export function finish(state, finalMessage, error, nowMs) {
       ...patchLastAssistant(state, { status: "error", error: readable, endedAt: at }),
       status: "error",
       error: readable,
+      pendingApproval: null,
     };
   }
 
@@ -268,7 +281,7 @@ export function finish(state, finalMessage, error, nowMs) {
     patch.thinking = thinkingOfMessage(finalMessage);
     patch.apiMessage = finalMessage;
   }
-  return { ...patchLastAssistant(state, patch), status: "idle", error: undefined };
+  return { ...patchLastAssistant(state, patch), status: "idle", error: undefined, pendingApproval: null };
 }
 
 /**
@@ -286,6 +299,7 @@ export function finishAborted(state, nowMs) {
     ...patchLastAssistant(state, { status: "stopped", endedAt: at }),
     status: "idle",
     error: undefined,
+    pendingApproval: null,
   };
 }
 

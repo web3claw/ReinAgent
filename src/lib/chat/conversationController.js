@@ -40,6 +40,7 @@ import {
   restoreState,
   noteMaxSteps,
   toApiMessages,
+  withPendingApproval,
 } from "./conversationModel.js";
 
 /**
@@ -67,8 +68,34 @@ export function createConversationController(deps) {
   /** 当前轮次持有的中止句柄（仅用于 stop/clear 与陈旧判定，**不**用于忙判定）。 */
   let abortRef = null;
 
+  /**
+   * 当前挂起的审批（{ resolve } 为决策回执句柄）。
+   * requestApproval 挂起 → UI 调 resolveApproval 决策 → 挂起解除。
+   * stop/clear 时以 reject 收场（先于 abort，让钩子里的等待有确定终值）。
+   */
+  let pendingApprovalRef = null;
+
+  /** 审批协调器的 request 实现：写状态（渲染审批卡）+ 挂起等决策。 */
+  function requestApproval(req) {
+    return new Promise((resolve) => {
+      pendingApprovalRef = { resolve };
+      setState((prev) => withPendingApproval(prev, req));
+    });
+  }
+
+  /** 解决当前挂起的审批（decision: "allow" | "always" | "reject"）。无挂起时静默。 */
+  function resolveApproval(decision) {
+    const pending = pendingApprovalRef;
+    if (pending === null) return;
+    pendingApprovalRef = null;
+    setState((prev) => withPendingApproval(prev, null));
+    pending.resolve(decision);
+  }
+
   /** 用户主动停止：中断当前轮次并立即收敛为「已停止」。 */
   function stop() {
+    // 先解除审批挂起（拒绝语义），再中止轮次——顺序保证钩子等待先有终值。
+    resolveApproval("reject");
     const controller = abortRef;
     if (controller === null) return;
     controller.abort();
@@ -79,6 +106,7 @@ export function createConversationController(deps) {
 
   /** 清空会话：中断在途轮次并重置状态。 */
   function clear() {
+    resolveApproval("reject");
     if (abortRef !== null) abortRef.abort();
     abortRef = null;
     setState(() => initialState());
@@ -103,7 +131,7 @@ export function createConversationController(deps) {
     // 忙判定来自状态派生（唯一真相），而非 abortRef。
     if (getState().status === "streaming") return false;
 
-    const { source, config, systemPrompt, maxSteps, workspaceRoot, thinkingLevel } = getOptions();
+    const { source, config, systemPrompt, maxSteps, workspaceRoot, thinkingLevel, approvalMode, approval } = getOptions();
 
     // 多轮上下文：历史 = 已完成消息（助手复用其权威 apiMessage）+ 本轮 user。
     const history = toApiMessages(getState());
@@ -129,6 +157,8 @@ export function createConversationController(deps) {
           workspaceRoot,
           signal: controller.signal,
           thinkingLevel,
+          approvalMode,
+          approval,
           onEvent: (ev) => {
             if (isStale()) return;
             setState((prev) => applyLibraryEvent(prev, ev, now()));
@@ -173,12 +203,22 @@ export function createConversationController(deps) {
         }
       } finally {
         // 仅当自己仍是当前轮次（未被新一轮取代）时才清空，避免覆盖新一轮的句柄。
-        if (abortRef === controller) abortRef = null;
+        if (abortRef === controller) {
+          // 异常路径兜底：轮次已结束但审批仍挂起（未被 stop/clear 解除）→ 以 reject 收场，
+          // 防止审批卡悬挂、钩子 Promise 永不 settle。
+          if (pendingApprovalRef !== null) {
+            const pending = pendingApprovalRef;
+            pendingApprovalRef = null;
+            setState((prev) => withPendingApproval(prev, null));
+            pending.resolve("reject");
+          }
+          abortRef = null;
+        }
       }
     })();
 
     return true;
   }
 
-  return { send, stop, clear, loadState };
+  return { send, stop, clear, loadState, requestApproval, resolveApproval };
 }

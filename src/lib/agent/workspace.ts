@@ -9,14 +9,16 @@
  *    或 Node 环境变量），任何来源都拿不到时返回空串并要求 UI 明确告警，严禁编造路径。
  */
 
+import { kvGet, kvSet } from "../storage/db.ts";
+
 /**
  * 获取系统默认工作区路径：~/.ReinAgent/DefaultProject
  * 主目录未知时返回空串，调用方必须显式处理空值（UI 告警），不得当作可用路径使用。
  */
 export function getDefaultWorkspaceRoot(): string {
-  // 1. 浏览器环境/前端无法直接读环境变量时，从 localStorage 中读取缓存或回退
+  // 1. 从启动时加载的 SQLite kv 缓存中读取（Tauri path_home_dir 拉取后写入）
   if (typeof window !== "undefined") {
-    const cached = localStorage.getItem("reinagent-user-home");
+    const cached = kvGet("reinagent-user-home");
     if (cached && cached.trim().length > 0) {
       return normalizePath(`${cached.trim().replace(/\/+$/, "")}/.ReinAgent/DefaultProject`);
     }
@@ -44,7 +46,7 @@ export async function initUserHome(): Promise<string | null> {
     const { invoke } = await import("@tauri-apps/api/core");
     const home = await invoke<string>("path_home_dir");
     if (home && typeof home === "string" && home.trim().length > 0) {
-      localStorage.setItem("reinagent-user-home", home.trim());
+      kvSet("reinagent-user-home", home.trim());
       return home.trim();
     }
     console.warn("path_home_dir 返回了空主目录，工作区决议将标记为未知");

@@ -27,6 +27,10 @@ export interface ConversationControllerOptions {
     maxSteps?: number;
     workspaceRoot?: string;
     thinkingLevel?: import("../agent/agentRuntime").RunTurnDeps["thinkingLevel"];
+    /** 本轮审批模式（任务级，发送时冻结；缺省 full=完全访问）。 */
+    approvalMode?: import("../providers/runAgentTurn").ApprovalMode;
+    /** 审批协调器（由会话池注入；缺省=不启用审批门）。 */
+    approval?: import("../providers/runAgentTurn").ApprovalCoordinator;
   };
   /** AbortController 工厂（可注入以在测试中控制）。 */
   createAbortController?: () => AbortController;
@@ -37,12 +41,18 @@ export interface ConversationControllerOptions {
 export interface ConversationController {
   /** 发送用户消息；返回本次是否被受理（false=空文本或正在流式中）。 */
   send: (text: string) => boolean;
-  /** 停止当前轮次（中止并标注「已停止」）。 */
+  /** 停止当前轮次（解除审批挂起 + 中止并标注「已停止」）。 */
   stop: () => void;
   /** 清空会话。 */
   clear: () => void;
   /** 加载或切换到指定消息列表。 */
   loadState: (messages: import("./conversationModel").TimelineEntry[]) => void;
+  /** 审批门挂起入口（runAgentTurn 的协调器回调到这）。 */
+  requestApproval: (req: import("./conversationModel").PendingApproval) => Promise<
+    import("../providers/runAgentTurn").ApprovalDecision
+  >;
+  /** 解决当前挂起的审批（allow/always/reject）；无挂起时静默。 */
+  resolveApproval: (decision: import("../providers/runAgentTurn").ApprovalDecision) => void;
 }
 
 export function createConversationController(

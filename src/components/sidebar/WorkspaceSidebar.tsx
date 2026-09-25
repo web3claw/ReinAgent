@@ -1,12 +1,91 @@
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { getVersion } from '@tauri-apps/api/app';
+import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
   Sun, Moon, HelpCircle, Plus, Search,
-  Timer, Puzzle, Hash, FolderOpen, Settings, Monitor,
+  Timer, Puzzle, Hash, FolderOpen, Settings, Monitor, Plug, Clock,
   Filter,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
+
+/** 底栏图标按钮（对齐 PI-Desktop TooltipButton + footer-action：32×32 命中区和 top 气泡提示）。
+ * 无 tooltip / 无 onClick 时为纯展示占位（不高亮、不可点）。 */
+function FooterIconButton({
+  tooltip,
+  onClick,
+  children,
+}: {
+  tooltip?: string;
+  onClick?: () => void;
+  children: ReactNode;
+}) {
+  const interactive = Boolean(tooltip || onClick);
+  return (
+    <TooltipPrimitive.Root delayDuration={300}>
+      <TooltipPrimitive.Trigger asChild>
+        <button
+          type="button"
+          onClick={onClick}
+          aria-label={tooltip}
+          className={`inline-flex w-8 h-8 flex-none items-center justify-center rounded-md text-[var(--sidebar-text)] transition-colors ${
+            interactive
+              ? 'hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] cursor-pointer'
+              : 'cursor-default'
+          }`}
+        >
+          {children}
+        </button>
+      </TooltipPrimitive.Trigger>
+      {tooltip ? (
+        <TooltipPrimitive.Portal>
+          <TooltipPrimitive.Content
+            side="top"
+            sideOffset={6}
+            className="z-50 bg-[var(--bg-elev)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 shadow-xl animate-in fade-in-0 zoom-in-95 select-none"
+          >
+            <span className="text-xs font-medium text-[var(--text)]">{tooltip}</span>
+            <TooltipPrimitive.Arrow className="fill-[var(--bg-elev)]" />
+          </TooltipPrimitive.Content>
+        </TooltipPrimitive.Portal>
+      ) : null}
+    </TooltipPrimitive.Root>
+  );
+}
+
+/** 应用 logo（内联 SVG，与 src-tauri/icons 应用图标同源设计：蓝色渐变圆角方块 + 白色粗体 R）。 */
+export function AppLogo({ size = 24 }: { size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 1024 1024"
+      aria-hidden="true"
+      className="shrink-0"
+    >
+      <defs>
+        <linearGradient id="reinagent-logo-gradient" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#4F7CFF" />
+          <stop offset="100%" stopColor="#2563EB" />
+        </linearGradient>
+      </defs>
+      <rect width="1024" height="1024" rx="224" fill="url(#reinagent-logo-gradient)" />
+      <text
+        x="512"
+        y="530"
+        textAnchor="middle"
+        dominantBaseline="central"
+        fontFamily="Arial, sans-serif"
+        fontWeight="bold"
+        fontSize="620"
+        fill="#FFFFFF"
+      >
+        R
+      </text>
+    </svg>
+  );
+}
 
 /** 融合版 SVG 地球仪图标（内置中/EN状态镂空刻字） */
 export function LanguageGlobeIcon({ locale, className = "w-4 h-4" }: { locale: string; className?: string }) {
@@ -64,6 +143,11 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
   const startNewTaskDraft = useAppStore(state => state.startNewTaskDraft);
   const selectedProject = useAppStore(state => state.selectedProject);
   const [activeTab, setActiveTab] = useState<'groups' | 'projects'>('projects');
+  // 应用版本号（tauri.conf.json version；浏览器模式取不到则不显示）
+  const [versionText, setVersionText] = useState("");
+  useEffect(() => {
+    getVersion().then(setVersionText).catch(() => setVersionText(""));
+  }, []);
 
   const handleNewTask = () => {
     startNewTaskDraft(selectedProject);
@@ -77,9 +161,7 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
       {/* Top Header */}
       <div className="flex items-center justify-between p-4 pb-2">
         <div className="flex items-center gap-2 font-bold text-[var(--sidebar-text-active)]">
-          <div className="flex items-center justify-center w-6 h-6 bg-[var(--accent)] text-white rounded-md">
-            R
-          </div>
+          <AppLogo size={24} />
           <span>ReinAgent</span>
         </div>
         <div className="flex items-center gap-1 text-[var(--sidebar-text)]">
@@ -176,28 +258,31 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
         )}
       </div>
 
-      {/* User Bar */}
-      <div className="flex items-center justify-between p-3 mt-auto border-t border-[var(--border)] hover:bg-[var(--sidebar-hover)] transition-colors cursor-pointer">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-8 h-8 bg-blue-600 text-white rounded-md font-bold">
-            K
+      {/* 底部图标条（对齐 PI-Desktop sidebar-footer）：齿轮=设置 / 插头=扩展 / 时钟=定时任务 /
+          电脑（原 Monitor）占位；除设置外均为纯展示占位（无功能）；默认全部不高亮。
+          版本号对齐 footer-build：12px tabular-nums leading-none。 */}
+      <div className="flex items-center justify-between p-3 mt-auto border-t border-[var(--border)]">
+        <TooltipPrimitive.Provider delayDuration={300}>
+          <div className="flex items-center">
+            <FooterIconButton tooltip={t('settings')} onClick={() => setCurrentView('settings')}>
+              <Settings className="w-3.5 h-3.5" />
+            </FooterIconButton>
+            <FooterIconButton tooltip={t('navPlugins')}>
+              <Plug className="w-3.5 h-3.5" />
+            </FooterIconButton>
+            <FooterIconButton tooltip={t('navScheduled')}>
+              <Clock className="w-3.5 h-3.5" />
+            </FooterIconButton>
+            <FooterIconButton>
+              <Monitor className="w-3.5 h-3.5" />
+            </FooterIconButton>
           </div>
-          <span className="text-sm font-medium text-[var(--sidebar-text-active)]">kwtgsgi8</span>
-        </div>
-        <div className="flex items-center gap-1 text-[var(--sidebar-text)]">
-          <button className="p-1.5 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] rounded-md transition-colors">
-            <Monitor className="w-4 h-4" />
-          </button>
-          <button 
-            onClick={(e) => {
-              e.stopPropagation();
-              setCurrentView('settings');
-            }}
-            className="p-1.5 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] rounded-md transition-colors"
-          >
-            <Settings className="w-4 h-4" />
-          </button>
-        </div>
+        </TooltipPrimitive.Provider>
+        {versionText && (
+          <span className="text-[12px] leading-none tabular-nums text-[var(--text)] font-medium">
+            v{versionText}
+          </span>
+        )}
       </div>
     </div>
   );

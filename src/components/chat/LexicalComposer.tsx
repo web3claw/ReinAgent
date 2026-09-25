@@ -21,6 +21,9 @@ import {
   MessageSquare,
   Check,
   Search,
+  Lightbulb,
+  ShieldCheck,
+  ShieldAlert,
 } from "lucide-react";
 import { MOCK_PROJECTS } from "../sidebar/WorkspaceSidebar";
 import {
@@ -53,12 +56,27 @@ interface ThinkingOption {
 }
 
 const THINKING_OPTIONS: ThinkingOption[] = [
-  { level: "default", label: "Default", steps: 20 },
-  { level: "low", label: "Low", steps: 30 },
-  { level: "medium", label: "Medium", steps: 40 },
-  { level: "high", label: "High", steps: 50 },
-  { level: "xhigh", label: "XHigh", steps: 60 },
-  { level: "max", label: "Max", steps: 70 },
+  { level: "default", label: "Default", steps: 100 },
+  { level: "low", label: "Low", steps: 200 },
+  { level: "medium", label: "Medium", steps: 300 },
+  { level: "high", label: "High", steps: 400 },
+  { level: "xhigh", label: "XHigh", steps: 500 },
+  { level: "max", label: "Max", steps: 600 },
+];
+
+/** 审批模式四档（对齐 ZCode mode.label.glm.*：plan=计划模式 ask=变更前确认 edit=自动编辑 full=完全访问）。 */
+type ComposerApprovalMode = "plan" | "ask" | "edit" | "full";
+
+const APPROVAL_MODE_OPTIONS: {
+  mode: ComposerApprovalMode;
+  labelKey: "modePlan" | "modeAsk" | "modeEdit" | "modeFull";
+  descKey: "modePlanDesc" | "modeAskDesc" | "modeEditDesc" | "modeFullDesc";
+  Icon: typeof Hand;
+}[] = [
+  { mode: "plan", labelKey: "modePlan", descKey: "modePlanDesc", Icon: Lightbulb },
+  { mode: "ask", labelKey: "modeAsk", descKey: "modeAskDesc", Icon: Hand },
+  { mode: "edit", labelKey: "modeEdit", descKey: "modeEditDesc", Icon: ShieldCheck },
+  { mode: "full", labelKey: "modeFull", descKey: "modeFullDesc", Icon: ShieldAlert },
 ];
 
 export const LexicalComposer: React.FC<LexicalComposerProps> = ({
@@ -77,15 +95,39 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
 }) => {
   const { t } = useTranslation();
   const {
-    thinkingLevel,
+    thinkingLevel: globalThinkingLevel,
     setThinkingLevel,
-    approvalMode,
+    approvalMode: globalApprovalMode,
     setApprovalMode,
+    activeTaskId,
+    tasks,
+    updateTaskThinkingLevel,
+    updateTaskApprovalMode,
     selectedProject,
     setSelectedProject,
     projects,
     addProject,
   } = useAppStore();
+
+  // 任务级隔离（对齐 ZCode task-local thoughtLevel/mode）：有活动任务读写任务字段，
+  // 草稿态读写全局默认（首次发送时随 createTask 落到新任务上）。
+  const activeTask = activeTaskId ? tasks.find((task) => task.id === activeTaskId) ?? null : null;
+  const thinkingLevel = activeTask?.thinkingLevel ?? globalThinkingLevel;
+  const approvalMode = activeTask?.approvalMode ?? globalApprovalMode;
+
+  const handleSelectThinkingLevel = (level: typeof globalThinkingLevel) => {
+    if (activeTaskId) updateTaskThinkingLevel(activeTaskId, level);
+    else setThinkingLevel(level);
+    // 仅草稿（全局默认）选择同步为模型默认 effort；任务级选择不污染全局模型配置。
+    if (!activeTaskId && providerId && modelId && level !== "off") {
+      updateModelEffortDefaultLevel(providerId, modelId, level as any).catch(console.error);
+    }
+  };
+
+  const handleSelectApprovalMode = (mode: ComposerApprovalMode) => {
+    if (activeTaskId) updateTaskApprovalMode(activeTaskId, mode);
+    else setApprovalMode(mode);
+  };
 
   const [text, setText] = useState("");
   const [showMentionMenu, setShowMentionMenu] = useState(false);
@@ -358,42 +400,82 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             <Plus className="w-4 h-4" />
           </button>
 
-          {/* Approval Mode Dropdown */}
+          {/* Approval Mode Dropdown（对齐 ZCode V4ComposerModeSwitch：图标+标题+描述，full 态 warning 色） */}
           <div className="relative">
-            <button
-              type="button"
-              onClick={() => {
-                setShowApprovalMenu(!showApprovalMenu);
-                setShowThinkingMenu(false);
-              }}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--surface-hover)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
-            >
-              <Hand className="w-3.5 h-3.5 text-[var(--text-secondary)]" />
-              <span>
-                {approvalMode === 'always' ? t("approvalAlways") :
-                 approvalMode === 'suggest' ? (t("confirmBeforeChange") || t("approvalSuggest")) :
-                 t("approvalAuto")}
-              </span>
-              <ChevronDown className="w-3 h-3 opacity-70" />
-            </button>
-            {showApprovalMenu && (
-              <div className="absolute bottom-full left-0 mb-2 w-36 rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
-                {(['suggest', 'always', 'auto'] as const).map((mode) => (
+            {(() => {
+              const currentOption =
+                APPROVAL_MODE_OPTIONS.find((opt) => opt.mode === approvalMode) ?? APPROVAL_MODE_OPTIONS[3];
+              const CurrentIcon = currentOption.Icon;
+              const isFullAccess = approvalMode === "full";
+              return (
+                <>
                   <button
-                    key={mode}
+                    type="button"
                     onClick={() => {
-                      setApprovalMode?.(mode);
-                      setShowApprovalMenu(false);
+                      setShowApprovalMenu(!showApprovalMenu);
+                      setShowThinkingMenu(false);
                     }}
-                    className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface-hover)] text-[var(--text-primary)] cursor-pointer"
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--surface-hover)] text-xs transition-colors cursor-pointer ${
+                      isFullAccess
+                        ? "text-[var(--status-warn)]"
+                        : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                    }`}
                   >
-                    {mode === 'always' ? t("approvalAlways") :
-                     mode === 'suggest' ? (t("confirmBeforeChange") || t("approvalSuggest")) :
-                     t("approvalAuto")}
+                    <CurrentIcon className="w-3.5 h-3.5" />
+                    <span>{t(currentOption.labelKey)}</span>
+                    <ChevronDown className="w-3 h-3 opacity-70" />
                   </button>
-                ))}
-              </div>
-            )}
+                  {showApprovalMenu && (
+                    <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-1.5 text-xs z-50 flex flex-col gap-0.5">
+                      {APPROVAL_MODE_OPTIONS.map(({ mode, labelKey, descKey, Icon }) => {
+                        const isSelected = approvalMode === mode;
+                        const optionFull = mode === "full";
+                        return (
+                          <button
+                            key={mode}
+                            type="button"
+                            onClick={() => {
+                              handleSelectApprovalMode(mode);
+                              setShowApprovalMenu(false);
+                            }}
+                            className={`w-full text-left px-2.5 py-2 rounded-lg transition-colors flex items-center gap-2.5 cursor-pointer ${
+                              isSelected
+                                ? "bg-[var(--accent)] text-white font-medium shadow-sm"
+                                : "hover:bg-[var(--surface-hover)] text-[var(--text-primary)]"
+                            }`}
+                          >
+                            <Icon
+                              className={`w-4 h-4 shrink-0 ${
+                                isSelected
+                                  ? "text-white"
+                                  : optionFull
+                                    ? "text-[var(--status-warn)]"
+                                    : "text-[var(--text-secondary)]"
+                              }`}
+                            />
+                            <span className="flex flex-col gap-0.5 min-w-0">
+                              <span className={optionFull && !isSelected ? "text-[var(--status-warn)]" : ""}>
+                                {t(labelKey)}
+                              </span>
+                              <span
+                                className={`text-[11px] font-normal ${
+                                  isSelected ? "text-white/80" : "text-[var(--text-secondary)]"
+                                }`}
+                              >
+                                {t(descKey)}
+                              </span>
+                            </span>
+                            <Check
+                              className={`w-3.5 h-3.5 ml-auto shrink-0 ${isSelected ? "opacity-100" : "opacity-0"}`}
+                            />
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
 
@@ -538,13 +620,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
                 visibleOptions[0] ||
                 THINKING_OPTIONS[0];
 
-              const handleSelectThinkingLevel = (level: typeof thinkingLevel) => {
-                setThinkingLevel?.(level);
-                setShowThinkingMenu(false);
-                if (providerId && modelId && level !== "off") {
-                  updateModelEffortDefaultLevel(providerId, modelId, level as any).catch(console.error);
-                }
-              };
+              // 档位选择用组件顶部的任务级感知 handler（activeTask ? 任务字段 : 全局默认）。
 
               return (
                 <>
@@ -582,7 +658,10 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
                           <button
                             key={level}
                             type="button"
-                            onClick={() => handleSelectThinkingLevel(level)}
+                            onClick={() => {
+                              handleSelectThinkingLevel(level);
+                              setShowThinkingMenu(false);
+                            }}
                             className={`w-full text-left px-2.5 py-1.5 rounded-lg transition-colors flex items-center justify-between cursor-pointer font-mono ${
                               isSelected
                                 ? "bg-[var(--accent)] text-[var(--accent-contrast)] font-medium shadow-sm"

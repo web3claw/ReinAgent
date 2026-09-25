@@ -202,8 +202,13 @@ export function computeDiffStat(toolName: string, args: unknown): DiffStat | nul
   if (!args || typeof args !== "object") return null;
   const record = args as Record<string, unknown>;
   if (toolName === "edit_file") {
-    const oldString = typeof record.old_string === "string" ? record.old_string : "";
-    const newString = typeof record.new_string === "string" ? record.new_string : "";
+    // 参数名回退：edit_file 工具实际签名为 target/replacement（old_string/new_string 为兼容别名）
+    const oldString =
+      typeof record.old_string === "string" ? record.old_string
+      : typeof record.target === "string" ? record.target : "";
+    const newString =
+      typeof record.new_string === "string" ? record.new_string
+      : typeof record.replacement === "string" ? record.replacement : "";
     if (!oldString && !newString) return null;
     const diff = computeLineDiff(oldString, newString);
     const added = diff.filter((line) => line.type === "added").length;
@@ -225,8 +230,13 @@ export function computeToolDiffLines(toolName: string, args: unknown): DiffLine[
   if (!args || typeof args !== "object") return null;
   const record = args as Record<string, unknown>;
   if (toolName === "edit_file") {
-    const oldString = typeof record.old_string === "string" ? record.old_string : "";
-    const newString = typeof record.new_string === "string" ? record.new_string : "";
+    // 参数名回退：同 computeDiffStat
+    const oldString =
+      typeof record.old_string === "string" ? record.old_string
+      : typeof record.target === "string" ? record.target : "";
+    const newString =
+      typeof record.new_string === "string" ? record.new_string
+      : typeof record.replacement === "string" ? record.replacement : "";
     if (!oldString && !newString) return null;
     return computeLineDiff(oldString, newString);
   }
@@ -298,6 +308,15 @@ export function pathDirectory(path: string): string | undefined {
 }
 
 /**
+ * 判定路径是否位于工作区临时目录 `.ReinAgent/temp/` 下（分隔符无关：正斜杠/反斜杠、
+ * 绝对/相对路径均可识别）。命中者不进文件更改摘要卡（一次性脚本无需审查/列出）。
+ */
+export function isReinAgentTempPath(path: string): boolean {
+  const normalized = path.replace(/\\/g, "/");
+  return normalized.startsWith(".ReinAgent/temp/") || normalized.includes("/.ReinAgent/temp/");
+}
+
+/**
  * 由行级 diff 组装 unified patch 文本（PreviewPane patch 模式的输入格式）。
  */
 export function buildUnifiedPatch(path: string, oldString: string, newString: string): string {
@@ -329,13 +348,22 @@ export function collectTurnFileChanges(entries: TimelineEntry[]): TurnFileChange
     if (!args) continue;
     const path = typeof args.path === "string" ? args.path : undefined;
     if (!path) continue;
+    // 参数名回退：edit_file 实际签名为 target/replacement（old_string/new_string 为兼容别名）
     const originalContent =
-      entry.toolName === "edit_file" && typeof args.old_string === "string" ? args.old_string : "";
+      entry.toolName === "edit_file"
+        ? typeof args.old_string === "string"
+          ? args.old_string
+          : typeof args.target === "string"
+            ? args.target
+            : ""
+        : "";
     const finalContent =
       entry.toolName === "edit_file"
         ? typeof args.new_string === "string"
           ? args.new_string
-          : ""
+          : typeof args.replacement === "string"
+            ? args.replacement
+            : ""
         : typeof args.content === "string"
           ? args.content
           : "";

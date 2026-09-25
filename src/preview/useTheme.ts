@@ -1,9 +1,10 @@
 import { useEffect, useState, useCallback } from "react";
+import { kvGet, kvSet } from "../lib/storage/db";
 
 export type Theme = "light" | "dark" | "zai-light" | "zai-dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
-const STORAGE_KEY = "zcode-theme";
+const STORAGE_KEY = "reinagent-preview-theme";
 const BROWSER_THEME_SURFACE_ATTRIBUTE = "data-zcode-browser-theme-surface";
 
 function getSystemTheme(): ResolvedTheme {
@@ -81,14 +82,14 @@ function isTheme(value: string | null): value is Theme {
 
 export function useTheme() {
   const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
+    const saved = kvGet(STORAGE_KEY);
     // 默认主题统一收敛到 Zai dark，避免旧 hook 兜底值和 Zustand store 默认值分叉。
     return isTheme(saved) ? normalizeThemePreference(saved) : "zai-dark";
   });
 
   const setTheme = useCallback((t: Theme) => {
     const normalizedTheme = normalizeThemePreference(t);
-    localStorage.setItem(STORAGE_KEY, normalizedTheme);
+    kvSet(STORAGE_KEY, normalizedTheme);
     setThemeState(normalizedTheme);
     applyTheme(normalizedTheme);
   }, []);

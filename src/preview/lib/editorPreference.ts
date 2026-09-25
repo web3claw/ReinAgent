@@ -11,7 +11,7 @@ function getBrowserStorage(): StorageLike | null {
   }
 
   try {
-    return window.localStorage;
+    return null;
   } catch {
     return null;
   }

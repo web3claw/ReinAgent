@@ -30,6 +30,13 @@ export type MessageStatus = "pending" | "streaming" | "done" | "stopped" | "erro
 /** 工具条目状态。 */
 export type ToolEntryStatus = "running" | "done" | "error";
 
+/** 一次待审批的工具调用（审批卡渲染数据源；纯内存态，不持久化）。 */
+export interface PendingApproval {
+  toolName: string;
+  toolCallId: string;
+  args: unknown;
+}
+
 export interface ChatMessage {
   id: string;
   role: TimelineRole;
@@ -106,10 +113,14 @@ export interface ChatState {
    * `toApiMessages`）；缺省时消息创建器回退为 `messages.length`，不会算出 NaN。
    */
   nextMessageSeq?: number;
+  /** 当前挂起的待审批请求（null=无）；仅流式中有意义，finish/finishAborted/restore 时清空。 */
+  pendingApproval?: PendingApproval | null;
 }
 
 export function initialState(): ChatState;
 export function restoreState(messages: TimelineEntry[]): ChatState;
+/** 设置或清除当前待审批请求（req 为 null/undefined 表示清除）。 */
+export function withPendingApproval(state: ChatState, req: PendingApproval | null): ChatState;
 
 export function appendUser(state: ChatState, text: string): ChatState;
 

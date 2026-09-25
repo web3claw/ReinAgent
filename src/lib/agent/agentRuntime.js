@@ -122,6 +122,7 @@ export async function runTurn(deps) {
     maxSteps,
     shouldStopAfterTurn,
     thinkingLevel,
+    beforeToolCall,
   } = deps;
 
   // ---- 入参前置校验（不满足即抛，绝不让它退化成库的静默降级）----
@@ -164,6 +165,10 @@ export async function runTurn(deps) {
   if (typeof streamFn !== "function") {
     throw new TypeError("agentRuntime.runTurn: deps.streamFn 必须是函数。");
   }
+  // beforeToolCall：可选透传（审批模式的挂起/拦截钩子）。形状不对就抛，绝不静默丢弃。
+  if (beforeToolCall !== undefined && typeof beforeToolCall !== "function") {
+    throw new TypeError("agentRuntime.runTurn: deps.beforeToolCall 必须是函数或 undefined。");
+  }
 
   // ---- 步数硬闸（可选）：把 maxSteps / shouldStopAfterTurn 组装成一个判据 ----
   let turnCount = 0;
@@ -182,6 +187,9 @@ export async function runTurn(deps) {
     toolExecution: "sequential",
     // Key 只能从 getApiKey 进（AgentOptions 无 apiKey 字段）；库会传 provider 进来。
     getApiKey: typeof getApiKey === "function" ? (provider) => getApiKey(provider) : undefined,
+    // 审批钩子直通库（AgentOptions.beforeToolCall）：工具执行前调用，返回 {block:true}
+    // 产生错误工具结果；钩子可 await（循环挂起等待，不中止）。
+    beforeToolCall,
     initialState: {
       model,
       thinkingLevel: thinkingLevel ?? "off",

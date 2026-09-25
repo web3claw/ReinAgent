@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import "./styles/global.css";
-import { useConversation } from "./lib/chat/useConversation";
+import { useConversationPool } from "./hooks/useConversationPool";
+import { send as poolSend, resolveApproval as poolResolveApproval } from "./lib/chat/conversationPool";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
 import { ConversationNavigator } from "./components/chat/ConversationNavigator";
@@ -12,7 +13,10 @@ import { TerminalPane } from "./components/terminal/TerminalPane";
 import { WorkspaceSidebar } from "./components/sidebar/WorkspaceSidebar";
 import { SettingsPage } from "./components/settings/SettingsPage";
 import { DEFAULT_SYSTEM_PROMPT } from "./lib/providers/runAgentTurn";
+import type { ApprovalDecision } from "./lib/providers/runAgentTurn";
+import { ApprovalCard } from "./components/chat/ApprovalCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
+import { kvGet } from "./lib/storage/db";
 import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
 import { getProviderMeta } from "./lib/providers/catalog";
@@ -31,10 +35,16 @@ export default function App() {
     isSidebarOpen, toggleSidebar,
     currentView, setCurrentView,
     activeTaskId, setActiveTaskId,
-    createTask, updateTaskTitle, updateTaskModel,
+    tasks,
+    createTask, updateTaskTitle, updateTaskModel, updateTaskThinkingLevel,
     selectedProject, setSelectedProject,
     thinkingLevel,
   } = useAppStore();
+
+  // 任务级隔离：推理等级/审批模式优先读活动任务的覆盖，缺省回退全局默认（新任务/草稿档位）。
+  const activeTask = activeTaskId ? tasks.find((task) => task.id === activeTaskId) ?? null : null;
+  const activeThinkingLevel = activeTask?.thinkingLevel ?? thinkingLevel;
+  const activeApprovalMode = activeTask?.approvalMode ?? "full";
 
   const { t } = useTranslation();
   const { settings, status, update } = useSettings();
@@ -75,7 +85,9 @@ export default function App() {
   // 思考内容仍然只渲染服务端真实流下来的，绝不伪造。
   const isReasoningSupported = true;
 
-  // 当切换模型或配置加载完成时，若模型支持 effort 且定义了 defaultLevel，自动切换全局 thinkingLevel
+  // 当切换模型或配置加载完成时，若模型支持 effort 且定义了 defaultLevel，自动对齐推理档位。
+  // 任务粒度（对齐 ZCode task-local thoughtLevel）：任务有显式覆盖且仍受支持 → 保留不动；
+  // 覆盖不再受支持 → 对齐该模型 defaultLevel（只写该任务）；草稿态 → 对齐全局默认。
   const prevModelIdRef = useRef<string>(activeModelId);
   useEffect(() => {
     const isModelChanged = prevModelIdRef.current !== activeModelId;
@@ -83,17 +95,36 @@ export default function App() {
 
     if (isReasoningSupported && currentModel?.effort) {
       const supported = currentModel.effort.supportedLevels || [];
-      const currentLevel = useAppStore.getState().thinkingLevel;
-      // 如果模型发生切换，或者当前等级不在支持列表中，强制对齐到模型 defaultLevel 或支持的第一项
-      if (isModelChanged || !supported.includes(currentLevel as any)) {
-        const nextLevel =
-          (currentModel.effort.defaultLevel && supported.includes(currentModel.effort.defaultLevel))
-            ? currentModel.effort.defaultLevel
+      const resolveNext = (currentLevel: string) => {
+        if (isModelChanged || !supported.includes(currentLevel as any)) {
+          return (currentModel.effort!.defaultLevel && supported.includes(currentModel.effort!.defaultLevel))
+            ? currentModel.effort!.defaultLevel
             : supported[0] || "low";
-        useAppStore.getState().setThinkingLevel(nextLevel);
+        }
+        return null;
+      };
+      if (activeTask) {
+        const taskLevel = activeTask.thinkingLevel;
+        if (taskLevel !== undefined) {
+          // 只修正「覆盖不再受支持」的任务，绝不冲掉仍受支持的任务级覆盖。
+          if (!supported.includes(taskLevel as any)) {
+            const next = resolveNext(taskLevel);
+            if (next) updateTaskThinkingLevel(activeTask.id, next as never);
+          }
+          return;
+        }
+        // 任务未覆盖：跟随全局默认，但要保证全局默认在该模型下受支持（对齐写全局）。
+        const globalLevel = useAppStore.getState().thinkingLevel;
+        const next = resolveNext(globalLevel);
+        if (next) useAppStore.getState().setThinkingLevel(next as never);
+        return;
       }
+      // 草稿态：对齐全局默认（原行为）。
+      const globalLevel = useAppStore.getState().thinkingLevel;
+      const next = resolveNext(globalLevel);
+      if (next) useAppStore.getState().setThinkingLevel(next as never);
     }
-  }, [activeModelId, isReasoningSupported, currentModel?.effort?.defaultLevel, currentModel?.effort?.supportedLevels]);
+  }, [activeModelId, isReasoningSupported, currentModel?.effort?.defaultLevel, currentModel?.effort?.supportedLevels, activeTask?.id, activeTask?.thinkingLevel]);
 
   const activeApiKey = currentProvider?.apiKey ?? settings.apiKey ?? "";
   const activeBaseUrl = currentProvider?.baseUrl ?? settings.baseUrl ?? "";
@@ -103,23 +134,28 @@ export default function App() {
 
   const [focusTrigger, setFocusTrigger] = useState(0);
 
+  // maxSteps 从**任务级**推理等级派生；完全访问模式下不设步数上限。
+  // 0 = 无上限（agentRuntime 仅在 maxSteps > 0 时启用硬闸；注意 0 不能写成 undefined——
+  // undefined 会在 runAgentTurn 里回退成 DEFAULT_MAX_STEPS=8）。
   const maxSteps =
-    thinkingLevel === "max"
-      ? 70
-      : thinkingLevel === "xhigh"
-      ? 60
-      : thinkingLevel === "high"
-      ? 50
-      : thinkingLevel === "medium"
-      ? 40
-      : thinkingLevel === "low"
-      ? 30
-      : 20; // default 为 20 步
+    activeApprovalMode === "full"
+      ? 0
+      : activeThinkingLevel === "max"
+      ? 600
+      : activeThinkingLevel === "xhigh"
+      ? 500
+      : activeThinkingLevel === "high"
+      ? 400
+      : activeThinkingLevel === "medium"
+      ? 300
+      : activeThinkingLevel === "low"
+      ? 200
+      : 100; // default 为 100 步
 
   // 用户主目录：先读本地缓存保证首屏可用，再从 Tauri 后端拉取真实值刷新缓存（No-Fallback：拿不到则 UI 告警）
   const [userHome, setUserHome] = useState<string | null>(() => {
     try {
-      return localStorage.getItem("reinagent-user-home");
+      return kvGet("reinagent-user-home");
     } catch {
       return null;
     }
@@ -141,24 +177,12 @@ export default function App() {
 
 
   const effectiveThinkingLevel =
-    !isReasoningSupported || thinkingLevel === "off" || thinkingLevel === "default"
+    !isReasoningSupported || activeThinkingLevel === "off" || activeThinkingLevel === "default"
       ? undefined
-      : thinkingLevel;
+      : activeThinkingLevel;
 
-  const { state, send, stop, clear, loadState, isStreaming } = useConversation({
-    source,
-    config: {
-      provider: activeProviderId as any,
-      apiKey: activeApiKey,
-      modelId: activeModelId,
-      baseUrl: activeBaseUrl,
-      hasEffort: isReasoningSupported,
-    },
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
-    maxSteps,
-    thinkingLevel: effectiveThinkingLevel,
-    workspaceRoot: effectiveWorkspaceRoot,
-  });
+  // 会话池：每个任务一个独立 controller；切任务只换订阅目标，后台任务照常流式。
+  const { state, stop, isStreaming } = useConversationPool(activeTaskId);
 
   // Keep ref of current messages and activeTaskId to prevent closure races and empty overrides
   // 上下文容量：真实 usage（最后一条 assistant apiMessage）+ 模型声明 contextWindow + 字符估算分类
@@ -279,36 +303,19 @@ export default function App() {
   // Mark whether activeTaskId transition was triggered by sending the first draft message
   const isPromotingDraftRef = useRef(false);
 
-  // Helper to persist non-empty messages for a given taskId
-  const persistTaskMessages = (taskId: string | null, messages: typeof state.messages) => {
-    if (!taskId || messages.length === 0) return;
-    try {
-      localStorage.setItem(`reinagent-task-msg-${taskId}`, JSON.stringify(messages));
-    } catch (e) {
-      console.error("Failed to persist task messages", e);
-    }
-  };
-
-  // When activeTaskId changes, persist previous task's messages and load next task's messages
+  // When activeTaskId changes: restore the task's model binding only (no abort, no state swap —
+  // 池中每个任务的状态独立存活，切换只是换 UI 绑定).
   useEffect(() => {
-    // If transitioning because of first message in draft, keep the ongoing conversation intact
     if (isPromotingDraftRef.current) {
       isPromotingDraftRef.current = false;
       prevTaskIdRef.current = activeTaskId;
       return;
     }
 
-    const prevId = prevTaskIdRef.current;
-    if (prevId && prevId !== activeTaskId) {
-      // Only persist if previous task has valid non-empty messages
-      persistTaskMessages(prevId, currentMessagesRef.current);
-    }
-
     prevTaskIdRef.current = activeTaskId;
 
     if (!activeTaskId) {
       // Draft mode (empty state)
-      clear();
       setSessionProviderId(settings.provider || "deepseek");
       setSessionModelId(settings.modelId || "");
     } else {
@@ -321,41 +328,15 @@ export default function App() {
         setSessionProviderId(settings.provider || "deepseek");
         setSessionModelId(settings.modelId || "");
       }
-
-      // Load saved messages for the active task
-      try {
-        const raw = localStorage.getItem(`reinagent-task-msg-${activeTaskId}`);
-        if (raw) {
-          const parsed = JSON.parse(raw);
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            loadState(parsed);
-            return;
-          }
-        }
-      } catch (e) {
-        console.error("Failed to load task messages", e);
-      }
-      clear();
     }
   }, [activeTaskId]);
 
-  // Persist current active task messages whenever messages change
-  useEffect(() => {
-    if (activeTaskId && state.messages.length > 0) {
-      persistTaskMessages(activeTaskId, state.messages);
-    }
-  }, [activeTaskId, state.messages]);
-
   const handleNewTask = (project?: string | null) => {
-    // If switching from an existing task, persist it first before clearing
-    if (activeTaskIdRef.current) {
-      persistTaskMessages(activeTaskIdRef.current, currentMessagesRef.current);
-    }
+    // 切回草稿态：在途任务留在池中继续跑（新建任务 ≠ 停止任何会话）
     setActiveTaskId(null);
     if (project !== undefined) {
       setSelectedProject(project);
     }
-    clear();
     setSessionProviderId(settings.provider || "deepseek");
     setSessionModelId(settings.modelId || "");
     // Trigger auto-focus on the input box
@@ -369,7 +350,16 @@ export default function App() {
     if (!targetTaskId) {
       isPromotingDraftRef.current = true;
       const fallbackTitle = text.slice(0, 30).trim() || (t("newTask") || "新任务");
-      targetTaskId = createTask(fallbackTitle, selectedProject, sessionProviderId, sessionModelId);
+      // 草稿所选的推理等级/审批模式随任务落库，实现任务级隔离（此后调整只影响该任务）。
+      const draftState = useAppStore.getState();
+      targetTaskId = createTask(
+        fallbackTitle,
+        selectedProject,
+        sessionProviderId,
+        sessionModelId,
+        draftState.thinkingLevel,
+        draftState.approvalMode,
+      );
       setActiveTaskId(targetTaskId);
 
       // Trigger AI session title generation or heuristic summarization in background sidecar
@@ -390,7 +380,24 @@ export default function App() {
       updateTaskTitle(targetTaskId, fallbackTitle);
     }
 
-    return send(text);
+    // 草稿提升竞态：setActiveTaskId 后 hook 闭包里的 taskId 仍是旧的（null），
+    // 必须用新 taskId 直接调池（池的 ensureEntry 会为新任务建条目）。
+    // 审批模式在发送瞬间冻结（整轮生效，对齐 ZCode 提交冻结语义）。
+    return poolSend(targetTaskId, text, {
+      source,
+      config: {
+        provider: activeProviderId as any,
+        apiKey: activeApiKey,
+        modelId: activeModelId,
+        baseUrl: activeBaseUrl,
+        hasEffort: isReasoningSupported,
+      },
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      maxSteps,
+      workspaceRoot: effectiveWorkspaceRoot,
+      thinkingLevel: effectiveThinkingLevel,
+      approvalMode: activeApprovalMode,
+    });
   };
 
   const handleRetry = () => {
@@ -526,6 +533,15 @@ export default function App() {
                   />
                 </div>
                 <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">
+                  {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
+                  {state.pendingApproval && (
+                    <ApprovalCard
+                      request={state.pendingApproval}
+                      onDecide={(decision: ApprovalDecision) => {
+                        if (activeTaskId) poolResolveApproval(activeTaskId, decision);
+                      }}
+                    />
+                  )}
                   <LexicalComposer
                     isStreaming={isStreaming}
                     onSend={handleSend}

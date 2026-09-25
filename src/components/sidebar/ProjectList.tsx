@@ -1,9 +1,12 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { useTranslation } from '../../i18n';
 import { useAppStore } from '../../store/useAppStore';
+import { subscribeStreaming, getStreamingTaskIds } from '../../lib/chat/conversationPool';
+import { kvGet, kvGetJSON, kvSet, kvSetJSON } from '../../lib/storage/db';
 import { Tooltip } from '../ui/Tooltip';
 import {
   ChevronDown,
+  Loader2,
   ChevronRight,
   Folder,
   FolderOpen,
@@ -24,6 +27,7 @@ export interface ProjectGroup {
 
 export type SectionType = "projects" | "tasks";
 
+// 折叠/排序偏好持久化在 SQLite kv 表（键名保留原名）
 const STORAGE_PROJECTS_KEY = "reinagent-projects-open-groups";
 const STORAGE_PROJECTS_SECTION_KEY = "reinagent-projects-section-expanded";
 const STORAGE_TASKS_KEY = "reinagent-tasks-expanded";
@@ -33,9 +37,7 @@ const getSavedOpenGroups = (projects: ProjectGroup[]): Record<string, boolean> =
   const defaultOpen = projects.reduce((acc, p) => ({ ...acc, [p.name]: true }), {});
   if (typeof window === "undefined") return defaultOpen;
   try {
-    const raw = localStorage.getItem(STORAGE_PROJECTS_KEY);
-    if (!raw) return defaultOpen;
-    const parsed = JSON.parse(raw);
+    const parsed = kvGetJSON<Record<string, boolean>>(STORAGE_PROJECTS_KEY);
     if (parsed && typeof parsed === "object") {
       return { ...defaultOpen, ...parsed };
     }
@@ -48,7 +50,7 @@ const getSavedOpenGroups = (projects: ProjectGroup[]): Record<string, boolean> =
 const getSavedProjectsSectionExpanded = (): boolean => {
   if (typeof window === "undefined") return true;
   try {
-    const raw = localStorage.getItem(STORAGE_PROJECTS_SECTION_KEY);
+    const raw = kvGet(STORAGE_PROJECTS_SECTION_KEY);
     if (raw !== null) {
       return raw === "true";
     }
@@ -61,7 +63,7 @@ const getSavedProjectsSectionExpanded = (): boolean => {
 const getSavedTasksExpanded = (): boolean => {
   if (typeof window === "undefined") return true;
   try {
-    const raw = localStorage.getItem(STORAGE_TASKS_KEY);
+    const raw = kvGet(STORAGE_TASKS_KEY);
     if (raw !== null) {
       return raw === "true";
     }
@@ -75,11 +77,10 @@ const getSavedSectionOrder = (): SectionType[] => {
   const defaultOrder: SectionType[] = ["projects", "tasks"];
   if (typeof window === "undefined") return defaultOrder;
   try {
-    const raw = localStorage.getItem(STORAGE_SECTION_ORDER_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
+    const parsed = kvGetJSON<SectionType[]>(STORAGE_SECTION_ORDER_KEY);
+    if (parsed) {
       if (Array.isArray(parsed) && parsed.includes("projects") && parsed.includes("tasks")) {
-        return parsed as SectionType[];
+        return parsed;
       }
     }
   } catch (e) {
@@ -151,6 +152,12 @@ export function ProjectList({
   const tasks = useAppStore((state) => state.tasks);
   const activeTaskId = useAppStore((state) => state.activeTaskId);
   const setActiveTaskId = useAppStore((state) => state.setActiveTaskId);
+
+  // 会话池流式集合（后台任务照常跑，侧栏实时显示「进行中」标记）
+  const streamingSignature = useSyncExternalStore(subscribeStreaming, () =>
+    getStreamingTaskIds().join(",")
+  );
+  const streamingTaskIds = new Set(streamingSignature ? streamingSignature.split(",") : []);
   const updateTaskTitle = useAppStore((state) => state.updateTaskTitle);
   const deleteTask = useAppStore((state) => state.deleteTask);
   const toggleTaskPin = useAppStore((state) => state.toggleTaskPin);
@@ -186,7 +193,7 @@ export function ProjectList({
     setProjectsExpanded((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem(STORAGE_PROJECTS_SECTION_KEY, String(next));
+        kvSet(STORAGE_PROJECTS_SECTION_KEY, String(next));
       } catch (e) {
         console.error("Failed to save projects section expanded", e);
       }
@@ -198,7 +205,7 @@ export function ProjectList({
     setOpenGroups((prev) => {
       const next = { ...prev, [name]: !prev[name] };
       try {
-        localStorage.setItem(STORAGE_PROJECTS_KEY, JSON.stringify(next));
+        kvSetJSON(STORAGE_PROJECTS_KEY, next);
       } catch (e) {
         console.error("Failed to save project open groups", e);
       }
@@ -210,7 +217,7 @@ export function ProjectList({
     setTasksExpanded((prev) => {
       const next = !prev;
       try {
-        localStorage.setItem(STORAGE_TASKS_KEY, String(next));
+        kvSet(STORAGE_TASKS_KEY, String(next));
       } catch (e) {
         console.error("Failed to save tasks expanded", e);
       }
@@ -312,7 +319,7 @@ export function ProjectList({
         const nextOrder: SectionType[] = [current[1], current[0]];
         setSectionOrder(nextOrder);
         try {
-          localStorage.setItem(STORAGE_SECTION_ORDER_KEY, JSON.stringify(nextOrder));
+          kvSetJSON(STORAGE_SECTION_ORDER_KEY, nextOrder);
         } catch (err) {
           console.error(err);
         }
@@ -322,7 +329,7 @@ export function ProjectList({
         const nextOrder: SectionType[] = [current[1], current[0]];
         setSectionOrder(nextOrder);
         try {
-          localStorage.setItem(STORAGE_SECTION_ORDER_KEY, JSON.stringify(nextOrder));
+          kvSetJSON(STORAGE_SECTION_ORDER_KEY, nextOrder);
         } catch (err) {
           console.error(err);
         }
@@ -600,7 +607,10 @@ export function ProjectList({
                               </span>
                               <div className="flex items-center gap-1 shrink-0">
                                 {!isConfirmingDelete && (
-                                  <span className="text-[13px] opacity-60 whitespace-nowrap group-hover/proj-task:hidden">
+                                  <span className="text-[13px] opacity-60 whitespace-nowrap group-hover/proj-task:hidden flex items-center gap-1.5">
+                                    {streamingTaskIds.has(task.id) && (
+                                      <Loader2 className="w-3 h-3 animate-spin text-[var(--brand)]" aria-label="进行中" />
+                                    )}
                                     {formatRelativeTime(task.createdAt, locale)}
                                   </span>
                                 )}
@@ -816,7 +826,10 @@ export function ProjectList({
                   <div className="flex items-center gap-1 shrink-0">
                     {/* Time display: hide when hovering or when confirming delete */}
                     {!isConfirmingDelete && (
-                      <span className="text-sm opacity-55 whitespace-nowrap group-hover:hidden">
+                      <span className="text-sm opacity-55 whitespace-nowrap group-hover:hidden flex items-center gap-1.5">
+                        {streamingTaskIds.has(task.id) && (
+                          <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--brand)]" aria-label="进行中" />
+                        )}
                         {formatRelativeTime(task.createdAt, locale)}
                       </span>
                     )}

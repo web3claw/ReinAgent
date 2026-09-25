@@ -37,3 +37,6 @@ src-tauri/target
 *.njsproj
 *.sln
 *.sw?
+
+# ReinAgent per-workspace scratch (debug scripts, temp artifacts; auto-cleanable)
+.ReinAgent/

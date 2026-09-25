@@ -26,6 +26,7 @@ import {
   computeLineChangeStat,
   formatWorkDuration,
   isExploreTool,
+  isReinAgentTempPath,
   pathDirectory,
   resolveTurnWorkState,
   toolArgPath,
@@ -189,7 +190,7 @@ export interface TurnGroupViewProps {
 function IntermediateText({ entry }: { entry: TimelineEntry }) {
   if (entry.role !== "assistant" || !entry.text) return null;
   return (
-    <div className="turn-intermediate-text text-[16px] font-[450] text-[var(--text)] leading-relaxed">
+    <div className="turn-intermediate-text font-[450] text-[var(--text)] leading-relaxed">
       <MarkdownText text={entry.text} />
     </div>
   );
@@ -248,9 +249,11 @@ function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntr
 
   // 同一文件在一轮内被多次编辑时按路径聚合：original 取第一次编辑前、final 取最后一次编辑后，
   // 只显示净变更（对齐 ZCode taskChangeSummary 的按路径合并语义）。
+  // `.ReinAgent/temp/` 下的一次性脚本不进摘要（不列行、不计入数量与增删统计）。
   const changes = useMemo(() => {
     const byPath = new Map<string, { path: string; originalContent: string; finalContent: string }>();
     for (const change of collectTurnFileChanges(entries)) {
+      if (isReinAgentTempPath(change.path)) continue;
       const existing = byPath.get(change.path);
       if (existing) {
         existing.finalContent = change.finalContent;
@@ -467,7 +470,7 @@ export function TurnGroupView({ group, liveNowMs, live = false, workspaceRoot, o
                   );
                 }
                 if (isToolEntry(item.entry)) {
-                  return <ToolCallCard key={item.entry.id} entry={item.entry} />;
+                  return <ToolCallCard key={item.entry.id} entry={item.entry} workspaceRoot={workspaceRoot} />;
                 }
                 return null;
               })}

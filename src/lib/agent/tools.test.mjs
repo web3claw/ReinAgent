@@ -39,6 +39,7 @@ import {
   buildTextToolResult,
   createTools,
   getTools,
+  resolveToolPermissionKind,
 } from "./tools.js";
 
 // 运行时从 provider 子入口加载 faux（仅 Node 测试用；不经过 Vite 打包，不拖入桶文件）。
@@ -463,4 +464,18 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
   // 浅拷贝：改动返回数组本身不影响内部注册表
   a.pop();
   assert.equal(getTools().length, TOOLS.length, "pop 后重新获取应仍是完整列表");
+});
+
+// ---------------------------------------------------------------------------
+// 9 · 审批模式工具分级（resolveToolPermissionKind）
+// ---------------------------------------------------------------------------
+test("9 · resolveToolPermissionKind：read/write/exec 分级准确，未知工具保守视为 write", () => {
+  assert.equal(resolveToolPermissionKind("read_file"), "read");
+  assert.equal(resolveToolPermissionKind("list_dir"), "read");
+  assert.equal(resolveToolPermissionKind("write_file"), "write");
+  assert.equal(resolveToolPermissionKind("edit_file"), "write");
+  assert.equal(resolveToolPermissionKind("exec_command"), "exec");
+  // 保守默认：未知/未来新增工具审批从紧（write 需批准、plan 模式拦截），绝不静默放权。
+  assert.equal(resolveToolPermissionKind("some_future_tool"), "write");
+  assert.equal(resolveToolPermissionKind(""), "write");
 });

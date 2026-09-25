@@ -5,15 +5,16 @@
  * 收起延迟卸载 + 运行态 kindLabel 扫光），各类型渲染结构对照 ZCode：
  * - 终端（exec_command ↔ ExecuteToolCallBlock）：摘要行内联命令（展开时隐藏），
  *   详情为 `rounded-xl border bg-panel` 卡：`$` 命令 + ExecuteOutput（5 行上限、吸底-冻结跟随）；
- * - 编辑/写入（edit_file/write_file ↔ EditToolCallBlock）：primaryText 文件 chip +
- *   `+N/−N`（LCS 精确口径），详情为 Shiki 高亮轻量 diff（buildUnifiedPatch 生成统一格式）；
+ * - 编辑/写入（edit_file/write_file ↔ EditToolCallBlock）：primaryText 文件 chip
+ *   （类型图标 + 可点击文件名 → 右侧 patch diff 视图）+ 目录路径（带尾斜杠）+
+ *   条件 `+N/−N`（added>0 / removed>0 才显示），详情为 Shiki 高亮轻量 diff；
  * - 读取（read_file ↔ ReadToolCallBlock）：不可展开；chip 点击在右侧面板打开文件预览；
  * - 其余工具：通用摘要（工具名 + 参数摘要 + 结果折叠）。
  * 三态不做图标旋转/对叉差异（对齐 ZCode 性能取舍）：运行态 = kindLabel 扫光 + 状态词。
  */
 
 import { memo, useMemo } from "react";
-import { FileText, Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
+import { Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
 import type { ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { formatToolArgs } from "../../lib/chat/toolDisplay";
 import { useTranslation } from "../../i18n";
@@ -25,21 +26,67 @@ import { getPlainTextPatchFallbackLines } from "../../preview/lib/patchDiffPrevi
 import { inferCodeLanguage } from "../../preview/lib/codeViewer";
 import { useZCodeStore } from "../../preview/store/StoreProvider";
 import {
+  FileDisplayIcon,
+  resolveFileDisplayDescriptor,
+} from "../../preview/lib/fileDisplay";
+import {
   buildUnifiedPatch,
   computeDiffStat,
   toolArgPath,
 } from "../../lib/chat/turnActivity";
 
 function DiffCountView({ added, removed }: { added: number; removed: number }) {
+  // 对齐 ZCode renderDiffCount：added>0 才显示绿色 +N，removed>0 才显示红色 −N，零不显示。
   return (
-    <span className="font-mono tabular-nums">
-      <span className="text-diff-added">+{added}</span>{" "}
-      <span className="text-diff-removed">−{removed}</span>
+    <span className="inline-flex items-center gap-1 whitespace-nowrap font-mono leading-none tabular-nums">
+      {added > 0 && <span className="text-diff-added">+{added}</span>}
+      {removed > 0 && <span className="text-diff-removed">−{removed}</span>}
     </span>
   );
 }
 
-function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
+/** 文件 chip（对齐 ZCode renderFileChip clickable 分支）：类型图标 + 文件名，hover 下划线；
+ * onMouseDown 阻断默认行为——防止点击文件名误触发整行的折叠/展开。 */
+function FileChip({
+  path,
+  workspaceRoot,
+  onOpen,
+}: {
+  path: string;
+  workspaceRoot?: string;
+  onOpen: () => void;
+}) {
+  const descriptor = useMemo(
+    () => resolveFileDisplayDescriptor(path, { basePath: workspaceRoot }),
+    [path, workspaceRoot],
+  );
+  return (
+    <button
+      type="button"
+      className="inline-flex min-w-0 max-w-full cursor-pointer items-center gap-1.5 text-foreground-subtle hover:underline"
+      onMouseDown={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
+      onClick={(e) => {
+        e.stopPropagation();
+        onOpen();
+      }}
+      title={descriptor.filePath ?? descriptor.normalizedPath}
+    >
+      <FileDisplayIcon src={descriptor.fileIconSrc} size={16} className="size-4 shrink-0" />
+      <span className="min-w-0 truncate">{descriptor.fileName}</span>
+    </button>
+  );
+}
+
+function ToolCallCardImpl({
+  entry,
+  workspaceRoot,
+}: {
+  entry: ToolTimelineEntry;
+  workspaceRoot?: string;
+}) {
   const { t, locale } = useTranslation();
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   const theme = useAppStore((state) => state.theme);
@@ -75,6 +122,12 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
 
   const path = toolArgPath(entry.args);
   const fileName = path ? path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || path : undefined;
+  // 目录段（带尾斜杠、剥工作区根前缀），仅剩文件名时为 undefined（不显示目录）
+  const dirPath = useMemo(() => {
+    if (!path) return undefined;
+    const descriptor = resolveFileDisplayDescriptor(path, { basePath: workspaceRoot });
+    return descriptor.filePath ?? undefined;
+  }, [path, workspaceRoot]);
 
   // ---- 终端（对齐 ZCode ExecuteToolCallBlock）----
   if (entry.toolName === "exec_command") {
@@ -115,16 +168,21 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
   // ---- 编辑 / 写入（对齐 ZCode EditToolCallBlock + EditInlineDiffContent 轻量路径）----
   if (entry.toolName === "edit_file" || entry.toolName === "write_file") {
     const diffStat = useMemo(() => computeDiffStat(entry.toolName, entry.args), [entry]);
+    // 参数名回退：edit_file 实际签名为 target/replacement（old_string/new_string 为兼容别名）
     const oldString =
       entry.toolName === "edit_file" && typeof entry.args?.old_string === "string"
         ? entry.args.old_string
-        : "";
+        : entry.toolName === "edit_file" && typeof entry.args?.target === "string"
+          ? entry.args.target
+          : "";
     const newString =
       entry.toolName === "edit_file" && typeof entry.args?.new_string === "string"
         ? entry.args.new_string
-        : typeof entry.args?.content === "string"
-          ? entry.args.content
-          : "";
+        : entry.toolName === "edit_file" && typeof entry.args?.replacement === "string"
+          ? entry.args.replacement
+          : typeof entry.args?.content === "string"
+            ? entry.args.content
+            : "";
     const patch = buildUnifiedPatch(path ?? fileName ?? entry.toolName, oldString, newString);
     const highlightLanguage = inferCodeLanguage(path ?? entry.toolName, patch);
     const highlightTheme =
@@ -135,7 +193,25 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
         toolId={entry.toolCallId}
         icon={<Pencil className="size-4 shrink-0 text-foreground-subtle" />}
         kindLabel={kindLabel}
-        primaryText={fileName ? <span className="truncate">{fileName}</span> : null}
+        primaryText={
+          fileName && path ? (
+            <FileChip
+              path={path}
+              workspaceRoot={workspaceRoot}
+              onOpen={() =>
+                openCodeViewer({
+                  type: "patch",
+                  title: fileName,
+                  path,
+                  patch,
+                })
+              }
+            />
+          ) : fileName ? (
+            <span className="truncate">{fileName}</span>
+          ) : null
+        }
+        secondaryText={dirPath}
         diffCount={
           diffStat ? (
             <DiffCountView added={diffStat.added} removed={diffStat.removed} />
@@ -173,17 +249,17 @@ function ToolCallCardImpl({ entry }: { entry: ToolTimelineEntry }) {
         kindLabel={kindLabel}
         canToggle={false}
         primaryText={
-          <button
-            type="button"
-            className="inline-flex min-w-0 cursor-pointer items-center gap-1.5"
-            onClick={() => path && openCodeViewer({ type: "file", title: fileName ?? path, path })}
-            title={path}
-          >
-            <FileText className="h-3 w-3 shrink-0" aria-hidden="true" />
+          fileName && path ? (
+            <FileChip
+              path={path}
+              workspaceRoot={workspaceRoot}
+              onOpen={() => openCodeViewer({ type: "file", title: fileName, path })}
+            />
+          ) : (
             <span className="truncate">{fileName ?? kindLabel}</span>
-          </button>
+          )
         }
-        secondaryText={path}
+        secondaryText={dirPath}
         statusLabel={statusLabelNode}
         showStatusLabel
         isRunning={isRunning}

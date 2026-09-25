@@ -270,3 +270,25 @@ export function getTools(options) {
   }
   return TOOLS.slice();
 }
+
+/**
+ * 工具权限分级（审批模式的裁决依据，对齐 ZCode 的 permission kind）：
+ * - "read"：只读（read_file / list_dir）—— 任何模式都直接放行；
+ * - "write"：写入/修改文件（write_file / edit_file）—— ask 模式需批准，plan 模式拦截；
+ * - "exec"：命令执行（exec_command）—— ask / edit 模式需批准，plan 模式拦截。
+ *
+ * 未知工具名一律视为 "write"（保守默认：审批从紧，绝不静默放权）。
+ * @param {string} name 工具名
+ * @returns {"read" | "write" | "exec"} 权限分级
+ */
+export function resolveToolPermissionKind(name) {
+  switch (name) {
+    case "read_file":
+    case "list_dir":
+      return "read";
+    case "exec_command":
+      return "exec";
+    default:
+      return "write";
+  }
+}

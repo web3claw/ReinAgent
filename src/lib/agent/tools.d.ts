@@ -84,3 +84,11 @@ export declare const TOOLS: ToolList;
 
 /** 返回工具集的**浅拷贝**，防止外部改动内部注册表数组。若传入 options 则创建专属工具集。 */
 export declare function getTools(options?: CreateToolsOptions): ToolList;
+
+/** 工具权限分级：read=只读（恒放行）、write=写入/修改文件、exec=命令执行。 */
+export type ToolPermissionKind = "read" | "write" | "exec";
+
+/**
+ * 按工具名解析权限分级（审批模式裁决依据）。未知工具名保守视为 "write"。
+ */
+export declare function resolveToolPermissionKind(name: string): ToolPermissionKind;

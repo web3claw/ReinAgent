@@ -74,9 +74,12 @@ const FILE_NAME_ICON_ALIASES: Record<string, string> = {
 const EXTENSION_ICON_ALIASES: Record<string, string> = {
   backup: "document",
   bash: "console",
+  bat: "console",
+  cmd: "console",
   cjs: "javascript",
   cts: "typescript",
   css: "css",
+  ps1: "powershell",
   // Office 扩展名与 Material Icons 素材名不一致，直接用扩展名拼路径会选错图标；
   // 这里显式收敛到同一套产品语义，旧版与新版 Word 文件也共用 word 图标。
   doc: "word",

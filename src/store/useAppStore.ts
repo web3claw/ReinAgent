@@ -1,10 +1,13 @@
 import { create } from "zustand";
+import { kvGet, kvSet, kvSetJSON, getTaskListCached, syncTasks } from "../lib/storage/db";
+import { destroyTask } from "../lib/chat/conversationPool";
 
 export type ThemeMode = "dark" | "light";
 export type LocaleMode = "zh-CN" | "en-US";
 export type ViewMode = "workbench" | "settings";
 export type ThinkingLevel = "off" | "default" | "low" | "medium" | "high" | "xhigh" | "max";
-export type ApprovalMode = "always" | "suggest" | "auto";
+/** 审批模式（对齐 ZCode 用户可切面）：plan=计划模式 ask=变更前确认 edit=自动编辑 full=完全访问。 */
+export type ApprovalMode = "plan" | "ask" | "edit" | "full";
 
 export interface AppTask {
   id: string;
@@ -15,6 +18,10 @@ export interface AppTask {
   pinned?: boolean;
   providerId?: string;
   modelId?: string;
+  /** 任务级推理强度覆盖；缺省=跟随全局默认（新任务/草稿档位）。 */
+  thinkingLevel?: ThinkingLevel;
+  /** 任务级审批模式覆盖；缺省=跟随全局默认。 */
+  approvalMode?: ApprovalMode;
 }
 
 interface AppState {
@@ -46,13 +53,24 @@ interface AppState {
   setSelectedProject: (project: string | null) => void;
   addProject: (project: string) => void;
   removeProject: (project: string) => void;
-  createTask: (title?: string, project?: string | null, providerId?: string, modelId?: string) => string;
+  createTask: (
+    title?: string,
+    project?: string | null,
+    providerId?: string,
+    modelId?: string,
+    thinkingLevel?: ThinkingLevel,
+    approvalMode?: ApprovalMode
+  ) => string;
   setActiveTaskId: (id: string | null) => void;
   updateTaskTitle: (id: string, title: string) => void;
   updateTaskModel: (id: string, providerId: string, modelId: string) => void;
+  updateTaskThinkingLevel: (id: string, level: ThinkingLevel) => void;
+  updateTaskApprovalMode: (id: string, mode: ApprovalMode) => void;
   deleteTask: (id: string) => void;
   toggleTaskPin: (id: string) => void;
   startNewTaskDraft: (project?: string | null) => void;
+  /** 启动时从 SQLite（经 db.ts 缓存）水合全部持久化字段。必须在渲染前调用一次。 */
+  hydratePersisted: () => void;
   /** 右侧代码/变更预览面板（ZCode PreviewPane 移植）的打开状态 */
   codeViewerSource:
     | { type: "file"; title: string; path: string }
@@ -72,7 +90,7 @@ interface AppState {
 
 const getInitialTheme = (): ThemeMode => {
   if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("reinagent-theme") as ThemeMode;
+    const saved = kvGet("reinagent-theme") as ThemeMode | null;
     if (saved === "light" || saved === "dark") return saved;
   }
   return "dark";
@@ -80,7 +98,7 @@ const getInitialTheme = (): ThemeMode => {
 
 const getInitialLocale = (): LocaleMode => {
   if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("reinagent-locale") as LocaleMode;
+    const saved = kvGet("reinagent-locale") as LocaleMode | null;
     if (saved === "zh-CN" || saved === "en-US") return saved;
   }
   return "zh-CN";
@@ -88,7 +106,7 @@ const getInitialLocale = (): LocaleMode => {
 
 const getInitialSidebarOpen = (): boolean => {
   if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("reinagent-sidebar");
+    const saved = kvGet("reinagent-sidebar");
     if (saved !== null) return saved === "true";
   }
   return true;
@@ -97,13 +115,15 @@ const getInitialSidebarOpen = (): boolean => {
 const getInitialTasks = (): AppTask[] => {
   if (typeof window !== "undefined") {
     try {
-      const saved = localStorage.getItem("reinagent-tasks");
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed)) {
-          return parsed;
-        }
-      }
+      return getTaskListCached()
+        .map((row) => {
+          try {
+            return JSON.parse(row.payload) as AppTask;
+          } catch {
+            return null;
+          }
+        })
+        .filter((t): t is AppTask => t !== null);
     } catch (e) {
       console.error("Failed to load initial tasks", e);
     }
@@ -113,7 +133,7 @@ const getInitialTasks = (): AppTask[] => {
 
 const getInitialThinkingLevel = (): ThinkingLevel => {
   if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("reinagent-thinking-level");
+    const saved = kvGet("reinagent-thinking-level");
     if (
       saved === "off" ||
       saved === "default" ||
@@ -129,9 +149,17 @@ const getInitialThinkingLevel = (): ThinkingLevel => {
   return "default";
 };
 
+const getInitialApprovalMode = (): ApprovalMode => {
+  if (typeof window !== "undefined") {
+    const saved = kvGet("reinagent-approval-mode");
+    if (saved === "plan" || saved === "ask" || saved === "edit" || saved === "full") return saved;
+  }
+  return "full";
+};
+
 const getInitialActiveTaskId = (tasks: AppTask[]): string | null => {
   if (typeof window !== "undefined") {
-    const saved = localStorage.getItem("reinagent-active-task-id");
+    const saved = kvGet("reinagent-active-task-id");
     if (saved && tasks.some((t) => t.id === saved)) {
       return saved;
     }
@@ -142,7 +170,7 @@ const getInitialActiveTaskId = (tasks: AppTask[]): string | null => {
 const getInitialProjects = (): string[] => {
   if (typeof window !== "undefined") {
     try {
-      const saved = localStorage.getItem("reinagent-user-projects");
+      const saved = kvGet("reinagent-user-projects");
       if (saved) {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
@@ -170,7 +198,7 @@ export const useAppStore = create<AppState>((set) => ({
   isSidebarOpen: getInitialSidebarOpen(),
   currentView: "workbench",
   thinkingLevel: getInitialThinkingLevel(),
-  approvalMode: "suggest",
+  approvalMode: getInitialApprovalMode(),
   selectedProject: initialActiveTask ? initialActiveTask.project : null,
   projects: initialProjects,
   tasks: initialTasks,
@@ -185,7 +213,7 @@ export const useAppStore = create<AppState>((set) => ({
         : [trimmed, ...state.projects];
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("reinagent-user-projects", JSON.stringify(nextProjects));
+          kvSetJSON("reinagent-user-projects", nextProjects);
         } catch (e) {
           console.error("Failed to save projects", e);
         }
@@ -198,7 +226,7 @@ export const useAppStore = create<AppState>((set) => ({
       const nextProjects = state.projects.filter((p) => p !== project);
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("reinagent-user-projects", JSON.stringify(nextProjects));
+          kvSetJSON("reinagent-user-projects", nextProjects);
         } catch (e) {
           console.error("Failed to save projects", e);
         }
@@ -212,9 +240,9 @@ export const useAppStore = create<AppState>((set) => ({
   setActiveTaskId: (activeTaskId) => {
     if (typeof window !== "undefined") {
       if (activeTaskId) {
-        localStorage.setItem("reinagent-active-task-id", activeTaskId);
+        kvSet("reinagent-active-task-id", activeTaskId);
       } else {
-        localStorage.removeItem("reinagent-active-task-id");
+        kvSet("reinagent-active-task-id", "");
       }
     }
     set((state) => {
@@ -226,23 +254,26 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
 
-  createTask: (title, project = null, providerId, modelId) => {
+  createTask: (title, project = null, providerId, modelId, thinkingLevel, approvalMode) => {
     const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newTask: AppTask = {
       id: newId,
-      title: title || (typeof window !== "undefined" && localStorage.getItem("reinagent-locale") === "en-US" ? "New Task" : "新建任务"),
+      title: title || (kvGet("reinagent-locale") === "en-US" ? "New Task" : "新建任务"),
       createdAt: Date.now(),
       updatedAt: Date.now(),
       project: project,
       providerId: providerId,
       modelId: modelId,
+      // 草稿态所选的推理等级/审批模式在首次发送（草稿提升）时落到新任务上，实现任务级隔离。
+      thinkingLevel: thinkingLevel,
+      approvalMode: approvalMode,
     };
     set((state) => {
       const nextTasks = [newTask, ...state.tasks];
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
-          localStorage.setItem("reinagent-active-task-id", newId);
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+          kvSet("reinagent-active-task-id", newId);
         } catch (e) {
           console.error("Failed to save tasks", e);
         }
@@ -254,7 +285,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   startNewTaskDraft: (project = null) => {
     if (typeof window !== "undefined") {
-      localStorage.removeItem("reinagent-active-task-id");
+      kvSet("reinagent-active-task-id", "");
     }
     set({
       activeTaskId: null,
@@ -269,7 +300,7 @@ export const useAppStore = create<AppState>((set) => ({
       );
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
         } catch (e) {
           console.error("Failed to save tasks", e);
         }
@@ -285,7 +316,39 @@ export const useAppStore = create<AppState>((set) => ({
       );
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  updateTaskThinkingLevel: (id, level) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id ? { ...t, thinkingLevel: level, updatedAt: Date.now() } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  updateTaskApprovalMode: (id, mode) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id ? { ...t, approvalMode: mode, updatedAt: Date.now() } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
         } catch (e) {
           console.error("Failed to save tasks", e);
         }
@@ -297,7 +360,7 @@ export const useAppStore = create<AppState>((set) => ({
   deleteTask: (id) => {
     if (typeof window !== "undefined") {
       try {
-        localStorage.removeItem(`reinagent-task-msg-${id}`);
+        void destroyTask(id);
       } catch (e) {
         console.error("Failed to remove task message chunk", e);
       }
@@ -307,9 +370,9 @@ export const useAppStore = create<AppState>((set) => ({
       const isDeletingActive = state.activeTaskId === id;
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
           if (isDeletingActive) {
-            localStorage.removeItem("reinagent-active-task-id");
+            kvSet("reinagent-active-task-id", "");
           }
         } catch (e) {
           console.error("Failed to save tasks", e);
@@ -329,7 +392,7 @@ export const useAppStore = create<AppState>((set) => ({
       );
       if (typeof window !== "undefined") {
         try {
-          localStorage.setItem("reinagent-tasks", JSON.stringify(nextTasks));
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
         } catch (e) {
           console.error("Failed to save tasks", e);
         }
@@ -340,7 +403,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   setTheme: (theme) => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("reinagent-theme", theme);
+      kvSet("reinagent-theme", theme);
       document.documentElement.setAttribute("data-theme", theme);
     }
     set({ theme });
@@ -350,7 +413,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const next = state.theme === "dark" ? "light" : "dark";
       if (typeof window !== "undefined") {
-        localStorage.setItem("reinagent-theme", next);
+        kvSet("reinagent-theme", next);
         document.documentElement.setAttribute("data-theme", next);
       }
       return { theme: next };
@@ -359,7 +422,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   setLocale: (locale) => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("reinagent-locale", locale);
+      kvSet("reinagent-locale", locale);
     }
     set({ locale });
   },
@@ -368,7 +431,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const next = state.locale === "zh-CN" ? "en-US" : "zh-CN";
       if (typeof window !== "undefined") {
-        localStorage.setItem("reinagent-locale", next);
+        kvSet("reinagent-locale", next);
       }
       return { locale: next };
     });
@@ -376,13 +439,27 @@ export const useAppStore = create<AppState>((set) => ({
 
   openCodeViewer: (source) => set({ codeViewerSource: source }),
   closeCodeViewer: () => set({ codeViewerSource: null }),
+  // 渲染前水合：store 在模块求值时创建（此时 initStorage 尚未运行，缓存为空），
+  // 因此初始值全部为默认；这里在渲染前用缓存重设全部持久化字段。
+  hydratePersisted: () =>
+    set(() => ({
+      theme: getInitialTheme(),
+      locale: getInitialLocale(),
+      isSidebarOpen: getInitialSidebarOpen(),
+      tasks: getInitialTasks(),
+      // activeTaskId 依赖 tasks 列表（校验任务存在），先 tasks 后 active
+      activeTaskId: getInitialActiveTaskId(getInitialTasks()),
+      projects: getInitialProjects(),
+      thinkingLevel: getInitialThinkingLevel(),
+      approvalMode: getInitialApprovalMode(),
+    })),
   setTerminalOpen: (open) => set({ isTerminalOpen: open }),
   toggleTerminal: () => set((s) => ({ isTerminalOpen: !s.isTerminalOpen })),
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),
   toggleSettings: () => set((s) => ({ isSettingsOpen: !s.isSettingsOpen })),
   setSidebarOpen: (open) => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("reinagent-sidebar", String(open));
+      kvSet("reinagent-sidebar", String(open));
     }
     set({ isSidebarOpen: open });
   },
@@ -390,7 +467,7 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const next = !state.isSidebarOpen;
       if (typeof window !== "undefined") {
-        localStorage.setItem("reinagent-sidebar", String(next));
+        kvSet("reinagent-sidebar", String(next));
       }
       return { isSidebarOpen: next };
     });
@@ -398,9 +475,14 @@ export const useAppStore = create<AppState>((set) => ({
   setCurrentView: (view) => set({ currentView: view }),
   setThinkingLevel: (level) => {
     if (typeof window !== "undefined") {
-      localStorage.setItem("reinagent-thinking-level", level);
+      kvSet("reinagent-thinking-level", level);
     }
     set({ thinkingLevel: level });
   },
-  setApprovalMode: (mode) => set({ approvalMode: mode }),
+  setApprovalMode: (mode) => {
+    if (typeof window !== "undefined") {
+      kvSet("reinagent-approval-mode", mode);
+    }
+    set({ approvalMode: mode });
+  },
 }));

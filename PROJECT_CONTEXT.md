@@ -125,13 +125,14 @@ ReinAgent 架构全景
 - **推理等级（EffortLevel / ThinkingLevel）与最大步数（maxSteps）动态映射**：
   - **6 档标准等级支持**：对齐现代大模型规范，包含 `default`、`low`、`medium`、`high`、`xhigh`、`max` 6 档；
   - **纯英文 UI 与首字母大写**：聊天窗口菜单使用纯英文展示（`Default`、`Low`、`Medium`、`High`、`XHigh`、`Max`），显示激活绿点 `●`、粗体高亮及 `{steps} steps` 徽章；
-  - **动态步数递增规则**：`Default` 为 20 步，`Low` 为 30 步，每级递增 10 步：
-    - `default`: 20 steps
-    - `low`: 30 steps
-    - `medium`: 40 steps
-    - `high`: 50 steps
-    - `xhigh`: 60 steps
-    - `max`: 70 steps
+  - **动态步数映射（2026-09-25 用户定档，每级递增 100 步）**：
+    - `default`: 100 steps
+    - `low`: 200 steps
+    - `medium`: 300 steps
+    - `high`: 400 steps
+    - `xhigh`: 500 steps
+    - `max`: 600 steps
+  - **完全访问模式无步数上限**：任务审批模式为 `full` 时 `maxSteps` 传 0（`agentRuntime` 仅在 >0 时启用硬闸；注意不能用 `undefined`——那会在 `runAgentTurn` 回退成 `DEFAULT_MAX_STEPS`=8），硬闸与「继续」机制不再触发；其余模式按上表生效
   - **动态过滤与模型真实能力严格联动（No Fallback）**：
     - 聊天窗口中，若当前模型声明了 `effort.supportedLevels`，**严格仅显示该模型声明支持的档位**，不支持的等级（包括未声明时的 `Default`）在列表中完全过滤隐藏，坚决不进行任何臆测兜底；例如 DeepSeek（支持 `["low", "high", "max"]`）的菜单中严格仅有 `Low`、`High`、`Max` 三项；
     - 模型编辑弹窗（`ModelEditModal`）中，同样通过一排胶囊按钮展示支持的等级，并支持点击直接高亮并设为模型默认等级；若模型上游未声明 effort，可手动开启并从完整档位中选择；
@@ -234,33 +235,86 @@ ReinAgent 架构全景
 
 ---
 
-## 五、状态存储速查
+## 五、状态存储速查（2026-09-25 起迁移至 SQLite）
 
-### 1. 本地磁盘持久化配置（Tauri Backend / Home Directory）
+### 1. 本地磁盘持久化（Tauri Backend）
 
-| 配置文件路径 | 类型 / 格式 | 用途说明 |
+**`~/.ReinAgent/conversations.db`**（SQLite，WAL 模式，`conversation_store.rs`；前端经 IPC 访问）：
+
+| 表 | 结构 | 用途 |
 | :--- | :--- | :--- |
-| `~/.ReinAgent/provider_config.json` | `ProviderItem[]` (JSON) | 多模型服务商持久化配置（包含各 Provider 的 Key、端点、模型列表等，由 Tauri `provider_config_load` / `provider_config_save` 读写） |
-| `~/.ReinAgent/settings.json` | `Settings` (JSON) | 运行期全局设置（含当前激活的默认服务商、模型 ID、API Key、Base URL 等） |
+| `message` | `(task_id, msg_id)` PK + seq/role/status/started_at/ended_at/tool_name/tool_call_id/is_error/truncated_by/error/thinking_* | 时间线条目骨架（一行一个 TimelineEntry） |
+| `part` | `(task_id, msg_id, part_index)` PK + kind/payload | 条目内容块（text/thinking/tool_args/tool_result/**api_message**），为全文检索铺路（对齐 LiveAgent message/part 拆分）。**api_message**（2026-09-25）：assistant/tool 条目的权威 API 消息原件（AssistantMessage/ToolResultMessage，含 usage 与精确 API 格式）——对齐 LiveAgent「落盘原件而非 UI 投影」：恢复后 token 统计/缓存命中率/上下文容量不再归零，`toApiMessages` 恢复完整历史（修复刷新后模型失忆）；改动前入库的旧轮次无此块，usage 如实缺失 |
+| `task` | `id` PK + seq/payload/updated_at | 任务元数据（标题/时间/项目/置顶/模型绑定，JSON payload） |
+| `kv` | `key` PK + value | UI 偏好（主题/语言/侧栏状态/active-task-id/user-projects/thinking-level/user-home） |
 
-### 2. 界面状态存储（LocalStorage）
+**IPC 命令**：`conversation_sync`（任务全量替换，事务）/ `conversation_load` / `conversation_delete` / `task_sync` / `task_list` / `kv_get_all` / `kv_set_many`。
 
-| 键名 (Key) | 类型 / 格式 | 用途说明 |
-| :--- | :--- | :--- |
-| `reinagent-theme` | `"dark" \| "light"` | 当前界面主题 |
-| `reinagent-locale` | `"zh-CN" \| "en-US"` | 国际化语言 |
-| `reinagent-sidebar` | `"true" \| "false"` | 侧边栏收起/展开状态 |
-| `reinagent-sidebar-section-order` | `["projects", "tasks"]` | 侧边栏类目排列次序 |
-| `reinagent-projects-section-expanded`| `"true" \| "false"` | 项目类目本身展开/收起 |
-| `reinagent-tasks-expanded` | `"true" \| "false"` | 任务类目本身展开/收起 |
-| `reinagent-projects-open-groups` | `Record<string, boolean>` | 每个具体子项目的折叠状态 |
-| `reinagent-tasks` | `AppTask[]` | 任务元数据列表（id, title, createdAt, updatedAt, project, pinned） |
-| `reinagent-task-msg-${id}` | `Message[]` | 各任务独立分片持久化的对话完整消息记录 |
-| `reinagent-custom-projects` | `ProjectItem[]` | 用户自定义添加的项目集合 |
-| `reinagent-user-projects` | `string[]` | 用户通过文件夹选择器添加的项目绝对路径集合 |
-| `reinagent-user-home` | `string` | 用户主目录缓存（由 Tauri `path_home_dir` 启动拉取写入，作为默认工作区决议的本地缓存来源） |
-| `reinagent-active-task-id` | `string \| null` | 当前活动的任务 ID（null 为草稿/首页） |
-| `reinagent-thinking-level` | `"off" \| "low" \| "medium" \| "high" \| "max"` | 用户选择的思考深度与步数档位（默认 "high"） |
+**前端访问层 `src/lib/storage/db.ts`**：`main.tsx` 渲染前 `await initStorage()`（kv 全量 + 任务列表 + user-home 进内存缓存）→ 之后所有同步读走缓存；写入走写透（缓存 + 防抖批量 IPC）。
+
+### 2. 会话池（`src/lib/chat/conversationPool.ts`）
+
+- `Map<taskId, PoolEntry>`：每任务一个独立 conversationController + 外部 store（getSnapshot/subscribe，供 useSyncExternalStore）；
+- **切任务 ≠ 停止**：切换只换 UI 订阅目标；后台任务流式照常跑、照常落库（「注销 ≠ 停止」）；
+- 持久化时机：状态变化防抖 300ms 全量 sync（含流式中的条目，恢复时消毒收敛）；
+- 治理：空闲条目 LRU 上限 12（豁免流式中）；删除任务 → `destroyTask`（abort + 清内存 + 删 SQLite）；
+- 侧栏「进行中」标记：`subscribeStreaming`/`getStreamingTaskIds`（仅集合变化才通知，流式 delta 不触发侧栏重算）。
+
+### 3. localStorage（已废除）
+
+对话与任务数据的全部 localStorage 键（`reinagent-task-msg-*`、`reinagent-tasks` 等）已于 2026-09-25 移除，历史数据不迁移（从零开始）。例外：ZCode 预览面板移植件内部零散偏好已改走 kv；仅第三方库内部缓存不归本项目管辖。
+
+
+## 六、Linux 编译、运行与环境隔离规范（严格基于 run-linux.sh）
+
+由于宿主工程目录位于网络共享盘（CIFS/SMB 文件系统不支持 Linux 符号链接与标准文件锁机制），为了防止 `bun install` 软链接失败或 Cargo 编译锁死，**所有构建、类型检查与运行必须严格遵循 `run-linux.sh` 的环境隔离配置**：
+
+### 1. 核心隔离参数
+- **本地工作区**：`WORK_DIR="/tmp/reinagent"`
+- **Rust Target 目录**：`TARGET_DIR="/tmp/reinagent/target"`（通过 `export CARGO_TARGET_DIR="$TARGET_DIR"` 挂载）
+- **依赖隔离**：原生 Linux node_modules 安装在 `/tmp/reinagent/node_modules` 下。
+- **根目录 `node_modules` 软链接机制**：
+  - 工程根目录下的 `node_modules` 为指向 `/tmp/reinagent/node_modules` 的软链接（`ln -sfn /tmp/reinagent/node_modules node_modules`）；
+  - **核心作用**：仅供宿主 VS Code / 编辑器（TSServer / Language Server）进行模块语法高亮、TypeScript 类型推导与代码自动补全；
+  - **解耦影响**：若该软链接被删除或重命名（如 `node_modules.bak`），**不会影响任何编译与运行**（因 `run-linux.sh` 与构建脚本使用 `/tmp/reinagent/node_modules` 原生依赖），但会导致宿主编辑器出现找不到模块的红线警告并失去代码补全。如需恢复 IDE 提示，仅需重新建立指向 `/tmp/reinagent/node_modules` 的软链接即可。
+
+### 2. 标准编译与验证命令
+```bash
+# 1. 增量同步源码至本地临时工作区
+rsync -av --delete --exclude 'node_modules' --exclude 'target' --exclude '.git' /home/web3claw/DevCode/ReinAgent/ReinAgent/ /tmp/reinagent/
+
+# 2. 前端类型检查与打包构建
+cd /tmp/reinagent && bun run build
+
+# 3. 单元测试 (Chat 状态机模型与调度逻辑)
+npm run test:chat
+```
+
+### 3. 本地启动脚本执行（run-linux.sh）
+- **启动前端 Vite 服务**：端口 `1420`，`(cd /tmp/reinagent && bun /tmp/reinagent/node_modules/vite/bin/vite.js --port 1420) &`
+- **启动 Tauri 桌面应用**：`cargo tauri dev -c '{"build": {"beforeDevCommand": ""}}'`
+
+### 4. 自动化无头视觉回归
+本地运行 dev server 后（默认端口 1420），可通过 Chrome 无头模式快速截取实际渲染图像进行像素级对比：
+```bash
+google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-size=1280,800 http://localhost:1420
+```
+
+---
+
+## 七、核心架构守则与避坑指南
+
+1. **包管理器限制 (Package Manager Rule)**：
+   - 项目采用 **Bun**（`bun@1.4.2` 与 `bun.lock`）。
+   - 严禁使用 npm/pnpm 篡改依赖锁定文件；所有依赖安装与更新必须在 `/tmp/reinagent` 隔离区进行，防止损坏网络共享挂载盘的软链接。
+2. **Tauri 2 + Web 双模兼容 (Dual-mode Compatibility Rule)**：
+   - 涉及系统级能力（终端 PTY、受控文件操作等）时，必须保留 Web Mock / Fallback 兼容层，保证在 Headless Chrome（无头自动化测试/截图回归）或普通浏览器中依然能完整渲染并正常调试。
+3. **Tailwind CSS v4 语义化主题 (Theme Styling Rule)**：
+   - 严禁在组件中硬编码 Hex/RGB 颜色值；必须使用 `src/styles/global.css` 定义的 CSS 语义变量（如 `var(--bg)`、`var(--sidebar-bg)`、`var(--sidebar-text)`、`var(--border)`），确保跟随 `data-theme="dark|light"` 自动平滑换肤。
+   - **表单控件原生样式隔离（Form Controls Native Appearance Rule）**：在 Linux Webview（WebKit2GTK）环境下，原生 `<select>` 必须配置 `appearance-none` 并配合自定义 `ChevronDown` 箭头图标，全局绑定 `var(--bg-card)` 与 `var(--text-primary)`，杜绝因操作系统原生 GTK 白色控件覆盖导致的“白底白字不可读”问题。
+4. **Git 与工作区保护 (Workspace Discipline)**：
+   - 未经用户明确许可或要求，**严禁自行调用 `git commit` 或 `git push`**。
+   - 测试产物、截图、中间日志等临时文件必须存放于 `/tmp/`，严禁污染工程工作树。
 
 ---
 
@@ -384,7 +438,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 
 1. **项目管理深化**：原生目录选择（`fs_pick_folder`）与工作区决议已落地；**目录文件树渲染**（结合 ZCode `WorkspaceSidebarItem` 树形逻辑）尚未实现。
 2. **对话持久化升级**：当前按任务分片存于 localStorage（`reinagent-task-msg-*`），有容量配额与 WebView2 数据清理丢失风险——应迁移至 `~/.ReinAgent/` 下 Sqlite 或 JSON 文件存储（服务商配置已走该通道，模式可复用）。
-3. **Agent 工具执行沙箱**：完善 Rust 端命令执行拦截与「变更前确认」审批流（ApprovalMode）。
+3. **Agent 工具执行沙箱**：前端审批流（ApprovalMode 四档 + beforeToolCall 挂起审批 + 计划模式拦截）已落地（见 十一 #14）；剩余：Rust 端命令执行拦截/沙箱、计划批准 elicitation（ExitPlanMode 批准后自动退出计划模式）、审批规则持久化、后台任务审批红点徽标。
 4. **推理能力元数据整改（铁律整改项）**：`modelFactory` 仍写死 `contextWindow: 128000 / maxTokens: 8192`，应解析上游 `/v1/models` 的 `context_length` / `max_tokens` 真实字段（WorkBuddy 网关已实测返回这两个字段）。
 5. 其余聊天窗口未实现项见 **十一、聊天窗口 ZCode 对标实现状态清单**。
 
@@ -398,7 +452,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 | :--- | :--- | :--- | :--- |
 | 1 | 回合工作状态条 | 「工作中 X 秒」（运行中锁定展开+每秒计时）/「已工作 X 秒」（完成折叠）/「已停止」/「已处理」（历史无打点 No-Fallback）；时长格式化最多两段非零单位 | `TurnGroupView.tsx`、`turnActivity.ts` |
 | 2 | 思考块三态折叠 | 流式默认展开+吸底跟随 → 整轮完成自动收一行；用户点击优先；Markdown 渲染 + 320px 限高 + 左导线 | `ThinkingBlock.tsx` |
-| 3 | 工具卡类型化 header | 类型图标/标签（未知工具回退原名）+ 文件 chip + 命令内联摘要 + `+N/−N`（LCS 精确口径）+ 状态词 | `ToolCallCard.tsx` |
+| 3 | 工具卡类型化 header | 类型图标/标签（未知工具回退原名）+ 文件 chip + 命令内联摘要 + `+N/−N`（LCS 精确口径）+ 状态词；**文件 chip 对齐 ZCode renderFileChip**（2026-09-25）：Material Icon Theme 彩色 SVG（`public/material-icons/` 40 个常用扩展名，颜色固化在 SVG，onError 三级回退）+ 文件名可点击（编辑/写入 → 右侧 patch diff；读取 → 文件预览；onMouseDown 阻断行折叠）+ 目录段带尾斜杠更暗一级 + 条件 ±N（added>0 绿 / removed>0 红，零不显示）；顺带修复 edit_file 参数名错配（工具签名 target/replacement vs 代码读 old_string/new_string 导致 ±N 与 diff 恒空，补回退） | `ToolCallCard.tsx`、`fileDisplay.tsx`、`fileDisplayHelpers.ts`（ps1/bat/cmd 别名）、`turnActivity.ts` |
 | 4 | 终端卡 | `$` 命令区（mono 限高折行）+ 输出区**吸底-冻结引擎**（上滚冻结/回底恢复）+「没有输出。」 | `ToolCallCard.tsx` |
 | 5 | 编辑/写入 diff 视图 | 行级 LCS diff（零依赖，500 行上限）+ 行号跨增删连续计数 + 增行绿底/删行红底 + 240px 滚动 | `ToolCallCard.tsx`、`turnActivity.ts` |
 | 6 | 「查阅」聚合卡 | 轮内连续 list_dir/read_file 聚合；header 分类计数徽标（N 列表 · N 文件）；**列表不渲染数组输出**，展开仅单行摘要 | `TurnGroupView.tsx` |
@@ -407,17 +461,24 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 | 9 | streamSimple 修复 | 修复误用裸 `stream` 导致思考被显式禁用的事故（详见 九.4） | `runAgentTurn.ts` |
 | 10 | 推理能力乐观兜底 | 无 effort 元数据模型视为支持思考（档位 Default/Low/Medium/High，可 off）；已声明模型仍严格按元数据过滤 | `App.tsx`、`LexicalComposer.tsx`、`modelFactory.ts` |
 | 11 | 右侧代码/变更预览面板（PreviewPane 完整移植） | 编辑/写入卡审查 → patch 模式（Shiki 高亮 diff）；读取卡 → 文件行号预览（Rust `fs_read_text_file` 256KB 截断+二进制探测）；`@pierre/diffs` + `shiki` 已引入；Media/PDF/PPTX/Office 为诚实降级 stub | `src/preview/**`（约 40 文件）、`fs_cmd.rs`、`CodeViewerPaneHost.tsx` |
-| 12 | 文件更改摘要卡 | 轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；**仅在整轮结束后显示**（编辑过程中看各工具卡，对齐 ZCode 时机）；同文件多次编辑按路径聚合为净变更，净零文件过滤；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2）；header 附**「清理临时目录」**按钮（行内二次确认 → `fs_clean_reinagent_tmp`） | `TurnGroupView.tsx`（TurnFileSummaryCard） |
+| 12 | 文件更改摘要卡 | 轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；**仅在整轮结束后显示**（编辑过程中看各工具卡，对齐 ZCode 时机）；同文件多次编辑按路径聚合为净变更，净零文件过滤；**`.ReinAgent/temp/` 下的一次性脚本不进摘要**（`isReinAgentTempPath`：不列行、不计入数量与增删统计，全部为 temp 时整卡隐藏；用户确认不做自动清理，手动清理按钮保留）；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2）；header 附**「清理临时目录」**按钮（行内二次确认 → `fs_clean_reinagent_tmp`） | `TurnGroupView.tsx`（TurnFileSummaryCard） |
 | 13.4 | 会话统计行（SessionStatsBar，对齐 LiveAgent 底部统计条） | 底栏下一行等宽小字：`N 轮 · M 步 | 上下文 P% | LLM/工具 耗时 | 输入/输出 tok · 命中 %`；耗时来自时间打点累计（流式段按当前时刻实算）；命中率 = 累计 cacheRead /（累计 input + cacheRead）（全会话口径，修复只取末条的 0%/100% 跳变）；居中、13px、亮色 | `SessionStatsBar.tsx`、`App.tsx` |
 | 13.5 | 上下文容量面板 | 触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 缓存命中率（移至会话统计行，≥0 才显示）；已用取真实 usage（input+cacheRead+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；**不含剩余额度**（用户确认排除）；**明细行可点击**——有内容的类别（消息/系统提示词/系统工具）懒构建真实文本在右侧面板查看（markdown/json 高亮），无内容类别（技能/MCP/其他）如实 0.0% 且不可点击 | `contextUsage.ts`、`ContextUsageIndicator.tsx`、`LexicalComposer.tsx`、`App.tsx` |
+| 14 | **任务级设置隔离 + 审批模式落地（对齐 ZCode task-local thoughtLevel/mode）** | 三项设置按任务隔离：模型（`providerId/modelId`，已有）、推理等级（`thinkingLevel?`）、审批模式（`approvalMode?`），字段随 task payload 进 SQLite；有活动任务读写任务字段，草稿态读写全局默认（首次发送随 createTask 落到新任务）；模型切换自动对齐改为任务粒度（只修正覆盖不受支持的任务，绝不冲掉仍受支持的覆盖）。审批模式四档（对齐 ZCode 用户可切面）：`plan 计划模式`（写/执行一律拦截+系统提示词约束只读调研）/`ask 变更前确认`（写+执行弹审批卡）/`edit 自动编辑`（写自动放行，执行弹卡）/`full 完全访问`（默认，零开销直通）；工具分级 `resolveToolPermissionKind`（read 直通/write/exec 受限，未知工具保守视为 write）。审批流经 pi-agent-core 原生 `beforeToolCall` 钩子：需要批准时 await 用户决策（**循环挂起不中止**，同 ZCode 权限流语义），拒绝 → `{block:true, reason}` 错误工具结果（模型知道被拒不重试）；审批卡（`ApprovalCard`）渲染于输入框上方（工具名+参数摘要+允许/总是允许/拒绝），「总是允许」为任务级内存免审集合；stop/clear/轮次异常结束均以 reject 解除挂起；模式下拉对齐 ZCode（图标+标题+描述，full 态触发按钮 warning 色）。实测：隔离（A 改 B 不动+全局不动）、拒绝（模型停手文件未创建）、允许（批准后文件真实落盘）全链路通过 | `useAppStore.ts`、`tools.js`（resolveToolPermissionKind）、`agentRuntime.js`（beforeToolCall 透传）、`runAgentTurn.ts`（createApprovalGate/PLAN_MODE_PROMPT）、`conversationPool.ts`（审批协调器）、`conversationController.js`（requestApproval/resolveApproval）、`conversationModel.js`（pendingApproval）、`ApprovalCard.tsx`、`LexicalComposer.tsx`、`App.tsx`、`approvalGate.test.mjs` |
+| 15 | **应用品牌换装（logo + 应用图标 + 底栏图标条）** | 应用图标全套更换：R 主题（蓝色渐变圆角方块 + 白色粗体 R，`src-tauri/app-icon.png` 1024 源图经 `cargo tauri icon` 生成 icon.ico/icns/各尺寸 PNG/Store logos），窗口/任务栏/开始菜单生效（需 Rust 重构建后启动）；左上角 logo 改为同源内联 SVG（`AppLogo` 组件，替换原文字方块）；左下角用户栏移除（头像 K/用户名 kwtgsgi8 删除），替换为 **PI-Desktop sidebar-footer 同款图标条**（lucide 14px 图标 + 32×32 命中区 + radix Tooltip 300ms，对齐 TooltipButton/footer-action）：齿轮=设置（可点，i18n settings）/ **插头 Plug=扩展**（navPlugins，占位）/ 时钟=定时任务（navScheduled，占位）/ 电脑（原 Monitor，占位）——占位无功能、默认全部不高亮；右侧版本号 `v{getVersion()}` 对齐 footer-build（**12px tabular-nums leading-none、UI 字体非 mono**；浏览器模式取不到则隐藏） | `WorkspaceSidebar.tsx`（AppLogo + 底栏）、`src-tauri/icons/*`、`src-tauri/app-icon.png` |
 | 13 | 临时/资料目录约定（B+C 组合，对齐 pi 的 `.pi/` 模式） | 系统提示词约定：一次性脚本/分析产物必须放 `<工作区>/.ReinAgent/temp/`（视为可丢弃）；记忆等持久资料也统一放 `<工作区>/.ReinAgent/` 下各自子目录（禁止散落项目根）；Rust `fs_clean_reinagent_tmp` 白名单清理 `.ReinAgent/temp`（两级路径严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈）。参照：PI-Desktop host-core 的 `.pi/` 工作区目录模式（plans/artifact.rs，路径安全校验同思路） | `runAgentTurn.ts`、`fs_cmd.rs`、`TurnGroupView.tsx` |
 
 ### 2. 未实现（Gap 清单，按主题分组）
 
 **修复记录（2026-09-24）**：
 - 工具瘦身：移除 `get_current_time` 与 `calculate` 两个演示工具（代码/注册表/测试/文档同步清理），工具集仅保留 read_file / write_file / edit_file / list_dir / exec_command；
+- 持久化迁移 SQLite（两表结构对齐 LiveAgent）+ 会话池多任务并行流式（2026-09-25）：切任务不再 abort，后台任务照常跑；localStorage 对话/任务键废除；
+- **修复：useSyncExternalStore 嵌套更新循环**——pi 库 processEvents 同步循环逐事件 notify，useSyncExternalStore 对每次快照变化强制重渲染，50 次即抛「Maximum update depth exceeded」（表现为轮次「请求失败」）。修复：池的 notify 按微任务合并（一轮事件爆发只渲染一次，状态已同步更新、订阅者拿到最新快照）；
+- **修复：草稿首条消息发送竞态**——handleSend 的 createTask/setActiveTaskId 后，hook 闭包里的 taskId 仍是 null → poolSend 被静默拒绝。修复：草稿提升路径用新 taskId 直接调池；
+- **修复：任务元数据落库缺 seq**——syncTasks 统一按索引派生 seq（= 创建顺序）；
 - 恢复消毒：`restoreState` 将残留的 streaming/running 条目标记为 stopped 并补 `endedAt`——消除重启后「执行中」僵尸条目导致的统计爆炸（如 LLM 9h17m）与状态条永久工作中；
 - 命中率口径修正：pi-ai 的 `input` 不含缓存命中部分，命中率 = 累计 `cacheRead / (input + cacheRead)`；容量 used = input + cacheRead + output。
+- **任务级隔离 + 审批模式（2026-09-25）**：见已实现清单 #14；`ApprovalMode` 值域由无实效的 always/suggest/auto 替换为 plan/ask/edit/full；全局默认持久化 kv（`reinagent-approval-mode`，缺省 full）。
 
 **渲染增强类**：
 - [x] diff 视图 / 代码块的 **Shiki 语法高亮** —— 已随 PreviewPane 移植引入（`shiki@^4` + `@pierre/diffs`，工具卡内联 diff 视图仍为单色形态）
