@@ -19,7 +19,7 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
 import { MarkdownText } from "./MarkdownText";
 import { useTranslation } from "../../i18n";
-import { useMemo, useRef, useState } from "react";
+import { memo, useMemo, useRef, useState } from "react";
 import {
   buildUnifiedPatch,
   collectTurnFileChanges,
@@ -172,6 +172,8 @@ function ExploreGroupCard({ entries }: { entries: ToolTimelineEntry[] }) {
 }
 
 export interface TurnGroupViewProps {
+  /** 本轮正在流式（代码高亮等昂贵渲染降级，完成后恢复） */
+  streaming?: boolean;
   group: TurnGroup;
   /** 每秒刷新的当前时间（MessageList live tick），仅运行中轮用于工时跳动。 */
   liveNowMs: number;
@@ -187,11 +189,11 @@ export interface TurnGroupViewProps {
 }
 
 /** 折叠体内「中间叙述」的暗色正文（非最终回复的 assistant 文本）。 */
-function IntermediateText({ entry }: { entry: TimelineEntry }) {
+function IntermediateText({ entry, streaming }: { entry: TimelineEntry; streaming?: boolean }) {
   if (entry.role !== "assistant" || !entry.text) return null;
   return (
     <div className="turn-intermediate-text font-[450] text-[var(--text)] leading-relaxed">
-      <MarkdownText text={entry.text} />
+      <MarkdownText text={entry.text} streaming={streaming} />
     </div>
   );
 }
@@ -371,7 +373,7 @@ function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntr
   );
 }
 
-export function TurnGroupView({ group, liveNowMs, live = false, workspaceRoot, onEditSend, onRetry }: TurnGroupViewProps) {
+function TurnGroupViewImpl({ group, liveNowMs, live = false, streaming = false, workspaceRoot, onEditSend, onRetry }: TurnGroupViewProps) {
   const { t, locale } = useTranslation();
   // 用户只折叠/展开「已完成」的轮次；运行中强制展开且不可收起（userToggle 仅完成态生效）。
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
@@ -465,7 +467,7 @@ export function TurnGroupView({ group, liveNowMs, live = false, workspaceRoot, o
                   return (
                     <div key={entry.id} className="turn-assistant-activity">
                       <ThinkingBlock entry={entry} liveNowMs={liveNowMs} turnRunning={isTurnRunning} />
-                      {entry !== lastAssistant ? <IntermediateText entry={entry} /> : null}
+                      {entry !== lastAssistant ? <IntermediateText entry={entry} streaming={streaming} /> : null}
                     </div>
                   );
                 }
@@ -488,3 +490,6 @@ export function TurnGroupView({ group, liveNowMs, live = false, workspaceRoot, o
     </div>
   );
 }
+
+/** 仅当 props 变化时才重渲染（group 引用在流式期间保持稳定，见 MessageList 引用稳定化）。 */
+export const TurnGroupView = memo(TurnGroupViewImpl);

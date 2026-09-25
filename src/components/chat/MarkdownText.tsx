@@ -1,4 +1,4 @@
-import { Component, memo } from "react";
+import { Component, memo, useCallback } from "react";
 import type { ReactNode } from "react";
 import { MarkdownBlocks } from "../../lib/markdown/markdownBlocks";
 import { MarkdownBlockRenderer } from "./MarkdownBlockRenderer";
@@ -24,13 +24,24 @@ class MarkdownErrorBoundary extends Component<{ fallback: ReactNode; children?: 
   }
 }
 
-function MarkdownTextImpl({ text }: { text: string }) {
+function MarkdownTextImpl({ text, streaming = false }: { text: string; streaming?: boolean }) {
+  // streaming 透传到块渲染器：流式中的代码块跳过 Shiki 高亮（对齐 ZCode：
+  // 高亮等消息完成后再启动，避免 async highlighter 与消息流更新叠加造成卡顿）。
+  const renderBlock = useCallback(
+    ({ text: blockText }: { text: string }) => (
+      <MarkdownBlockRenderer text={blockText} streaming={streaming} />
+    ),
+    [streaming],
+  );
   return (
     <MarkdownErrorBoundary fallback={<span className="msg-text">{text}</span>}>
-      <MarkdownBlocks text={text} renderBlock={MarkdownBlockRenderer} />
+      <MarkdownBlocks text={text} renderBlock={renderBlock} />
     </MarkdownErrorBoundary>
   );
 }
 
 /** 仅当 text 变化时才重新解析 Markdown。 */
-export const MarkdownText = memo(MarkdownTextImpl, (prev, next) => prev.text === next.text);
+export const MarkdownText = memo(
+  MarkdownTextImpl,
+  (prev, next) => prev.text === next.text && prev.streaming === next.streaming,
+);

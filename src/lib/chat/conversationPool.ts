@@ -36,6 +36,7 @@ interface PoolEntry {
   lastActivityAt: number;
   persistTimer: number | null;
   notifyScheduled: boolean;
+  lastNotifyAt: number;
   /** 「总是允许」免审集合（任务级内存态；重启即失效，对齐一期范围）。 */
   alwaysAllowedTools: Set<string>;
 }
@@ -166,18 +167,36 @@ function deserializeRow(row: {
 
 // ---- 池内部 ----
 
+// 流式性能（对齐 ZCode DELIVERY_PROFILES.flushWindowMs=30）：状态更新保持同步，
+// 但通知走 30ms 节流窗——窗口首事件立即渲染（leading），窗内后续事件合并到窗口尾
+// （trailing）一次渲染。密集 delta 下 UI 每帧最多重渲染一次。
+const NOTIFY_FLUSH_MS = 30;
+
 function notify(entry: PoolEntry) {
-  // 按微任务合并通知：pi 库的 processEvents 会在同一轮同步循环里连续发大量事件，
-  // 每个事件都直接 notify 会让 useSyncExternalStore 连续 forceStoreRerender，
-  // 被 React 计为嵌套更新并抛「Maximum update depth exceeded」。
-  // 合并后一轮事件爆发只渲染一次（状态本身已同步更新，订阅者拿到的是最新快照）。
+  // 先按微任务合并同一同步循环内的爆发（避免 zalgo），再进 30ms 节流窗。
   if (entry.notifyScheduled) return;
   entry.notifyScheduled = true;
   queueMicrotask(() => {
     entry.notifyScheduled = false;
-    for (const listener of entry.listeners) listener();
-    refreshStreamingSet();
+    const now = Date.now();
+    const elapsed = now - entry.lastNotifyAt;
+    if (elapsed >= NOTIFY_FLUSH_MS) {
+      entry.lastNotifyAt = now;
+      flushNotify(entry);
+      return;
+    }
+    entry.notifyScheduled = true;
+    window.setTimeout(() => {
+      entry.notifyScheduled = false;
+      entry.lastNotifyAt = Date.now();
+      flushNotify(entry);
+    }, NOTIFY_FLUSH_MS - elapsed);
   });
+}
+
+function flushNotify(entry: PoolEntry) {
+  for (const listener of entry.listeners) listener();
+  refreshStreamingSet();
 }
 
 function schedulePersist(entry: PoolEntry) {
@@ -203,6 +222,7 @@ function createEntry(taskId: string): PoolEntry {
     lastActivityAt: Date.now(),
     persistTimer: null,
     notifyScheduled: false,
+    lastNotifyAt: 0,
     sendOptions: null,
     alwaysAllowedTools: new Set<string>(),
   };

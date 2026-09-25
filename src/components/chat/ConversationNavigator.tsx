@@ -30,11 +30,13 @@ const JUMP_TOP_GAP = 16;
 
 export interface ConversationNavigatorProps {
   messages: TimelineEntry[];
+  /** 虚拟化兜底：DOM 未挂载（屏外轮）时按注册表估算锚点偏移 */
+  measureFallback?: (msgId: string) => number | undefined;
   /** 消息滚动容器 ref（App.tsx 中 hasMessages 分支的滚动元素） */
   scrollRef: React.RefObject<HTMLDivElement | null>;
 }
 
-export function ConversationNavigator({ messages, scrollRef }: ConversationNavigatorProps) {
+export function ConversationNavigator({ messages, scrollRef, measureFallback }: ConversationNavigatorProps) {
   const { t } = useTranslation();
   const items = useMemo(() => buildNavigatorItems(messages), [messages]);
 
@@ -75,14 +77,17 @@ export function ConversationNavigator({ messages, scrollRef }: ConversationNavig
     const containerTop = el.getBoundingClientRect().top;
     offsetsRef.current = items.map((item) => {
       const node = el.querySelector(`[data-msg-id="${CSS.escape(item.msgId)}"]`);
-      if (!node) return -1;
-      return (node as HTMLElement).getBoundingClientRect().top - containerTop + el.scrollTop;
+      if (node) {
+        return (node as HTMLElement).getBoundingClientRect().top - containerTop + el.scrollTop;
+      }
+      // 屏外轮未挂载：虚拟化偏移注册表兜底（-1 = 无法估计）
+      return measureFallback?.(item.msgId) ?? -1;
     });
     setActiveIndex((cur) => {
       const next = resolveActiveAnchor(offsetsRef.current, el.scrollTop, el.clientHeight);
       return next === cur ? cur : next;
     });
-  }, [items, scrollRef]);
+  }, [items, scrollRef, measureFallback]);
 
   const syncActive = useCallback(() => {
     if (rafRef.current) return;

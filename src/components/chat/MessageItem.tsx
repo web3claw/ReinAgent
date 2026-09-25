@@ -159,7 +159,7 @@ function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
     <div className="group/assistant-row flex flex-col items-start w-full">
       <div className="w-full text-sm text-[var(--text)] leading-relaxed">
         <div className="md">
-          <MarkdownText text={message.text} />
+          <MarkdownText text={message.text} streaming={message.status === "streaming"} />
           {isStreaming ? <span className="msg-caret">▋</span> : null}
         </div>
 

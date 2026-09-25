@@ -6,10 +6,12 @@ import { DiffViewer } from "../diff/DiffViewer";
 
 export interface MarkdownBlockRendererProps {
   text: string;
+  /** 流式中：代码块跳过 Shiki 高亮（对齐 ZCode，完成后自动恢复高亮） */
+  streaming?: boolean;
 }
 
 export const MarkdownBlockRenderer: React.FC<MarkdownBlockRendererProps> = React.memo(
-  ({ text }) => {
+  ({ text, streaming = false }) => {
     return (
       <Markdown
         remarkPlugins={[remarkGfm]}
@@ -24,7 +26,7 @@ export const MarkdownBlockRenderer: React.FC<MarkdownBlockRendererProps> = React
             }
 
             if (!inline && lang) {
-              return <CodeBlock code={codeString} language={lang} />;
+              return <CodeBlock code={codeString} language={lang} streaming={streaming} />;
             }
 
             return (
@@ -39,5 +41,5 @@ export const MarkdownBlockRenderer: React.FC<MarkdownBlockRendererProps> = React
       </Markdown>
     );
   },
-  (prev, next) => prev.text === next.text
+  (prev, next) => prev.text === next.text && prev.streaming === next.streaming
 );

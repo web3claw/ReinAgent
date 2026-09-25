@@ -235,6 +235,16 @@ ReinAgent 架构全景
 
 ---
 
+## 四点四、流式渲染性能架构（对齐 ZCode，2026-09-25）
+
+消息时间线按 ZCode ConversationTimeline 的五层性能架构实现（`MessageList.tsx`）：
+
+1. **生产端节流**：池层 notify 走 30ms 节流窗（leading 立即 + trailing 合并，`NOTIFY_FLUSH_MS`），密集 delta 下 UI 每帧最多渲染一次；状态更新本身保持同步。
+2. **引用稳定 + 行级 memo**：`groupTurns` 结果引用稳定化（entries 未变的轮复用旧 group 对象）；`TurnGroupView` / `ToolCallCard` / `MarkdownText`（text+streaming 双键）/ `MarkdownBlockRenderer` 全部 memo——流式时每帧只有正在流的轮重渲染。
+3. **虚拟化 + live tail 拆分**：`@tanstack/react-virtual`（轮为单位，稳定 key，overscan 4，行高 LRU 缓存 `TurnHeightCache` 上限 4000）；**正在流式的最后一轮拆出虚拟列表放普通文档流**（消除流式长高回填跳动）；`scrollMargin` 动态测量 App 内边距包装；轮偏移注册表 `turnOffsetRegistry` 供导航条屏外轮兜底（`getRegisteredTurnOffset` → `ConversationNavigator.measureFallback`）。
+4. **流式降级**：`streaming` prop 贯穿 MarkdownText → MarkdownBlockRenderer → CodeBlock，流式中的代码块跳过 Shiki 异步高亮（plain 渲染），流式结束自动恢复；`renderKey`/memo 键含 streaming 防子树错位。
+5. **滚动权状态机**：following 存 ref；wheel/touch/键盘 capture 阶段预登记用户上滚意图（同帧解除跟随，不等 scroll 事件）；程序化贴底打 120ms 时间戳标记（窗内 scroll 事件不参与跟随判定）；贴底 `scrollTop = scrollHeight` instant 直赋；内容子树 `overflowAnchor: none` 禁用浏览器原生锚定；liveNowMs tick 只驱动正在流式的轮。
+
 ## 四点五、系统提示词单一真相源（PROMPTS.md，2026-09-25）
 
 系统提示词的完整记录与 ZCode 借鉴映射见 **[PROMPTS.md](./PROMPTS.md)**：

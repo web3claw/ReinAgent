@@ -4,6 +4,7 @@ import { useConversationPool } from "./hooks/useConversationPool";
 import { send as poolSend, resolveApproval as poolResolveApproval } from "./lib/chat/conversationPool";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
+import { getRegisteredTurnOffset } from "./components/chat/MessageList";
 import { ConversationNavigator } from "./components/chat/ConversationNavigator";
 import { CodeViewerPaneHost } from "./preview/CodeViewerPaneHost";
 import { SessionStatsBar } from "./components/chat/SessionStatsBar";
@@ -528,6 +529,7 @@ export default function App() {
                   <MessageList
                     messages={state.messages}
                     isStreaming={isStreaming}
+                    scrollRef={chatScrollRef}
                     onEditSend={handleSend}
                     onRetry={handleRetry}
                   />
@@ -558,7 +560,11 @@ export default function App() {
                 </div>
               </div>
               </div>
-              <ConversationNavigator messages={state.messages} scrollRef={chatScrollRef} />
+              <ConversationNavigator
+                      messages={state.messages}
+                      scrollRef={chatScrollRef}
+                      measureFallback={getRegisteredTurnOffset}
+                    />
             </div>
           )}
         </div>

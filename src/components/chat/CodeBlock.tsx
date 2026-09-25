@@ -7,9 +7,11 @@ import { useTranslation } from "../../i18n";
 export interface CodeBlockProps {
   code: string;
   language?: string;
+  /** 流式中：跳过 Shiki 异步高亮（plain 渲染），完成后自动恢复（对齐 ZCode） */
+  streaming?: boolean;
 }
 
-export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language = "text" }) => {
+export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language = "text", streaming = false }) => {
   const theme = useAppStore((s) => s.theme);
   const { t } = useTranslation();
   const [html, setHtml] = useState<string | null>(null);
@@ -17,6 +19,13 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language = "text" })
 
   useEffect(() => {
     let active = true;
+    if (streaming) {
+      // 流式中不做异步高亮：plain pre 渲染，等流式结束（streaming=false）再高亮
+      setHtml(null);
+      return () => {
+        active = false;
+      };
+    }
     getShikiHighlighter()
       .then((highlighter) => {
         if (!active) return;
@@ -43,7 +52,7 @@ export const CodeBlock: React.FC<CodeBlockProps> = ({ code, language = "text" })
     return () => {
       active = false;
     };
-  }, [code, language, theme]);
+  }, [code, language, theme, streaming]);
 
   const handleCopy = async () => {
     try {
