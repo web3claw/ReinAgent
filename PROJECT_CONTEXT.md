@@ -235,6 +235,15 @@ ReinAgent 架构全景
 
 ---
 
+## 四点五、系统提示词单一真相源（PROMPTS.md，2026-09-25）
+
+系统提示词的完整记录与 ZCode 借鉴映射见 **[PROMPTS.md](./PROMPTS.md)**：
+- 第一部分：ZCode 提示词原文摘录（Communicating / Code style / Autonomy / Git / Environment / Edit-Read 失败文案 / 证据标准，含源码路径行号）；
+- 第二部分：ReinAgent 当前全部提示词（DEFAULT_SYSTEM_PROMPT 分段、buildEnvironmentSection 动态段、PLAN_MODE_PROMPT / APPROVAL_HINT、五工具描述与失败文案、审批门/计划模式拦截文案、权限分级）；
+- 第三部分：采纳映射表与待办（gitStatus 快照、记忆、AGENTS.md 注入、压缩、防注入包装等）。
+
+**铁律**：修改 `DEFAULT_SYSTEM_PROMPT`、`buildEnvironmentSection`、`PLAN_MODE_PROMPT`、`APPROVAL_HINT_PROMPT` 或任何工具描述/失败文案时，必须同步更新 PROMPTS.md。
+
 ## 五、状态存储速查（2026-09-25 起迁移至 SQLite）
 
 ### 1. 本地磁盘持久化（Tauri Backend）

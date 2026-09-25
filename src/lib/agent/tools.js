@@ -147,10 +147,67 @@ export function createTools(options) {
     ? opts.getWorkspaceRoot
     : () => resolveWorkspaceRoot(opts.workspaceRoot);
 
+  // 本会话内已 Read 过的文件（edit_file 的 read-before-edit 前置校验依据，对齐 ZCode）。
+  const readPaths = new Set();
+
+  /** 文件不存在时的相似文件名建议（对齐 ZCode：Levenshtein 距离最近的兄弟文件）。 */
+  async function suggestSimilarFile(targetPath) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const idx = Math.max(targetPath.lastIndexOf("/"), targetPath.lastIndexOf("\\"));
+      if (idx <= 0) return undefined;
+      const parent = targetPath.slice(0, idx);
+      const base = targetPath.slice(idx + 1);
+      const entries = await invoke("fs_list_dir", { path: parent });
+      const names = (Array.isArray(entries) ? entries : [])
+        .map((e) => (typeof e === "string" ? e : e?.name))
+        .filter((n) => typeof n === "string");
+      function lev(a, b) {
+        const m = a.length;
+        const n = b.length;
+        if (!m || !n) return Math.max(m, n);
+        const prev = new Array(n + 1);
+        const curr = new Array(n + 1);
+        for (let j = 0; j <= n; j++) prev[j] = j;
+        for (let i = 1; i <= m; i++) {
+          curr[0] = i;
+          for (let j = 1; j <= n; j++) {
+            curr[j] = Math.min(prev[j] + 1, curr[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+          }
+        }
+        return curr[n];
+      }
+      const lower = base.toLowerCase();
+      let best;
+      let bestDist = Infinity;
+      for (const name of names) {
+        if (name === base) continue;
+        const d = lev(lower, name.toLowerCase());
+        if (d < bestDist) {
+          bestDist = d;
+          best = name;
+        }
+      }
+      // 只有足够接近才建议（距离 > 长度一半视为无关文件）
+      return best && bestDist <= Math.max(3, Math.ceil(lower.length / 2))
+        ? parent + "/" + best
+        : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  function isNotFoundMessage(message) {
+    return /not found|no such|does not exist/i.test(message);
+  }
+
   const readFile = {
     name: "read_file",
     label: "读取文件",
-    description: "读取指定路径的文件内容（支持绝对路径或相对于项目工作区的相对路径）。",
+    description:
+      "读取指定路径的文件内容（支持绝对路径或相对于项目工作区的相对路径）。\n" +
+      "- Do NOT re-read a file you just edited to verify — edit_file/write_file would have errored if the change failed.\n" +
+      "- 空文件会如实返回空内容警告；文件不存在时会给出行内相似文件名建议。",
     parameters: Type.Object(
       {
         path: Type.String({ description: "文件的路径（相对路径将自动相对于当前工作区根目录解析）" }),
@@ -160,15 +217,32 @@ export function createTools(options) {
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
       const targetPath = resolveWorkspacePath(params.path, getWorkspace());
-      const content = await invoke("fs_read_file", { path: targetPath });
-      return buildTextToolResult(content, { path: targetPath, requestedPath: params.path });
+      let content;
+      try {
+        content = await invoke("fs_read_file", { path: targetPath });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (isNotFoundMessage(message)) {
+          const suggestion = await suggestSimilarFile(targetPath);
+          throw new Error(
+            `File does not exist: ${targetPath}. Note: the working directory is ${getWorkspace()}.` +
+              (suggestion ? ` Did you mean ${suggestion}?` : ""),
+          );
+        }
+        throw err;
+      }
+      readPaths.add(targetPath);
+      const text = content.length === 0
+        ? "Warning: the file exists but the contents are empty."
+        : content;
+      return buildTextToolResult(text, { path: targetPath, requestedPath: params.path });
     },
   };
 
   const writeFile = {
     name: "write_file",
     label: "写入文件",
-    description: "将内容写入指定文件（全量覆盖，父目录若不存在会自动创建。支持绝对路径或相对于项目工作区的相对路径）。",
+    description: "将内容写入指定文件（全量覆盖，父目录若不存在会自动创建。支持绝对路径或相对于项目工作区的相对路径）。\n- For partial changes, prefer edit_file over rewriting the whole file.",
     parameters: Type.Object(
       {
         path: Type.String({ description: "文件的路径（相对路径将自动相对于当前工作区根目录解析）" }),
@@ -180,6 +254,7 @@ export function createTools(options) {
       const { invoke } = await import("@tauri-apps/api/core");
       const targetPath = resolveWorkspacePath(params.path, getWorkspace());
       await invoke("fs_write_file", { path: targetPath, content: params.content });
+      readPaths.add(targetPath);
       return buildTextToolResult(`Successfully written to ${targetPath}`, { path: targetPath, requestedPath: params.path });
     },
   };
@@ -187,7 +262,11 @@ export function createTools(options) {
   const editFile = {
     name: "edit_file",
     label: "编辑文件块",
-    description: "精准替换文件中的特定代码或文本块（target 必须精确匹配文件中的现有片段。支持绝对路径或相对于工作区的相对路径）。",
+    description:
+      "精准替换文件中的特定代码或文本块。\n" +
+      "- You must read_file the file in this conversation before editing, or the call will fail.\n" +
+      "- target 必须精确匹配文件中的现有片段（含缩进与空白）且唯一出现，否则编辑失败。\n" +
+      "- 支持绝对路径或相对于工作区的相对路径。",
     parameters: Type.Object(
       {
         path: Type.String({ description: "文件路径（相对路径将自动相对于当前工作区根目录解析）" }),
@@ -199,13 +278,33 @@ export function createTools(options) {
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
       const targetPath = resolveWorkspacePath(params.path, getWorkspace());
-      const oldContent = await invoke("fs_read_file", { path: targetPath });
+      if (!readPaths.has(targetPath)) {
+        throw new Error(`File has not been read yet. Read it first before writing to it: ${targetPath}`);
+      }
+      let oldContent;
+      try {
+        oldContent = await invoke("fs_read_file", { path: targetPath });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (isNotFoundMessage(message)) {
+          const suggestion = await suggestSimilarFile(targetPath);
+          throw new Error(
+            `File does not exist: ${targetPath}.` +
+              (suggestion ? ` Did you mean ${suggestion}?` : ""),
+          );
+        }
+        throw err;
+      }
       const occurrences = oldContent.split(params.target).length - 1;
       if (occurrences === 0) {
-        throw new Error(`edit_file: target text not found in ${targetPath}`);
+        throw new Error(
+          `edit_file: target text not found in ${targetPath}. The target must match the file exactly, including indentation and whitespace — copy it from the read output.`,
+        );
       }
       if (occurrences > 1) {
-        throw new Error(`edit_file: target text appears ${occurrences} times in ${targetPath}, must be unique`);
+        throw new Error(
+          `Found ${occurrences} matches of the target string in ${targetPath}. Provide a longer, more specific target that is unique in the file.`,
+        );
       }
       const newContent = oldContent.replace(params.target, params.replacement);
       await invoke("fs_write_file", { path: targetPath, content: newContent });

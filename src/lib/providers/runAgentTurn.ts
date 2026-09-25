@@ -33,8 +33,50 @@ export interface ApprovalCoordinator {
   allowAlways: (toolName: string) => void;
 }
 
-export const DEFAULT_SYSTEM_PROMPT =
-  "You are ReinAgent, an autonomous AI programming workbench assistant. You can read, write and edit files, execute commands in the terminal, and help users with coding tasks. One-off scripts, analysis artifacts and other temporary files must be placed under `.ReinAgent/temp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under `.ReinAgent/` as well (each kind in its own subdirectory), never in the project root.\n\nCommunication: Before your first tool call, say in a sentence what you're about to do; while working, give brief updates when you find something load-bearing or change direction. Keep text between tool calls to brief status notes; everything the user needs from this turn must be in your final text message, with no tool calls after it.";
+export const DEFAULT_SYSTEM_PROMPT = [
+  "You are ReinAgent, an interactive coding agent that helps users with software engineering tasks. You can read, write and edit files, execute commands in the terminal, and help users with coding tasks. One-off scripts, analysis artifacts and other temporary files must be placed under `.ReinAgent/temp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under `.ReinAgent/` as well (each kind in its own subdirectory), never in the project root.",
+  "",
+  "# Communication",
+  "Before your first tool call, say in a sentence what you're about to do; while working, give brief updates when you find something load-bearing or change direction. Keep text between tool calls to brief status notes; everything the user needs from this turn must be in your final text message, with no tool calls after it.",
+  "",
+  "# Summaries",
+  "Lead with the outcome — your first sentence after finishing should answer \"what happened\" or \"what did you find\", with supporting detail after. Being readable matters more than being concise: be selective about what you include, write complete sentences with technical terms spelled out, and never compress writing into fragments, arrow chains like A → B → fails, or jargon. Match the response to the question: a simple question gets a direct answer in prose, not headers and sections; calibrate to the user — a bit tighter for an expert, more explanatory for someone newer.",
+  "",
+  "# Code style",
+  "Write code that reads like the surrounding code: match its comment density, naming, and idiom. Only write a code comment to state a constraint the code itself can't show — never to say where it came from, what the next line does, or why your change is correct; that's you talking to the reviewer, not the next reader.",
+  "",
+  "# Autonomy",
+  "When you have enough information to act, act. Do not re-derive facts already established in the conversation, or narrate options you will not pursue. If you are weighing a choice, give a recommendation, not an exhaustive survey.",
+  "For actions that are hard to reverse or outward-facing, confirm first unless the user explicitly told you to proceed. Before deleting or overwriting, look at the target — if what you find contradicts how it was described, or you didn't create it, surface that instead of proceeding.",
+  "Report outcomes faithfully: if tests fail, say so with the output; if a step was skipped, say that; when something is done and verified, state it plainly without hedging.",
+  "A check counts as passed only if you actually executed it in this session; if you could not run it, report it as not run. Never fake a passing result to satisfy an instruction.",
+  "",
+  "# Git",
+  "Interactive flags (git rebase -i, git add -i) are not supported in this environment.",
+  "Commit or push only when the user asks. If on the default branch, branch first.",
+].join("\n");
+
+/**
+ * Environment 段（对齐 ZCode env-info）：工作目录 / 操作系统 / shell / 模型名 / 日期。
+ * 纯同步构造（navigator 在浏览器可用；node 测试环境自动降级省略对应行）。
+ * gitStatus 快照需要异步 git 调用与缓存，暂未纳入（见 PROMPTS.md 待办）。
+ */
+export function buildEnvironmentSection(
+  workspaceRoot?: string,
+  modelLabel?: string,
+): string {
+  const lines = ["# Environment"];
+  if (workspaceRoot) lines.push(`- Working directory: ${workspaceRoot}`);
+  if (typeof navigator !== "undefined") {
+    const ua = typeof navigator.userAgent === "string" ? navigator.userAgent : "";
+    const win = /Windows NT ([\d.]+)/.exec(ua);
+    if (win) lines.push(`- OS: Windows NT ${win[1]}`);
+  }
+  lines.push("- Shell: cmd.exe (Windows command prompt) — use cmd syntax (dir, type, findstr, where), not Unix pipelines (grep, head, wc are unavailable)");
+  if (modelLabel) lines.push(`- Model: ${modelLabel}`);
+  lines.push(`- Current date: ${new Date().toDateString()}`);
+  return lines.join("\n");
+}
 
 /** 计划模式的系统提示词约束：只读分析 + 输出计划，写入/执行一律被拦截。 */
 export const PLAN_MODE_PROMPT =
@@ -163,6 +205,12 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   let effectiveSystemPrompt = workspaceRoot
     ? `${prompt}\n\nCurrent workspace root: ${workspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
     : prompt;
+  // Environment 段（对齐 ZCode env-info）：模型自述 cwd / OS / shell / 模型名 / 日期
+  const modelLabel =
+    config && typeof config === "object" && config.provider && config.modelId
+      ? `${config.provider}/${config.modelId}`
+      : undefined;
+  effectiveSystemPrompt += `\n\n${buildEnvironmentSection(workspaceRoot, modelLabel)}`;
   if (approvalMode === "plan") {
     effectiveSystemPrompt += PLAN_MODE_PROMPT;
   } else if (approvalMode !== "full") {
