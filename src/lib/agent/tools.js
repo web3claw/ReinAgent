@@ -237,16 +237,27 @@ export function createTools(options) {
     description: "在系统终端中执行 shell 命令行（支持 bash / sh 语法，例如 git status, ls 等）。默认在当前项目工作区根目录下执行。",
     parameters: Type.Object(
       {
-        command: Type.String({ description: "要执行的命令行内容" }),
+        command: Type.Optional(Type.String({ description: "要执行的命令行内容" })),
+        // 兼容别名：部分模型会把参数名写成 cmd；schema 放行后在 execute 里归一化
+        cmd: Type.Optional(Type.String({ description: "Alias of `command` (accepted for compatibility; normalized before execution)" })),
         cwd: Type.Optional(Type.String({ description: "执行命令的工作目录（未指定时默认使用当前项目工作区根目录）" })),
       },
-      { required: ["command"] },
+      { required: [] },
     ),
     execute: async (_toolCallId, params) => {
+      const command = typeof params.command === "string" && params.command.length > 0
+        ? params.command
+        : typeof params.cmd === "string" && params.cmd.length > 0
+          ? params.cmd
+          : undefined;
+      if (command === undefined) {
+        const received = Object.keys(params).filter((k) => k !== "cwd").join(", ") || "none";
+        throw new Error(`exec_command: missing required parameter "command" (received: ${received})`);
+      }
       const { invoke } = await import("@tauri-apps/api/core");
       const targetCwd = params.cwd ? resolveWorkspacePath(params.cwd, getWorkspace()) : getWorkspace();
-      const output = await invoke("fs_execute", { command: params.command, cwd: targetCwd });
-      return buildTextToolResult(output, { command: params.command, cwd: targetCwd });
+      const output = await invoke("fs_execute", { command, cwd: targetCwd });
+      return buildTextToolResult(output, { command, cwd: targetCwd });
     },
   };
 

@@ -132,6 +132,9 @@ function ToolCallCardImpl({
   // ---- 终端（对齐 ZCode ExecuteToolCallBlock）----
   if (entry.toolName === "exec_command") {
     const command = typeof entry.args?.command === "string" ? entry.args.command : "";
+    // 摘要行命令预览硬上限：过长的复合命令截断（完整命令在展开详情与库中仍可见）
+    const commandPreview =
+      command.length > 64 ? `${command.slice(0, 64)}…` : command;
     const hasResult = entry.resultText.length > 0;
     return (
       <ToolLayout
@@ -139,7 +142,7 @@ function ToolCallCardImpl({
         icon={<SquareTerminal className="size-4 shrink-0 text-foreground-subtle" />}
         kindLabel={kindLabel}
         primaryText={null}
-        secondaryText={<code className="truncate font-sans">{command}</code>}
+        secondaryText={<code className="truncate font-sans">{commandPreview}</code>}
         hideSecondaryTextWhenOpen
         statusLabel={statusLabelNode}
         showStatusLabel
