@@ -497,6 +497,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **修复：任务元数据落库缺 seq**——syncTasks 统一按索引派生 seq（= 创建顺序）；
 - 恢复消毒：`restoreState` 将残留的 streaming/running 条目标记为 stopped 并补 `endedAt`——消除重启后「执行中」僵尸条目导致的统计爆炸（如 LLM 9h17m）与状态条永久工作中；
 - 命中率口径修正：pi-ai 的 `input` 不含缓存命中部分，命中率 = 累计 `cacheRead / (input + cacheRead)`；容量 used = input + cacheRead + output。
+- **修复：exec 终端命令大面积失败（2026-09-26）**——根因是 Rust `Command::arg()` 按 MSVC 规则把命令内引号转义成 `\"`，而 cmd 不认该转义，`findstr /c:"..."` 与多词带引号模式被拆坏（`FINDSTR: Cannot open <词>`）。修复：`fs_execute` 改用 `raw_arg` 原样透传命令行；同时主命令加 `CREATE_NO_WINDOW`（不再弹黑框抢焦点）、输出收集加 5s 有界收尾（防孙进程持管道永久挂起）、输出 256KB 截断（防巨型输出拖垮 IPC）。另：模型把 exec 参数名写成 `cmd` 导致的校验秒败已由 schema 别名修复（见提交 059903f）。
 - **任务级隔离 + 审批模式（2026-09-25）**：见已实现清单 #14；`ApprovalMode` 值域由无实效的 always/suggest/auto 替换为 plan/ask/edit/full；全局默认持久化 kv（`reinagent-approval-mode`，缺省 full）。
 
 **渲染增强类**：

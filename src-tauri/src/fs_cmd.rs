@@ -125,9 +125,11 @@ pub async fn fs_list_dir(path: String) -> Result<Vec<String>, String> {
 pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         const EXEC_TIMEOUT_SECS: u64 = 120;
-
-        let shell = if cfg!(target_os = "windows") { "cmd" } else { "sh" };
-        let flag = if cfg!(target_os = "windows") { "/C" } else { "-c" };
+        // 输出上限（防巨型输出拖垮 IPC 与前端渲染）：256KB
+        const OUTPUT_CAP_BYTES: usize = 256 * 1024;
+        // 进程退出后等待管道收尾的上限：超时取部分输出（防孙进程持管道永久挂起）
+        const DRAIN_JOIN_TIMEOUT_MS: u64 = 5000;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
         let exec_dir = match cwd {
             Some(ref dir) if !dir.trim().is_empty() => resolve_path(dir),
@@ -138,13 +140,34 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
             let _ = fs::create_dir_all(&exec_dir);
         }
 
-        let mut cmd = Command::new(shell);
-        cmd.arg(flag).arg(&command);
-        cmd.current_dir(&exec_dir);
-        cmd.stdout(Stdio::piped());
-        cmd.stderr(Stdio::piped());
+        fn spawn_shell(command: &str, exec_dir: &Path) -> std::io::Result<std::process::Child> {
+            let mut cmd = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" });
+            if cfg!(target_os = "windows") {
+                // ★ raw_arg：命令行原样透传给 cmd /C。普通 arg() 会按 MSVC 规则把内部引号
+                //   转义成 \"，而 cmd 不认这种转义——findstr /c:"..." 这类带引号的命令会被
+                //   拆坏（表现为 FINDSTR: Cannot open <词>）。
+                use std::os::windows::process::CommandExt;
+                cmd.raw_arg("/C").raw_arg(command);
+                cmd.creation_flags(CREATE_NO_WINDOW);
+            } else {
+                cmd.arg("-c").arg(command);
+            }
+            cmd.current_dir(exec_dir);
+            cmd.stdout(Stdio::piped());
+            cmd.stderr(Stdio::piped());
+            cmd.spawn()
+        }
 
-        let mut child = cmd.spawn().map_err(|e| e.to_string())?;
+        fn cap_output(mut buf: Vec<u8>) -> Vec<u8> {
+            if buf.len() > OUTPUT_CAP_BYTES {
+                buf.truncate(OUTPUT_CAP_BYTES);
+                let note = b"\n...[output truncated at 256KB]";
+                buf.extend_from_slice(note);
+            }
+            buf
+        }
+
+        let mut child = spawn_shell(&command, &exec_dir).map_err(|e| e.to_string())?;
 
         // 输出读取放独立线程：进程未退出时也能持续收集，不会因管道缓冲写满而卡死子进程。
         let mut stdout_pipe = child.stdout.take().expect("stdout piped");
@@ -162,7 +185,7 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
 
         // 轮询等待 + 超时保护：挂起的命令（如管道空输入等待）超时后强杀整棵进程树。
         let started = std::time::Instant::now();
-        let timeout = std::time::Duration::from_secs(EXEC_TIMEOUT_SECS);
+        let timeout = Duration::from_secs(EXEC_TIMEOUT_SECS);
         let status = loop {
             match child.try_wait() {
                 Ok(Some(status)) => break Some(status),
@@ -173,7 +196,7 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
                             let pid = child.id();
                             let _ = Command::new("taskkill")
                                 .args(["/PID", &pid.to_string(), "/T", "/F"])
-                                .creation_flags(0x08000000)
+                                .creation_flags(CREATE_NO_WINDOW)
                                 .status();
                         }
                         #[cfg(not(target_os = "windows"))]
@@ -189,8 +212,23 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
             }
         };
 
-        let stdout = String::from_utf8_lossy(&stdout_reader.join().unwrap_or_default()).to_string();
-        let stderr = String::from_utf8_lossy(&stderr_reader.join().unwrap_or_default()).to_string();
+        // 有界收尾：进程已退出，但（可能的）孙进程持管道会让 read_to_end 永不返回——
+        // 最多再等 DRAIN_JOIN_TIMEOUT_MS，超时取已收集的部分输出。
+        let drain = |handle: std::thread::JoinHandle<Vec<u8>>| -> Vec<u8> {
+            let deadline = Duration::from_millis(DRAIN_JOIN_TIMEOUT_MS);
+            let started = std::time::Instant::now();
+            loop {
+                if handle.is_finished() {
+                    return handle.join().unwrap_or_default();
+                }
+                if started.elapsed() >= deadline {
+                    return Vec::new(); // 无法安全取回（handle 未完成），放弃输出
+                }
+                std::thread::sleep(std::time::Duration::from_millis(10));
+            }
+        };
+        let stdout = String::from_utf8_lossy(&cap_output(drain(stdout_reader))).to_string();
+        let stderr = String::from_utf8_lossy(&cap_output(drain(stderr_reader))).to_string();
 
         match status {
             Some(status) if status.success() => Ok(stdout),
