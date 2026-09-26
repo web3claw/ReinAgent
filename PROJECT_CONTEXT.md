@@ -44,9 +44,20 @@ ReinAgent 架构全景
 │   │   │   ├── WorkspaceSidebar.tsx    # 侧边栏主体：品牌 Header、快捷操作、分组/项目 Tab、用户信息
 │   │   │   └── ProjectList.tsx         # 项目与任务类目：折叠展开、长按拖拽重排、Tooltip 触发、时间流
 │   │   ├── chat/
-│   │   │   ├── LexicalComposer.tsx     # 双层对齐胶囊输入框、工作区项目选择器、@ 上下文、/ 快捷指令
-│   │   │   ├── MessageList.tsx         # 会话流列表与滚动控制
-│   │   │   ├── MessageItem.tsx         # 消息渲染（Markdown、代码块、思考折叠、工具调用、Diff）
+│   │   │   ├── LexicalComposer.tsx     # 输入胶囊：附件/图片粘贴、模型切换、推理等级、审批模式下拉
+│   │   │   ├── Composer.tsx            # 输入胶囊壳（附件条、Lightbox 挂载）
+│   │   │   ├── MessageList.tsx         # 会话流列表：虚拟化 + live tail 拆分 + 贴底跟随状态机
+│   │   │   ├── MessageItem.tsx         # 消息渲染（Markdown、图片气泡、错误详情、重试按钮）
+│   │   │   ├── TurnGroupView.tsx       # 回合分组：状态条/重连副行/查阅聚合卡/文件更改摘要卡
+│   │   │   ├── ThinkingBlock.tsx       # 思考块三态折叠
+│   │   │   ├── ToolCallCard.tsx        # 工具卡（类型化 header、终端卡、diff 视图）
+│   │   │   ├── ApprovalCard.tsx        # 工具审批卡（允许/总是允许/拒绝）
+│   │   │   ├── RetryDetailsBlock.tsx   # 重试详情折叠块（每次尝试错误原文卡片）
+│   │   │   ├── ConversationNavigator.tsx # 对话问题导航条
+│   │   │   ├── SessionStatsBar.tsx     # 会话统计行（轮/步/上下文/耗时/token）
+│   │   │   ├── ContextUsageIndicator.tsx # 上下文容量圆环触发器 + HoverCard 面板
+│   │   │   ├── ImageLightbox.tsx       # 图片放大浮层（附件缩略图与气泡共用）
+│   │   │   ├── MarkdownText.tsx / MarkdownBlockRenderer.tsx / CodeBlock.tsx # Markdown 渲染链
 │   │   │   └── EmptyState.tsx          # 欢迎页、快捷动作卡片
 │   │   ├── terminal/
 │   │   │   └── TerminalPane.tsx        # XTerm 终端集成与底栏展示
@@ -55,9 +66,11 @@ ReinAgent 架构全景
 │   │   └── ui/
 │   │       └── Tooltip.tsx             # 基于 @radix-ui/react-tooltip 的通用精致提示浮层
 │   └── src/lib/
-│       ├── chat/                       # 会话控制器 (conversationController, stateBridge, useConversation)
-│       ├── providers/                  # 模型路由与 Provider 抽象 (DeepSeek, OpenAI, Claude, Faux 演示)
-│       └── agent/                      # 本地 Tool 执行与 AgentTurn 调度循环
+│       ├── chat/                       # conversationPool（会话池）、conversationController（调度+重试裁决）、
+│       │                               # conversationModel（纯状态机）、stateBridge、errors（错误链展开/诊断）、
+│       │                               # turnActivity（回合分组）、useConversation、titleGenerator、contextUsage
+│       ├── providers/                  # runAgentTurn（系统提示词+审批门）、modelFactory、catalog、fauxSource
+│       └── agent/                      # agentRuntime（Agent 循环）、tools（五工具）、workspace（路径决议）
 └── Backend (Tauri 2 / Rust)
     └── src-tauri/
         ├── src/main.rs                 # Tauri 入口、窗口管理
@@ -254,6 +267,14 @@ ReinAgent 架构全景
 
 **铁律**：修改 `DEFAULT_SYSTEM_PROMPT`、`buildEnvironmentSection`、`PLAN_MODE_PROMPT`、`APPROVAL_HINT_PROMPT` 或任何工具描述/失败文案时，必须同步更新 PROMPTS.md。
 
+## 四点六、界面字号体系（对齐 ZCode，2026-09-26）
+
+全部 UI 字号以 `src/styles/global.css` 的 **`--ui-font-size: 20px`** 为单一基准（对齐用户 ZCode 实例的界面字号设置），严禁散落硬编码：
+
+- **`text-ui-*` 派生刻度**（语义刻度，新代码优先用）：`--text-ui-xl`(+4) / `--text-ui-lg`(+2) / `--text-ui-base`(=基准) / `--text-ui-caption`(−1) / `--text-ui-sm`(−2) / `--text-ui-xs`(−4)；
+- **Tailwind 标准字阶整体上移**（侧栏/设置页等 `text-xs~xl` 的界面跟随放大）：`xs 16px` / `sm 18px` / `base 20px` / `lg 22px` / `xl 24px`（含配套 `--text-*--line-height`）；
+- 既有组件内零散 px 字号（14px/15px 等）暂保留，后续按需迁移到 `text-ui-*` 刻度；新增样式**禁止直接写死字号**，统一走上述变量。
+
 ## 五、状态存储速查（2026-09-25 起迁移至 SQLite）
 
 ### 1. 本地磁盘持久化（Tauri Backend）
@@ -283,59 +304,6 @@ ReinAgent 架构全景
 
 对话与任务数据的全部 localStorage 键（`reinagent-task-msg-*`、`reinagent-tasks` 等）已于 2026-09-25 移除，历史数据不迁移（从零开始）。例外：ZCode 预览面板移植件内部零散偏好已改走 kv；仅第三方库内部缓存不归本项目管辖。
 
-
-## 六、Linux 编译、运行与环境隔离规范（严格基于 run-linux.sh）
-
-由于宿主工程目录位于网络共享盘（CIFS/SMB 文件系统不支持 Linux 符号链接与标准文件锁机制），为了防止 `bun install` 软链接失败或 Cargo 编译锁死，**所有构建、类型检查与运行必须严格遵循 `run-linux.sh` 的环境隔离配置**：
-
-### 1. 核心隔离参数
-- **本地工作区**：`WORK_DIR="/tmp/reinagent"`
-- **Rust Target 目录**：`TARGET_DIR="/tmp/reinagent/target"`（通过 `export CARGO_TARGET_DIR="$TARGET_DIR"` 挂载）
-- **依赖隔离**：原生 Linux node_modules 安装在 `/tmp/reinagent/node_modules` 下。
-- **根目录 `node_modules` 软链接机制**：
-  - 工程根目录下的 `node_modules` 为指向 `/tmp/reinagent/node_modules` 的软链接（`ln -sfn /tmp/reinagent/node_modules node_modules`）；
-  - **核心作用**：仅供宿主 VS Code / 编辑器（TSServer / Language Server）进行模块语法高亮、TypeScript 类型推导与代码自动补全；
-  - **解耦影响**：若该软链接被删除或重命名（如 `node_modules.bak`），**不会影响任何编译与运行**（因 `run-linux.sh` 与构建脚本使用 `/tmp/reinagent/node_modules` 原生依赖），但会导致宿主编辑器出现找不到模块的红线警告并失去代码补全。如需恢复 IDE 提示，仅需重新建立指向 `/tmp/reinagent/node_modules` 的软链接即可。
-
-### 2. 标准编译与验证命令
-```bash
-# 1. 增量同步源码至本地临时工作区
-rsync -av --delete --exclude 'node_modules' --exclude 'target' --exclude '.git' /home/web3claw/DevCode/ReinAgent/ReinAgent/ /tmp/reinagent/
-
-# 2. 前端类型检查与打包构建
-cd /tmp/reinagent && bun run build
-
-# 3. 单元测试 (Chat 状态机模型与调度逻辑)
-npm run test:chat
-```
-
-### 3. 本地启动脚本执行（run-linux.sh）
-- **启动前端 Vite 服务**：端口 `1420`，`(cd /tmp/reinagent && bun /tmp/reinagent/node_modules/vite/bin/vite.js --port 1420) &`
-- **启动 Tauri 桌面应用**：`cargo tauri dev -c '{"build": {"beforeDevCommand": ""}}'`
-
-### 4. 自动化无头视觉回归
-本地运行 dev server 后（默认端口 1420），可通过 Chrome 无头模式快速截取实际渲染图像进行像素级对比：
-```bash
-google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-size=1280,800 http://localhost:1420
-```
-
----
-
-## 七、核心架构守则与避坑指南
-
-1. **包管理器限制 (Package Manager Rule)**：
-   - 项目采用 **Bun**（`bun@1.4.2` 与 `bun.lock`）。
-   - 严禁使用 npm/pnpm 篡改依赖锁定文件；所有依赖安装与更新必须在 `/tmp/reinagent` 隔离区进行，防止损坏网络共享挂载盘的软链接。
-2. **Tauri 2 + Web 双模兼容 (Dual-mode Compatibility Rule)**：
-   - 涉及系统级能力（终端 PTY、受控文件操作等）时，必须保留 Web Mock / Fallback 兼容层，保证在 Headless Chrome（无头自动化测试/截图回归）或普通浏览器中依然能完整渲染并正常调试。
-3. **Tailwind CSS v4 语义化主题 (Theme Styling Rule)**：
-   - 严禁在组件中硬编码 Hex/RGB 颜色值；必须使用 `src/styles/global.css` 定义的 CSS 语义变量（如 `var(--bg)`、`var(--sidebar-bg)`、`var(--sidebar-text)`、`var(--border)`），确保跟随 `data-theme="dark|light"` 自动平滑换肤。
-   - **表单控件原生样式隔离（Form Controls Native Appearance Rule）**：在 Linux Webview（WebKit2GTK）环境下，原生 `<select>` 必须配置 `appearance-none` 并配合自定义 `ChevronDown` 箭头图标，全局绑定 `var(--bg-card)` 与 `var(--text-primary)`，杜绝因操作系统原生 GTK 白色控件覆盖导致的“白底白字不可读”问题。
-4. **Git 与工作区保护 (Workspace Discipline)**：
-   - 未经用户明确许可或要求，**严禁自行调用 `git commit` 或 `git push`**。
-   - 测试产物、截图、中间日志等临时文件必须存放于 `/tmp/`，严禁污染工程工作树。
-
----
 
 ## 六、Linux 编译、运行与环境隔离规范（严格基于 run-linux.sh）
 
@@ -456,7 +424,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 ## 十、后续迭代方向推荐（2026-09-24 刷新）
 
 1. **项目管理深化**：原生目录选择（`fs_pick_folder`）与工作区决议已落地；**目录文件树渲染**（结合 ZCode `WorkspaceSidebarItem` 树形逻辑）尚未实现。
-2. **对话持久化升级**：当前按任务分片存于 localStorage（`reinagent-task-msg-*`），有容量配额与 WebView2 数据清理丢失风险——应迁移至 `~/.ReinAgent/` 下 Sqlite 或 JSON 文件存储（服务商配置已走该通道，模式可复用）。
+2. ~~**对话持久化升级**~~：**已完成（2026-09-25）**——对话/任务已迁移至 `~/.ReinAgent/conversations.db` SQLite（见 五），localStorage 对话/任务键全部废除。
 3. **Agent 工具执行沙箱**：前端审批流（ApprovalMode 四档 + beforeToolCall 挂起审批 + 计划模式拦截）已落地（见 十一 #14）；剩余：Rust 端命令执行拦截/沙箱、计划批准 elicitation（ExitPlanMode 批准后自动退出计划模式）、审批规则持久化、后台任务审批红点徽标。
 4. **推理能力元数据整改（铁律整改项）**：`modelFactory` 仍写死 `contextWindow: 128000 / maxTokens: 8192`，应解析上游 `/v1/models` 的 `context_length` / `max_tokens` 真实字段（WorkBuddy 网关已实测返回这两个字段）。
 5. 其余聊天窗口未实现项见 **十一、聊天窗口 ZCode 对标实现状态清单**。
@@ -498,6 +466,10 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - 恢复消毒：`restoreState` 将残留的 streaming/running 条目标记为 stopped 并补 `endedAt`——消除重启后「执行中」僵尸条目导致的统计爆炸（如 LLM 9h17m）与状态条永久工作中；
 - 命中率口径修正：pi-ai 的 `input` 不含缓存命中部分，命中率 = 累计 `cacheRead / (input + cacheRead)`；容量 used = input + cacheRead + output。
 - **修复：exec 终端命令大面积失败（2026-09-26）**——根因是 Rust `Command::arg()` 按 MSVC 规则把命令内引号转义成 `\"`，而 cmd 不认该转义，`findstr /c:"..."` 与多词带引号模式被拆坏（`FINDSTR: Cannot open <词>`）。修复：`fs_execute` 改用 `raw_arg` 原样透传命令行；同时主命令加 `CREATE_NO_WINDOW`（不再弹黑框抢焦点）、输出收集加 5s 有界收尾（防孙进程持管道永久挂起）、输出 256KB 截断（防巨型输出拖垮 IPC）。另：模型把 exec 参数名写成 `cmd` 导致的校验秒败已由 schema 别名修复（见提交 059903f）。
+- **错误详情展示 + 自动重试（2026-09-26，对齐 LiveAgent）**——controller 捕获错误时用 `describeErrorChain` 展开 Error 的 **cause 链**（OpenAI SDK 的 APIConnectionError message 只有 "Connection error."，真实原因在 cause 上），错误行以**原文为主**（状态码/上游原因/URL 一并展示）+ `errorHint`（diagnoseError 友好提示）小字；`finish` 同步存储 error(原文)/errorHint 两字段；diagnoseError 新增 5xx 分支（502/503/504/forward）；**自动重试两层（对齐 LiveAgent withStreamRetry）**：provider 层 `maxRetries: 2`（pi-ai retryProviderRequest，连接级瞬时重试）+ **controller 层统一重试裁决 5 次**（对齐 codex stream_max_retries=5；关键覆盖点：pi-ai 把 HTTP 错误作为 stopReason:'error' 的 errorMessage 返回而非 throw，只 catch throw 会完全漏掉 502 这类失败——throw 与 errorMessage 两路归一进同一裁决，失败判定 = `result.errorMessage` 非空（pi-ai 的 HTTP 错误以 stopReason:'error' 正常收敛、agent_end 照常到达，`reachedAgentEnd === false` 的判定会完全漏掉它们——已修正为检查 errorMessage））；退避 200ms x 2^(n-1) x uniform(0.9,1.1)；`isRetryableError` 覆盖网络/超时/429/500/502/503/504/524/Cloudflare 52x；401/402 等确定性失败不重试；每次重试重建历史（R13 剔除失败行）并 beginAssistant 另起新行；手动重试按钮保留。自动重试上限 **10 次**（2026-09-26 用户定档，替代初版 5 次）；每次重试追加 RetryAttemptRecord（attempt/maxAttempts/errorMessage/plannedDelayMs）到 state.retryAttempts；UI 两处（对齐 ZCode/LiveAgent）：① 状态条下方**重连副行**「重新连接中… N/10」（`reconnect-line`，仅流式中的轮显示，对齐 ZCode 重连样式）；② **「重试详情 (N)」折叠块**（RetryDetailsBlock，对齐 LiveAgent RetryDetailsBlock：RefreshCw 图标 + 折叠头 + 每次尝试卡片「第 N/M 次重试 + 错误原文」）——实时轮从 state.retryAttempts 传入，完成后固化到 assistant 条目（retryAttempts part）随消息持久化；关键修复：beginAssistant 保留轮次级 state 字段（原实现构造全新对象把 retryAttempts 抹掉，导致记录只剩 1 条）。
+- **修复：markdown 列表/标题渲染丢失（2026-09-26）**——Tailwind preflight 把 `ul/ol` 的 list-style 与 `h1-h4` 的字号/字重重置，`.md` 只补了边距，导致模型输出里的列表渲染成无符号缩进段落、`## 标题` 渲染成与正文同大的普通文本（用户感知为「总结没有列表、很紧凑」）。已显式恢复：h1-h4 分级字号（1.5/1.3/1.15/1.05em）+ 700-600 字重，ul disc / ol decimal + `li::marker` 暗色，li 项间距 0.25em。
+- **新增：附件与图片粘贴（2026-09-26，对齐 LiveAgent）**——Rust 命令 `fs_pick_files`（rfd 多选）/ `fs_import_pasted_file`（粘贴图片 base64 落盘 `.ReinAgent/temp/pasted/`）/ `fs_read_image_preview`（≤5MB 缩略图 base64）/ `fs_read_attachment_base64`（≤25MB 发送内联）；前端 Composer 真实附件状态（上限 9、扩展名图片白名单）、textarea onPaste 粘贴图片、缩略图点击 Lightbox 放大（Radix Dialog）、X 删除；发送时文本附件以路径引用追加、**图片转 pi-ai 原生 image content block 内联**（非视觉模型降级为路径引用提示）；后续轮次重建历史时图片不再保留（v1 限制）。
+- **修复：用户气泡图片点击放大失效（2026-09-26）**——MessageItem 的返回结构是「用户分支提前 return + 助手分支 return」，Lightbox 最初只挂在 assistant 分支的树尾，用户气泡分支的树里没有该节点（点击后 setState 生效、组件重渲染，但 JSX 树中无 Lightbox → 无 DOM 变化）。已在用户分支 return 的根 div 内补挂 ImageLightbox（Composer 附件条与消息气泡共用组件）。
 - **任务级隔离 + 审批模式（2026-09-25）**：见已实现清单 #14；`ApprovalMode` 值域由无实效的 always/suggest/auto 替换为 plan/ask/edit/full；全局默认持久化 kv（`reinagent-approval-mode`，缺省 full）。
 
 **渲染增强类**：

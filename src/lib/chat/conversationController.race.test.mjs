@@ -255,16 +255,27 @@ test("新增 · 保险收敛：runAgentTurn resolve 但未到达 agent_end（无
   assert.equal(lastAssistant(getState()).status, "done");
 });
 
-test("新增 · 保险收敛：runAgentTurn resolve 但未到达 agent_end 且带 errorMessage → 兜底收敛为 error", async () => {
+test("新增 · 保险收敛：runAgentTurn resolve 带 errorMessage → 可重试错误进入自动重试（5 次上限）", async () => {
   const { controller, getState, calls } = makeHarness();
 
   assert.equal(controller.send("A"), true);
   await settle();
+  // 第 1 次调用返回可重试的 errorMessage → 应触发自动重试
   calls[0].resolve({ reachedAgentEnd: false, errorMessage: "429 rate limit exceeded" });
   await settle();
+  await settle(); // 双 settle：让退避计时器走完、第二次调用发出
 
-  assert.equal(getState().status, "error", "带 errorMessage 的兜底应收敛为 error");
-  assert.equal(lastAssistant(getState()).status, "error");
+  // 重试期间保持 streaming（对齐 LiveAgent：调用方看到的是「进行中」而非「已失败」）
+  assert.equal(getState().status, "streaming", "可重试错误应保持 streaming 进行自动重试");
+  assert.ok(getState().retryAttempts?.length >= 1, "应记录重试条目");
+
+  // 第 2 次调用返回不可重试错误 → 收敛为最终 error
+  assert.ok(calls.length >= 2, `应已发起第二次调用，实际 ${calls.length}`);
+  calls[calls.length - 1].resolve({ reachedAgentEnd: false, errorMessage: "401 unauthorized" });
+  await settle();
+  await settle();
+  assert.equal(getState().status, "error", "不可重试错误应收敛为 error");
+  assert.ok(/401/.test(getState().error ?? ""), "最终错误应为最后一次的原文");
 });
 
 test("新增 · 保险收敛：runAgentTurn resolve 但未到达 agent_end 且 aborted → 兜底标为 stopped", async () => {

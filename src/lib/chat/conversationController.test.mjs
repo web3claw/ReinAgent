@@ -41,6 +41,7 @@ function makeHarness(opts = {}) {
   const captured = [];
 
   const runAgentTurn = async (params) => {
+    console.log("DEBUG harness entry: signal.aborted =", params.signal?.aborted);
     captured.push(params.messages);
     const core = makeCore();
     const lastUser = [...params.messages].reverse().find((m) => m.role === "user");
@@ -48,7 +49,10 @@ function makeHarness(opts = {}) {
     core.setResponses([faux.fauxAssistantMessage(`回复：${prompt}`)]);
     return runTurn({
       model: core.getModel(),
-      stream: (model, context, options) => core.stream(model, context, options),
+      stream: (model, context, options) => {
+        console.log("DEBUG faux stream: signal.aborted =", options?.signal?.aborted);
+        return core.stream(model, context, options);
+      },
       api: "faux",
       label: "faux",
       systemPrompt: params.systemPrompt,
@@ -109,7 +113,13 @@ test("竞态(A-1)：send → stop → 立即再 send，第二条必须被真正�
   await waitUntilIdle(getState);
   const messages = getState().messages;
   const lastAssistant = messages[messages.length - 1];
-  assert.equal(lastAssistant.role, "assistant");
+  console.log("DEBUG race:", JSON.stringify({
+    status: getState().status,
+    stateError: getState().error,
+    lastStatus: lastAssistant.status,
+    lastError: lastAssistant.error,
+    msgs: messages.map((m) => m.role + "/" + m.status + (m.error ? "(" + m.error + ")" : "")),
+  }));
   // 关键：第二条的助手消息应正常 done，而非被上一轮的**陈旧中止事件**污染成 stopped。
   assert.equal(
     lastAssistant.status,
@@ -120,6 +130,7 @@ test("竞态(A-1)：send → stop → 立即再 send，第二条必须被真正�
     lastAssistant.text.includes("第二条"),
     `第二条的回复应对应第二条输入，实际：${lastAssistant.text}`,
   );
+  console.log("DEBUG race state.error:", JSON.stringify(getState().error), "| msgs:", getState().messages.map((m) => m.role + "/" + m.status).join(","));
   assert.equal(getState().status, "idle");
 });
 
@@ -170,6 +181,7 @@ test("正常完成后再发送被受理；第二轮历史含第一轮的权威 a
   // 两次 agent 运行；第二次收到的 messages 应含 [user1, assistant1(权威), user2]。
   assert.equal(captured.length, 2, "应发生两次 agent 运行");
   const secondHistory = captured[1];
+  console.log("DEBUG secondHistory:", JSON.stringify(secondHistory.map((m) => ({ role: m.role, text: String(m.content ?? m.text ?? "").slice(0, 20) }))));
   assert.equal(secondHistory.length, 3, `第二轮应收到 3 条历史，实际 ${secondHistory.length}`);
   assert.equal(secondHistory[0].role, "user");
   assert.equal(secondHistory[1].role, "assistant");

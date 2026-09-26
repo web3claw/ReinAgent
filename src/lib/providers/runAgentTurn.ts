@@ -225,6 +225,9 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     signal,
     onEvent,
     thinkingLevel,
+    // provider 层自动重试（连接重置/5xx 等瞬时失败），对齐 ZCode 的重试策略
+    maxRetries: 2,
+    maxRetryDelayMs: 60000,
     // 审批门：非 full 模式（且有协调器）才注入；full 下零开销直通。
     beforeToolCall: approval && approvalMode !== "full" ? createApprovalGate(approvalMode, approval) : undefined,
   };

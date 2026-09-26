@@ -1,9 +1,11 @@
-import { memo, useState, useCallback } from "react";
+import { memo, useState, useCallback, useEffect } from "react";
 import type { TimelineEntry, ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { MarkdownText } from "./MarkdownText";
+import { RetryDetailsBlock } from "./RetryDetailsBlock";
 import { ToolCallCard } from "./ToolCallCard";
 import { Copy, Check, Pencil, CornerDownLeft, X, ThumbsUp, ThumbsDown, Play, RotateCw } from "lucide-react";
 import { useTranslation } from "../../i18n";
+import { ImageLightbox } from "./ImageLightbox";
 
 /**
  * 类型收窄守卫：把工具条目从联合类型里挑出来。
@@ -37,6 +39,40 @@ function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
   const [copied, setCopied] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editText, setEditText] = useState(message.text);
+
+  // 用户消息图片附件：缩略图预览（会话内已有 previewUrl 直接用；历史消息懒加载）
+  const userImages = (message.attachments ?? []).filter((a) => a.kind === "image");
+  const [previewMap, setPreviewMap] = useState<Record<string, string>>({});
+  const [lightbox, setLightbox] = useState<{ src: string; name: string } | null>(null);
+
+  useEffect(() => {
+    const missing = userImages.filter(
+      (a) => !a.previewUrl && !previewMap[a.path] && !(previewMap[a.path] === ""),
+    );
+    if (missing.length === 0) return;
+    let active = true;
+    void (async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      for (const a of missing) {
+        try {
+          const res = await invoke<{ mime: string; base64: string }>("fs_read_image_preview", {
+            path: a.path,
+          });
+          if (!active) return;
+          setPreviewMap((prev) => ({
+            ...prev,
+            [a.path]: `data:${res.mime};base64,${res.base64}`,
+          }));
+        } catch (err) {
+          console.warn("[attachment] message preview failed:", err);
+          if (active) setPreviewMap((prev) => ({ ...prev, [a.path]: "" }));
+        }
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [userImages, previewMap]);
 
   const isUser = message.role === "user";
   const isStreaming = message.status === "streaming";
@@ -122,6 +158,50 @@ function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
           // 普通展示模式：ZCode 风格不对称圆角气泡
           <>
             <div className="flex max-w-2xl flex-col gap-2 rounded-2xl rounded-tr-sm border border-[#2563eb] dark:border-[#3a5db0] bg-[#2563eb] dark:bg-[#3a5db0] px-4 py-3 text-sm text-white shadow-xs">
+              {message.attachments && message.attachments.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {message.attachments.map((a) =>
+                    a.kind === "image" ? (
+                      <button
+                        key={a.path}
+                        type="button"
+                        title={`${a.name}（点击放大）`}
+                        ref={(el) => {
+                          // 原生 onclick 绑定：绕过 React 合成事件委托（同 Composer 缩略图）
+                          if (el) {
+                            el.onclick = (ev) => {
+                              ev.stopPropagation();
+                              const src = previewMap[a.path] ?? a.previewUrl;
+                              if (src) setLightbox({ src, name: a.name });
+                            };
+                          }
+                        }}
+                        className="block h-28 rounded-lg overflow-hidden border border-white/30 cursor-zoom-in"
+                      >
+                        {previewMap[a.path] || a.previewUrl ? (
+                          <img
+                            src={previewMap[a.path] ?? a.previewUrl}
+                            alt={a.name}
+                            className="h-full w-auto max-w-56 object-cover"
+                          />
+                        ) : (
+                          <span className="flex items-center justify-center w-28 h-full text-white/70 text-xs">
+                            图片加载中…
+                          </span>
+                        )}
+                      </button>
+                    ) : (
+                      <div
+                        key={a.path}
+                        className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-white/15 text-xs"
+                        title={a.path}
+                      >
+                        📄 {a.name}
+                      </div>
+                    ),
+                  )}
+                </div>
+              )}
               <span className="whitespace-pre-wrap break-words leading-relaxed select-text">{message.text}</span>
             </div>
 
@@ -149,6 +229,9 @@ function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
               )}
             </div>
           </>
+        )}
+        {lightbox && (
+          <ImageLightbox src={lightbox.src} name={lightbox.name} onClose={() => setLightbox(null)} />
         )}
       </div>
     );
@@ -180,9 +263,21 @@ function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
             )}
           </div>
         ) : null}
+        {message.retryAttempts && message.retryAttempts.length > 0 && (
+          <RetryDetailsBlock attempts={message.retryAttempts} />
+        )}
         {message.status === "error" ? (
           <div className="msg-error mt-2 flex items-center justify-between gap-3">
-            <span>出错了：{message.error ?? "未知错误"}</span>
+            <div className="min-w-0">
+              {message.error?.includes("自动重试") ? (
+                <div className="break-words text-[var(--status-warn)]">{message.error}</div>
+              ) : (
+                <div className="break-words">{message.error}</div>
+              )}
+              {message.errorHint && message.errorHint !== message.error && (
+                <div className="mt-1 text-xs opacity-60 break-words">{message.errorHint}</div>
+              )}
+            </div>
             {onRetry && (
               <button
                 type="button"
@@ -225,6 +320,9 @@ function MessageItemImpl({ message, onEditSend, onRetry }: MessageItemProps) {
             <ThumbsDown className="w-3.5 h-3.5" />
           </button>
         </div>
+      )}
+      {lightbox && (
+        <ImageLightbox src={lightbox.src} name={lightbox.name} onClose={() => setLightbox(null)} />
       )}
     </div>
   );

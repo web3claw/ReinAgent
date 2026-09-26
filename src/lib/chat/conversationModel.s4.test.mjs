@@ -149,8 +149,9 @@ test("aborted 与 error 可区分：前者不报错，后者进 error 且文案�
   );
   assert.equal(errored.state.status, "error");
   assert.equal(lastAssistant(errored.state).status, "error");
-  assert.ok(/429/.test(errored.state.error), `错误文案应含 429，实际：${errored.state.error}`);
-  assert.ok(/请求过于频繁/.test(lastAssistant(errored.state).error), "应映射为可读中文");
+  assert.ok(/429/.test(errored.state.error), `error 应保留原始文本（含 429），实际：${errored.state.error}`);
+  assert.ok(/请求过于频繁/.test(errored.state.errorHint ?? ""), "errorHint 应为可读中文提示");
+  assert.ok(/请求过于频繁/.test(lastAssistant(errored.state).errorHint ?? ""), "条目 errorHint 应为可读中文");
 });
 
 // ---------------------------------------------------------------------------
@@ -184,7 +185,8 @@ test("错误经模型收敛为可读文案（而非原始文本）", async () =>
     faux.fauxAssistantMessage("", { stopReason: "error", errorMessage: "ENOTFOUND api.deepseek.com" }),
   );
   assert.equal(state.status, "error");
-  assert.ok(/网络错误/.test(state.error), `实际：${state.error}`);
+  assert.ok(/ENOTFOUND/.test(state.error), `error 应保留原始文本，实际：${state.error}`);
+  assert.ok(/网络错误/.test(state.errorHint ?? ""), "errorHint 应为可读中文提示");
 });
 
 // ---------------------------------------------------------------------------

@@ -37,6 +37,9 @@ export function diagnoseError(message) {
   if (/429|rate limit|too many requests/i.test(m)) {
     return "请求过于频繁（429）：请稍后重试。";
   }
+  if (/502|503|504|bad gateway|service unavailable|failed to forward/i.test(m)) {
+    return "服务暂时不可用（5xx）：上游服务无响应或转发失败，请稍后重试。";
+  }
   if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|failed to fetch|socket hang up|network|connection error/i.test(m)) {
     return "网络错误：连接中断或无法连接服务，请检查网络或代理设置。";
   }
@@ -57,4 +60,20 @@ export function diagnoseError(message) {
  */
 export function isAbortReason(reason) {
   return reason === "aborted";
+}
+
+/**
+ * 判断一个错误是否值得自动重试（网络抖动 / 网关 5xx / 超时）。
+ * 401/402/429 等确定性失败不重试（重试也不会成功）。
+ * @param {string|undefined|null} message
+ * @returns {boolean}
+ */
+export function isRetryableError(message) {
+  const m = message ?? "";
+  return (
+    /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|failed to fetch|socket hang up|network|connection error|timeout|timed out|超时/i.test(m) ||
+    /502|503|504|bad gateway|service unavailable|failed to forward/i.test(m) ||
+    // 对齐 LiveAgent 重试预设：429/500/524 + Cloudflare 520-527
+    /(^|\D)(429|500|524|52[0-7])(\D|$)/.test(m)
+  );
 }

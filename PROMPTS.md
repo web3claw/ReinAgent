@@ -192,6 +192,7 @@
 | edit_file | **read-before-edit 强制**（未读先改报 "File has not been read yet. Read it first before writing to it: <path>"）；target 不唯一时报匹配数并要求加长上下文；找不到 target 时提示精确复制（含缩进空白）；文件不存在时同样给相似文件建议 |
 | list_dir | 目录列表（JSON） |
 | exec_command | 接受 `command`（`cmd` 为兼容别名，执行前归一化，双缺时报出实际收到的参数名）；cwd 缺省为工作区根 |
+| 附件（图片粘贴/文件添加） | Composer 附件条：图片缩略图（点击 Lightbox 放大）+ 文件横条 + X 删除，上限 9 个；发送时文本附件以 `[Attached file: <路径>]` 路径引用追加、图片转原生 image content block（非视觉模型降级为「无法查看图片」路径引用提示）；粘贴图片落盘 `.ReinAgent/temp/pasted/` |
 | 审批门拒绝文案 | "[Approval] 用户拒绝了本次 ${toolName} 调用。不要重试同样的调用；请说明意图或改用其它方案继续。" |
 | 计划模式拦截文案 | "[Plan Mode] 已拦截：当前任务处于计划模式，禁止写入/修改文件与执行命令。请继续只读调研并输出实施计划，不要重试该调用。" |
 
@@ -219,6 +220,6 @@
 | AGENTS.md OVERRIDE 注入 + meta-user 免责 | 待实现（依赖 AGENTS.md 支持） | ⏳ |
 | Context management（压缩） | 待实现（依赖会话压缩） | ⏳ |
 | system-reminder 防伪造包装 | 待实现（任何系统侧注入文本时采用） | ⏳ |
-| 附件 "data not instructions" 免责 | 待实现（依赖附件功能） | ⏳ |
+| 附件 "data not instructions" 免责 | 待实现（附件功能已上线：路径引用 + 图片内联，但发送时尚未附加免责包装） | ⏳ |
 | Todo 描述与提醒 | 暂不适用（无 todo 工具） | — |
 | 子代理/工作流/压缩/计划模式全量提示 | 暂不适用 | — |

@@ -31,6 +31,10 @@ export interface ConversationControllerOptions {
     approvalMode?: import("../providers/runAgentTurn").ApprovalMode;
     /** 审批协调器（由会话池注入；缺省=不启用审批门）。 */
     approval?: import("../providers/runAgentTurn").ApprovalCoordinator;
+    /** 本轮用户消息附带的图片（原生 image content block 内联）。 */
+    images?: { base64: string; mimeType: string }[];
+    /** 本轮用户消息附带的文件/图片（时间线展示 + 随消息持久化）。 */
+    userAttachments?: import("./conversationModel").UserEntryAttachment[];
   };
   /** AbortController 工厂（可注入以在测试中控制）。 */
   createAbortController?: () => AbortController;

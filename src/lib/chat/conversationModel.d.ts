@@ -18,7 +18,7 @@
  *   （UI 真正渲染工具卡片由 S7-6 负责。）
  */
 
-import type { AssistantMessage, AssistantMessageEvent, Message, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, AssistantMessageEvent, Message, ToolResultMessage, UserMessage } from "@earendil-works/pi-ai";
 import type { AgentEvent } from "@earendil-works/pi-agent-core";
 
 /** 时间线条目角色：用户 / 助手 / 工具。 */
@@ -37,17 +37,40 @@ export interface PendingApproval {
   args: unknown;
 }
 
+/** 自动重试记录（重试详情块数据源；对齐 LiveAgent RetryAttemptRecord）。 */
+export interface RetryAttemptRecord {
+  attempt: number;
+  maxAttempts: number;
+  errorMessage: string;
+  /** 本次重试前的退避时长（毫秒） */
+  plannedDelayMs?: number;
+}
+
+/** 用户消息附件（路径引用 + 可选会话内预览 URL；随消息持久化）。 */
+export interface UserEntryAttachment {
+  path: string;
+  name: string;
+  kind: "image" | "file";
+  previewUrl?: string;
+}
+
 export interface ChatMessage {
   id: string;
   role: TimelineRole;
+  /** 用户消息附带的文件/图片（仅 user 条目） */
+  attachments?: UserEntryAttachment[];
   /** 正文文本（仅由 text_delta 累积）。用户 / 助手使用；工具条目为空串。 */
   text: string;
   /** 思考文本（S2 不渲染，但不丢弃）。 */
   thinking: string;
   status: MessageStatus | ToolEntryStatus;
   error?: string;
-  /** finish / turn_end 时保存的权威消息，供多轮上下文复用。 */
-  apiMessage?: AssistantMessage | ToolResultMessage;
+  /** 友好诊断提示（diagnoseError 生成；error 为原始上游错误文本） */
+  errorHint?: string;
+  /** 本轮的自动重试记录（finish 时从 state 固化到条目上，随消息持久化） */
+  retryAttempts?: RetryAttemptRecord[];
+  /** finish / turn_end 时保存的权威消息，供多轮上下文复用。用户条目可存含图片块的 UserMessage。 */
+  apiMessage?: AssistantMessage | ToolResultMessage | UserMessage;
 
   // ---- 工具专属字段（仅 role === "tool" 时存在；在 ChatMessage 上可选仅为类型兼容）----
   toolCallId?: string;
@@ -103,6 +126,10 @@ export interface ChatState {
   messages: TimelineEntry[];
   status: ChatStatus;
   error?: string;
+  /** 友好诊断提示（diagnoseError 生成；error 为原始上游错误文本） */
+  errorHint?: string;
+  /** 自动重试记录（当前轮；controller 每次失败尝试追加，发送时清空） */
+  retryAttempts?: RetryAttemptRecord[];
   /**
    * 单调递增的消息序号，用于生成**唯一** id（`m${seq}`）。
    *
@@ -122,7 +149,12 @@ export function restoreState(messages: TimelineEntry[]): ChatState;
 /** 设置或清除当前待审批请求（req 为 null/undefined 表示清除）。 */
 export function withPendingApproval(state: ChatState, req: PendingApproval | null): ChatState;
 
-export function appendUser(state: ChatState, text: string): ChatState;
+export function appendUser(
+  state: ChatState,
+  text: string,
+  attachments?: UserEntryAttachment[],
+  apiUserMessage?: UserMessage,
+): ChatState;
 
 export function beginAssistant(state: ChatState, nowMs?: number): ChatState;
 
@@ -138,6 +170,8 @@ export function finishAborted(state: ChatState, nowMs?: number): ChatState;
 
 /** 步数硬闸触顶：给最后一条助手条目打「已达最大步数」纯展示标注（不改 status）。 */
 export function noteMaxSteps(state: ChatState): ChatState;
+/** error 态下更新错误文案（自动重试倒计时）。 */
+export function updateErrorNote(state: ChatState, text: string): ChatState;
 
 export function lastAssistant(state: ChatState): ChatMessage | undefined;
 

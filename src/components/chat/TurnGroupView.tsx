@@ -18,6 +18,7 @@ import { MessageItem } from "./MessageItem";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
 import { MarkdownText } from "./MarkdownText";
+import { RetryDetailsBlock } from "./RetryDetailsBlock";
 import { useTranslation } from "../../i18n";
 import { memo, useMemo, useRef, useState } from "react";
 import {
@@ -174,6 +175,8 @@ function ExploreGroupCard({ entries }: { entries: ToolTimelineEntry[] }) {
 export interface TurnGroupViewProps {
   /** 本轮正在流式（代码高亮等昂贵渲染降级，完成后恢复） */
   streaming?: boolean;
+  /** 本轮的自动重试记录（重试详情块数据源；仅实时轮传入） */
+  retryAttempts?: import("../../lib/chat/conversationModel").RetryAttemptRecord[];
   group: TurnGroup;
   /** 每秒刷新的当前时间（MessageList live tick），仅运行中轮用于工时跳动。 */
   liveNowMs: number;
@@ -373,7 +376,7 @@ function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntr
   );
 }
 
-function TurnGroupViewImpl({ group, liveNowMs, live = false, streaming = false, workspaceRoot, onEditSend, onRetry }: TurnGroupViewProps) {
+function TurnGroupViewImpl({ group, retryAttempts, liveNowMs, live = false, streaming = false, workspaceRoot, onEditSend, onRetry }: TurnGroupViewProps) {
   const { t, locale } = useTranslation();
   // 用户只折叠/展开「已完成」的轮次；运行中强制展开且不可收起（userToggle 仅完成态生效）。
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
@@ -404,6 +407,13 @@ function TurnGroupViewImpl({ group, liveNowMs, live = false, streaming = false, 
   // 折叠交互仅对有内容的轮次生效；运行中强制展开且不可收起（对齐 ZCode 只读展开）。
   const open = isTurnRunning ? true : userToggle === true;
   const activityItems = useMemo(() => buildActivityItems(group.activity), [group.activity]);
+
+  // 重连副行（对齐 ZCode「重新连接中… 3/10」）：流式中的轮有重试记录时显示在状态条下方
+  const lastRetry = retryAttempts && retryAttempts.length > 0 ? retryAttempts[retryAttempts.length - 1] : null;
+  const reconnectLabel =
+    isTurnRunning && lastRetry
+      ? t("reconnecting").replace("{attempt}", String(lastRetry.attempt)).replace("{max}", String(lastRetry.maxAttempts))
+      : null;
 
   let headerLabel: string;
   switch (workState) {
@@ -456,6 +466,18 @@ function TurnGroupViewImpl({ group, liveNowMs, live = false, streaming = false, 
               <span className="turn-header-label">{headerLabel}</span>
             </div>
           )}
+          {reconnectLabel && (
+            <div className="reconnect-line">{reconnectLabel}</div>
+          )}
+          {(() => {
+            const records = retryAttempts ?? group.lastAssistant?.retryAttempts;
+            if (!records || records.length === 0) return null;
+            return (
+              <div className="px-0 pt-1">
+                <RetryDetailsBlock attempts={records} />
+              </div>
+            );
+          })()}
           {hasBody && open && (
             <div className="turn-body">
               {activityItems.map((item, index) => {

@@ -344,7 +344,11 @@ export default function App() {
     setFocusTrigger((c) => c + 1);
   };
 
-  const handleSend = (text: string) => {
+  const handleSend = (
+    text: string,
+    images?: { base64: string; mimeType: string }[],
+    userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
+  ) => {
     let targetTaskId = activeTaskId;
 
     // If currently in draft mode (no activeTaskId), create the task on first message
@@ -398,6 +402,8 @@ export default function App() {
       workspaceRoot: effectiveWorkspaceRoot,
       thinkingLevel: effectiveThinkingLevel,
       approvalMode: activeApprovalMode,
+      images,
+      userAttachments,
     });
   };
 
@@ -517,6 +523,7 @@ export default function App() {
                     onSelectModel={handleSelectModel}
                     focusRequestTrigger={focusTrigger}
                     contextUsage={contextUsage}
+                    workspaceRoot={effectiveWorkspaceRoot}
                   />
                 </div>
               </div>
@@ -529,6 +536,7 @@ export default function App() {
                   <MessageList
                     messages={state.messages}
                     isStreaming={isStreaming}
+                    retryAttempts={state.retryAttempts}
                     scrollRef={chatScrollRef}
                     onEditSend={handleSend}
                     onRetry={handleRetry}

@@ -9,6 +9,7 @@ import {
   Plus,
   AtSign,
   Terminal,
+  FileText,
   FileCode,
   Image as ImageIcon,
   X,
@@ -33,9 +34,20 @@ import {
   updateModelEffortDefaultLevel,
 } from "../settings/model-provider/types";
 
+export interface ComposerImageInput {
+  base64: string;
+  mimeType: string;
+}
+
 export interface LexicalComposerProps {
   isStreaming: boolean;
-  onSend: (text: string) => boolean;
+  onSend: (
+    text: string,
+    images?: ComposerImageInput[],
+    userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
+  ) => boolean;
+  /** 会话工作区根（粘贴图片落盘 / 附件对话框初始目录） */
+  workspaceRoot?: string;
   onStop: () => void;
   providerId?: string;
   providerName?: string;
@@ -82,6 +94,7 @@ const APPROVAL_MODE_OPTIONS: {
 export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   isStreaming,
   contextUsage,
+  workspaceRoot,
   onSend,
   onStop,
   providerId = "deepseek",
@@ -140,7 +153,16 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const [showRemoteDialog, setShowRemoteDialog] = useState(false);
   const [remoteHost, setRemoteHost] = useState("");
 
-  const [attachments, setAttachments] = useState<{ id: string; name: string }[]>([]);
+  // 附件（对齐 LiveAgent PendingUploadedFile：路径引用 + 图片预览；上限 9 个）
+  const [attachments, setAttachments] = useState<
+    { path: string; name: string; kind: "image" | "file"; sizeBytes: number; previewUrl?: string }[]
+  >([]);
+  const [previewAttachment, setPreviewAttachment] = useState<
+    { path: string; name: string; previewUrl?: string } | null
+  >(null);
+  const [pickingFiles, setPickingFiles] = useState(false);
+  const attachmentsRef = useRef(attachments);
+  attachmentsRef.current = attachments;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
@@ -176,17 +198,55 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     }
   }, [hasMessages]);
 
-  const submit = () => {
+  const submit = async () => {
     const trimmed = text.trim();
     if ((trimmed.length === 0 && attachments.length === 0) || isStreaming) return;
 
     let payload = trimmed;
+    const imageInputs: ComposerImageInput[] = [];
+    const supportsImage = currentModel?.supportsImage === true;
+
     if (attachments.length > 0) {
-      const attachDesc = attachments.map((a) => `[Attachment: ${a.name}]`).join(" ");
-      payload = payload ? `${payload}\n\n${attachDesc}` : attachDesc;
+      const { invoke } = await import("@tauri-apps/api/core");
+      const fileLines: string[] = [];
+      for (const a of attachments) {
+        if (a.kind === "image") {
+          if (supportsImage) {
+            try {
+              const res = await invoke<{ mime: string; base64: string }>(
+                "fs_read_attachment_base64",
+                { path: a.path },
+              );
+              imageInputs.push({ base64: res.base64, mimeType: res.mime });
+            } catch (err) {
+              console.warn("[attachment] inline read failed:", err);
+              payload += `\n\n[Attached image: ${a.path}]`;
+            }
+          } else {
+            // 非视觉模型：无法直接看图，降级为路径引用
+            payload += `\n\n[The user attached an image: ${a.path}. The current model does not support vision input, so the image content cannot be viewed.]`;
+          }
+        } else {
+          fileLines.push(`[Attached file: ${a.path}]`);
+        }
+      }
+      if (fileLines.length > 0) {
+        payload += `\n\n${fileLines.join("\n")}`;
+      }
     }
 
-    if (onSend(payload)) {
+    const userAttachments = attachments.map((a) => ({
+      path: a.path,
+      name: a.name,
+      kind: a.kind,
+      previewUrl: a.previewUrl,
+    }));
+    const accepted = onSend(
+      payload,
+      imageInputs.length > 0 ? imageInputs : undefined,
+      userAttachments.length > 0 ? userAttachments : undefined,
+    );
+    if (accepted) {
       setText("");
       setAttachments([]);
       setShowMentionMenu(false);
@@ -244,13 +304,113 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     textareaRef.current?.focus();
   };
 
-  const addMockAttachment = () => {
-    const newId = Date.now().toString();
-    setAttachments((prev) => [...prev, { id: newId, name: `file-${prev.length + 1}.png` }]);
+  const MAX_ATTACHMENTS = 9;
+  const IMAGE_EXTS = ["png", "jpg", "jpeg", "gif", "webp", "bmp"];
+  const isImagePath = (p: string) =>
+    IMAGE_EXTS.includes(p.split(".").pop()?.toLowerCase() ?? "");
+
+  /** "+" 添加文件：rfd 原生多选对话框 → 图片加载缩略图 */
+  const addPickedFiles = async () => {
+    if (pickingFiles) return;
+    setPickingFiles(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const paths = await invoke<string[]>("fs_pick_files", {
+        workdir: workspaceRoot ?? undefined,
+      });
+      if (Array.isArray(paths)) {
+        const remaining = MAX_ATTACHMENTS - attachmentsRef.current.length;
+        for (const path of paths.slice(0, Math.max(0, remaining))) {
+          const image = isImagePath(path);
+          let previewUrl: string | undefined;
+          if (image) {
+            try {
+              const preview = await invoke<{ mime: string; base64: string }>(
+                "fs_read_image_preview",
+                { path },
+              );
+              previewUrl = `data:${preview.mime};base64,${preview.base64}`;
+            } catch (err) {
+              console.warn("[attachment] preview failed:", err);
+            }
+          }
+          setAttachments((prev) =>
+            prev.some((a) => a.path === path)
+              ? prev
+              : [
+                  ...prev,
+                  {
+                    path,
+                    name: path.split(/[\/]/).pop() || path,
+                    kind: (image ? "image" : "file") as "image" | "file",
+                    sizeBytes: 0,
+                    previewUrl,
+                  },
+                ],
+          );
+        }
+      }
+    } catch (err) {
+      console.warn("[attachment] pick files failed:", err);
+    } finally {
+      setPickingFiles(false);
+    }
   };
 
-  const removeAttachment = (id: string) => {
-    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  const removeAttachment = (path: string) => {
+    setAttachments((prev) => prev.filter((a) => a.path !== path));
+  };
+
+  /** Ctrl+V 粘贴图片：base64 → Rust 落盘 .ReinAgent/temp/pasted/ → 路径引用附件 */
+  const handlePasteFiles = async (files: File[]) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    for (const file of files) {
+      if (attachmentsRef.current.length >= MAX_ATTACHMENTS) break;
+      try {
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => {
+            const result = String(reader.result ?? "");
+            resolve(result.slice(result.indexOf(",") + 1));
+          };
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        });
+        const name = file.name || "clipboard.png";
+        const path = await invoke<string>("fs_import_pasted_file", {
+          name,
+          mime: file.type || "image/png",
+          base64Data: base64,
+          workdir: workspaceRoot ?? "",
+        });
+        setAttachments((prev) =>
+          prev.some((a) => a.path === path)
+            ? prev
+            : [
+                ...prev,
+                {
+                  path,
+                  name,
+                  kind: "image" as const,
+                  sizeBytes: file.size,
+                  previewUrl: URL.createObjectURL(file),
+                },
+              ],
+        );
+      } catch (err) {
+        console.warn("[attachment] paste import failed:", err);
+      }
+    }
+  };
+
+  const handleTextareaPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
+    const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+      f.type.startsWith("image/"),
+    );
+    if (files.length > 0) {
+      e.preventDefault();
+      void handlePasteFiles(files);
+    }
   };
 
   // 合并全局已打开项目与预设项目
@@ -302,25 +462,61 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           : "rounded-2xl border-t border-[var(--capsule-border)] shadow-xs"
       } bg-[var(--capsule-bg)] w-full flex flex-col overflow-visible`}
     >
-      {/* Attachments inside the capsule, above text area */}
+      {/* 附件条（对齐 LiveAgent ComposerAttachmentCard）：图片缩略图点击放大，非图片图标横条，右上角删除 */}
       {attachments.length > 0 && (
         <div className="flex flex-wrap gap-2 px-4 pt-3 pb-1">
-          {attachments.map((a) => (
-            <div
-              key={a.id}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--capsule-border)] text-xs text-[var(--text-primary)]"
-            >
-              <ImageIcon className="w-3.5 h-3.5 text-blue-500" />
-              <span>{a.name}</span>
-              <button
-                type="button"
-                onClick={() => removeAttachment(a.id)}
-                className="text-[var(--text-secondary)] hover:text-red-500 ml-1"
+          {attachments.map((a) =>
+            a.kind === "image" ? (
+              <div key={a.path} className="relative">
+                <button
+                  type="button"
+                  ref={(el) => {
+                    // 原生 onclick 绑定：React 合成事件在流式渲染期间可能丢点击，
+                    // 原生属性赋值绕过委托系统（赋值函数每次渲染刷新，捕获最新 a）
+                    if (el) {
+                      el.onclick = (ev) => {
+                        ev.stopPropagation();
+                        setPreviewAttachment(a);
+                      };
+                    }
+                  }}
+                  className="block w-16 h-16 rounded-lg overflow-hidden border border-[var(--capsule-border)] cursor-zoom-in bg-[var(--surface)]"
+                  title={a.name}
+                >
+                  {a.previewUrl ? (
+                    <img src={a.previewUrl} alt={a.name} className="w-full h-full object-cover" />
+                  ) : (
+                    <span className="flex items-center justify-center w-full h-full text-[var(--text-secondary)]">
+                      <ImageIcon className="w-4 h-4" />
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(a.path)}
+                  className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--bg-elev)] border border-[var(--capsule-border)] text-[var(--text-secondary)] hover:text-red-500 flex items-center justify-center"
+                  title="移除"
+                >
+                  <X className="w-2.5 h-2.5" />
+                </button>
+              </div>
+            ) : (
+              <div
+                key={a.path}
+                className="relative flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-[var(--surface)] border border-[var(--capsule-border)] text-xs text-[var(--text-primary)]"
               >
-                <X className="w-3 h-3" />
-              </button>
-            </div>
-          ))}
+                <FileText className="w-3.5 h-3.5 text-blue-500" />
+                <span className="max-w-40 truncate">{a.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removeAttachment(a.path)}
+                  className="text-[var(--text-secondary)] hover:text-red-500 ml-1"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            ),
+          )}
         </div>
       )}
 
@@ -382,6 +578,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
         value={text}
         onChange={handleInputChange}
         onKeyDown={handleKeyDown}
+        onPaste={handleTextareaPaste}
         placeholder={placeholder}
         className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none leading-relaxed"
       />
@@ -393,7 +590,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           {/* Add / Attach Button */}
           <button
             type="button"
-            onClick={addMockAttachment}
+            onClick={addPickedFiles}
             className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
             title={t("attachFile")}
           >
@@ -720,6 +917,36 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </div>
         </div>
       </div>
+      {/* 图片放大预览（Lightbox）：点遮罩或 X 关闭 */}
+      {previewAttachment && (
+        <div
+          className="fixed inset-0 z-[100] bg-black/85 flex items-center justify-center cursor-zoom-out"
+          onClick={() => setPreviewAttachment(null)}
+        >
+          {previewAttachment.previewUrl && (
+            <img
+              src={previewAttachment.previewUrl}
+              alt={previewAttachment.name}
+              className="max-w-[94vw] max-h-[94vh] object-contain rounded-lg shadow-2xl"
+              onClick={(e) => e.stopPropagation()}
+            />
+          )}
+          <button
+            type="button"
+            className="absolute top-4 right-4 w-9 h-9 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center transition-colors cursor-pointer"
+            title="关闭"
+            onClick={(e) => {
+              e.stopPropagation();
+              setPreviewAttachment(null);
+            }}
+          >
+            <X className="w-5 h-5" />
+          </button>
+          <span className="absolute bottom-4 left-1/2 -translate-x-1/2 px-3 py-1 rounded-lg bg-black/60 text-white text-xs font-mono">
+            {previewAttachment.name}
+          </span>
+        </div>
+      )}
     </div>
   );
 
@@ -928,6 +1155,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </div>
         </div>
       )}
+
     </div>
   );
 };

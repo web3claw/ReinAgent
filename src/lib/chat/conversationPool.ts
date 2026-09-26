@@ -61,6 +61,22 @@ function serializeEntry(entry: TimelineEntry, seq: number) {
   if (entry.thinking) {
     parts.push({ part_index: partIndex++, kind: "thinking", payload: JSON.stringify({ thinking: entry.thinking }) });
   }
+  if (Array.isArray(entry.retryAttempts) && entry.retryAttempts.length > 0) {
+    parts.push({
+      part_index: partIndex++,
+      kind: "retry_attempts",
+      payload: JSON.stringify({ retryAttempts: entry.retryAttempts }),
+    });
+  }
+    if (entry.role === "user" && Array.isArray(entry.attachments) && entry.attachments.length > 0) {
+    parts.push({
+      part_index: partIndex++,
+      kind: "user_attachments",
+      payload: JSON.stringify({
+        attachments: entry.attachments.map((a) => ({ path: a.path, name: a.name, kind: a.kind })),
+      }),
+    });
+  }
   if (entry.role === "tool") {
     parts.push({ part_index: partIndex++, kind: "tool_args", payload: JSON.stringify({ args: entry.args ?? null }) });
     if (entry.resultText) {
@@ -120,6 +136,8 @@ function deserializeRow(row: {
   let resultText = "";
   let details: unknown = undefined;
   let apiMessage: unknown = undefined;
+  let userAttachments: TimelineEntry["attachments"] = undefined;
+  let entryRetryAttempts: TimelineEntry["retryAttempts"] = undefined;
   for (const part of row.parts) {
     try {
       const parsed = JSON.parse(part.payload);
@@ -131,6 +149,12 @@ function deserializeRow(row: {
         details = parsed.details;
       } else if (part.kind === "api_message") {
         apiMessage = parsed.apiMessage ?? parsed;
+      }
+      else if (part.kind === "user_attachments") {
+        userAttachments = Array.isArray(parsed.attachments) ? parsed.attachments : undefined;
+      }
+      else if (part.kind === "retry_attempts") {
+        entryRetryAttempts = Array.isArray(parsed.retryAttempts) ? parsed.retryAttempts : undefined;
       }
     } catch (e) {
       // 单块损坏不拖垮整条：跳过该块（No-Fallback：不编造内容）。
@@ -149,6 +173,8 @@ function deserializeRow(row: {
     thinkingDurationMs: row.thinking_duration_ms ?? undefined,
     truncatedBy: (row.truncated_by ?? undefined) as TimelineEntry["truncatedBy"],
     apiMessage: apiMessage as TimelineEntry["apiMessage"],
+    ...(userAttachments && userAttachments.length > 0 ? { attachments: userAttachments } : {}),
+    ...(entryRetryAttempts && entryRetryAttempts.length > 0 ? { retryAttempts: entryRetryAttempts } : {}),
   };
   if (row.role === "tool") {
     return {

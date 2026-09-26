@@ -42,6 +42,30 @@ import {
   toApiMessages,
   withPendingApproval,
 } from "./conversationModel.js";
+import { isRetryableError } from "../chat/errors.js";
+import { pushRetryAttempt } from "./conversationModel.js";
+
+/**
+ * 展开 Error 的 cause 链为「主消息 ← 原因 ← …」的完整描述。
+ * OpenAI SDK 的连接错误 message 只有 "Connection error."，真实原因（URL、
+ * 对端重置等）在 cause 链上——不解开就只剩一句空话（对齐 LiveAgent 的原文展示）。
+ * @param {unknown} err
+ * @returns {string}
+ */
+function describeErrorChain(err) {
+  const parts = [];
+  let current = err;
+  for (let depth = 0; current && depth < 5; depth += 1) {
+    const msg =
+      typeof current.message === "string" && current.message
+        ? current.message
+        : String(current);
+    if (!parts.includes(msg)) parts.push(msg);
+    current = current.cause;
+  }
+  if (parts.length === 0) parts.push(String(err));
+  return parts.join(" ← ");
+}
 
 /**
  * 创建一个会话编排器。
@@ -131,13 +155,23 @@ export function createConversationController(deps) {
     // 忙判定来自状态派生（唯一真相），而非 abortRef。
     if (getState().status === "streaming") return false;
 
-    const { source, config, systemPrompt, maxSteps, workspaceRoot, thinkingLevel, approvalMode, approval } = getOptions();
+    const { source, config, systemPrompt, maxSteps, workspaceRoot, thinkingLevel, approvalMode, approval, images, userAttachments } = getOptions();
 
-    // 多轮上下文：历史 = 已完成消息（助手复用其权威 apiMessage）+ 本轮 user。
-    const history = toApiMessages(getState());
-    history.push({ role: "user", content: text, timestamp: now() });
+    // 图片附件：转成 pi-ai 原生 image content block（对齐 LiveAgent 原生内联策略）
+    const userMessage = images && images.length > 0
+      ? {
+          role: "user",
+          content: [
+            { type: "text", text },
+            ...images.map((img) => ({ type: "image", data: img.base64, mimeType: img.mimeType })),
+          ],
+          timestamp: now(),
+        }
+      : { role: "user", content: text, timestamp: now() };
 
-    setState((prev) => beginAssistant(appendUser(prev, text), now()));
+    setState((prev) =>
+      beginAssistant(appendUser(prev, text, userAttachments, userMessage), now()),
+    );
 
     const controller = createAbortController();
     abortRef = controller;
@@ -148,27 +182,113 @@ export function createConversationController(deps) {
       try {
         // ★ 一次 `runAgentTurn` = 完整多轮循环（循环在库里）。库事件经 onEvent 交给
         //   状态机；该回调由库在整段循环期间反复调用，故陈旧轮次必须**在此处**拦截。
-        const result = await runAgentTurn({
-          source,
-          config,
-          messages: history,
-          systemPrompt,
-          maxSteps,
-          workspaceRoot,
-          signal: controller.signal,
-          thinkingLevel,
-          approvalMode,
-          approval,
-          onEvent: (ev) => {
+        //
+        // 自动重试（对齐 LiveAgent withStreamRetry）：**关键覆盖点**——可重试错误
+        // 不止从 throw 冒出：pi-ai 把 HTTP 错误（如网关 502）作为 stopReason:"error"
+        // 的失败消息返回（result.errorMessage），只 catch throw 会完全漏掉这类失败。
+        // 因此 throw 与 errorMessage 两条路径都进同一个重试裁决，统一 5 次重试
+        // （共 6 次尝试，对齐 codex stream_max_retries=5）+ 指数抖动退避
+        // （200ms × 2^(n-1) × uniform(0.9,1.1)，同 computeStreamRetryBackoffMs）。
+        // 每次重试重建历史：失败尝试的尾部 error assistant 会被 R13 剔除，随后
+        // beginAssistant 开新行——用户能看到每次失败，重试的回复另起新行。
+        const MAX_AUTO_RETRIES = 10;
+        const RETRY_BASE_MS = 200;
+        const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        let result;
+        let attempt = 0; // 已消耗的重试次数
+        setState((prev) => ({ ...prev, retryAttempts: [] }));
+        while (true) {
+          // 每次尝试重建历史：当前 user 条目（含图片块 apiMessage）已在时间线中，
+          // toApiMessages 会带上它；失败尝试的尾部 error assistant 会被 R13 剔除。
+          const history = toApiMessages(getState());
+          let errorMessage; // 本次尝试的失败原因（throw 或 errorMessage 两路归一）
+          try {
+            result = await runAgentTurn({
+              source,
+              config,
+              messages: history,
+              systemPrompt,
+              maxSteps,
+              workspaceRoot,
+              signal: controller.signal,
+              thinkingLevel,
+              approvalMode,
+              approval,
+              onEvent: (ev) => {
+                if (isStale()) return;
+                setState((prev) => applyLibraryEvent(prev, ev, now()));
+              },
+            });
+            // ★ 失败判定：result.errorMessage 非空 = 本次尝试失败（含 HTTP 502 等网关错误）。
+            // 连接类错误（pi-ai 只透出 "Connection error."）追加端点，帮助定位是哪个网关失败。
+            if (result && result.errorMessage) {
+              errorMessage = result.errorMessage;
+              if (config && typeof config.baseUrl === "string" && config.baseUrl && /connection|fetch|network/i.test(errorMessage)) {
+                errorMessage += ` (Endpoint: ${config.baseUrl})`;
+              }
+            } else {
+              break; // 正常完成
+            }
+          } catch (err) {
             if (isStale()) return;
-            setState((prev) => applyLibraryEvent(prev, ev, now()));
-          },
-        });
+            const aborted =
+              controller.signal.aborted || (err instanceof Error && err.name === "AbortError");
+            if (aborted) {
+              setState((prev) => finishAborted(prev, now()));
+              return;
+            }
+            errorMessage = describeErrorChain(err);
+            console.warn("[retry] inner catch raw =", JSON.stringify(errorMessage), "retryable =", isRetryableError(errorMessage), "attempt =", attempt);
+          }
+
+          // ---- 失败裁决：用户已中止 → 直接收敛（中止优先于一切重试/错误）----
+          if (controller.signal.aborted) {
+            setState((prev) => finishAborted(prev, now()));
+            break;
+          }
+          console.warn("[retry] adjudication errorMessage =", JSON.stringify(errorMessage), "retryable =", isRetryableError(errorMessage), "attempt =", attempt, "MAX =", MAX_AUTO_RETRIES);
+          if (!isRetryableError(errorMessage) || attempt >= MAX_AUTO_RETRIES) {
+            // 5 次重试耗尽（或不可重试）：收敛为最终 error 行
+            // finish 保持 state.retryAttempts（轮次级字段），但要把记录固化到 assistant 条目上
+            setState((prev) => {
+              const finished = finish(prev, undefined, errorMessage, now());
+              const records = finished.retryAttempts;
+              if (!records || records.length === 0) return finished;
+              // 固化到最后一条 assistant 条目
+              const messages = finished.messages.slice();
+              for (let i = messages.length - 1; i >= 0; i--) {
+                if (messages[i].role === "assistant") {
+                  messages[i] = { ...messages[i], retryAttempts: records };
+                  break;
+                }
+              }
+              return { ...finished, messages };
+            });
+            break;
+          }
+          attempt += 1;
+          console.warn("[retry] retrying, attempt =", attempt);
+          const backoff = Math.round(RETRY_BASE_MS * 2 ** (attempt - 1) * (0.9 + Math.random() * 0.2));
+          // 记录重试 + 退避。**不**为失败尝试开新行/收敛 error 行——重试期间
+          // 时间线只有「重新连接中… N/10」副行（对齐 ZCode），所有失败详情
+          // 都进重试记录，等 10 次耗尽后才随最终错误一并输出。
+          setState((prev) =>
+            pushRetryAttempt(prev, {
+              attempt,
+              maxAttempts: MAX_AUTO_RETRIES,
+              errorMessage,
+              plannedDelayMs: backoff,
+            }),
+          );
+          await sleep(backoff);
+          if (isStale()) return;
+        }
 
         // ★ 保险：正常路径下 agent_end 经 onEvent → applyLibraryEvent → finish 收敛，
         //   那是**唯一**的收敛点，这里不另造。但**绝不能依赖「事件一定到达」**：
         //   若本次运行未订阅到 agent_end（reachedAgentEnd === false），此处兜底收敛，
-        //   避免状态永久卡在 streaming（发送按钮永久禁用）。
+        //   避免状态永久卡在 streaming（发送按钮永久禁用）。（finish 幂等：非 streaming
+        //   时原样返回，重复收敛无害。）
         if (isStale()) return;
         if (result && result.reachedAgentEnd === false) {
           if (result.aborted || result.stopReason === "aborted") {
@@ -190,6 +310,7 @@ export function createConversationController(deps) {
           setState((prev) => noteMaxSteps(prev));
         }
       } catch (err) {
+        console.warn("[retry] OUTER catch:", describeErrorChain(err).slice(0, 200));
         if (isStale()) return;
         // 中止不是错误：不发红字提示，只收敛为「已停止」。
         // （`runTurn` 会 reject：入口前置校验抛可解释错误，库内部某些路径抛裸异常。）
@@ -198,7 +319,7 @@ export function createConversationController(deps) {
         if (aborted) {
           setState((prev) => finishAborted(prev, now()));
         } else {
-          const message = err instanceof Error ? err.message : String(err);
+          const message = describeErrorChain(err);
           setState((prev) => finish(prev, undefined, message, now()));
         }
       } finally {

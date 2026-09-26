@@ -53,6 +53,8 @@ export interface MessageListProps {
   messages: TimelineEntry[];
   /** Agent 循环是否仍在流式（用于把最后一轮钉在「工作中」，消除轮间空窗闪烁）。 */
   isStreaming?: boolean;
+  /** 自动重试记录（当前轮；来自 state.retryAttempts，重试详情块数据源） */
+  retryAttempts?: import("../../lib/chat/conversationModel").RetryAttemptRecord[];
   /** 会话工作区根目录（传给文件更改摘要卡的临时目录清理）。 */
   workspaceRoot?: string;
   /** 滚动容器（App 的 chatScrollRef；MessageList 内容是其子节点）。 */
@@ -76,6 +78,7 @@ export function MessageList({
   messages,
   isStreaming = false,
   workspaceRoot,
+  retryAttempts,
   scrollRef,
   onEditSend,
   onRetry,
@@ -289,6 +292,7 @@ export function MessageList({
             group={liveTurn}
             live
             liveNowMs={liveNowMs}
+            retryAttempts={retryAttempts}
             workspaceRoot={workspaceRoot}
             onEditSend={stableEditSend}
             onRetry={stableRetry}

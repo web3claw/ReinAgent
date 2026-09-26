@@ -81,7 +81,7 @@ function nextSeq(state) {
  * @param {import("./conversationModel").ChatState} state
  * @param {string} text
  */
-export function appendUser(state, text) {
+export function appendUser(state, text, attachments, apiUserMessage) {
   const seq = nextSeq(state);
   const message = {
     id: `m${seq}`,
@@ -89,6 +89,10 @@ export function appendUser(state, text) {
     text,
     thinking: "",
     status: "done",
+    // 用户消息附带的文件/图片（图片在气泡内渲染缩略图，点击放大）
+    ...(Array.isArray(attachments) && attachments.length > 0 ? { attachments } : {}),
+    // 含图片块的原生 UserMessage（toApiMessages 优先回灌，图片跨重试保留）
+    ...(apiUserMessage ? { apiMessage: apiUserMessage } : {}),
   };
   return {
     messages: [...state.messages, message],
@@ -119,6 +123,10 @@ export function beginAssistant(state, nowMs) {
     messages: [...state.messages, message],
     status: "streaming",
     error: undefined,
+    // 保留轮次级状态字段（retryAttempts 等随 state 流转；beginAssistant 不清空它们）
+    ...Object.fromEntries(
+      Object.entries(state).filter(([key]) => !["messages", "status", "error", "nextMessageSeq"].includes(key)),
+    ),
     nextMessageSeq: seq + 1,
   };
 }
@@ -243,6 +251,7 @@ export function applyEvent(state, ev, nowMs) {
       if (isAbortReason(ev.reason)) {
         return finishAborted(state);
       }
+      console.warn("[model] error event:", JSON.stringify(ev.error?.errorMessage ?? ev.error ?? ev.reason ?? null), "reason =", JSON.stringify(ev.reason ?? null));
       return finish(state, undefined, ev.error && ev.error.errorMessage ? ev.error.errorMessage : "请求失败");
 
     default:
@@ -266,11 +275,22 @@ export function finish(state, finalMessage, error, nowMs) {
   const at = typeof nowMs === "number" ? nowMs : Date.now();
 
   if (error !== undefined) {
-    const readable = diagnoseError(error);
+    const raw = typeof error === "string" ? error : String(error);
+    // 原文为主（对齐 LiveAgent：状态码 + 上游原因 + URL 一并展示），诊断提示放 errorHint
+    const retried = Array.isArray(state.retryAttempts) ? state.retryAttempts : undefined;
     return {
-      ...patchLastAssistant(state, { status: "error", error: readable, endedAt: at }),
+      ...patchLastAssistant(state, {
+        status: "error",
+        error: raw,
+        errorHint: diagnoseError(raw),
+        endedAt: at,
+        // 重试记录固化到条目上（对齐 LiveAgent：重试历史随轮次持久展示）
+        ...(retried && retried.length > 0 ? { retryAttempts: retried } : {}),
+      }),
       status: "error",
-      error: readable,
+      error: raw,
+      errorHint: diagnoseError(raw),
+      retryAttempts: retried,
       pendingApproval: null,
     };
   }
@@ -317,6 +337,30 @@ export function finishAborted(state, nowMs) {
  * @param {import("./conversationModel").ChatState} state
  * @returns {import("./conversationModel").ChatState}
  */
+/**
+ * error 态下更新错误文案（自动重试倒计时用）：改末条 assistant 条目的 error/errorHint
+ * 与 state.error/errorHint。非 error 态原样返回。
+ * @param {import("./conversationModel").ChatState} state
+ * @param {string} text
+ */
+/**
+ * 追加一条重试记录（重试详情块的数据源；对齐 LiveAgent RetryAttemptRecord）。
+ * @param {import("./conversationModel").ChatState} state
+ * @param {{ attempt: number, maxAttempts: number, errorMessage: string, plannedDelayMs?: number }} record
+ */
+export function pushRetryAttempt(state, record) {
+  const list = Array.isArray(state.retryAttempts) ? state.retryAttempts : [];
+  return { ...state, retryAttempts: [...list, record] };
+}
+
+export function updateErrorNote(state, text) {
+  if (state.status !== "error") return state;
+  return {
+    ...patchLastAssistant(state, { error: text }),
+    error: text,
+  };
+}
+
 export function noteMaxSteps(state) {
   const index = lastAssistantIndex(state.messages);
   if (index === -1) return state;
@@ -568,7 +612,12 @@ export function toApiMessages(state) {
 
   for (const message of state.messages) {
     if (message.role === "user") {
-      if (message.text.length > 0) {
+      // 优先回灌原生 apiMessage（含图片 content block），无则用纯文本
+      if (message.apiMessage && message.apiMessage.role === "user") {
+        out.push({ ...message.apiMessage, timestamp });
+        sourceStatus.push(undefined);
+        timestamp += 1;
+      } else if (message.text.length > 0) {
         out.push({ role: "user", content: message.text, timestamp });
         sourceStatus.push(undefined);
         timestamp += 1;

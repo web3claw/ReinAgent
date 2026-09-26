@@ -366,3 +366,137 @@ pub async fn fs_read_text_file(
     .await
     .map_err(|e| e.to_string())?
 }
+
+// ==================== 附件（文件选择 / 图片粘贴） ====================
+
+use base64::Engine as _;
+
+fn detect_image_mime(path: &str) -> Option<&'static str> {
+    let lower = path.to_lowercase();
+    let ext = lower.rsplit('.').next()?;
+    match ext {
+        "png" => Some("image/png"),
+        "jpg" | "jpeg" => Some("image/jpeg"),
+        "gif" => Some("image/gif"),
+        "webp" => Some("image/webp"),
+        "bmp" => Some("image/bmp"),
+        _ => None,
+    }
+}
+
+const IMAGE_PREVIEW_MAX_BYTES: u64 = 5 * 1024 * 1024;
+const ATTACHMENT_INLINE_MAX_BYTES: u64 = 25 * 1024 * 1024;
+
+#[derive(serde::Serialize)]
+pub struct ImageDataBase64 {
+    pub mime: String,
+    pub base64: String,
+}
+
+/// 原生多选文件对话框（rfd）。取消返回空数组。
+#[tauri::command]
+pub async fn fs_pick_files(workdir: Option<String>) -> Result<Vec<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new();
+        if let Some(dir) = workdir {
+            let p = resolve_path(&dir);
+            if p.is_dir() {
+                dialog = dialog.set_directory(p);
+            }
+        }
+        Ok(dialog
+            .pick_files()
+            .map(|paths| {
+                paths
+                    .iter()
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .collect()
+            })
+            .unwrap_or_default())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 读图片做缩略图预览（≤5MB），返回 mime + base64。
+#[tauri::command]
+pub async fn fs_read_image_preview(path: String) -> Result<ImageDataBase64, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let meta = fs::metadata(&path).map_err(|e| format!("{}: {}", path, e))?;
+        if meta.len() > IMAGE_PREVIEW_MAX_BYTES {
+            return Err(format!("图片超过预览大小上限（5 MB）：{}", path));
+        }
+        let mime = detect_image_mime(&path)
+            .ok_or_else(|| format!("不是支持的图片类型（png/jpg/jpeg/gif/webp/bmp）：{}", path))?;
+        let data = fs::read(&path).map_err(|e| format!("{}: {}", path, e))?;
+        Ok(ImageDataBase64 {
+            mime: mime.into(),
+            base64: base64::engine::general_purpose::STANDARD.encode(data),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 粘贴图片落盘：base64 解码写入 <workdir>/.ReinAgent/temp/pasted/<时间戳>-<消毒后文件名>，
+/// 返回绝对路径（对齐「一次性产物进 .ReinAgent/temp/」约定）。
+#[tauri::command]
+pub async fn fs_import_pasted_file(
+    name: String,
+    mime: String,
+    base64_data: String,
+    workdir: String,
+) -> Result<String, String> {
+    use base64::engine::general_purpose::STANDARD;
+    tauri::async_runtime::spawn_blocking(move || {
+        let data = STANDARD
+            .decode(base64_data.as_bytes())
+            .map_err(|e| format!("base64 解码失败: {}", e))?;
+        // 文件名消毒：路径分隔符与 Windows 保留字符
+        let sanitized: String = name
+            .chars()
+            .map(|c| {
+                if matches!(c, '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|') {
+                    '_'
+                } else {
+                    c
+                }
+            })
+            .collect();
+        let sanitized = if sanitized.trim().is_empty() {
+            "clipboard.png".to_string()
+        } else {
+            sanitized
+        };
+        let root = resolve_path(&workdir);
+        let dir = root.join(".ReinAgent").join("temp").join("pasted");
+        fs::create_dir_all(&dir).map_err(|e| format!("创建暂存目录失败: {}", e))?;
+        let target = dir.join(format!("{}-{}", std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0), sanitized));
+        fs::write(&target, &data).map_err(|e| format!("写入失败: {}", e))?;
+        Ok(target.to_string_lossy().into_owned())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 读附件内容（发送时图片内联用，≤25MB），mime 按扩展名推断（非图片为 octet-stream）。
+#[tauri::command]
+pub async fn fs_read_attachment_base64(path: String) -> Result<ImageDataBase64, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let meta = fs::metadata(&path).map_err(|e| format!("{}: {}", path, e))?;
+        if meta.len() > ATTACHMENT_INLINE_MAX_BYTES {
+            return Err(format!("附件超过内联大小上限（25 MB）：{}", path));
+        }
+        let mime = detect_image_mime(&path).unwrap_or("application/octet-stream");
+        let data = fs::read(&path).map_err(|e| format!("{}: {}", path, e))?;
+        Ok(ImageDataBase64 {
+            mime: mime.into(),
+            base64: base64::engine::general_purpose::STANDARD.encode(data),
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
