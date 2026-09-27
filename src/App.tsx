@@ -776,14 +776,13 @@ export default function App() {
               defaultModelId={settings.modelId || ""}
               workspacePath={selectedProject ?? undefined}
               onDispatch={dispatchAutomationRun}
-              onBack={() => setCurrentView("workbench")}
             />
           ) : currentView === "mcp" ? (
-            <McpHubPage onBack={() => setCurrentView("workbench")} />
+            <McpHubPage />
           ) : currentView === "memory" ? (
-            <MemoryPanel onBack={() => setCurrentView("workbench")} />
+            <MemoryPanel />
           ) : currentView === "skills" ? (
-            <SkillsHubPage onBack={() => setCurrentView("workbench")} />
+            <SkillsHubPage />
           ) : !hasMessages ? (
             <div className="flex-1 flex flex-col items-center justify-start pt-28 md:pt-36 px-4 pb-8 overflow-y-auto">
               <div className="w-full px-[120px]">

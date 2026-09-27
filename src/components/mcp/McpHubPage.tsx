@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ChevronLeft, Pencil, Play, Plug, Plus, Trash2 } from "lucide-react";
+import { Pencil, Play, Plug, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "../../i18n";
 
 interface McpServerConfig {
@@ -41,7 +41,7 @@ const EMPTY_SERVER: McpServerConfig = {
   timeoutMs: null,
 };
 
-export function McpHubPage({ onBack }: { onBack: () => void }) {
+export function McpHubPage() {
   const { t } = useTranslation();
   const [servers, setServers] = useState<McpServerConfig[]>([]);
   const [editing, setEditing] = useState<McpServerConfig | null>(null);
@@ -93,14 +93,6 @@ export function McpHubPage({ onBack }: { onBack: () => void }) {
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden text-[var(--text)]">
       <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-6 pb-4 pt-5">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-ui-sm text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            <span>{t("automationsBack")}</span>
-          </button>
           <h1 className="text-ui-lg font-semibold text-[var(--text)]">{t("navMcp")}</h1>
         </div>
         <button

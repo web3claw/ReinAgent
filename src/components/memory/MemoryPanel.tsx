@@ -7,7 +7,7 @@
 
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Brain, ChevronLeft, Pencil, Plus, Trash2 } from "lucide-react";
+import { Brain, Pencil, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "../../i18n";
 
 interface MemoryEntry {
@@ -27,7 +27,7 @@ const TYPE_LABELS: Record<string, string> = {
   reference: "reference",
 };
 
-export function MemoryPanel({ onBack }: { onBack: () => void }) {
+export function MemoryPanel() {
   const { t } = useTranslation();
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [editing, setEditing] = useState<MemoryEntry | null>(null);
@@ -71,14 +71,6 @@ export function MemoryPanel({ onBack }: { onBack: () => void }) {
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden text-[var(--text)]">
       <div className="flex flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-6 pb-4 pt-5">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={onBack}
-            className="flex items-center gap-1 rounded-lg px-2 py-1 text-ui-sm text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
-          >
-            <ChevronLeft className="h-4 w-4" />
-            <span>{t("automationsBack")}</span>
-          </button>
           <h1 className="text-ui-lg font-semibold text-[var(--text)]">{t("navMemory")}</h1>
         </div>
         <button

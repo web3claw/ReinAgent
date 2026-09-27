@@ -5,7 +5,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { ChevronLeft, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Play, Plus, RefreshCw, Trash2 } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { useAutomationStore } from "../../lib/automations/store";
 import { describeRule } from "../../lib/automations/types";
@@ -14,7 +14,6 @@ import { AutomationEditView } from "./AutomationEditView";
 import type { ProviderItem } from "../settings/model-provider/types";
 
 export interface AutomationsPageProps {
-  onBack: () => void;
   /** 派发一次运行（立即运行按钮 → App 的 dispatcher） */
   onDispatch: (payload: AutomationDuePayload) => void;
   providers: ProviderItem[];
@@ -37,7 +36,7 @@ export function formatDateTime(ms: number): string {
 }
 
 export function AutomationsPage(props: AutomationsPageProps) {
-  const { onBack, onDispatch, providers, defaultProviderId, defaultModelId, workspacePath } = props;
+  const { onDispatch, providers, defaultProviderId, defaultModelId, workspacePath } = props;
   const { t } = useTranslation();
   const { automations, loading, error, refresh, setEnabled, remove, runNow } =
     useAutomationStore();
@@ -112,19 +111,10 @@ export function AutomationsPage(props: AutomationsPageProps) {
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden text-[var(--text)]">
-      {/* Header（对齐 ZCode 页头：面包屑返回 + 标题 + 副标题 + 右侧动作） */}
+      {/* Header（标题 + 副标题 + 右侧动作；返回按钮已移除——侧边栏导航直达） */}
       <div className="flex-shrink-0 border-b border-[var(--border)] px-6 pb-4 pt-5">
         <div className="flex items-center justify-between gap-3">
           <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onBack}
-              className="flex items-center gap-1 rounded-lg px-2 py-1 text-ui-sm text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
-              title={t("automationsBack")}
-            >
-              <ChevronLeft className="h-4 w-4" />
-              <span>{t("automationsBack")}</span>
-            </button>
             <h1 className="text-ui-lg font-semibold text-[var(--text)]">{t("automationsTitle")}</h1>
           </div>
           <div className="flex items-center gap-2">
