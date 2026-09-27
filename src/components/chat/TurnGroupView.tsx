@@ -6,7 +6,12 @@
  *   2. 回合工作状态条：「工作中 {时长}」（运行中，每秒跳动、锁定展开不可收起）/
  *      「已工作 {时长}」（完成，默认折叠可展开）/「已停止」/「已处理」（历史无打点，No-Fallback）；
  *   3. 折叠体：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本；
- *   4. 最终回复正文（轮内最后一条 assistant，复用 MessageItem 助手分支，始终外显）。
+ *      运行中最后一条 assistant 的正文**就地**渲染在折叠体的时间线位置（亮色 + 流式指示器）；
+ *   4. 最终回复正文（轮内最后一条 assistant，复用 MessageItem 助手分支）：**轮结束后**外显。
+ *
+ * 时间线不变式（对齐 ZCode orderedRows 严格按产出顺序渲染）：工具条目在状态机里诞生于
+ * 所属 assistant 消息之后，因此「运行中正文就地、结束后外显」的首尾位置一致——工具卡
+ * 出现时必然落在正文下方且不再移动，轮次切换不再发生上下跳动（修复卡片位置漂移）。
  *
  * 折叠交互对齐 ZCode：运行中是「只读展开」（不渲染箭头、不可收起）；完成态翻转为默认折叠、
  * 可点击展开。轮 key 变化时组件随 React key 重挂载，折叠态自然复位。
@@ -18,6 +23,7 @@ import { MessageItem } from "./MessageItem";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
 import { MarkdownText } from "./MarkdownText";
+import { ChatLoading } from "./ChatLoading";
 import { useTranslation } from "../../i18n";
 import { memo, useMemo, useRef, useState } from "react";
 import {
@@ -413,6 +419,9 @@ function TurnGroupViewImpl({
       ? Math.max(0, liveNowMs - group.startedAt)
       : turnDurationMs(group, liveNowMs);
   const lastAssistant = group.lastAssistant;
+  // 运行中最后一条 assistant 的正文就地渲染进折叠体（见文件头「时间线不变式」）。
+  // 纯文本轮没有思考/工具/中间叙述，靠这个标记让折叠体仍然渲染（否则流式正文不可见）。
+  const liveAnswerInBody = isTurnRunning && lastAssistant !== undefined;
 
   // 状态条恒显示（对齐 ZCode：纯文本回复也有「已工作 X 秒」）；折叠箭头仅在有
   // 可折叠内容（思考/工具/中间叙述）时出现，纯文本回复的状态条只是工时说明。
@@ -503,7 +512,7 @@ function TurnGroupViewImpl({
           {reconnectLabel && (
             <div className="reconnect-line break-words">{reconnectLabel}</div>
           )}
-          {hasBody && open && (
+          {(hasBody || liveAnswerInBody) && open && (
             <div className="turn-body">
               {activityItems.map((item, index) => {
                 if (item.kind === "explore") {
@@ -514,7 +523,20 @@ function TurnGroupViewImpl({
                   return (
                     <div key={entry.id} className="turn-assistant-activity">
                       <ThinkingBlock entry={entry} liveNowMs={liveNowMs} turnRunning={isTurnRunning} />
-                      {entry !== lastAssistant ? <IntermediateText entry={entry} streaming={streaming} /> : null}
+                      {entry !== lastAssistant ? (
+                        <IntermediateText entry={entry} streaming={streaming} />
+                      ) : isTurnRunning ? (
+                        // 运行中的最终回复正文：就地渲染（样式对齐 MessageItem 助手正文），
+                        // 结束后由下方外显的 MessageItem 接管——时间线位置不变。
+                        <div className="w-full text-sm text-[var(--text)] leading-relaxed">
+                          <div className="md">
+                            <MarkdownText text={entry.text} streaming={entry.status === "streaming"} />
+                            {entry.status === "streaming" ? (
+                              <ChatLoading loading size="sm" className="mt-1" />
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 }
@@ -528,7 +550,8 @@ function TurnGroupViewImpl({
         </div>
       ) : null}
 
-      {lastAssistant ? (
+      {/* 最终回复：轮结束后外显（运行中正文已在折叠体时间线位置就地渲染，见文件头）。 */}
+      {lastAssistant && !isTurnRunning ? (
         <MessageItem
           message={lastAssistant}
           actionsDisabled={actionsDisabled}
