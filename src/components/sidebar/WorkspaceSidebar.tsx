@@ -4,7 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
-  Sun, Moon, Plus, Search,
+  Sun, Moon, Plus,
   Timer, Puzzle, Settings, Monitor, Plug, Clock,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
@@ -167,13 +167,6 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
             <span className="text-sm">{t('newTask')}</span>
           </div>
           <span className="text-xs opacity-50">Ctrl+N</span>
-        </button>
-        <button className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md">
-          <div className="flex items-center gap-2">
-            <Search className="w-4 h-4" />
-            <span className="text-sm">{t('search')}</span>
-          </div>
-          <span className="text-xs opacity-50">Ctrl+K</span>
         </button>
         <button
           onClick={() => setCurrentView('automations')}

@@ -577,10 +577,10 @@ export function ProjectList({
                                 setSelectedProject(project.path);
                                 setActiveTaskId(task.id);
                               }}
-                              className={`group/proj-task flex items-center justify-between w-full py-1 px-2 rounded-md transition-colors text-left text-xs cursor-pointer ${
+                              className={`group/proj-task flex items-center justify-between w-full py-1 px-2 rounded-md transition-colors text-left text-base cursor-pointer ${
                                 isTaskActive
                                   ? "bg-[var(--surface-hover)] text-[var(--sidebar-text-active)] font-medium"
-                                  : "text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)]"
+                                  : "text-[var(--sidebar-text-active)] hover:bg-[var(--sidebar-hover)]"
                               }`}
                             >
                               <div className="flex items-center shrink-0 mr-1">
@@ -602,12 +602,12 @@ export function ProjectList({
                                   </button>
                                 </Tooltip>
                               </div>
-                              <span className="truncate mr-2 border-l-2 border-[var(--border)] pl-1.5 -ml-1">
+                              <span className="truncate mr-2 border-l-2 border-[var(--border)] pl-1.5 -ml-1 text-[15px]">
                                 {task.title}
                               </span>
                               <div className="flex items-center gap-1 shrink-0">
                                 {!isConfirmingDelete && (
-                                  <span className="text-[13px] opacity-60 whitespace-nowrap group-hover/proj-task:hidden flex items-center gap-1.5">
+                                  <span className="text-sm opacity-55 whitespace-nowrap group-hover/proj-task:hidden flex items-center gap-1.5">
                                     {streamingTaskIds.has(task.id) && (
                                       <Loader2 className="w-3 h-3 animate-spin text-[var(--brand)]" aria-label="进行中" />
                                     )}
