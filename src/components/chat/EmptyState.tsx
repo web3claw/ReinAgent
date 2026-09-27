@@ -5,9 +5,11 @@ import { Sparkles, BarChart2, Bug, Presentation, Moon } from "lucide-react";
 interface EmptyStateProps {
   demo?: boolean;
   onQuickPrompt?: (text: string) => void;
+  /** 闲时任务按钮：直接进入自动化页（页面就绪后接通，替代旧预填行为） */
+  onOpenAutomations?: () => void;
 }
 
-export function EmptyState({ demo, onQuickPrompt }: EmptyStateProps) {
+export function EmptyState({ demo, onQuickPrompt, onOpenAutomations }: EmptyStateProps) {
   const { t } = useTranslation();
   const [hour, setHour] = useState(new Date().getHours());
 
@@ -23,8 +25,13 @@ export function EmptyState({ demo, onQuickPrompt }: EmptyStateProps) {
   }, [hour]);
 
   // 快捷动作卡：按钮显示 i18n 标签，点击**只预填**对应的固定提示词进输入框（不自动发送）。
-  // fill 为用户定档的固定文案（2026-09-27）；idleTask 待自动化页面移植后改为页面导航。
-  const prompts: { key: TranslationKey; icon: typeof BarChart2; fill: string }[] = [
+  // fill 为用户定档的固定文案（2026-09-27）；idleTask 特例 → 直接进入自动化页。
+  const prompts: {
+    key: TranslationKey;
+    icon: typeof BarChart2;
+    fill?: string;
+    navigate?: "automations";
+  }[] = [
     { key: "weeklyReport", icon: BarChart2, fill: "每周五总结这一周发生的事情。" },
     {
       key: "bugFix",
@@ -36,7 +43,7 @@ export function EmptyState({ demo, onQuickPrompt }: EmptyStateProps) {
       icon: Presentation,
       fill: "先完整阅读所有文档和代码，掌握整个开发流程和进度，严格遵守开发规则，等待新需求",
     },
-    { key: "idleTask", icon: Moon, fill: "闲时任务" },
+    { key: "idleTask", icon: Moon, navigate: "automations" },
   ];
 
   return (
@@ -64,7 +71,13 @@ export function EmptyState({ demo, onQuickPrompt }: EmptyStateProps) {
               return (
                 <button
                   key={p.key}
-                  onClick={() => onQuickPrompt(p.fill)}
+                  onClick={() => {
+                    if (p.navigate === "automations") {
+                      onOpenAutomations?.();
+                      return;
+                    }
+                    if (p.fill) onQuickPrompt?.(p.fill);
+                  }}
                   className="flex items-center gap-2 px-4 py-2 rounded-full border border-[var(--chip-border)] bg-[var(--chip-bg)] hover:bg-[var(--chip-hover)] text-[var(--text-primary)] text-sm cursor-pointer transition-colors shadow-sm"
                 >
                   <Icon className="w-4 h-4" />
