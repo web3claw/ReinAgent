@@ -4,8 +4,9 @@ import { destroyTask } from "../lib/chat/conversationPool";
 
 export type ThemeMode = "dark" | "light";
 export type LocaleMode = "zh-CN" | "en-US";
-/** workbench=聊天工作台 / settings=设置 / automations=自动化定时任务页 */
-export type ViewMode = "workbench" | "settings" | "automations";
+/** workbench=聊天工作台 / settings=设置 / automations=自动化定时任务 /
+ *  skills / mcp / memory=资源中心页（照抄 LiveAgent resource-hub 导航） */
+export type ViewMode = "workbench" | "settings" | "automations" | "skills" | "mcp" | "memory";
 export type ThinkingLevel = "off" | "default" | "low" | "medium" | "high" | "xhigh" | "max";
 /** 审批模式（对齐 ZCode 用户可切面）：plan=计划模式 ask=变更前确认 edit=自动编辑 full=完全访问。 */
 export type ApprovalMode = "plan" | "ask" | "edit" | "full";
