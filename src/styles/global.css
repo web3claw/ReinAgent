@@ -431,8 +431,10 @@ select option {
 /* ---------- Markdown（S5） ---------- */
 .md {
   margin: 0;
-  /* 消息正文对齐 ZCode MessageContent（text-ui-base + relaxed 行高）：随界面字号设置整体缩放 */
-  font-size: var(--text-ui-base);
+  /* 消息正文对齐 ZCode MessageContent（relaxed 行高）：随界面字号设置整体缩放。
+     2026-09-27 用户定档：消息内容整体比界面基准（text-ui-base）小一号（text-ui-sm），
+     标题/代码均为 em 基准自动跟随。 */
+  font-size: var(--text-ui-sm);
   line-height: 1.625;
 }
 
@@ -799,7 +801,7 @@ select option {
 }
 .turn-intermediate-text {
   margin: 0 0 2px 2px;
-  font-size: var(--text-ui-base);
+  font-size: var(--text-ui-sm);
   line-height: 1.625;
 }
 
@@ -815,7 +817,7 @@ select option {
   border: none;
   background: transparent;
   cursor: pointer;
-  font-size: var(--text-ui-base);
+  font-size: var(--text-ui-sm);
   font-weight: 450;
   color: var(--text-dim);
 }
