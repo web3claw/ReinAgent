@@ -31,11 +31,19 @@ import { Type } from "typebox";
 import { resolveWorkspacePath, resolveWorkspaceRoot } from "./workspace.ts";
 
 /**
- * 工具硬闸上限（导出供测试与上层消费）。
- * - `maxResultBytes`：工具**返回给模型的文本内容**的 UTF-8 字节上限（安全边界 §6）。
+ * 工具硬闸上限（导出供测试与上层消费）——**按工具分设**（对齐 ZCode
+ * `contracts/tools/read.ts` 与 `handlers/bash.ts` 的口径，修复"85KB 文件读不全"
+ * 的分段磨步问题）：
+ * - `readFileBytes`：read_file 单次返回给模型的 UTF-8 字节上限（ZCode `READ_MAX_FILE_SIZE_BYTES` = 256KB）；
+ * - `readMaxLines`：read_file 默认行数闸（ZCode `READ_DEFAULT_MAX_LINES` = 2000）；
+ * - `execBytes`：exec_command 内联输出上限（ZCode `MAX_INLINE_OUTPUT_BYTES` = 30KB）；
+ * - `listDirBytes`：list_dir JSON 列表上限（沿用既有 8KB）。
  */
 export const TOOL_LIMITS = Object.freeze({
-  maxResultBytes: 8192,
+  readFileBytes: 256 * 1024,
+  readMaxLines: 2000,
+  execBytes: 30_000,
+  listDirBytes: 8192,
 });
 
 /**
@@ -82,10 +90,11 @@ function utf8SafeSlice(bytes, maxBytes) {
 }
 
 /**
- * 构造一个「文本类」工具结果，并在**出口**按 `maxResultBytes` 做 UTF-8 字节截断。
+ * 构造一个「文本类」工具结果，并在**出口**按 `maxBytes` 做 UTF-8 字节截断。
  *
- * 返回的 `content[0].text` **一定 ≤ maxResultBytes 字节**（截断标记也计入预算），
+ * 返回的 `content[0].text` **一定 ≤ maxBytes 字节**（截断标记也计入预算），
  * 且 `details` 里带上 `{ length, originalLength, truncated }` 真值供 UI / 日志消费。
+ * `maxBytes` 按工具传入（`TOOL_LIMITS` 的对应字段；缺省 `listDirBytes`）。
  *
  * ⚠️ 边界说明：截断只保护「工具返回给模型的内容」。工具**入参不做截断** ——
  *    改动入参会破坏 toolCall 与 toolResult 的配对语义；入参保护由各工具自己的
@@ -93,22 +102,23 @@ function utf8SafeSlice(bytes, maxBytes) {
  *
  * @param {string} text 原始结果文本。
  * @param {Record<string, unknown>} [details] 追加到 `details` 的业务字段。
+ * @param {number} [maxBytes] 本工具的返回字节上限（缺省 listDirBytes）。
  * @returns {import("./tools.js").TextToolResult} 工具结果（content + details）。
  */
-export function buildTextToolResult(text, details = {}) {
+export function buildTextToolResult(text, details = {}, maxBytes = TOOL_LIMITS.listDirBytes) {
   const originalLength = utf8ByteLength(text);
 
-  if (originalLength <= TOOL_LIMITS.maxResultBytes) {
+  if (originalLength <= maxBytes) {
     return {
       content: [{ type: "text", text }],
       details: { ...details, length: originalLength, originalLength, truncated: false },
     };
   }
 
-  const marker = `\n…[truncated: 原 ${originalLength} 字节，已截断至 ${TOOL_LIMITS.maxResultBytes}]`;
+  const marker = `\n…[truncated: 原 ${originalLength} 字节，已截断至 ${maxBytes}]`;
   const markerBytes = utf8ByteLength(marker);
   // 预留标记的字节预算，保证「前缀 + 标记」整体不超上限。
-  const budget = Math.max(0, TOOL_LIMITS.maxResultBytes - markerBytes);
+  const budget = Math.max(0, maxBytes - markerBytes);
   const head = utf8SafeSlice(utf8Encoder.encode(text), budget);
   const finalText = head + marker;
 
@@ -121,6 +131,30 @@ export function buildTextToolResult(text, details = {}) {
       truncated: true,
     },
   };
+}
+
+/**
+ * read_file 行数闸（对齐 ZCode `READ_DEFAULT_MAX_LINES` = 2000）：超限文件只保留
+ * 前 `maxLines` 行并附截断标记注明总行数；字节级截断仍由 `buildTextToolResult`
+ * 按 `readFileBytes` 二次兜底（两个闸独立生效，哪个先到算哪个）。
+ * 纯函数（导出供单测）。
+ * @param {string} text 文件全文。
+ * @param {number} [maxLines] 行数上限（缺省 TOOL_LIMITS.readMaxLines）。
+ * @returns {{ text: string, totalLines: number, truncated: boolean }}
+ */
+export function applyReadLineCap(text, maxLines = TOOL_LIMITS.readMaxLines) {
+  if (!text.includes("\n")) {
+    return { text, totalLines: text.length === 0 ? 0 : 1, truncated: false };
+  }
+  const lines = text.split("\n");
+  // 结尾换行产生的尾部空串是噪声：真实行数不计它（与 turnActivity.splitDiffLines 同口径）。
+  const totalLines =
+    lines.length > 1 && lines[lines.length - 1] === "" ? lines.length - 1 : lines.length;
+  if (totalLines <= maxLines) {
+    return { text, totalLines, truncated: false };
+  }
+  const marker = `\n…[truncated: 显示前 ${maxLines} 行，文件共 ${totalLines} 行]`;
+  return { text: lines.slice(0, maxLines).join("\n") + marker, totalLines, truncated: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -211,6 +245,7 @@ export function createTools(options) {
     label: "读取文件",
     description:
       "读取指定路径的文件内容（支持绝对路径或相对于项目工作区的相对路径）。\n" +
+      "- Reads up to 2000 lines / 256KB by default; longer output is truncated with an explicit marker (page through the rest with exec_command if needed).\n" +
       "- Do NOT re-read a file you just edited to verify — edit_file/write_file would have errored if the change failed.\n" +
       "- 空文件会如实返回空内容警告；文件不存在时会给出行内相似文件名建议。",
     parameters: Type.Object(
@@ -237,10 +272,21 @@ export function createTools(options) {
         throw err;
       }
       readPaths.add(targetPath);
-      const text = content.length === 0
-        ? "Warning: the file exists but the contents are empty."
-        : content;
-      return buildTextToolResult(text, { path: targetPath, requestedPath: params.path });
+      // 行数闸（对齐 ZCode READ_DEFAULT_MAX_LINES=2000）先生效并注明总行数，
+      // 字节闸（readFileBytes=256KB）在 buildTextToolResult 出口二次兜底。
+      const capped = applyReadLineCap(
+        content.length === 0 ? "Warning: the file exists but the contents are empty." : content,
+      );
+      return buildTextToolResult(
+        capped.text,
+        {
+          path: targetPath,
+          requestedPath: params.path,
+          totalLines: capped.totalLines,
+          linesTruncated: capped.truncated,
+        },
+        TOOL_LIMITS.readFileBytes,
+      );
     },
   };
 
@@ -335,14 +381,14 @@ export function createTools(options) {
       const { invoke } = await import("@tauri-apps/api/core");
       const targetPath = resolveWorkspacePath(params.path || ".", getWorkspace());
       const entries = await invoke("fs_list_dir", { path: targetPath });
-      return buildTextToolResult(JSON.stringify(entries, null, 2), { path: targetPath, entries, requestedPath: params.path });
+      return buildTextToolResult(JSON.stringify(entries, null, 2), { path: targetPath, entries, requestedPath: params.path }, TOOL_LIMITS.listDirBytes);
     },
   };
 
   const execCommand = {
     name: "exec_command",
     label: "执行终端命令",
-    description: "在系统终端中执行 shell 命令行（支持 bash / sh 语法，例如 git status, ls 等）。默认在当前项目工作区根目录下执行。",
+    description: "在系统终端中执行 shell 命令行（支持 bash / sh 语法，例如 git status, ls 等）。默认在当前项目工作区根目录下执行。输出上限 30KB，超出会被截断并附标记。",
     parameters: Type.Object(
       {
         command: Type.Optional(Type.String({ description: "要执行的命令行内容" })),
@@ -365,7 +411,7 @@ export function createTools(options) {
       const { invoke } = await import("@tauri-apps/api/core");
       const targetCwd = params.cwd ? resolveWorkspacePath(params.cwd, getWorkspace()) : getWorkspace();
       const output = await invoke("fs_execute", { command, cwd: targetCwd });
-      return buildTextToolResult(output, { command, cwd: targetCwd });
+      return buildTextToolResult(output, { command, cwd: targetCwd }, TOOL_LIMITS.execBytes);
     },
   };
 
