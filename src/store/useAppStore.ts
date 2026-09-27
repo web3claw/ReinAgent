@@ -4,7 +4,8 @@ import { destroyTask } from "../lib/chat/conversationPool";
 
 export type ThemeMode = "dark" | "light";
 export type LocaleMode = "zh-CN" | "en-US";
-export type ViewMode = "workbench" | "settings";
+/** workbench=聊天工作台 / settings=设置 / automations=自动化定时任务页 */
+export type ViewMode = "workbench" | "settings" | "automations";
 export type ThinkingLevel = "off" | "default" | "low" | "medium" | "high" | "xhigh" | "max";
 /** 审批模式（对齐 ZCode 用户可切面）：plan=计划模式 ask=变更前确认 edit=自动编辑 full=完全访问。 */
 export type ApprovalMode = "plan" | "ask" | "edit" | "full";
@@ -249,6 +250,9 @@ export const useAppStore = create<AppState>((set) => ({
       const targetTask = activeTaskId ? state.tasks.find((t) => t.id === activeTaskId) : null;
       return {
         activeTaskId,
+        // 从自动化页等非工作台视图激活任务（点击侧栏任务/新建任务）时切回聊天工作台；
+        // 自动化自身的派发走 createTask（不经此 action），不会打断页面停留。
+        currentView: state.currentView === "automations" ? "workbench" : state.currentView,
         // 切到已有任务严格跟随任务自身项目（无项目如实为 null，绝不残留上一个任务的项目）；
         // 切回草稿态（null）保留当前所选项目（供新任务默认归属）。
         selectedProject: targetTask ? (targetTask.project ?? null) : state.selectedProject,

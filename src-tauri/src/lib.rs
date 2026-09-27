@@ -3,6 +3,7 @@ mod fs_cmd;
 mod provider_config;
 mod conversation_store;
 mod checkpoint;
+mod automation;
 
 use terminal::TerminalState;
 
@@ -32,6 +33,11 @@ pub fn run() {
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_store::Builder::new().build()),
     )
+    .setup(|app| {
+        // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
+        automation::start_scheduler(app.handle().clone());
+        Ok(())
+    })
     .invoke_handler(tauri::generate_handler![
             greet,
             terminal::terminal_create,
@@ -63,7 +69,15 @@ pub fn run() {
             checkpoint::checkpoint_list,
             checkpoint::checkpoint_diff_stats,
             checkpoint::checkpoint_rewind_code,
-            checkpoint::checkpoint_clear
+            checkpoint::checkpoint_clear,
+            automation::automation_list,
+            automation::automation_create,
+            automation::automation_update,
+            automation::automation_delete,
+            automation::automation_set_enabled,
+            automation::automation_run_now,
+            automation::automation_list_runs,
+            automation::automation_run_finished
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

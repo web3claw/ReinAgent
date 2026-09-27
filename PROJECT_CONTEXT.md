@@ -559,3 +559,25 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - X11 恢复验证：`GDK_BACKEND=x11` 启动后 `xdotool search --name ReinAgent getwindowgeometry`（本机有 xdotool/xwininfo；GNOME 50 的 Shell Screenshot/Introspect DBus 已确认 AccessDenied 不可用）。
 
 
+## 十三、自动化定时任务（一期，2026-09-27 落地；对齐 ZCode AutomationsSection）
+
+### 1. 架构
+- **Rust `src-tauri/src/automation.rs`**：
+  - 存储：`~/.ReinAgent/conversations.db` 新增 `automations` / `automation_runs` 两表（独立连接，WAL 多连接并存）；scheduleRule 结构化规则为调度权威（JSON 列），cronExpr 仅展示；
+  - IPC 8 命令：`automation_list / create / update / delete / set_enabled / run_now / list_runs / run_finished`（serde camelCase DTO 与前端 types.ts 一一对应）；
+  - 调度线程（`start_scheduler`，setup 钩子启动）：每 **20s** 轮询（对齐 ZCode POLL_INTERVAL_MS）`enabled=1 且 next_run_at<=now` 的任务 → claim（写 running run 行 + `run_count+1` + 推进 `next_run_at`）→ `app.emit("automation-due", payload)` 派发前端；启动时残留 running 一律收敛 `stopped`（应用重启中断）；next 计算失败退避 1h 并记 last_error。
+- **前端**：
+  - `src/lib/automations/types.ts`（DTO 类型 + `inferPreset` / `applyPreset` / `describeRule` 摘要）与 `store.ts`（zustand：列表缓存 + CRUD + loadSeq 过期响应守卫）；
+  - `AutomationsPage.tsx`（列表页：页头/刷新/创建按钮、状态筛选 pills 全部·进行中·已暂停·失败、卡片网格 `grid-cols-1 lg:grid-cols-2`、卡片=标题+提示词两行+频率徽标+运行计数+下次运行+启停开关+立即运行+行内二次确认删除、空态引导）；
+  - `AutomationEditView.tsx`（创建/编辑：名称、**频率构建器**（预设 pills 每小时·每天·工作日·每周·每月·自定义 + 规则编辑器：间隔/时间/星期 chips/月日 chips）、提示词、模型双下拉（服务商+启用模型）、工作区只读、保存/取消）；
+  - **App 派发器**（`dispatchAutomationRun` + ref + `automation-due` 事件监听一次注册）：到点 → `createTask(title, workspacePath, 模型, approvalMode="full")` → `poolSend(prompt, maxSteps=0)` → 5s 轮询 `getEntrySnapshot` 收敛（done/error/stopped）→ `automation_run_finished` 回报 outcome；
+  - 入口（2026-09-27 修正补全）：**侧栏 Quick Actions 的「自动化」按钮**（Timer 图标，原为无 onClick 的占位——用户点击无反应的根因）+ 侧栏底栏**时钟图标** + 欢迎页**闲时任务按钮**（`onOpenAutomations` 导航，替代预填）；`ViewMode` 扩展 `"automations"`；**页面为主视图形态**（渲染在主内容区、保留侧边栏与顶栏，统计行/终端面板仅 workbench 视图显示，页面根由 `h-screen` 改 `h-full` 填充主区）；**从自动化页激活任务自动切回工作台**（`setActiveTaskId` 内：currentView 为 automations 时任何任务激活/新建任务都切回 workbench——点击侧栏任务即进入对话；自动化自身派发走 `createTask` 内部赋值不经此 action，页面停留不被打断）。
+- **调度规则语义**（ScheduleRule）：`unit: minute|hourly|daily|weekly|monthly`（年/yearly 一期不做）、`interval≥1`、`hour/minute`、`weekdays`（0=周日…6=周六，工作日预设=1-5）、`monthDays`（1-31，月末越界自动跳过）；预设映射：每小时=hourly/1，每天=daily/1，工作日=weekly[1-5]，每周=weekly 单选星期，每月=monthly 单选日期；计算=从 now 起按锚点对齐向后扫描（epoch 分钟/小时/天/周/月对齐），有界防死循环。
+- **样式**：颜色/字号全部走项目语义变量（`--brand/--surface/--text-dim/--border` 等 + `text-ui-*` 刻度），交互对齐 ZCode（卡片 hover 显现动作、切换开关、pills 单选）。
+
+### 2. 已知边界（一期范围外，二期候选）
+- 运行历史 tab（`automation_runs` 已落库、`list_runs` 命令已备，UI 未做）与运行记录跳转会话；
+- ZCode 的 OffPeak 闲时任务 tab、任务模板库、cron 自定义对话框、workspace 选择器（一期工作区取创建时的 `selectedProject`）；
+- 调度要求**应用处于运行状态**（桌面常驻应用语义，与 ZCode 桌面端一致；应用关闭期间到点的任务错过不补跑）。
+
+

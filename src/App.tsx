@@ -2,10 +2,14 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import "./styles/global.css";
 import { useConversationPool } from "./hooks/useConversationPool";
 import {
+  getEntrySnapshot,
   send as poolSend,
   editResend as poolEditResend,
   resolveApproval as poolResolveApproval,
 } from "./lib/chat/conversationPool";
+import { AutomationsPage } from "./components/automations/AutomationsPage";
+import { useAutomationStore } from "./lib/automations/store";
+import type { AutomationDuePayload } from "./lib/automations/types";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
 import { getRegisteredTurnOffset } from "./components/chat/MessageList";
@@ -398,6 +402,96 @@ export default function App() {
     ],
   );
 
+  // ---- 自动化调度派发（Rust 调度器 automation-due 事件 / 立即运行按钮）----
+  // 到点后：创建任务（绑定自动化的模型与工作区）→ 会话池发送提示词 → 轮询收敛后回报结果。
+  const dispatchAutomationRun = useCallback(
+    (payload: AutomationDuePayload) => {
+      const store = useAppStore.getState();
+      const providerId = payload.modelProvider || settings.provider || "deepseek";
+      const modelId = payload.modelId || settings.modelId || "";
+      const provider = providers.find((p) => p.id === providerId);
+      const apiKey = provider?.apiKey ?? settings.apiKey ?? "";
+      const isDemo = apiKey.trim().length === 0;
+      const taskId = store.createTask(
+        payload.title,
+        payload.workspacePath ?? null,
+        providerId,
+        modelId,
+        undefined,
+        "full",
+      );
+      const accepted = poolSend(taskId, payload.prompt, {
+        source: isDemo ? "faux" : (providerId as never),
+        config: {
+          provider: providerId as never,
+          apiKey,
+          modelId,
+          baseUrl: provider?.baseUrl ?? settings.baseUrl ?? "",
+          hasEffort: true,
+        },
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        maxSteps: 0,
+        workspaceRoot: resolveWorkspaceRoot(payload.workspacePath ?? null),
+        thinkingLevel: undefined,
+        approvalMode: "full",
+      });
+      if (!accepted) {
+        void import("@tauri-apps/api/core").then(({ invoke }) =>
+          invoke("automation_run_finished", { runId: payload.runId, status: "failed", taskId, error: "dispatch rejected" }).catch(() => {}),
+        );
+        return;
+      }
+      // claim 已推进 runCount/nextRunAt/lastRunAt：立即静默刷新列表
+      void useAutomationStore.getState().refresh(true);
+      // 轮询该任务直至收敛，回报运行结果（5s 间隔）
+      const timer = window.setInterval(() => {
+        const snap = getEntrySnapshot(taskId);
+        if (snap.status === "streaming" || snap.messages.length === 0) return;
+        const last = snap.messages[snap.messages.length - 1];
+        if (last.status === "streaming" || last.status === "running") return;
+        window.clearInterval(timer);
+        const outcome =
+          last.status === "done" ? "succeeded" : last.status === "error" ? "failed" : "stopped";
+        void import("@tauri-apps/api/core").then(({ invoke }) =>
+          invoke("automation_run_finished", {
+            runId: payload.runId,
+            status: outcome,
+            taskId,
+            error: last.error ?? null,
+          }).catch(() => {}),
+        );
+        // 运行结束（结果/错误可能落在列表卡片上）：静默刷新
+        void useAutomationStore.getState().refresh(true);
+      }, 5000);
+    },
+    [providers, settings],
+  );
+
+  // ref 保持最新派发器身份：automation-due 事件监听只注册一次
+  const dispatchAutomationRunRef = useRef(dispatchAutomationRun);
+  dispatchAutomationRunRef.current = dispatchAutomationRun;
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const stop = await listen<AutomationDuePayload>("automation-due", (event) => {
+          dispatchAutomationRunRef.current(event.payload);
+        });
+        if (cancelled) stop();
+        else unlisten = stop;
+      } catch (err) {
+        console.warn("[automations] automation-due listen unavailable (web mode)", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   // 编辑重发后的强制贴底（对齐 LiveAgent stickToBottom on run start）+ 回退 toast。
   const [followSignal, setFollowSignal] = useState(0);
   const [rewindToast, setRewindToast] = useState<{ level: "success" | "error"; message: string } | null>(null);
@@ -655,12 +749,25 @@ export default function App() {
           </div>
         )}
 
-        {/* Chat / Composer Area */}
+        {/* Chat / Composer Area（automations 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {!hasMessages ? (
+          {currentView === "automations" ? (
+            <AutomationsPage
+              providers={providers}
+              defaultProviderId={settings.provider || "deepseek"}
+              defaultModelId={settings.modelId || ""}
+              workspacePath={selectedProject ?? undefined}
+              onDispatch={dispatchAutomationRun}
+              onBack={() => setCurrentView("workbench")}
+            />
+          ) : !hasMessages ? (
             <div className="flex-1 flex flex-col items-center justify-start pt-28 md:pt-36 px-4 pb-8 overflow-y-auto">
               <div className="w-full px-[120px]">
-                <EmptyState demo={isDemo} onQuickPrompt={handleQuickPrompt} />
+                <EmptyState
+                  demo={isDemo}
+                  onQuickPrompt={handleQuickPrompt}
+                  onOpenAutomations={() => setCurrentView("automations")}
+                />
                 {/* 快捷按钮与输入框间距（用户定档：聊天框下移、间距加大） */}
                 <div className="mt-16 w-full">
                   <LexicalComposer
@@ -750,11 +857,11 @@ export default function App() {
           )}
         </div>
 
-        {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅在有消息的任务视图显示，首页不渲染 */}
-        {hasMessages && <SessionStatsBar stats={sessionStats} />}
+        {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅聊天工作台显示 */}
+        {currentView === "workbench" && hasMessages && <SessionStatsBar stats={sessionStats} />}
 
-        {/* Terminal Pane */}
-        {isTerminalOpen && (
+        {/* Terminal Pane（仅聊天工作台显示） */}
+        {currentView === "workbench" && isTerminalOpen && (
           <div className="h-64 border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-sunken)] overflow-hidden">
             <TerminalPane />
           </div>
