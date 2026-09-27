@@ -231,7 +231,7 @@ ReinAgent 架构全景
 - **按轮分组**：`groupTurns(messages)`（`src/lib/chat/turnActivity.ts`）——user 消息开轮至下一条 user 前；轮工时 = 最早 startedAt → 最晚 endedAt（运行中 = now 现算）；MessageList 按轮渲染并持有 1 秒 `setInterval` live tick（仅存在运行中轮时启动，对齐 ZCode 不用 rAF）；
 - **运行中判定含会话级兜底**（2026-09-24 修复闪烁）：多步工具循环的轮与轮之间存在瞬态空窗（上一轮条目已 done、下一轮未建条目），仅凭条目状态判 running 会让状态条/思考块「展开→收缩→展开」闪烁——现由 App 透传 `isStreaming`，将**流式中的最后一轮**钉在 running（`live` prop），整个 Agent 循环期间状态条恒为「工作中」、思考块恒展开，循环结束才统一翻转折叠；
 - **回合工作状态条（TurnGroupView）**：三态文案——运行中「工作中 {时长}」（**锁定展开、按钮 disabled、不渲染箭头**）/ 完成「已工作 {时长}」（**默认折叠、可展开**，运行→完成自动翻转折叠）/ 中止「已停止」；**历史消息无打点时如实显示「已处理」，绝不伪造时长（No-Fallback）**；时长格式化 `formatWorkDuration`（`Math.max(1, round)` 整秒、最多两段最靠前非零单位，中文「3 分 48 秒」/ 英文「3m 48s」）；
-- **折叠体内容**：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本（非末条 assistant 的正文，暗色渲染）；**最终回复正文（轮内最后一条 assistant）始终外显**；
+- **折叠体内容**：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本（非末条 assistant 的正文）；**最终回复正文（轮内最后一条 assistant）在轮结束后外显**。**时间线不变式（2026-09-27，修复卡片位置漂移）**：工具条目在状态机里诞生于所属 assistant 消息之后，运行中最后一条 assistant 的正文**就地**渲染在折叠体的时间线位置（亮色 + ChatLoading，样式对齐 MessageItem 正文；纯文本轮靠 `liveAnswerInBody` 让折叠体仍渲染），轮结束后才由外显 MessageItem 接管——工具卡出现时必然落在正文下方且永不移动，彻底消除轮次切换时「卡片在简述上面↔下面」的跳动（对齐 ZCode `conversationTurnRenderUnits` 的 orderedRows 严格按产出顺序渲染，无「末条钉底」规则）；
 - **思考块（ThinkingBlock）**：header「思考 · 持续了 N 秒」（整秒向上取整；无打点如实显示「持续了几秒」）+ 流式「正在思考」；默认收起；正文最暗文字层（`--text-dim` + 透明度）+ 左导线缩进 + 限高 240px 滚动 + `whitespace-pre-wrap` 纯文本；
 - **「查阅」聚合卡（对齐 ZCode ExploreToolCallBlock）**：轮内**连续**的查阅族工具（`list_dir` 列表 / `read_file` 文件读取，`EXPLORE_TOOL_NAMES`）聚合为一张卡——header = 搜索图标 + 「查阅」+ 分类计数徽标（`N 列表 · N 文件`，仅非零项）+ 状态词 + 折叠箭头；**列表调用不渲染文件数组输出**，展开体只保留单行摘要（列表 → 目录路径；读文件 → 文件名 chip + 目录暗色路径），信息取舍与 ZCode 一致；`buildActivityItems` 把轮内活动切分为普通条目与连续查阅组；
 - **工具卡类型化**：header = 类型图标（read/list/write/edit/exec/calc → lucide 图标）+ 类型标签（`toolKindLabel`：读取/查阅/写入/编辑/终端/计算，**未知工具如实回退原名，不臆测分类**）+ 文件 chip（`toolArgPath` 取 basename，title 全路径）/ 终端命令内联摘要（收起即可见命令，`tool-cmd-inline` 尾部截断）+ `+N/－N` diff 统计（LCS 精确口径；绿 `--diff-added` / 红 `--diff-removed` 主题变量）+ 状态词（执行中/已执行/执行失败，i18n）；
@@ -386,10 +386,12 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 ## 八、工作区与路径决议机制（对齐 ZCode 规范）
 
 ### 1. 业务工作区决议规则（Workspace Resolution）
+- **活动任务优先（2026-09-27 修订，修复重启回退 DefaultProject）**：有活动任务时，工作区根目录严格跟随**任务自身持久化的 `project` 字段**（`App.tsx` 的 `workspaceProject = activeTask ? activeTask.project : selectedProject`，单一真相源，不依赖 UI 态同步时机）；**草稿态**（无活动任务）才使用 `selectedProject`（侧边栏/输入框所选项目）。
 - **有指定项目**：若当前任务选中了项目（或会话绑定了 Project），则工作区根目录 `workspaceRoot` 为该项目所指定的文件夹路径。
 - **无指定项目（默认回退）**：若任务未指定项目（或点击“不在项目中工作”），工作区根目录自动回退到用户主目录下的：
   👉 `~/.ReinAgent/DefaultProject`（如 Windows 下 `C:\Users\<user>\.ReinAgent\DefaultProject`）。
   - 若该目录不存在，首次文件写入或命令执行时由系统自动创建（`mkdir -p`）。
+- **`selectedProject` 同步纪律（2026-09-27）**：① `hydratePersisted` 恢复持久化字段时必须从恢复的 activeTaskId 同步 `selectedProject`（历史缺陷：漏掉导致重启自动恢复的任务“在项目下显示、工具却落在 DefaultProject”）；② `setActiveTaskId` 切到已有任务严格跟随 `targetTask.project ?? null`（无项目如实为 null，绝不残留上一个任务的项目），切回草稿态保留当前所选。
 - **用户主目录真实来源（No-Fallback，严禁编造路径）**：
   - 前端 `getDefaultWorkspaceRoot()`（`src/lib/agent/workspace.ts`）的三级来源为：① `localStorage["reinagent-user-home"]` 缓存；② Node/Bun 测试环境的 `HOME` / `USERPROFILE` 环境变量；③ **全部缺失时返回空串，绝不返回任何编造的默认路径**（历史遗留的 `/home/web3claw/...` 硬编码兜底已彻底移除）。
   - 应用启动时 `App.tsx` 调用 `initUserHome()`：经 Tauri IPC 命令 `path_home_dir`（`src-tauri/src/fs_cmd.rs`，优先读 `USERPROFILE`，其次 `HOME`，均缺失则真实报错）拉取宿主真实主目录，写入 `reinagent-user-home` 缓存；Web/无头环境下后端不可达时保留既有缓存并返回 null。
