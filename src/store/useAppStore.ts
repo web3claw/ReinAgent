@@ -249,7 +249,9 @@ export const useAppStore = create<AppState>((set) => ({
       const targetTask = activeTaskId ? state.tasks.find((t) => t.id === activeTaskId) : null;
       return {
         activeTaskId,
-        selectedProject: targetTask ? targetTask.project : state.selectedProject,
+        // 切到已有任务严格跟随任务自身项目（无项目如实为 null，绝不残留上一个任务的项目）；
+        // 切回草稿态（null）保留当前所选项目（供新任务默认归属）。
+        selectedProject: targetTask ? (targetTask.project ?? null) : state.selectedProject,
       };
     });
   },
@@ -447,17 +449,25 @@ export const useAppStore = create<AppState>((set) => ({
   // 渲染前水合：store 在模块求值时创建（此时 initStorage 尚未运行，缓存为空），
   // 因此初始值全部为默认；这里在渲染前用缓存重设全部持久化字段。
   hydratePersisted: () =>
-    set(() => ({
-      theme: getInitialTheme(),
-      locale: getInitialLocale(),
-      isSidebarOpen: getInitialSidebarOpen(),
-      tasks: getInitialTasks(),
+    set(() => {
       // activeTaskId 依赖 tasks 列表（校验任务存在），先 tasks 后 active
-      activeTaskId: getInitialActiveTaskId(getInitialTasks()),
-      projects: getInitialProjects(),
-      thinkingLevel: getInitialThinkingLevel(),
-      approvalMode: getInitialApprovalMode(),
-    })),
+      const tasks = getInitialTasks();
+      const activeTaskId = getInitialActiveTaskId(tasks);
+      return {
+        theme: getInitialTheme(),
+        locale: getInitialLocale(),
+        isSidebarOpen: getInitialSidebarOpen(),
+        tasks,
+        activeTaskId,
+        // selectedProject 必须跟随恢复的活动任务：漏掉它会导致重启自动恢复的任务
+        // 工作区回退 DefaultProject（任务在项目下显示、工具却落在默认目录）。
+        selectedProject:
+          (activeTaskId ? tasks.find((t) => t.id === activeTaskId)?.project : null) ?? null,
+        projects: getInitialProjects(),
+        thinkingLevel: getInitialThinkingLevel(),
+        approvalMode: getInitialApprovalMode(),
+      };
+    }),
   setTerminalOpen: (open) => set({ isTerminalOpen: open }),
   toggleTerminal: () => set((s) => ({ isTerminalOpen: !s.isTerminalOpen })),
   setSettingsOpen: (open) => set({ isSettingsOpen: open }),

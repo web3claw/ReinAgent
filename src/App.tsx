@@ -181,8 +181,12 @@ export default function App() {
   const [chatScrollEl, setChatScrollEl] = useState<HTMLDivElement | null>(null);
 
 
-  const effectiveWorkspaceRoot = resolveWorkspaceRoot(selectedProject);
-  const isWorkspaceUnknown = !selectedProject && !userHome;
+  // 工作区决议（活动任务优先）：活动任务严格跟随任务自身持久化的 project 字段（单一真相源，
+  // 不依赖 UI 态 selectedProject 的同步时机——修复重启水合后自动恢复的任务回退 DefaultProject）；
+  // 草稿态（无活动任务）才使用 selectedProject（侧边栏/输入框所选项目）。
+  const workspaceProject = activeTask ? activeTask.project : selectedProject;
+  const effectiveWorkspaceRoot = resolveWorkspaceRoot(workspaceProject);
+  const isWorkspaceUnknown = !workspaceProject && !userHome;
 
 
 
