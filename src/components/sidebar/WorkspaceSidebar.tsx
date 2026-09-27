@@ -4,8 +4,8 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
-  Sun, Moon, Plus,
-  Timer, Puzzle, Settings, Monitor, Plug, Clock,
+  Sun, Moon, Plus, Search, Blend, Cable, Brain,
+  Timer, Settings, Monitor, Plug, Clock,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
 
@@ -131,7 +131,14 @@ export function LanguageGlobeIcon({ locale, className = "w-4 h-4" }: { locale: s
 
 export const MOCK_PROJECTS: ProjectGroup[] = [];
 
-export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string | null) => void }) {
+export function WorkspaceSidebar({
+  onNewTask,
+  onOpenSearch,
+}: {
+  onNewTask?: (project?: string | null) => void;
+  /** 打开全局搜索弹窗（放大镜按钮；对齐 LiveAgent ConversationSearchDialog 入口） */
+  onOpenSearch?: () => void;
+}) {
   const { t } = useTranslation();
   const isSidebarOpen = useAppStore(state => state.isSidebarOpen);
   const setCurrentView = useAppStore(state => state.setCurrentView);
@@ -156,7 +163,10 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
 
   return (
     <div className="flex flex-col w-[260px] h-full bg-[var(--sidebar-bg)] border-r border-[var(--border)] transition-all duration-300">
-      {/* Quick Actions（顶部品牌区已移除：与系统窗口标题栏重复；主题/语言开关移至底栏图标排） */}
+      {/* Quick Actions（顶部品牌区已移除：与系统窗口标题栏重复；主题/语言开关移至底栏图标排）。
+          新建任务行右侧 = 搜索按钮（对齐 LiveAgent：放大镜在侧栏顶部，Ctrl+N 字样已移除）；
+          自动化下方为 Skills / MCP / 记忆（照抄 LiveAgent sidebarShortcuts，图标 lucide 同款）；
+          插件市场占位已删除。 */}
       <div className="flex flex-col gap-1 p-3">
         <button
           onClick={handleNewTask}
@@ -166,7 +176,18 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
             <Plus className="w-4 h-4" />
             <span className="text-sm">{t('newTask')}</span>
           </div>
-          <span className="text-xs opacity-50">Ctrl+N</span>
+          <span
+            role="button"
+            aria-label={t('searchConversations')}
+            title={t('searchConversations')}
+            className="p-1 rounded-md transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSearch?.();
+            }}
+          >
+            <Search className="w-4 h-4" />
+          </span>
         </button>
         <button
           onClick={() => setCurrentView('automations')}
@@ -177,10 +198,31 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
             <span className="text-sm">{t('automation')}</span>
           </div>
         </button>
-        <button className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md">
+        <button
+          onClick={() => setCurrentView('skills')}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
+        >
           <div className="flex items-center gap-2">
-            <Puzzle className="w-4 h-4" />
-            <span className="text-sm">{t('pluginMarket')}</span>
+            <Blend className="w-4 h-4" />
+            <span className="text-sm">{t('navSkills')}</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setCurrentView('mcp')}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <Cable className="w-4 h-4" />
+            <span className="text-sm">{t('navMcp')}</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setCurrentView('memory')}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <Brain className="w-4 h-4" />
+            <span className="text-sm">{t('navMemory')}</span>
           </div>
         </button>
       </div>

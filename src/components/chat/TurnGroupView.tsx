@@ -80,6 +80,8 @@ export interface TurnGroupViewProps {
   onBranchFrom?: (messageId: string) => void;
   /** 发送/流式中禁用全部行内动作（对齐 LiveAgent isSending）。 */
   actionsDisabled?: boolean;
+  /** 搜索跳转定位高亮：命中的消息 id（user/assistant 行短暂亮边）。 */
+  highlightMessageId?: string | null;
 }
 
 /** 折叠体内「中间叙述」的暗色正文（非最终回复的 assistant 文本）。 */
@@ -276,6 +278,7 @@ function TurnGroupViewImpl({
   onRetryFrom,
   onBranchFrom,
   actionsDisabled = false,
+  highlightMessageId,
 }: TurnGroupViewProps) {
   const { t, locale } = useTranslation();
   // 用户只折叠/展开「已完成」的轮次；运行中强制展开且不可收起（userToggle 仅完成态生效）。
@@ -353,6 +356,7 @@ function TurnGroupViewImpl({
           onCancelEdit={onCancelEdit}
           onEditResend={onEditResend}
           onAppendSend={onEditSend}
+          highlight={highlightMessageId === group.userMessage.id}
         />
       ) : null}
 
@@ -425,6 +429,7 @@ function TurnGroupViewImpl({
           onAppendSend={onEditSend}
           onRetryFrom={onRetryFrom}
           onBranchFrom={onBranchFrom}
+          highlight={highlightMessageId === lastAssistant.id}
         />
       ) : null}
 

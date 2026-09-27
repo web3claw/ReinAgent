@@ -9,6 +9,10 @@ import {
 } from "./lib/chat/conversationPool";
 import { AutomationsPage } from "./components/automations/AutomationsPage";
 import { useAutomationStore } from "./lib/automations/store";
+import { ConversationSearchDialog } from "./components/search/ConversationSearchDialog";
+import { McpHubPage } from "./components/mcp/McpHubPage";
+import { MemoryPanel } from "./components/memory/MemoryPanel";
+import { SkillsHubPage } from "./components/skills/SkillsHubPage";
 import type { AutomationDuePayload } from "./lib/automations/types";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
@@ -148,6 +152,11 @@ export default function App() {
   // 快捷动作卡预填状态（EmptyState → 输入框；hooks 必须在设置页早退 return 之前声明）
   const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(null);
   const prefillNonceRef = useRef(0);
+
+  // 全局会话搜索弹窗（侧栏放大镜触发）
+  const [searchOpen, setSearchOpen] = useState(false);
+  // 搜索跳转定位：目标消息 id（MessageList 滚动定位 + 高亮后置 null）
+  const [scrollTargetMessageId, setScrollTargetMessageId] = useState<string | null>(null);
 
   // maxSteps 从**任务级**推理等级派生；完全访问模式下不设步数上限。
   // 0 = 无上限（agentRuntime 仅在 maxSteps > 0 时启用硬闸；注意 0 不能写成 undefined——
@@ -679,8 +688,7 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  if (currentView === "settings") {
-    return (
+  if (currentView === "settings") {    return (
       <SettingsPage
         settings={settings}
         status={status}
@@ -713,9 +721,19 @@ export default function App() {
       {/* Sidebar */}
       {isSidebarOpen && (
         <div className="flex-shrink-0 w-[260px] h-full border-r border-[var(--border)]">
-          <WorkspaceSidebar onNewTask={handleNewTask} />
+          <WorkspaceSidebar onNewTask={handleNewTask} onOpenSearch={() => setSearchOpen(true)} />
         </div>
       )}
+
+      {/* 全局会话搜索弹窗（LiveAgent ConversationSearchDialog 移植） */}
+      <ConversationSearchDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onOpenTask={(taskId, messageId) => {
+          setActiveTaskId(taskId);
+          setScrollTargetMessageId(messageId ?? null);
+        }}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -749,7 +767,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Chat / Composer Area（automations 视图也保留侧边栏与顶栏，主区切换内容） */}
+        {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {currentView === "automations" ? (
             <AutomationsPage
@@ -760,6 +778,12 @@ export default function App() {
               onDispatch={dispatchAutomationRun}
               onBack={() => setCurrentView("workbench")}
             />
+          ) : currentView === "mcp" ? (
+            <McpHubPage onBack={() => setCurrentView("workbench")} />
+          ) : currentView === "memory" ? (
+            <MemoryPanel onBack={() => setCurrentView("workbench")} />
+          ) : currentView === "skills" ? (
+            <SkillsHubPage onBack={() => setCurrentView("workbench")} />
           ) : !hasMessages ? (
             <div className="flex-1 flex flex-col items-center justify-start pt-28 md:pt-36 px-4 pb-8 overflow-y-auto">
               <div className="w-full px-[120px]">
@@ -819,6 +843,8 @@ export default function App() {
                       onBranchFrom={handleBranchFrom}
                       followSignal={followSignal}
                       workspaceRoot={effectiveWorkspaceRoot}
+                      scrollTargetMessageId={scrollTargetMessageId}
+                      onScrollTargetDone={() => setScrollTargetMessageId(null)}
                     />
                   </div>
                   <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">

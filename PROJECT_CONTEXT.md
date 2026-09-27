@@ -581,3 +581,37 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - 调度要求**应用处于运行状态**（桌面常驻应用语义，与 ZCode 桌面端一致；应用关闭期间到点的任务错过不补跑）。
 
 
+## 十四、LiveAgent 资源中心移植：搜索 / MCP / 记忆 / Skills（一期，2026-09-27）
+
+照抄 LiveAgent（源码 `crates/agent-ui` + `crates/agent-gui/src-tauri`）的四个功能，存储路径全部 `~/.ReinAgent/`。
+
+### 0. 侧栏重排（照抄 LiveAgent ChatHistorySidebar + sidebarShortcuts）
+- 新建任务行右侧 = **放大镜**（原 Ctrl+N 字样删除；点击打开搜索弹窗）；
+- 自动化下新增 **Skills（Blend 图标）/ MCP（Cable）/ 记忆（Brain）** 三个入口（setCurrentView 新增 `skills/mcp/memory` 三视图，页面为主视图形态保留侧栏顶栏）；
+- **插件市场占位删除**（pluginMarket 键移除）。
+
+### 1. 搜索（ConversationSearchDialog 移植）
+- **UI**：居中 Radix Dialog（防抖 180ms、分组结果、空态最近会话 12 个、↑↓/Enter/Esc 键盘导航、`[...]` 片段标记保留、点击结果跳转对应任务并聚焦）。
+- **Rust `src-tauri/src/history_search.rs`**：`chat_history_search` 命令——标题命中（task.payload 提取）加权优先 + 消息全文命中（part 表 text/thinking LIKE，UTF-8 边界安全片段窗口 40 字符），每任务最多 5 条片段、最多 20 组；空查询返回最近任务。FTS5 二期。
+- **接线**：`WorkspaceSidebar onOpenSearch` prop → App 的 `searchOpen` 状态 + `ConversationSearchDialog`（`onOpenTask` = setActiveTaskId + 聚焦）。
+
+### 2. MCP（照抄 LiveAgent commands/integration/mcp.rs 一期子集）
+- **Rust `src-tauri/src/mcp.rs`**：配置存 `~/.ReinAgent/mcp_servers.json`（id/name/enabled/transport stdio|http/command/args/env/url/headers/timeoutMs）；stdio 传输 = spawn 子进程 + 行协议 JSON-RPC（独立 stdout 线程 → mpsc，stderr 尾部 20 行摘要附错误）；HTTP 传输 = ureq streamable POST + `Mcp-Session-Id` 会话头（SSE data: 行解析）；握手 `initialize`(2024-11-05) → `notifications/initialized`；连接池 5 分钟 TTL，`Drop`/`shutdown` 进程树 best-effort kill（Unix `kill -TERM/-KILL -pid`）。6 命令：`mcp_save_servers/list_servers/list_tools/call_tool/test_server/stop_server`。
+- **Agent 集成（`src/lib/mcp/mcpTools.ts`）**：`createMcpTools()` 发送时枚举全部启用服务器（失败服务器如实跳过 + console 记录），工具名 `mcp__<serverId>__<tool>`，执行透传 `mcp_call_tool`（isError/content[] text 拼接；HTTP 错误 throw → 库侧 isError toolResult）；`runAgentTurn` 将 MCP 工具附加到工具数组（`[...tools, ...mcpTools]`），权限分级保守视为 write（未知工具名 → ask/edit 需审批，plan 拦截）。
+- **页面 `McpHubPage.tsx`**：服务器卡片（名称/endpoint 摘要/transport 徽标/启停开关/测试连接（工具计数或错误）/编辑/删除）+ 添加/编辑弹窗（名称/transport/命令/参数/环境变量多行 KEY=value/URL）。
+
+### 3. 记忆（照抄 LiveAgent memory 服务一期子集）
+- **Rust `src-tauri/src/memory.rs`**：存储 `~/.ReinAgent/memory/global/<type>/<id>.md`（frontmatter id/type/title/created/updated + 正文；类型 user/feedback/project/reference；8KB 上限）；文件即真相（无独立索引库，扫描重建）。6 命令：`memory_list/read/write/update/delete/index_overview`。
+- **Agent 集成**：`runAgentTurn` 调 `memory_index_overview` 注入系统提示词 `# Memory Index` 段（每条 `[标题] (类型) 摘要`，最多 50 条；不可达时如实跳过）。
+- **页面 `MemoryPanel.tsx`**：记忆卡片（类型徽标 + 标题 + 三行摘要 + 更新日期）+ 新建/编辑弹窗（标题/类型/正文）+ 行内二次确认删除。
+
+### 4. Skills（照抄 LiveAgent skills 服务一期子集）
+- **Rust `src-tauri/src/skills.rs`**：存储 `~/.ReinAgent/skills/<id>/SKILL.md`（frontmatter name/description + 正文指令；id 消毒防路径穿越）；启停状态 `~/.ReinAgent/skills/.enabled.json`。5 命令：`skills_list/read/save/delete/set_enabled`。
+- **Agent 集成**：`runAgentTurn` 注入 `# Skills` 段（启用技能一行 `- 名称: 描述 (instructions: ~/.ReinAgent/skills/<id>/SKILL.md)`，指引模型经 read_file 读取全文——对齐 LiveAgent 的显式提及 + 读取模式；MemoryManager/SkillsManager 专用管理工具二期）。
+- **页面 `SkillsHubPage.tsx`**：技能卡片（名称/描述/id chip/启停开关/编辑/删除）+ 新建/编辑弹窗（id 目录名/名称/描述/正文 Markdown）。
+
+### 5. 验证与边界
+- 构建 ✓、test:chat 108 / test:agent 39 / test:providers 8 全部通过；Rust cargo check ✓。
+- 二期候选：搜索 FTS5 索引、MCP 商店/导入/OAuth/McpManager 工具、记忆 project 作用域 + LLM 整理（organizer）+ 提取管线、技能商店（ClawHub）/导入/批量操作 + SkillsManager 管理工具。
+
+

@@ -42,6 +42,8 @@ export interface MessageItemProps {
   onBranchFrom?: (messageId: string) => void;
   /** 追加发送新消息（「已达最大步数 → 继续」按钮沿用普通发送路径）。 */
   onAppendSend?: (text: string) => void;
+  /** 搜索跳转定位高亮（外部下发；短暂亮边框后由父级清除）。 */
+  highlight?: boolean;
 }
 
 /**
@@ -61,6 +63,7 @@ function MessageItemImpl({
   onRetryFrom,
   onBranchFrom,
   onAppendSend,
+  highlight = false,
 }: MessageItemProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -158,7 +161,10 @@ function MessageItemImpl({
     const entrance = wasRecentlyCreated(message.id);
 
     return (
-      <div className="group/user-row flex w-full flex-col items-end" data-msg-id={message.id}>
+      <div
+        className={`group/user-row flex w-full flex-col items-end ${highlight ? "msg-search-hit" : ""}`}
+        data-msg-id={message.id}
+      >
         <div
           className={`flex max-w-2xl flex-col gap-2 rounded-2xl rounded-tr-sm border border-[#2563eb] dark:border-[#3a5db0] bg-[#2563eb] dark:bg-[#3a5db0] px-4 py-3 text-sm text-white shadow-xs ${
             entrance ? "chat-bubble-enter" : ""
@@ -262,7 +268,10 @@ function MessageItemImpl({
 
   // ===================== 助手消息分支 =====================
   return (
-    <div className="group/assistant-row flex flex-col items-start w-full">
+    <div
+      className={`group/assistant-row flex flex-col items-start w-full ${highlight ? "msg-search-hit" : ""}`}
+      data-msg-id={message.id}
+    >
       <div className="w-full text-sm text-[var(--text)] leading-relaxed">
         <div className="md">
           <MarkdownText text={message.text} streaming={message.status === "streaming"} />

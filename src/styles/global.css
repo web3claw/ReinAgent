@@ -1251,3 +1251,31 @@ select option {
     animation: none;
   }
 }
+
+/* ---------- 搜索跳转定位高亮（消息行短暂亮边） ---------- */
+@keyframes msg-search-hit-kf {
+  0% {
+    outline-color: transparent;
+  }
+  15% {
+    outline-color: var(--brand);
+  }
+  70% {
+    outline-color: var(--brand);
+  }
+  100% {
+    outline-color: transparent;
+  }
+}
+.msg-search-hit {
+  border-radius: 12px;
+  outline: 2px solid transparent;
+  outline-offset: 4px;
+  animation: msg-search-hit-kf 2.4s ease-out both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .msg-search-hit {
+    animation: none;
+    outline-color: var(--brand);
+  }
+}

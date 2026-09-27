@@ -59,6 +59,9 @@ export interface MessageListProps {
   retrying?: boolean;
   /** 会话工作区根目录（传给文件更改摘要卡的临时目录清理）。 */
   workspaceRoot?: string;
+  /** 外部定位请求（搜索跳转）：目标消息 id；滚动完成后回调置空。 */
+  scrollTargetMessageId?: string | null;
+  onScrollTargetDone?: () => void;
   /** 滚动容器（App 的 chatScrollRef；MessageList 内容是其子节点）。 */
   scrollRef: React.RefObject<HTMLDivElement | null>;
   /**
@@ -102,6 +105,9 @@ export function MessageList({
   onRetryFrom,
   onBranchFrom,
   followSignal,
+  /** 外部定位请求（搜索跳转）：滚动到该消息 + 短暂高亮；滚动完成后置 null */
+  scrollTargetMessageId,
+  onScrollTargetDone,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
@@ -128,12 +134,59 @@ export function MessageList({
     el.scrollTop = el.scrollHeight; // instant：smooth 的中间帧会被滚动判定误读为离底
   }, [scrollRef]);
 
-  // 编辑重发/重试截断重跑后：强制恢复贴底跟随（对齐 LiveAgent stickToBottom on run start）。
+  /** 编辑重发/重试截断重跑后：强制恢复贴底跟随（对齐 LiveAgent stickToBottom on run start）。 */
   useEffect(() => {
     if (followSignal === undefined || followSignal === 0) return;
     followingRef.current = true;
     stickToBottom();
   }, [followSignal, stickToBottom]);
+
+  // ---- 搜索跳转定位：滚动到目标消息 + 高亮。消息行是轮内 DOM（虚拟化屏外轮未挂载），
+  //      所以先确保目标轮在虚拟列表里渲染（scrollToIndex），再对 data-msg-id 锚点定位。----
+  const [highlightMessageId, setHighlightMessageId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!scrollTargetMessageId) return;
+    const el = scrollRef.current;
+    if (!el || scrollEl === null || scrollEl === undefined) return;
+    // 找到目标消息所属轮（messages 平铺序 → groupTurns 的轮），拿轮下标驱动虚拟列表
+    const msgIndex = messages.findIndex((m) => m.id === scrollTargetMessageId);
+    if (msgIndex === -1) {
+      onScrollTargetDone?.();
+      return;
+    }
+    // 轮下标（liveTurn 不在虚拟列表里——正在流式的轮永远在底部可见）
+    let turnIdx = historyTurns.findIndex(
+      (turn) =>
+        turn.userMessage?.id === scrollTargetMessageId ||
+        turn.activity.some((a) => a.id === scrollTargetMessageId) ||
+        turn.lastAssistant?.id === scrollTargetMessageId,
+    );
+    if (turnIdx >= 0) {
+      // 先让虚拟列表渲染目标轮（即使估算高度不准，DOM 挂载后第二步再做像素级定位）
+      virtualizer.scrollToIndex(turnIdx, { align: "start" });
+    }
+    // 两帧后（虚拟行已挂载）做像素级定位：锚点行距视口顶 16px（对齐导航条 JUMP_TOP_GAP）
+    const raf = requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const node = el.querySelector(`[data-msg-id="${CSS.escape(scrollTargetMessageId)}"]`);
+        if (node) {
+          const target =
+            el.scrollTop +
+            (node as HTMLElement).getBoundingClientRect().top -
+            el.getBoundingClientRect().top -
+            16;
+          programmaticUntilRef.current = Date.now() + 300;
+          el.scrollTo({ top: Math.max(0, target), behavior: "auto" });
+          followingRef.current = false;
+          setHighlightMessageId(scrollTargetMessageId);
+          window.setTimeout(() => setHighlightMessageId(null), 2400);
+        }
+        onScrollTargetDone?.();
+      });
+    });
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 仅按定位请求触发
+  }, [scrollTargetMessageId]);
 
   // 用户上滚意图预登记（wheel / touch / 键盘，capture 阶段，不等 scroll 事件）
   useEffect(() => {
@@ -334,6 +387,7 @@ export function MessageList({
                 isEditing={editingMessageKey === turn.userMessage?.id}
                 actionsDisabled={isStreaming}
                 streaming={false}
+                highlightMessageId={highlightMessageId}
               />
             </div>
           );
@@ -358,6 +412,7 @@ export function MessageList({
             isEditing={editingMessageKey === liveTurn.userMessage?.id}
             actionsDisabled={isStreaming}
             streaming
+            highlightMessageId={highlightMessageId}
           />
           <div ref={endRef} />
         </>
