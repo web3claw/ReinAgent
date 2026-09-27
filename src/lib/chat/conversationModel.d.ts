@@ -130,6 +130,8 @@ export interface ChatState {
   errorHint?: string;
   /** 自动重试记录（当前轮；controller 每次失败尝试追加，发送时清空） */
   retryAttempts?: RetryAttemptRecord[];
+  /** 是否处于自动重试等待期（「重新连接中」副行的显示条件；新尝试开始/收敛时清除） */
+  retrying?: boolean;
   /**
    * 单调递增的消息序号，用于生成**唯一** id（`m${seq}`）。
    *

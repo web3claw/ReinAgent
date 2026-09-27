@@ -40,11 +40,20 @@ export interface ConversationControllerOptions {
   createAbortController?: () => AbortController;
   /** 时钟（可注入以便确定性测试）。 */
   now?: () => number;
+  /** 本会话归属的任务 id（检查点上下文来源；缺省=不捕获检查点）。 */
+  taskId?: string;
+  /** 轮边界回调（检查点 begin_turn 打点；缺省=无）。 */
+  onTurnBegin?: (turnId: string) => void;
 }
 
 export interface ConversationController {
   /** 发送用户消息；返回本次是否被受理（false=空文本或正在流式中）。 */
   send: (text: string) => boolean;
+  /**
+   * 编辑重发（对齐 LiveAgent 硬截断）：把锚点 user 消息原位替换为新文本，
+   * 其后的旧分支全部移除后作为全新一轮重跑。返回是否被受理（false=忙/锚点不存在）。
+   */
+  editResend: (anchorMessageId: string, text: string) => boolean;
   /** 停止当前轮次（解除审批挂起 + 中止并标注「已停止」）。 */
   stop: () => void;
   /** 清空会话。 */

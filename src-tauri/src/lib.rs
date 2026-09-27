@@ -2,6 +2,7 @@ mod terminal;
 mod fs_cmd;
 mod provider_config;
 mod conversation_store;
+mod checkpoint;
 
 use terminal::TerminalState;
 
@@ -43,7 +44,12 @@ pub fn run() {
             conversation_store::kv_get_all,
             conversation_store::kv_set_many,
             provider_config::provider_config_load,
-            provider_config::provider_config_save
+            provider_config::provider_config_save,
+            checkpoint::checkpoint_begin_turn,
+            checkpoint::checkpoint_list,
+            checkpoint::checkpoint_diff_stats,
+            checkpoint::checkpoint_rewind_code,
+            checkpoint::checkpoint_clear
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

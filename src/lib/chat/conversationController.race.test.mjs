@@ -82,6 +82,16 @@ async function settle(ticks = 8) {
   for (let i = 0; i < ticks; i += 1) await new Promise((resolve) => setTimeout(resolve, 0));
 }
 
+/** 轮询等待条件成立（重试退避是真实计时器；并行负载下固定 sleep 会抖）。 */
+async function waitFor(predicate, deadlineMs = 3000) {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > deadlineMs) return false;
+    await new Promise((resolve) => setTimeout(resolve, 25));
+  }
+  return true;
+}
+
 const lastAssistant = (state) => [...state.messages].reverse().find((m) => m.role === "assistant");
 
 // ---------------------------------------------------------------------------
@@ -263,14 +273,12 @@ test("新增 · 保险收敛：runAgentTurn resolve 带 errorMessage → 可重�
   // 第 1 次调用返回可重试的 errorMessage → 应触发自动重试
   calls[0].resolve({ reachedAgentEnd: false, errorMessage: "429 rate limit exceeded" });
   await settle();
-  await settle(); // 双 settle：让退避计时器走完、第二次调用发出
+  // 等退避计时器走完、第二次调用发出（退避 ~200ms，轮询等待对负载不敏感）
+  assert.ok(await waitFor(() => calls.length >= 2), "退避后应已发起第二次调用");
 
   // 重试期间保持 streaming（对齐 LiveAgent：调用方看到的是「进行中」而非「已失败」）
   assert.equal(getState().status, "streaming", "可重试错误应保持 streaming 进行自动重试");
   assert.ok(getState().retryAttempts?.length >= 1, "应记录重试条目");
-
-  // 第 2 次调用返回不可重试错误 → 收敛为最终 error
-  assert.ok(calls.length >= 2, `应已发起第二次调用，实际 ${calls.length}`);
   calls[calls.length - 1].resolve({ reachedAgentEnd: false, errorMessage: "401 unauthorized" });
   await settle();
   await settle();

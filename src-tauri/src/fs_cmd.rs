@@ -37,9 +37,18 @@ pub async fn fs_read_file(path: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub async fn fs_write_file(path: String, content: String) -> Result<(), String> {
+pub async fn fs_write_file(
+    path: String,
+    content: String,
+    checkpoint: Option<crate::checkpoint::CheckpointCtx>,
+) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let resolved = resolve_path(&path);
+        // 检查点前像捕获（对齐 LiveAgent）：落盘前把被改文件的"前像"记入
+        // 会话检查点。尽力而为，失败只记 error 记录，绝不阻断写入。
+        if let Some(ctx) = checkpoint.as_ref() {
+            capture_write_pre_image(&ctx, &resolved);
+        }
         if let Some(parent) = resolved.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
@@ -47,6 +56,29 @@ pub async fn fs_write_file(path: String, content: String) -> Result<(), String> 
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// 推导写入目标的检查点（root, rel_path）并捕获前像。
+/// 目标必须位于 ctx.root（会话工作区根）之下才捕获——授权根集合只含工作区根，
+/// 工作区外的绝对路径本来就无法回退。
+fn capture_write_pre_image(ctx: &crate::checkpoint::CheckpointCtx, resolved: &Path) {
+    let root = if ctx.root.trim().is_empty() {
+        return;
+    } else {
+        match dunce::canonicalize(resolve_path(ctx.root.trim())) {
+            Ok(p) => p,
+            Err(_) => return,
+        }
+    };
+    let Ok(rel) = resolved.strip_prefix(&root) else {
+        return;
+    };
+    let pre_image = match fs::symlink_metadata(resolved) {
+        Err(_) => crate::checkpoint::PreImage::Missing,
+        Ok(md) if md.is_file() => crate::checkpoint::PreImage::File(None),
+        Ok(_) => return, // 目标是目录/符号链接等非常规形态：不捕获
+    };
+    crate::checkpoint::capture_pre_image(Some(ctx), &root, rel, pre_image);
 }
 
 /// 清理工作区白名单临时目录 `<workspace>/.ReinAgent/temp/`（整目录递归删除，幂等）。

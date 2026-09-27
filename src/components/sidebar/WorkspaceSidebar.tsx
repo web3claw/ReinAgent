@@ -4,7 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
-  Sun, Moon, HelpCircle, Plus, Search,
+  Sun, Moon, Plus, Search,
   Timer, Puzzle, Hash, FolderOpen, Settings, Monitor, Plug, Clock,
   Filter,
 } from 'lucide-react';
@@ -158,38 +158,7 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
 
   return (
     <div className="flex flex-col w-[260px] h-full bg-[var(--sidebar-bg)] border-r border-[var(--border)] transition-all duration-300">
-      {/* Top Header */}
-      <div className="flex items-center justify-between p-4 pb-2">
-        <div className="flex items-center gap-2 font-bold text-[var(--sidebar-text-active)]">
-          <AppLogo size={24} />
-          <span>ReinAgent</span>
-        </div>
-        <div className="flex items-center gap-1 text-[var(--sidebar-text)]">
-          <button
-            onClick={toggleTheme}
-            className="p-1 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] rounded-md transition-colors"
-            title={theme === 'dark' ? t('lightMode') : t('darkMode')}
-          >
-            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-          </button>
-          <button
-            onClick={toggleLocale}
-            className="p-1 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] rounded-md transition-colors"
-            title={locale === 'zh-CN' ? 'Switch to English' : '切换为简体中文'}
-          >
-            <LanguageGlobeIcon locale={locale} className="w-4 h-4" />
-          </button>
-          <button
-            onClick={() => setCurrentView('settings')}
-            className="p-1 hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] rounded-md transition-colors"
-            title={t('settings')}
-          >
-            <HelpCircle className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Quick Actions */}
+      {/* Quick Actions（顶部品牌区已移除：与系统窗口标题栏重复；主题/语言开关移至底栏图标排） */}
       <div className="flex flex-col gap-1 p-3">
         <button
           onClick={handleNewTask}
@@ -258,12 +227,21 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
         )}
       </div>
 
-      {/* 底部图标条（对齐 PI-Desktop sidebar-footer）：齿轮=设置 / 插头=扩展 / 时钟=定时任务 /
-          电脑（原 Monitor）占位；除设置外均为纯展示占位（无功能）；默认全部不高亮。
+      {/* 底部图标条（对齐 PI-Desktop sidebar-footer）：主题/语言开关 + 齿轮=设置 /
+          插头=扩展 / 时钟=定时任务 / 电脑占位；除设置与开关外均为纯展示占位。
           版本号对齐 footer-build：12px tabular-nums leading-none。 */}
       <div className="flex items-center justify-between p-3 mt-auto border-t border-[var(--border)]">
         <TooltipPrimitive.Provider delayDuration={300}>
           <div className="flex items-center">
+            <FooterIconButton tooltip={theme === 'dark' ? t('lightMode') : t('darkMode')} onClick={toggleTheme}>
+              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
+            </FooterIconButton>
+            <FooterIconButton
+              tooltip={locale === 'zh-CN' ? 'Switch to English' : '切换为简体中文'}
+              onClick={toggleLocale}
+            >
+              <LanguageGlobeIcon locale={locale} className="w-3.5 h-3.5" />
+            </FooterIconButton>
             <FooterIconButton tooltip={t('settings')} onClick={() => setCurrentView('settings')}>
               <Settings className="w-3.5 h-3.5" />
             </FooterIconButton>

@@ -364,6 +364,11 @@ export const useAppStore = create<AppState>((set) => ({
       } catch (e) {
         console.error("Failed to remove task message chunk", e);
       }
+      // 检查点数据（索引 + blobs）以任务为单位存放，随任务删除一并清理
+      //（对齐 LiveAgent deleteChatHistory → checkpoint_clear；失败不影响删除流程）。
+      import("@tauri-apps/api/core")
+        .then(({ invoke }) => invoke("checkpoint_clear", { conversationId: id }))
+        .catch((e) => console.warn("[checkpoint] clear failed:", e));
     }
     set((state) => {
       const nextTasks = state.tasks.filter((t) => t.id !== id);

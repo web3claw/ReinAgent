@@ -44,6 +44,7 @@ import {
 } from "./conversationModel.js";
 import { isRetryableError } from "../chat/errors.js";
 import { pushRetryAttempt } from "./conversationModel.js";
+import { markTurnEntrance } from "./entranceOnce.js";
 
 /**
  * 展开 Error 的 cause 链为「主消息 ← 原因 ← …」的完整描述。
@@ -76,14 +77,17 @@ function describeErrorChain(err) {
  *   runAgentTurn: (params: { source: string, config: unknown, messages: unknown[], systemPrompt?: string, signal?: AbortSignal, onEvent: (ev: unknown, signal?: AbortSignal) => void | Promise<void> }) => Promise<any>,
  *   getOptions: () => { source: string, config: unknown, systemPrompt: string },
  *   createAbortController?: () => AbortController,
- *   now?: () => number,
- * }} deps
- * @returns {{
- *   send: (text: string) => boolean,
- *   stop: () => void,
- *   clear: () => void,
- * }}
- */
+   *   now?: () => number,
+   *   taskId?: string,                     // 本会话归属的任务 id（检查点上下文来源）
+   *   onTurnBegin?: (turnId: string) => void, // 轮边界回调（检查点 begin_turn 打点）
+   * }} deps
+   * @returns {{
+   *   send: (text: string) => boolean,
+   *   editResend: (anchorMessageId: string, text: string) => boolean,
+   *   stop: () => void,
+   *   clear: () => void,
+   * }}
+   */
 export function createConversationController(deps) {
   const { getState, setState, runAgentTurn, getOptions } = deps;
   const createAbortController = deps.createAbortController ?? (() => new AbortController());
@@ -144,35 +148,31 @@ export function createConversationController(deps) {
   }
 
   /**
-   * 发送一条用户消息并启动一轮流式。
-   * @param {string} rawText
-   * @returns {boolean} **本次是否被受理**（true=已开始/无需处理；false=空文本或忙）。
-   *   调用方（Composer）应只在返回 true 时清空输入框，避免竞态下静默丢用户输入。
+   * 是否为「内容承载」事件（对齐 LiveAgent withStreamRetry 的 committed 判定）：
+   * 正文/思考增量或工具调用已开始。已提交内容后的失败不再自动重试——
+   * 部分内容已到达用户屏幕，重发会造成重复。
    */
-  function send(rawText) {
-    const text = typeof rawText === "string" ? rawText.trim() : "";
-    if (text.length === 0) return false;
-    // 忙判定来自状态派生（唯一真相），而非 abortRef。
-    if (getState().status === "streaming") return false;
+  function isContentBearingEvent(ev) {
+    if (!ev || typeof ev !== "object") return false;
+    if (ev.type === "tool_execution_start") return true;
+    if (ev.type === "message_update") {
+      const inner = ev.assistantMessageEvent;
+      if (!inner || typeof inner !== "object") return false;
+      return (
+        inner.type === "text_delta" ||
+        inner.type === "thinking_delta" ||
+        inner.type === "toolcall_start" ||
+        inner.type === "toolcall_delta"
+      );
+    }
+    return false;
+  }
 
-    const { source, config, systemPrompt, maxSteps, workspaceRoot, thinkingLevel, approvalMode, approval, images, userAttachments } = getOptions();
-
-    // 图片附件：转成 pi-ai 原生 image content block（对齐 LiveAgent 原生内联策略）
-    const userMessage = images && images.length > 0
-      ? {
-          role: "user",
-          content: [
-            { type: "text", text },
-            ...images.map((img) => ({ type: "image", data: img.base64, mimeType: img.mimeType })),
-          ],
-          timestamp: now(),
-        }
-      : { role: "user", content: text, timestamp: now() };
-
-    setState((prev) =>
-      beginAssistant(appendUser(prev, text, userAttachments, userMessage), now()),
-    );
-
+  /**
+   * 启动一轮 Agent 循环（send 与 editResend 共用的流水线）。
+   * @param {string} turnId 本轮用户消息的稳定 id（检查点边界与重试归因使用）。
+   */
+  function launchTurn(turnId) {
     const controller = createAbortController();
     abortRef = controller;
     /** 本轮的写回是否已过期（已被新一轮取代 / 被清空）。 */
@@ -186,36 +186,48 @@ export function createConversationController(deps) {
         // 自动重试（对齐 LiveAgent withStreamRetry）：**关键覆盖点**——可重试错误
         // 不止从 throw 冒出：pi-ai 把 HTTP 错误（如网关 502）作为 stopReason:"error"
         // 的失败消息返回（result.errorMessage），只 catch throw 会完全漏掉这类失败。
-        // 因此 throw 与 errorMessage 两条路径都进同一个重试裁决，统一 5 次重试
-        // （共 6 次尝试，对齐 codex stream_max_retries=5）+ 指数抖动退避
-        // （200ms × 2^(n-1) × uniform(0.9,1.1)，同 computeStreamRetryBackoffMs）。
-        // 每次重试重建历史：失败尝试的尾部 error assistant 会被 R13 剔除，随后
-        // beginAssistant 开新行——用户能看到每次失败，重试的回复另起新行。
+        // 因此 throw 与 errorMessage 两条路径都进同一个重试裁决 + 指数抖动退避。
+        // 另一条 LiveAgent 语义：**已提交内容（正文/思考/工具调用已开始）后的失败
+        // 不重试**，直接收敛为错误行。重试期间失败尝试的空错误行不留在时间线
+        // （失败详情进重试记录，等耗尽后才随最终错误一并输出）。
         const MAX_AUTO_RETRIES = 10;
         const RETRY_BASE_MS = 200;
         const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
         let result;
         let attempt = 0; // 已消耗的重试次数
-        setState((prev) => ({ ...prev, retryAttempts: [] }));
+        setState((prev) => ({ ...prev, retrying: false, retryAttempts: [] }));
         while (true) {
           // 每次尝试重建历史：当前 user 条目（含图片块 apiMessage）已在时间线中，
-          // toApiMessages 会带上它；失败尝试的尾部 error assistant 会被 R13 剔除。
+          // toApiMessages 会带上它；失败/中止的 assistant 及其后随 toolResult 会被剔除。
           const history = toApiMessages(getState());
+          let contentCommitted = false;
           let errorMessage; // 本次尝试的失败原因（throw 或 errorMessage 两路归一）
           try {
+            const options = getOptions();
             result = await runAgentTurn({
-              source,
-              config,
+              source: options.source,
+              config: options.config,
               messages: history,
-              systemPrompt,
-              maxSteps,
-              workspaceRoot,
+              systemPrompt: options.systemPrompt,
+              maxSteps: options.maxSteps,
+              workspaceRoot: options.workspaceRoot,
               signal: controller.signal,
-              thinkingLevel,
-              approvalMode,
-              approval,
+              thinkingLevel: options.thinkingLevel,
+              approvalMode: options.approvalMode,
+              approval: options.approval,
+              // 检查点上下文：本轮写文件前捕获前像（回退本轮代码改动的数据源）
+              checkpoint:
+                deps.taskId && turnId
+                  ? { conversationId: deps.taskId, turnId }
+                  : undefined,
               onEvent: (ev) => {
                 if (isStale()) return;
+                if (!contentCommitted && isContentBearingEvent(ev)) {
+                  contentCommitted = true;
+                  // 对齐 LiveAgent onRetryRecovered：新尝试产出**首个内容**才撤下
+                  // 「重新连接中」副行——重试的整个连接+等待过程保持显示。
+                  if (getState().retrying) setState((prev) => ({ ...prev, retrying: false }));
+                }
                 setState((prev) => applyLibraryEvent(prev, ev, now()));
               },
             });
@@ -223,8 +235,8 @@ export function createConversationController(deps) {
             // 连接类错误（pi-ai 只透出 "Connection error."）追加端点，帮助定位是哪个网关失败。
             if (result && result.errorMessage) {
               errorMessage = result.errorMessage;
-              if (config && typeof config.baseUrl === "string" && config.baseUrl && /connection|fetch|network/i.test(errorMessage)) {
-                errorMessage += ` (Endpoint: ${config.baseUrl})`;
+              if (options.config && typeof options.config.baseUrl === "string" && options.config.baseUrl && /connection|fetch|network/i.test(errorMessage)) {
+                errorMessage += ` (Endpoint: ${options.config.baseUrl})`;
               }
             } else {
               break; // 正常完成
@@ -247,8 +259,8 @@ export function createConversationController(deps) {
             break;
           }
           console.warn("[retry] adjudication errorMessage =", JSON.stringify(errorMessage), "retryable =", isRetryableError(errorMessage), "attempt =", attempt, "MAX =", MAX_AUTO_RETRIES);
-          if (!isRetryableError(errorMessage) || attempt >= MAX_AUTO_RETRIES) {
-            // 5 次重试耗尽（或不可重试）：收敛为最终 error 行
+          if (!isRetryableError(errorMessage) || attempt >= MAX_AUTO_RETRIES || contentCommitted) {
+            // 重试耗尽 / 不可重试 / 内容已提交：收敛为最终 error 行
             // finish 保持 state.retryAttempts（轮次级字段），但要把记录固化到 assistant 条目上
             setState((prev) => {
               const finished = finish(prev, undefined, errorMessage, now());
@@ -269,19 +281,58 @@ export function createConversationController(deps) {
           attempt += 1;
           console.warn("[retry] retrying, attempt =", attempt);
           const backoff = Math.round(RETRY_BASE_MS * 2 ** (attempt - 1) * (0.9 + Math.random() * 0.2));
-          // 记录重试 + 退避。**不**为失败尝试开新行/收敛 error 行——重试期间
-          // 时间线只有「重新连接中… N/10」副行（对齐 ZCode），所有失败详情
-          // 都进重试记录，等 10 次耗尽后才随最终错误一并输出。
-          setState((prev) =>
-            pushRetryAttempt(prev, {
+          // 记录重试 + 退避。对齐 LiveAgent：失败尝试的错误行不留在时间线（失败详情
+          // 进重试记录），并确保时间线以一条空流式助手行收尾——「重新连接中… N/10」
+          // 副行由此持续显示（retrying 直到新尝试产出首个内容才撤下，见 onEvent），
+          // 退避/连接等待期间轮保持 live，stop() 也有正确的 patch 目标。
+          setState((prev) => {
+            const last = prev.messages[prev.messages.length - 1];
+            let messages = prev.messages.slice();
+            let seq = typeof prev.nextMessageSeq === "number" ? prev.nextMessageSeq : messages.length;
+            // 继承本轮最初的工作起始时间：轮工时必须跨重试累加，不能每次重建行都从零计时。
+            let carriedStartedAt;
+            if (last && last.role === "assistant" && last.status === "error") {
+              carriedStartedAt = last.startedAt;
+              messages = messages.slice(0, -1);
+            }
+            const tail = messages[messages.length - 1];
+            if (!(tail && tail.role === "assistant" && tail.status === "streaming")) {
+              messages.push({
+                id: `m${seq}`,
+                role: "assistant",
+                text: "",
+                thinking: "",
+                status: "streaming",
+                startedAt: carriedStartedAt ?? now(),
+              });
+              seq += 1;
+            } else if (carriedStartedAt !== undefined && tail.startedAt === undefined) {
+              // 空流式行被复用但缺打点（理论不可达）：补上继承值。
+              tail.startedAt = carriedStartedAt;
+            }
+            const base = {
+              ...prev,
+              messages,
+              status: "streaming",
+              error: undefined,
+              retrying: true,
+              nextMessageSeq: seq,
+            };
+            return pushRetryAttempt(base, {
               attempt,
               maxAttempts: MAX_AUTO_RETRIES,
               errorMessage,
               plannedDelayMs: backoff,
-            }),
-          );
+            });
+          });
           await sleep(backoff);
           if (isStale()) return;
+          // 退避期间用户已停止：立即收敛为「已停止」，不再把下一次（注定失败的）
+          // 请求发出去——否则停止后还会等一个完整的连接超时才安静下来。
+          if (controller.signal.aborted) {
+            setState((prev) => finishAborted(prev, now()));
+            break;
+          }
         }
 
         // ★ 保险：正常路径下 agent_end 经 onEvent → applyLibraryEvent → finish 收敛，
@@ -341,5 +392,106 @@ export function createConversationController(deps) {
     return true;
   }
 
-  return { send, stop, clear, loadState, requestApproval, resolveApproval };
+  /**
+   * 发送一条用户消息并启动一轮流式。
+   * @param {string} rawText
+   * @returns {boolean} **本次是否被受理**（true=已开始/无需处理；false=空文本或忙）。
+   *   调用方（Composer）应只在返回 true 时清空输入框，避免竞态下静默丢用户输入。
+   */
+  function send(rawText) {
+    const text = typeof rawText === "string" ? rawText.trim() : "";
+    if (text.length === 0) return false;
+    // 忙判定来自状态派生（唯一真相），而非 abortRef。
+    if (getState().status === "streaming") return false;
+
+    const { images, userAttachments } = getOptions();
+
+    // 图片附件：转成 pi-ai 原生 image content block（对齐 LiveAgent 原生内联策略）
+    const userMessage = images && images.length > 0
+      ? {
+          role: "user",
+          content: [
+            { type: "text", text },
+            ...images.map((img) => ({ type: "image", data: img.base64, mimeType: img.mimeType })),
+          ],
+          timestamp: now(),
+        }
+      : { role: "user", content: text, timestamp: now() };
+
+    // 轮 id = 即将生成的 user 条目 id（appendUser 用同一公式）；先打检查点轮边界。
+    const prev = getState();
+    const turnId = `m${typeof prev.nextMessageSeq === "number" ? prev.nextMessageSeq : prev.messages.length}`;
+    setState((current) =>
+      beginAssistant(appendUser(current, text, userAttachments, userMessage), now()),
+    );
+    deps.onTurnBegin?.(turnId);
+    launchTurn(turnId);
+    return true;
+  }
+
+  /**
+   * 编辑重发（对齐 LiveAgent 编辑重发 = 硬截断）：把锚点 user 消息原位替换为新文本，
+   * 其后的全部旧分支（旧回复/工具调用）一并移除，随后作为全新一轮重跑。
+   * 任何一步不受理时原历史保持不变。
+   * @param {string} anchorMessageId 锚点 user 消息 id（切点只能是用户消息 ⇒ 天然无孤儿 toolResult）。
+   * @param {string} rawText 替换后的新文本（调用方已把保留的文件附件折算进文本）。
+   * @returns {boolean} 是否被受理。
+   */
+  function editResend(anchorMessageId, rawText) {
+    if (getState().status === "streaming") return false;
+    const text = typeof rawText === "string" ? rawText.trim() : "";
+    const { images, userAttachments } = getOptions();
+    if (text.length === 0 && !(Array.isArray(images) && images.length > 0)) return false;
+
+    const current = getState();
+    const anchorIndex = current.messages.findIndex(
+      (m) => m && m.id === anchorMessageId && m.role === "user",
+    );
+    if (anchorIndex === -1) return false;
+
+    const seq = typeof current.nextMessageSeq === "number" ? current.nextMessageSeq : current.messages.length;
+    const turnId = `m${seq}`;
+    const userMessage = images && images.length > 0
+      ? {
+          role: "user",
+          content: [
+            { type: "text", text },
+            ...images.map((img) => ({ type: "image", data: img.base64, mimeType: img.mimeType })),
+          ],
+          timestamp: now(),
+        }
+      : { role: "user", content: text, timestamp: now() };
+
+    const replacement = {
+      id: turnId,
+      role: "user",
+      text,
+      thinking: "",
+      status: "done",
+      ...(Array.isArray(userAttachments) && userAttachments.length > 0 ? { attachments: userAttachments } : {}),
+      apiMessage: userMessage,
+    };
+    setState((prev) => {
+      const truncated = {
+        ...prev,
+        messages: [...prev.messages.slice(0, anchorIndex), replacement],
+        status: "idle",
+        error: undefined,
+        retrying: false,
+        retryAttempts: [],
+        nextMessageSeq: seq + 1,
+        pendingApproval: null,
+      };
+      // 与 send 同构：同步建流式助手行——忙判定（状态派生）即刻生效，消除
+      // 「截断后到库 message_start 之间」的发送竞态空窗；库的 message_start
+      // 见末条 assistant 正在 streaming 会自动跳过重复建行。
+      return beginAssistant(truncated, now());
+    });
+    markTurnEntrance(turnId);
+    deps.onTurnBegin?.(turnId);
+    launchTurn(turnId);
+    return true;
+  }
+
+  return { send, editResend, stop, clear, loadState, requestApproval, resolveApproval };
 }

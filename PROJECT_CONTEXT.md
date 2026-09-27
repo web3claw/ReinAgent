@@ -157,10 +157,9 @@ ReinAgent 架构全景
     - 当单轮工具调用/思考循环达到当前等级的步数上限时，`agentRuntime` 返回 `maxStepsReached: true`，状态机为末条助手消息标上 `truncatedBy: "maxSteps"`；
     - `MessageItem` 在展示「已达最大步数，本次回复已停止。」提示的同时，右侧提供精致的「继续」胶囊按钮（带有 `Play` 图标）；
     - 用户点击后自动发送“请继续执行未完成的步骤”，无缝衔接上一轮未完成的编码/任务流。
-- **错误诊断加固与一键「重试（Retry）」机制**：
+- **错误诊断与「重试」机制（2026-09-26 改版，对齐 LiveAgent）**：
   - 对网络抖动/断连（`Connection error`、`failed to fetch`、`socket hang up`、`ECONNRESET` 等）精准识别并映射为友好的「网络错误：连接中断或无法连接服务，请检查网络或代理设置」；
-  - `MessageItem` 报错栏右侧提供精致的红色「重试」（带 `RotateCw` 图标）按钮；
-  - 点击重试智能判定：若当前回合已执行过工具，自动发送“请重试刚才失败的操作”无缝续接；若尚未执行工具，自动重发上一轮用户提示词。
+  - 错误行只保留原文 + `errorHint` 双层展示；**手动重试已迁移为 LiveAgent 语义**：助手消息悬停动作栏 RotateCw 确认弹层（「重试该回复？」）→ 以原始提问**截断重发该轮**（见 四点七.2），旧的红色「重试」按钮与「请重试刚才失败的操作」补发逻辑已移除。
 - **活动任务 ID 持久化与刷新恢复机制**：
   - `activeTaskId` 实时写入 `reinagent-active-task-id` 本地持久化；
   - 页面刷新（F5 / Ctrl+R）或开发期 Vite 热重载重挂载时，自动精准恢复刷新前正在进行中的任务并加载完整历史消息，绝不退回主页草稿态。
@@ -275,6 +274,31 @@ ReinAgent 架构全景
 - **Tailwind 标准字阶整体上移**（侧栏/设置页等 `text-xs~xl` 的界面跟随放大）：`xs 16px` / `sm 18px` / `base 20px` / `lg 22px` / `xl 24px`（含配套 `--text-*--line-height`）；
 - 既有组件内零散 px 字号（14px/15px 等）暂保留，后续按需迁移到 `text-ui-*` 刻度；新增样式**禁止直接写死字号**，统一走上述变量。
 
+## 四点七、编辑重发 / 手动重试 / 回退本轮代码改动（对齐 LiveAgent，2026-09-26）
+
+### 1. 编辑重发 = 硬截断（对齐 LiveAgent replaceConversationAtMessage 语义）
+- **入口**：用户消息悬停动作栏（复制 / 编辑 Pencil / 回退 Undo2）；点击 Pencil 后整行被 `EditableUserMessageBubble` 替换（受控 textarea 行数自适应、聚焦 `preventScroll` + 恢复 `[data-scroll-viewport]` 的 scrollTop、附件卡可移除、**只有 Esc=取消**，Enter 是换行、必须点「发送」；提交 trim，空文本且无附件禁提交）。
+- **单值编辑态**：`MessageList` 持有 `editingMessageKey`；被编辑行随截断消失时自动退出（useEffect 检测）。
+- **提交链**（LiveAgent 同款「先退出编辑态，再异步重发」）：`onSubmit → onCancelEdit() → App.handleEditResend`——保留附件经 `buildOutgoingPayload`（`src/lib/chat/attachments.ts`，Composer 共用单一真源）折算：图片+视觉模型 → `fs_read_attachment_base64` 内联 image block；图片+非视觉 → 降级路径引用；文件 → `[Attached file]` 行。
+- **controller.editResend(anchorMessageId, text)**：忙判定（streaming 拒绝）→ 锚点必须存在且 role==user → `messages.slice(0, anchorIndex)` + 原位替换新 user 条目（**新 id**，`nextMessageSeq` 单调递增）→ **同步** `beginAssistant`（与 send 同构，消除忙判定空窗；库 message_start 见末条 streaming 自动跳过重复建行）→ 清空 `retryAttempts/retrying` → `markTurnEntrance`（新气泡入场动画）→ `checkpoint_begin_turn` → 全新流水线。任何一步不受理原历史保持不变。
+- **持久化**：截断后的时间线经池层 300ms 防抖 `conversation_sync` 全量落库（旧分支物理消失，无版本留存；对齐 LiveAgent，想保留用分支会话——未实现）。
+- **贴底**：受理后 App `followSignal+1` → MessageList 强制恢复贴底跟随 + instant 置底（对齐 LiveAgent stickToBottom on run start）。
+- **入场动画**：`entranceOnce.js` 诞生注册表（600ms 窗口）+ `chat-bubble-enter` CSS（0.3s cubic-bezier(0.16,1,0.3,1)，prefers-reduced-motion 退化）；初始构建/晚挂载行永不播放。
+
+### 2. 手动重试 = 以原始提问重发该轮（对齐 LiveAgent RowActions retry）
+- 助手消息悬停动作栏新增 `RotateCw` 确认弹层（Radix Popover）：「重试该回复？/ 将以原始提问重新发送，该回复及之后的对话内容将被删除。」确认后 `handleRetryFrom(messageId)`：向前扫描锚点 user → 文本沿用锚点原始载荷、图片直接复用其权威 `apiMessage` 的原生 image block（免重读文件）→ `poolEditResend`（同一截断管线）。**旧红色「重试」按钮已移除**（LiveAgent 无此形态）；错误行只保留原文+errorHint 双层展示。自动重试上限仍为 10 次（用户定档优先）。
+- **自动重试对齐 LiveAgent withStreamRetry 三点**：① **已提交内容（text/thinking delta 或 toolcall 已开始）后的失败不再重试**（重发会重复，直接收敛 error 行，部分内容保留）；② **重试期间失败尝试的尾部 error 行不留在时间线**；③ **「重新连接中」副行从重试调度起持续显示并实时携带最新失败的错误原因**（`重新连接中… N/10 · <最新 errorMessage>`；`pushRetryAttempt` 置 `retrying=true` 并重建空流式行保持 live 轮），直到新尝试产出**首个内容事件**才撤下（onEvent 的 onRetryRecovered 语义；此前实现为「新尝试开始即撤下」，连接等待期副行闪现，2026-09-27 修复）。退避期间点停止会**立即收敛为已停止**（不再把下一次注定失败的请求发完才安静）。
+- **重试详情块已从代码彻底删除（2026-09-27 定版）**：`RetryDetailsBlock` 组件文件、实时渲染、收敛后 `MessageItem` 的渲染与相关 i18n 键全部移除（用户明确要求完全删除而非隐藏；失败原因实时见重连副行）。重试记录（`state.retryAttempts` / 条目 `retryAttempts` part / 序列化）仍保留：实时副行的数据源 + 留档。停止（stop）不固化记录；重试耗尽的 error 收敛也不再有详情块 UI。
+- **轮工时跨重试累加（2026-09-27 修复）**：重试重建的空流式行**继承被剪除行的 `startedAt`**（链式传递 = 本轮最初起点），工时不再每次重试从零计时。
+- **错误行合并 + 行内重试按钮（2026-09-27）**：error 收敛行改为单行「`<错误原文> · <errorHint>`」（` · ` 分隔，允许折行），行右侧红色「重试」按钮（RotateCw）直接触发 `onRetryFrom`（截断重发该轮，无确认弹层）。⚠️ `handleRetryFrom` 读取图片时必须先判 `apiMessage.content` 是否为数组（pi-ai 的 UserMessage.content 纯文本时是**字符串**，直接 `.filter` 会 TypeError 导致按钮无反应）；`errorHint` 不落库，`deserializeRow` 水合时由 `diagnoseError(error)` 重算（否则刷新后友好提示丢失）。
+- **流式加载指示器（2026-09-27，移植 ZCode ChatLoading）**：`ChatLoading.tsx` = lucide `LoaderIcon` + `animate-spin` + 弱化前景色（`--text-dim`），`size="sm"`（16px）用于流式助手正文末尾，替换旧「▋ msg-caret 竖条光标」（`.msg-caret`/blink 动画已从代码删除）；`loading=false` 不渲染。
+
+### 3. 回退本轮代码改动（checkpoint/rewind，完整移植 LiveAgent checkpoint.rs）
+- **数据记录层（Rust `src-tauri/src/checkpoint.rs`）**：`fs_write_file` 落盘**前**把被改文件的前像写入 `~/.ReinAgent/checkpoints/<taskId>/`（`index.jsonl` 追加日志 + `blobs/` 原始字节拷贝，schema v2）。ReinAgent 的 edit=读后整文件写回，故只挂钩 write 一处。捕获尽力而为：失败只追加 `kind="error"` 记录（该轮 UI 显示不完整），绝不阻断写入。turnId=用户消息 id；turn_seq 由 Rust 在 INDEX_LOCK 下单调分配（同 turnId 复用）。容量防线：单 blob 32MB/会话 512MB/10000 条（尾部 64 条留给 error）。
+- **命令**：`checkpoint_begin_turn`（发送瞬间打轮边界，零文件轮也是合法回退点）/ `checkpoint_list` / `checkpoint_diff_stats`（预览：restore/delete/clean/skip-dir/missing-blob/unresolvable + 现状哈希）/ `checkpoint_rewind_code`（带 expected 哈希做 TOCTOU 冲突检测，缺指纹一律判冲突 fail-closed）/ `checkpoint_clear`（删任务时清理）。⚠️ Tauri 命令**不加** `rename_all = "snake_case"`（本项目 JS 侧统一驼峰键，加了会要求蛇形键导致 invoke 失败）。
+- **回退语义**：「恢复到第 N 轮开始前」= 聚合撤销 turn_seq>=N 的所有路径（每路径取最早前像）；本轮新建文件（existed_before=false）→ 删除；完整回退（无冲突/失败/跳过/捕获缺口）才写 `kind="rewind"` 剪枝标记——读取侧丢弃 >= target 的陈旧未来记录，**多轮各自独立回退、回退第 N 轮连带撤销其后的轮且不影响 < N**。安全链：授权根白名单（fail-closed）+ 根/路径链逐级拒符号链接 + Unix 多硬链接拒绝 + 写前 reverify + 临时文件原子 rename（Windows 备份名回滚）。
+- **UI**：`CheckpointRewindProvider`（`src/lib/chat/checkpointRewind.tsx`）+ 行内 Undo2 按钮（pending 时 Loader2 转圈；无检查点/发送中禁用，title「回退本轮代码改动/本轮没有可用的代码检查点」）。流程=preview → 确认框（标题「回退到本轮开始前」+ 时间副标题 + 逐项统计描述 + 等宽路径 detail 清单 + 红色确认键，组件 `src/components/ui/ConfirmDialog.tsx`）→ 回传全部预览哈希执行 → toast（成功「已回退代码：恢复 N 个、删除 N 个文件」，数字间 U+00A0 防折行）/ 部分完成对话框 → 重拉轮列表。**文件更改摘要卡的假「撤销」占位已移除**（LiveAgent 摘要卡无撤销）。终端命令的写入不在检查点内（与 LiveAgent 一致，需用户知悉）。
+
 ## 五、状态存储速查（2026-09-25 起迁移至 SQLite）
 
 ### 1. 本地磁盘持久化（Tauri Backend）
@@ -288,7 +312,7 @@ ReinAgent 架构全景
 | `task` | `id` PK + seq/payload/updated_at | 任务元数据（标题/时间/项目/置顶/模型绑定，JSON payload） |
 | `kv` | `key` PK + value | UI 偏好（主题/语言/侧栏状态/active-task-id/user-projects/thinking-level/user-home） |
 
-**IPC 命令**：`conversation_sync`（任务全量替换，事务）/ `conversation_load` / `conversation_delete` / `task_sync` / `task_list` / `kv_get_all` / `kv_set_many`。
+**IPC 命令**：`conversation_sync`（任务全量替换，事务）/ `conversation_load` / `conversation_delete` / `task_sync` / `task_list` / `kv_get_all` / `kv_set_many`；另有检查点五命令（`checkpoint_begin_turn/list/diff_stats/rewind_code/clear`，见 四点七.3，数据存 `~/.ReinAgent/checkpoints/<taskId>/`，不入库）。
 
 **前端访问层 `src/lib/storage/db.ts`**：`main.tsx` 渲染前 `await initStorage()`（kv 全量 + 任务列表 + user-home 进内存缓存）→ 之后所有同步读走缓存；写入走写透（缓存 + 防抖批量 IPC）。
 
@@ -482,7 +506,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 **工具卡类**：
 - [ ] 查阅卡**搜索类 bucket**（当前无搜索工具；加入后自动扩展 N 搜索 徽标）
 - [ ] **多文件编辑子卡**（ZCode 多文件 edit 每文件独立展开块；ReinAgent edit 为单文件模型）
-- [x] 文件 chip **点击打开代码查看器** —— 已实现（编辑/写入/读取卡 header 点击 → 右侧 PreviewPane；撤销真回滚待 Rust 写入日志，gating 关闭）
+- [x] 文件 chip **点击打开代码查看器** —— 已实现（编辑/写入/读取卡 header 点击 → 右侧 PreviewPane；~~撤销真回滚待 Rust 写入日志~~ **已由 checkpoint/rewind 实现**（见 四点七.3，行内 Undo2 按钮，2026-09-26））
 - [ ] 工具卡展开态**跨重挂载记忆**（ZCode 用模块级 `toolLayoutOpenState: Map<toolId, boolean>`）
 
 **回合/时间线类**：

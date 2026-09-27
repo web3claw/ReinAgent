@@ -146,6 +146,11 @@ export function createTools(options) {
   const getWorkspace = typeof opts.getWorkspaceRoot === "function"
     ? opts.getWorkspaceRoot
     : () => resolveWorkspaceRoot(opts.workspaceRoot);
+  // 检查点上下文（对齐 LiveAgent）：提供时 write_file 落盘前捕获被改文件的前像，
+  // 供「回退本轮代码改动」把工作区恢复到本轮开始前的状态。
+  const checkpoint = opts.checkpoint && typeof opts.checkpoint === "object"
+    ? opts.checkpoint
+    : undefined;
 
   // 本会话内已 Read 过的文件（edit_file 的 read-before-edit 前置校验依据，对齐 ZCode）。
   const readPaths = new Set();
@@ -253,7 +258,11 @@ export function createTools(options) {
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
       const targetPath = resolveWorkspacePath(params.path, getWorkspace());
-      await invoke("fs_write_file", { path: targetPath, content: params.content });
+      await invoke("fs_write_file", {
+        path: targetPath,
+        content: params.content,
+        ...(checkpoint ? { checkpoint: { ...checkpoint, root: getWorkspace() } } : {}),
+      });
       readPaths.add(targetPath);
       return buildTextToolResult(`Successfully written to ${targetPath}`, { path: targetPath, requestedPath: params.path });
     },
@@ -375,7 +384,7 @@ export const TOOLS = createTools();
  * @returns {import("./tools.js").ToolList} 新数组，元素为工具对象引用。
  */
 export function getTools(options) {
-  if (options && (options.now || options.workspaceRoot || options.getWorkspaceRoot)) {
+  if (options && (options.now || options.workspaceRoot || options.getWorkspaceRoot || options.checkpoint)) {
     return createTools(options);
   }
   return TOOLS.slice();

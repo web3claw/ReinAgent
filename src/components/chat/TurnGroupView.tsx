@@ -18,7 +18,6 @@ import { MessageItem } from "./MessageItem";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
 import { MarkdownText } from "./MarkdownText";
-import { RetryDetailsBlock } from "./RetryDetailsBlock";
 import { useTranslation } from "../../i18n";
 import { memo, useMemo, useRef, useState } from "react";
 import {
@@ -177,6 +176,8 @@ export interface TurnGroupViewProps {
   streaming?: boolean;
   /** 本轮的自动重试记录（重试详情块数据源；仅实时轮传入） */
   retryAttempts?: import("../../lib/chat/conversationModel").RetryAttemptRecord[];
+  /** 是否处于自动重试等待期（「重新连接中」副行显示条件，对齐 LiveAgent 恢复后撤下）。 */
+  retrying?: boolean;
   group: TurnGroup;
   /** 每秒刷新的当前时间（MessageList live tick），仅运行中轮用于工时跳动。 */
   liveNowMs: number;
@@ -187,8 +188,18 @@ export interface TurnGroupViewProps {
    */
   live?: boolean;
   workspaceRoot?: string;
+  /** 追加发送新消息（「已达最大步数 → 继续」）。 */
   onEditSend?: (newText: string) => void;
-  onRetry?: () => void;
+  /** 编辑重发（硬截断该轮及其后内容后以新文本重跑）。 */
+  onEditResend?: (messageId: string, text: string, attachments: import("../../lib/chat/attachments").UserAttachmentRef[]) => void;
+  /** 单值编辑态（MessageList 下发）：仅锚点命中的轮进入编辑。 */
+  isEditing?: boolean;
+  onStartEdit?: (messageId: string) => void;
+  onCancelEdit?: () => void;
+  /** 以原始提问重发该轮（重试 = 截断该回复及其后内容后重跑）。 */
+  onRetryFrom?: (messageId: string) => void;
+  /** 发送/流式中禁用全部行内动作（对齐 LiveAgent isSending）。 */
+  actionsDisabled?: boolean;
 }
 
 /** 折叠体内「中间叙述」的暗色正文（非最终回复的 assistant 文本）。 */
@@ -311,13 +322,6 @@ function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntr
           <span className="diff-added">+{added}</span>
           <span className="diff-removed">−{removed}</span>
         </span>
-        <span
-          className="turn-file-summary-action opacity-50"
-          title="撤销将在后续版本支持"
-          onClick={(event) => event.stopPropagation()}
-        >
-          ↩ {t("turnFileSummaryUndo")}
-        </span>
         <button
           type="button"
           className={`turn-file-summary-action ${cleanState === "confirm" || cleanState === "error" ? "text-[var(--danger)] border-[var(--danger)]" : ""} ${cleanState === "done" ? "opacity-70" : ""}`}
@@ -376,7 +380,22 @@ function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntr
   );
 }
 
-function TurnGroupViewImpl({ group, retryAttempts, liveNowMs, live = false, streaming = false, workspaceRoot, onEditSend, onRetry }: TurnGroupViewProps) {
+function TurnGroupViewImpl({
+  group,
+  retryAttempts,
+  retrying = false,
+  liveNowMs,
+  live = false,
+  streaming = false,
+  workspaceRoot,
+  onEditSend,
+  onEditResend,
+  isEditing = false,
+  onStartEdit,
+  onCancelEdit,
+  onRetryFrom,
+  actionsDisabled = false,
+}: TurnGroupViewProps) {
   const { t, locale } = useTranslation();
   // 用户只折叠/展开「已完成」的轮次；运行中强制展开且不可收起（userToggle 仅完成态生效）。
   const [userToggle, setUserToggle] = useState<boolean | null>(null);
@@ -408,11 +427,15 @@ function TurnGroupViewImpl({ group, retryAttempts, liveNowMs, live = false, stre
   const open = isTurnRunning ? true : userToggle === true;
   const activityItems = useMemo(() => buildActivityItems(group.activity), [group.activity]);
 
-  // 重连副行（对齐 ZCode「重新连接中… 3/10」）：流式中的轮有重试记录时显示在状态条下方
+  // 重连副行（对齐 LiveAgent：重试等待期间显示、首个内容事件到达才撤下；重试详情
+  // 记录只在回合收敛后由 MessageItem 展示）。副行实时携带最新一次失败的错误原因。
   const lastRetry = retryAttempts && retryAttempts.length > 0 ? retryAttempts[retryAttempts.length - 1] : null;
   const reconnectLabel =
-    isTurnRunning && lastRetry
-      ? t("reconnecting").replace("{attempt}", String(lastRetry.attempt)).replace("{max}", String(lastRetry.maxAttempts))
+    isTurnRunning && retrying && lastRetry
+      ? t("reconnecting")
+          .replace("{attempt}", String(lastRetry.attempt))
+          .replace("{max}", String(lastRetry.maxAttempts)) +
+        (lastRetry.errorMessage ? ` · ${lastRetry.errorMessage}` : "")
       : null;
 
   let headerLabel: string;
@@ -439,7 +462,15 @@ function TurnGroupViewImpl({ group, retryAttempts, liveNowMs, live = false, stre
   return (
     <div className="turn-group">
       {group.userMessage ? (
-        <MessageItem message={group.userMessage} onEditSend={onEditSend} />
+        <MessageItem
+          message={group.userMessage}
+          actionsDisabled={actionsDisabled}
+          isEditing={isEditing}
+          onStartEdit={onStartEdit}
+          onCancelEdit={onCancelEdit}
+          onEditResend={onEditResend}
+          onAppendSend={onEditSend}
+        />
       ) : null}
 
       {showHeader ? (
@@ -467,17 +498,8 @@ function TurnGroupViewImpl({ group, retryAttempts, liveNowMs, live = false, stre
             </div>
           )}
           {reconnectLabel && (
-            <div className="reconnect-line">{reconnectLabel}</div>
+            <div className="reconnect-line break-words">{reconnectLabel}</div>
           )}
-          {(() => {
-            const records = retryAttempts ?? group.lastAssistant?.retryAttempts;
-            if (!records || records.length === 0) return null;
-            return (
-              <div className="px-0 pt-1">
-                <RetryDetailsBlock attempts={records} />
-              </div>
-            );
-          })()}
           {hasBody && open && (
             <div className="turn-body">
               {activityItems.map((item, index) => {
@@ -504,7 +526,12 @@ function TurnGroupViewImpl({ group, retryAttempts, liveNowMs, live = false, stre
       ) : null}
 
       {lastAssistant ? (
-        <MessageItem message={lastAssistant} onEditSend={onEditSend} onRetry={onRetry} />
+        <MessageItem
+          message={lastAssistant}
+          actionsDisabled={actionsDisabled}
+          onAppendSend={onEditSend}
+          onRetryFrom={onRetryFrom}
+        />
       ) : null}
 
       {/* 文件更改摘要卡：仅在整轮结束后显示（对齐 ZCode —— 编辑过程中看各工具卡，跑完出汇总） */}

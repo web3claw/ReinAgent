@@ -55,12 +55,25 @@ export interface MessageListProps {
   isStreaming?: boolean;
   /** 自动重试记录（当前轮；来自 state.retryAttempts，重试详情块数据源） */
   retryAttempts?: import("../../lib/chat/conversationModel").RetryAttemptRecord[];
+  /** 是否处于自动重试等待期（重连副行显示条件；新尝试开始即撤下）。 */
+  retrying?: boolean;
   /** 会话工作区根目录（传给文件更改摘要卡的临时目录清理）。 */
   workspaceRoot?: string;
   /** 滚动容器（App 的 chatScrollRef；MessageList 内容是其子节点）。 */
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  /**
+   * 滚动容器元素（state 持有）：虚拟列表的 getScrollElement 数据源。
+   * 用 state 而非 ref 采样——元素挂载必然伴随一次渲染，规避「虚拟器在 ref 接上
+   * 之前采样到 null 后永久停摆（容器有估高、行数 0）」的首点竞态。
+   */
+  scrollEl?: HTMLDivElement | null;
   onEditSend?: (newText: string) => void;
-  onRetry?: () => void;
+  /** 编辑重发（硬截断；异步执行，失败时原历史保持不变）。 */
+  onEditResend?: (messageId: string, text: string, attachments: import("../../lib/chat/attachments").UserAttachmentRef[]) => void;
+  /** 以原始提问重发该轮。 */
+  onRetryFrom?: (messageId: string) => void;
+  /** 变化时强制恢复贴底跟随并置底（编辑重发/重试后对齐 LiveAgent stickToBottom）。 */
+  followSignal?: number;
 }
 
 /**
@@ -79,12 +92,26 @@ export function MessageList({
   isStreaming = false,
   workspaceRoot,
   retryAttempts,
+  retrying = false,
   scrollRef,
+  scrollEl,
   onEditSend,
-  onRetry,
+  onEditResend,
+  onRetryFrom,
+  followSignal,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
   const endRef = useRef<HTMLDivElement>(null);
+
+  // ---- 编辑态（对齐 LiveAgent 单值 editingMessageKey）：被编辑行随截断消失时自动退出 ----
+  const [editingMessageKey, setEditingMessageKey] = useState<string | null>(null);
+  useEffect(() => {
+    if (!editingMessageKey) return;
+    const stillThere = messages.some((m) => m.role === "user" && m.id === editingMessageKey);
+    if (!stillThere) setEditingMessageKey(null);
+  }, [editingMessageKey, messages]);
+  const handleStartEdit = useCallback((key: string) => setEditingMessageKey(key), []);
+  const handleCancelEdit = useCallback(() => setEditingMessageKey(null), []);
 
   // ---- 滚动权状态机：following 存 ref；用户上滚意图 capture 阶段同帧解除 ----
   const followingRef = useRef(true);
@@ -97,6 +124,13 @@ export function MessageList({
     programmaticUntilRef.current = Date.now() + 120;
     el.scrollTop = el.scrollHeight; // instant：smooth 的中间帧会被滚动判定误读为离底
   }, [scrollRef]);
+
+  // 编辑重发/重试截断重跑后：强制恢复贴底跟随（对齐 LiveAgent stickToBottom on run start）。
+  useEffect(() => {
+    if (followSignal === undefined || followSignal === 0) return;
+    followingRef.current = true;
+    stickToBottom();
+  }, [followSignal, stickToBottom]);
 
   // 用户上滚意图预登记（wheel / touch / 键盘，capture 阶段，不等 scroll 事件）
   useEffect(() => {
@@ -182,7 +216,7 @@ export function MessageList({
   // ---- 虚拟化（已完成轮）----
   const virtualizer = useVirtualizer({
     count: historyTurns.length,
-    getScrollElement: () => scrollRef.current,
+    getScrollElement: () => scrollEl ?? null,
     estimateSize: (index) => heightCache.get(historyTurns[index]?.key ?? "") ?? DEFAULT_TURN_HEIGHT,
     getItemKey: (index) => historyTurns[index]?.key ?? String(index),
     overscan: TURN_OVERSCAN,
@@ -224,13 +258,21 @@ export function MessageList({
     return () => window.clearInterval(timer);
   }, [hasRunningTurn]);
 
-  // ---- 回调稳定化（App 每次渲染会新建 handleSend/handleRetry；ref 包装保引用稳定）----
+  // ---- 回调稳定化（App 每次渲染会新建回调；ref 包装保引用稳定）----
   const onEditSendRef = useRef(onEditSend);
   onEditSendRef.current = onEditSend;
-  const onRetryRef = useRef(onRetry);
-  onRetryRef.current = onRetry;
+  const onEditResendRef = useRef(onEditResend);
+  onEditResendRef.current = onEditResend;
+  const onRetryFromRef = useRef(onRetryFrom);
+  onRetryFromRef.current = onRetryFrom;
   const stableEditSend = useCallback((text: string) => onEditSendRef.current?.(text), []);
-  const stableRetry = useCallback(() => onRetryRef.current?.(), []);
+  const stableEditResend = useCallback(
+    (messageId: string, text: string, attachments: import("../../lib/chat/attachments").UserAttachmentRef[]) => {
+      onEditResendRef.current?.(messageId, text, attachments);
+    },
+    [],
+  );
+  const stableRetryFrom = useCallback((messageId: string) => onRetryFromRef.current?.(messageId), []);
 
   // 内容高度变化（live tail 流式长高）且仍跟随 → 贴底（instant）。
   // RO 常驻不随 delta 重挂：内容增长本身就会触发 RO 回调。
@@ -278,7 +320,12 @@ export function MessageList({
                 liveNowMs={0}
                 workspaceRoot={workspaceRoot}
                 onEditSend={stableEditSend}
-                onRetry={stableRetry}
+                onEditResend={stableEditResend}
+                onStartEdit={handleStartEdit}
+                onCancelEdit={handleCancelEdit}
+                onRetryFrom={stableRetryFrom}
+                isEditing={editingMessageKey === turn.userMessage?.id}
+                actionsDisabled={isStreaming}
                 streaming={false}
               />
             </div>
@@ -293,9 +340,15 @@ export function MessageList({
             live
             liveNowMs={liveNowMs}
             retryAttempts={retryAttempts}
+            retrying={retrying}
             workspaceRoot={workspaceRoot}
             onEditSend={stableEditSend}
-            onRetry={stableRetry}
+            onEditResend={stableEditResend}
+            onStartEdit={handleStartEdit}
+            onCancelEdit={handleCancelEdit}
+            onRetryFrom={stableRetryFrom}
+            isEditing={editingMessageKey === liveTurn.userMessage?.id}
+            actionsDisabled={isStreaming}
             streaming
           />
           <div ref={endRef} />

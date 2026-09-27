@@ -227,16 +227,8 @@ select option {
   white-space: normal;
 }
 
-.msg-caret {
-  color: var(--accent);
-  animation: blink 1s steps(1) infinite;
-}
-
-@keyframes blink {
-  50% {
-    opacity: 0;
-  }
-}
+/* 流式加载指示器（ChatLoading，移植 ZCode）使用 lucide animate-spin，
+   旧「▋ 竖条光标」的 .msg-caret / blink 动画已随组件替换删除。 */
 
 .msg-error {
   margin-top: 8px;
@@ -756,13 +748,15 @@ select option {
 .turn-group {
   display: flex;
   flex-direction: column;
+  /* 轮间距用组内 padding：虚拟化按行高定位（不含 margin），margin 会造成行重叠。
+     同时给上一轮末尾的文件摘要卡与下一轮用户气泡留出呼吸空间。 */
+  padding-top: 22px;
 }
 .reconnect-line {
   font-size: var(--text-ui-sm);
   color: var(--text-dim);
   padding: 0 0 6px;
   margin-bottom: 8px;
-  border-bottom: 1px solid var(--border);
 }
 
 .turn-header-row {
@@ -1234,4 +1228,24 @@ select option {
   --text-base: 18px;
   --text-base--line-height: 1.7;
   --text-lg: 20px;
+}
+
+/* ---------- 编辑重发替换出的新气泡入场动画（对齐 LiveAgent chat-bubble-enter） ---------- */
+@keyframes chat-bubble-enter-kf {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.chat-bubble-enter {
+  animation: chat-bubble-enter-kf 0.3s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .chat-bubble-enter {
+    animation: none;
+  }
 }

@@ -291,6 +291,7 @@ export function finish(state, finalMessage, error, nowMs) {
       error: raw,
       errorHint: diagnoseError(raw),
       retryAttempts: retried,
+      retrying: false,
       pendingApproval: null,
     };
   }
@@ -301,7 +302,7 @@ export function finish(state, finalMessage, error, nowMs) {
     patch.thinking = thinkingOfMessage(finalMessage);
     patch.apiMessage = finalMessage;
   }
-  return { ...patchLastAssistant(state, patch), status: "idle", error: undefined, pendingApproval: null };
+  return { ...patchLastAssistant(state, patch), status: "idle", error: undefined, retrying: false, pendingApproval: null };
 }
 
 /**
@@ -319,6 +320,7 @@ export function finishAborted(state, nowMs) {
     ...patchLastAssistant(state, { status: "stopped", endedAt: at }),
     status: "idle",
     error: undefined,
+    retrying: false,
     pendingApproval: null,
   };
 }
@@ -345,12 +347,14 @@ export function finishAborted(state, nowMs) {
  */
 /**
  * 追加一条重试记录（重试详情块的数据源；对齐 LiveAgent RetryAttemptRecord）。
+ * 同时置 retrying 标记：UI 的「重新连接中」副行只在重试等待期间显示，
+ * 重试详情块则保留全部记录。
  * @param {import("./conversationModel").ChatState} state
  * @param {{ attempt: number, maxAttempts: number, errorMessage: string, plannedDelayMs?: number }} record
  */
 export function pushRetryAttempt(state, record) {
   const list = Array.isArray(state.retryAttempts) ? state.retryAttempts : [];
-  return { ...state, retryAttempts: [...list, record] };
+  return { ...state, retrying: true, retryAttempts: [...list, record] };
 }
 
 export function updateErrorNote(state, text) {
@@ -609,8 +613,19 @@ export function toApiMessages(state) {
   /** @type {Array<string | undefined>} */
   const sourceStatus = [];
   let timestamp = 1;
+  // 对齐 LiveAgent stripAbortedMessagesForModelContext：中止的 assistant 连同
+  // 紧随其后的 toolResult 一并剔除（否则下一次请求会因孤儿 toolCall/toolResult 400）。
+  let skippingAbortedChain = false;
 
   for (const message of state.messages) {
+    if (message.role === "assistant" && message.status === "stopped") {
+      skippingAbortedChain = true;
+      continue;
+    }
+    if (skippingAbortedChain) {
+      if (message.role === "tool") continue;
+      skippingAbortedChain = false;
+    }
     if (message.role === "user") {
       // 优先回灌原生 apiMessage（含图片 content block），无则用纯文本
       if (message.apiMessage && message.apiMessage.role === "user") {

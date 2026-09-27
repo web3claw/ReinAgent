@@ -95,6 +95,8 @@ export interface RunAgentTurnParams {
   approvalMode?: ApprovalMode;
   /** 审批协调器（由会话池注入；缺省时不注入审批门，工具直通）。 */
   approval?: ApprovalCoordinator;
+  /** 检查点上下文（对齐 LiveAgent）：本轮写文件前捕获前像，供「回退本轮代码改动」。 */
+  checkpoint?: { conversationId: string; turnId: string; root?: string };
   onEvent: (ev: AgentEvent, signal?: AbortSignal) => void | Promise<void>;
 }
 
@@ -198,9 +200,13 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     thinkingLevel,
     approvalMode = "full",
     approval,
+    checkpoint,
   } = params;
 
-  const tools = getTools(workspaceRoot ? { workspaceRoot } : undefined);
+  const tools = getTools({
+    ...(workspaceRoot ? { workspaceRoot } : {}),
+    ...(checkpoint ? { checkpoint } : {}),
+  });
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
   let effectiveSystemPrompt = workspaceRoot
     ? `${prompt}\n\nCurrent workspace root: ${workspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`

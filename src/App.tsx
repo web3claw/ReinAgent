@@ -1,7 +1,11 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import "./styles/global.css";
 import { useConversationPool } from "./hooks/useConversationPool";
-import { send as poolSend, resolveApproval as poolResolveApproval } from "./lib/chat/conversationPool";
+import {
+  send as poolSend,
+  editResend as poolEditResend,
+  resolveApproval as poolResolveApproval,
+} from "./lib/chat/conversationPool";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
 import { getRegisteredTurnOffset } from "./components/chat/MessageList";
@@ -24,9 +28,11 @@ import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import { buildContextUsageData } from "./lib/chat/contextUsage";
 import { getTools } from "./lib/agent/tools";
+import { CheckpointRewindProvider, formatCheckpointRewoundNotification } from "./lib/chat/checkpointRewind";
+import { buildOutgoingPayload } from "./lib/chat/attachments";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
-  Terminal, PanelLeftClose, PanelLeft, Minus, Maximize2, X, AlertTriangle
+  Terminal, PanelLeftClose, PanelLeft, AlertTriangle
 } from "lucide-react";
 
 export default function App() {
@@ -47,7 +53,7 @@ export default function App() {
   const activeThinkingLevel = activeTask?.thinkingLevel ?? thinkingLevel;
   const activeApprovalMode = activeTask?.approvalMode ?? "full";
 
-  const { t } = useTranslation();
+  const { t, locale } = useTranslation();
   const { settings, status, update } = useSettings();
   
   const [providers, setProviders] = useState<ProviderItem[]>([]);
@@ -169,6 +175,10 @@ export default function App() {
 
   // 消息滚动容器 ref：承载对话问题导航条（ConversationNavigator）的锚点测量与跳转
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  // 元素本体进 state：首次点击任务时消息分支在数据水合后才挂载，滚动 div 与 MessageList
+  // 的相对挂载时序存在竞态——若虚拟列表在 ref 接上之前采样到 null 会永久停摆（行数 0）。
+  // ref 回调 setState 保证元素挂载后必然触发一次渲染，让 useVirtualizer 稳定拿到元素。
+  const [chatScrollEl, setChatScrollEl] = useState<HTMLDivElement | null>(null);
 
 
   const effectiveWorkspaceRoot = resolveWorkspaceRoot(selectedProject);
@@ -344,6 +354,127 @@ export default function App() {
     setFocusTrigger((c) => c + 1);
   };
 
+  // 轮次发送选项（send 与 editResend 共用；审批模式在发送瞬间冻结，整轮生效）。
+  const buildTurnOptions = useCallback(
+    (
+      images?: { base64: string; mimeType: string }[],
+      userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
+    ) => ({
+      source,
+      config: {
+        provider: activeProviderId as any,
+        apiKey: activeApiKey,
+        modelId: activeModelId,
+        baseUrl: activeBaseUrl,
+        hasEffort: isReasoningSupported,
+      },
+      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      maxSteps,
+      workspaceRoot: effectiveWorkspaceRoot,
+      thinkingLevel: effectiveThinkingLevel,
+      approvalMode: activeApprovalMode,
+      images,
+      userAttachments,
+    }),
+    [
+      source,
+      activeProviderId,
+      activeApiKey,
+      activeModelId,
+      activeBaseUrl,
+      isReasoningSupported,
+      maxSteps,
+      effectiveWorkspaceRoot,
+      effectiveThinkingLevel,
+      activeApprovalMode,
+    ],
+  );
+
+  // 编辑重发后的强制贴底（对齐 LiveAgent stickToBottom on run start）+ 回退 toast。
+  const [followSignal, setFollowSignal] = useState(0);
+  const [rewindToast, setRewindToast] = useState<{ level: "success" | "error"; message: string } | null>(null);
+  const rewindToastTimerRef = useRef<number | null>(null);
+  const showRewindToast = useCallback((info: Parameters<typeof formatCheckpointRewoundNotification>[0]) => {
+    const notice = formatCheckpointRewoundNotification(info, locale === "zh-CN");
+    setRewindToast(notice);
+    if (rewindToastTimerRef.current !== null) window.clearTimeout(rewindToastTimerRef.current);
+    rewindToastTimerRef.current = window.setTimeout(() => setRewindToast(null), 4500);
+  }, [locale]);
+
+  /**
+   * 编辑重发（对齐 LiveAgent 硬截断语义）：锚点 user 消息原位替换为新文本，
+   * 其后的旧分支（旧回复/工具调用）全部移除，随后作为全新一轮重跑。
+   * 保留的图片附件经 fs_read_attachment_base64 重建原生 image block；
+   * 文件附件折算为 [Attached file] 路径引用行。
+   */
+  const handleEditResend = useCallback(
+    async (
+      messageId: string,
+      newText: string,
+      keptAttachments: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
+    ): Promise<boolean> => {
+      const targetTaskId = activeTaskId;
+      if (!targetTaskId) return false;
+      const supportsImage = currentModel?.supportsImage === true;
+      const { payload, imageInputs } = await buildOutgoingPayload(newText, keptAttachments, supportsImage);
+      const accepted = poolEditResend(
+        targetTaskId,
+        messageId,
+        payload,
+        buildTurnOptions(imageInputs.length > 0 ? imageInputs : undefined, keptAttachments.length > 0 ? keptAttachments : undefined),
+      );
+      if (accepted) setFollowSignal((c) => c + 1);
+      return accepted;
+    },
+    [activeTaskId, currentModel?.supportsImage, buildTurnOptions],
+  );
+
+  /**
+   * 以原始提问重发某条回复所在的轮（对齐 LiveAgent retry = 截断该回复及其后内容后重跑）。
+   * 文本沿用锚点 user 消息的原始载荷；图片直接复用其权威 apiMessage 里的原生 image block
+   * （免重读文件，跨轮不失效）。
+   */
+  const handleRetryFrom = useCallback(
+    (messageId: string) => {
+      const targetTaskId = activeTaskId;
+      if (!targetTaskId) return;
+      const msgs = state.messages;
+      const messageIndex = msgs.findIndex((m) => m.id === messageId);
+      if (messageIndex === -1) return;
+      let anchorIndex = -1;
+      for (let i = messageIndex; i >= 0; i -= 1) {
+        if (msgs[i].role === "user") {
+          anchorIndex = i;
+          break;
+        }
+      }
+      if (anchorIndex === -1) return;
+      const anchor = msgs[anchorIndex];
+      // pi-ai 的 UserMessage.content 既可能是字符串（纯文本）也可能是块数组，必须先判型
+      const apiContent: unknown = anchor.apiMessage?.content;
+      const contentBlocks = Array.isArray(apiContent)
+        ? (apiContent as { type?: string; data?: string; mimeType?: string }[])
+        : [];
+      const images = contentBlocks
+        .filter((b) => b.type === "image" && typeof b.data === "string" && typeof b.mimeType === "string")
+        .map((b) => ({ base64: b.data as string, mimeType: b.mimeType as string }));
+      const attachments = (anchor.attachments ?? []).map((a) => ({
+        path: a.path,
+        name: a.name,
+        kind: a.kind,
+        previewUrl: a.previewUrl,
+      }));
+      const accepted = poolEditResend(
+        targetTaskId,
+        anchor.id,
+        anchor.text,
+        buildTurnOptions(images.length > 0 ? images : undefined, attachments.length > 0 ? attachments : undefined),
+      );
+      if (accepted) setFollowSignal((c) => c + 1);
+    },
+    [activeTaskId, state.messages, buildTurnOptions],
+  );
+
   const handleSend = (
     text: string,
     images?: { base64: string; mimeType: string }[],
@@ -387,40 +518,7 @@ export default function App() {
 
     // 草稿提升竞态：setActiveTaskId 后 hook 闭包里的 taskId 仍是旧的（null），
     // 必须用新 taskId 直接调池（池的 ensureEntry 会为新任务建条目）。
-    // 审批模式在发送瞬间冻结（整轮生效，对齐 ZCode 提交冻结语义）。
-    return poolSend(targetTaskId, text, {
-      source,
-      config: {
-        provider: activeProviderId as any,
-        apiKey: activeApiKey,
-        modelId: activeModelId,
-        baseUrl: activeBaseUrl,
-        hasEffort: isReasoningSupported,
-      },
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      maxSteps,
-      workspaceRoot: effectiveWorkspaceRoot,
-      thinkingLevel: effectiveThinkingLevel,
-      approvalMode: activeApprovalMode,
-      images,
-      userAttachments,
-    });
-  };
-
-  const handleRetry = () => {
-    const msgs = state.messages;
-    for (let i = msgs.length - 1; i >= 0; i--) {
-      if (msgs[i].role === "user") {
-        const hasToolsSinceUser = msgs.slice(i + 1).some((m) => m.role === "tool");
-        if (hasToolsSinceUser) {
-          handleSend(t("retryPrompt") || "请重试刚才失败的操作");
-        } else {
-          handleSend(msgs[i].text);
-        }
-        return;
-      }
-    }
-    handleSend(t("retryPrompt") || "请重试刚才失败的操作");
+    return poolSend(targetTaskId, text, buildTurnOptions(images, userAttachments));
   };
 
   useEffect(() => {
@@ -483,16 +581,6 @@ export default function App() {
             >
               <Terminal className="w-4 h-4" />
             </button>
-            <div className="w-px h-4 bg-[var(--border)] mx-1" />
-            <button className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] transition-colors">
-              <Minus className="w-4 h-4" />
-            </button>
-            <button className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] transition-colors">
-              <Maximize2 className="w-4 h-4" />
-            </button>
-            <button className="p-1.5 rounded hover:bg-red-500 hover:text-white text-[var(--text-dim)] transition-colors">
-              <X className="w-4 h-4" />
-            </button>
           </div>
         </div>
 
@@ -529,56 +617,75 @@ export default function App() {
               </div>
             </div>
           ) : (
-            <div className="relative flex-1 min-h-0 flex">
-              <div ref={chatScrollRef} className="flex-1 overflow-y-auto min-h-0">
-              <div className="min-h-full flex flex-col justify-between">
-                <div className="w-full px-6 sm:px-8 md:px-12 pt-3 pb-36 flex-1">
-                  <MessageList
-                    messages={state.messages}
-                    isStreaming={isStreaming}
-                    retryAttempts={state.retryAttempts}
-                    scrollRef={chatScrollRef}
-                    onEditSend={handleSend}
-                    onRetry={handleRetry}
-                  />
-                </div>
-                <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">
-                  {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
-                  {state.pendingApproval && (
-                    <ApprovalCard
-                      request={state.pendingApproval}
-                      onDecide={(decision: ApprovalDecision) => {
-                        if (activeTaskId) poolResolveApproval(activeTaskId, decision);
-                      }}
-                    />
-                  )}
-                  <LexicalComposer
-                    isStreaming={isStreaming}
-                    onSend={handleSend}
-                    onStop={stop}
-                    providerId={activeProviderId}
-                    providerName={currentProvider?.name || currentProviderMeta.name}
-                    modelId={activeModelId}
-                    currentModel={currentModel}
-                    providers={providers}
-                    onSelectModel={handleSelectModel}
-                    hasMessages={true}
-                    contextUsage={contextUsage}
-                  />
-                </div>
-              </div>
-              </div>
-              <ConversationNavigator
+            <CheckpointRewindProvider
+              conversationId={activeTaskId ?? undefined}
+              disabled={isStreaming}
+              resolveAuthorizedRoots={async () => (effectiveWorkspaceRoot ? [effectiveWorkspaceRoot] : [])}
+              onRewound={showRewindToast}
+            >
+              <div className="relative flex-1 min-h-0 flex">
+                <div
+                  ref={(el) => {
+                    chatScrollRef.current = el;
+                    setChatScrollEl(el);
+                  }}
+                  data-scroll-viewport
+                  className="flex-1 overflow-y-auto min-h-0"
+                >
+                <div className="min-h-full flex flex-col justify-between">
+                  <div className="w-full px-6 sm:px-8 md:px-12 pt-3 pb-36 flex-1">
+                    <MessageList
                       messages={state.messages}
+                      isStreaming={isStreaming}
+                      retryAttempts={state.retryAttempts}
+                      retrying={state.retrying}
                       scrollRef={chatScrollRef}
-                      measureFallback={getRegisteredTurnOffset}
+                      scrollEl={chatScrollEl}
+                      onEditSend={handleSend}
+                      onEditResend={handleEditResend}
+                      onRetryFrom={handleRetryFrom}
+                      followSignal={followSignal}
+                      workspaceRoot={effectiveWorkspaceRoot}
                     />
-            </div>
+                  </div>
+                  <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">
+                    {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
+                    {state.pendingApproval && (
+                      <ApprovalCard
+                        request={state.pendingApproval}
+                        onDecide={(decision: ApprovalDecision) => {
+                          if (activeTaskId) poolResolveApproval(activeTaskId, decision);
+                        }}
+                      />
+                    )}
+                    <LexicalComposer
+                      isStreaming={isStreaming}
+                      onSend={handleSend}
+                      onStop={stop}
+                      providerId={activeProviderId}
+                      providerName={currentProvider?.name || currentProviderMeta.name}
+                      modelId={activeModelId}
+                      currentModel={currentModel}
+                      providers={providers}
+                      onSelectModel={handleSelectModel}
+                      hasMessages={true}
+                      contextUsage={contextUsage}
+                    />
+                  </div>
+                </div>
+                </div>
+                <ConversationNavigator
+                        messages={state.messages}
+                        scrollRef={chatScrollRef}
+                        measureFallback={getRegisteredTurnOffset}
+                      />
+              </div>
+            </CheckpointRewindProvider>
           )}
         </div>
 
-        {/* 会话统计行（对齐 LiveAgent 底部统计条）：轮数/步数 | 上下文 | LLM/工具耗时 | token 用量与命中率 */}
-        <SessionStatsBar stats={sessionStats} />
+        {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅在有消息的任务视图显示，首页不渲染 */}
+        {hasMessages && <SessionStatsBar stats={sessionStats} />}
 
         {/* Terminal Pane */}
         {isTerminalOpen && (
@@ -590,6 +697,20 @@ export default function App() {
 
       {/* 右侧代码/变更预览面板（ZCode PreviewPane 移植） */}
       <CodeViewerPaneHost workspacePath={effectiveWorkspaceRoot || undefined} />
+
+      {/* 回退结果 toast（对齐 LiveAgent addNotify：成功/问题分级，底部右侧悬浮） */}
+      {rewindToast && (
+        <div
+          className={`fixed bottom-5 right-5 z-[80] max-w-sm rounded-lg border px-4 py-2.5 text-xs shadow-2xl ${
+            rewindToast.level === "error"
+              ? "border-[var(--warn-border)] bg-[var(--warn-bg)] text-[var(--warn-text)]"
+              : "border-[var(--border)] bg-[var(--surface)] text-[var(--text)]"
+          }`}
+          role="status"
+        >
+          {rewindToast.message}
+        </div>
+      )}
 
     </div>
   );

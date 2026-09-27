@@ -28,16 +28,18 @@ import {
 } from "lucide-react";
 import { MOCK_PROJECTS } from "../sidebar/WorkspaceSidebar";
 import {
+  buildOutgoingPayload,
+  type ComposerImageInput,
+  type UserAttachmentRef,
+} from "../../lib/chat/attachments";
+import {
   type ModelItem,
   type ProviderItem,
   formatModelContextWindowLabel,
   updateModelEffortDefaultLevel,
 } from "../settings/model-provider/types";
 
-export interface ComposerImageInput {
-  base64: string;
-  mimeType: string;
-}
+export type { ComposerImageInput, UserAttachmentRef };
 
 export interface LexicalComposerProps {
   isStreaming: boolean;
@@ -202,38 +204,8 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     const trimmed = text.trim();
     if ((trimmed.length === 0 && attachments.length === 0) || isStreaming) return;
 
-    let payload = trimmed;
-    const imageInputs: ComposerImageInput[] = [];
     const supportsImage = currentModel?.supportsImage === true;
-
-    if (attachments.length > 0) {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const fileLines: string[] = [];
-      for (const a of attachments) {
-        if (a.kind === "image") {
-          if (supportsImage) {
-            try {
-              const res = await invoke<{ mime: string; base64: string }>(
-                "fs_read_attachment_base64",
-                { path: a.path },
-              );
-              imageInputs.push({ base64: res.base64, mimeType: res.mime });
-            } catch (err) {
-              console.warn("[attachment] inline read failed:", err);
-              payload += `\n\n[Attached image: ${a.path}]`;
-            }
-          } else {
-            // 非视觉模型：无法直接看图，降级为路径引用
-            payload += `\n\n[The user attached an image: ${a.path}. The current model does not support vision input, so the image content cannot be viewed.]`;
-          }
-        } else {
-          fileLines.push(`[Attached file: ${a.path}]`);
-        }
-      }
-      if (fileLines.length > 0) {
-        payload += `\n\n${fileLines.join("\n")}`;
-      }
-    }
+    const { payload, imageInputs } = await buildOutgoingPayload(trimmed, attachments, supportsImage);
 
     const userAttachments = attachments.map((a) => ({
       path: a.path,

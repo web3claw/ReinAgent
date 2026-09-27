@@ -16,6 +16,7 @@ import { createConversationController } from "./conversationController";
 import type { ConversationController } from "./conversationController";
 import type { ChatState, TimelineEntry } from "./conversationModel";
 import { initialState, restoreState } from "./conversationModel.js";
+import { diagnoseError } from "./errors.js";
 import { runAgentTurn } from "../providers/runAgentTurn";
 import type { AgentSource, ApprovalCoordinator, ApprovalDecision } from "../providers/runAgentTurn";
 import { invoke } from "@tauri-apps/api/core";
@@ -167,6 +168,8 @@ function deserializeRow(row: {
     thinking,
     status: row.status as TimelineEntry["status"],
     error: row.error ?? undefined,
+    // errorHint 不落库（纯派生展示字段）：水合时由原文重算，保证刷新后仍有友好提示
+    errorHint: row.error ? diagnoseError(row.error) : undefined,
     startedAt: row.started_at ?? undefined,
     endedAt: row.ended_at ?? undefined,
     thinkingStartedAt: row.thinking_started_at ?? undefined,
@@ -253,6 +256,14 @@ function createEntry(taskId: string): PoolEntry {
     alwaysAllowedTools: new Set<string>(),
   };
   entry.controller = createConversationController({
+    taskId,
+    // 检查点轮边界（对齐 LiveAgent checkpoint_begin_turn）：发送瞬间先落一条
+    // turn 记录，零文件轮也是合法回退点。失败不阻断发送（后端写日志）。
+    onTurnBegin: (turnId: string) => {
+      invoke("checkpoint_begin_turn", { conversationId: taskId, turnId }).catch((err) =>
+        console.warn("[pool] checkpoint_begin_turn failed:", err),
+      );
+    },
     getState: () => entry.state,
     setState: (updater) => {
       entry.state = updater(entry.state);
@@ -353,6 +364,27 @@ export function subscribeTask(taskId: string, listener: () => void): () => void 
 /** 发送消息到指定任务（options 在发送时注入该轮）。返回是否被受理。 */
 export function send(taskId: string, text: string, options: PoolSendOptions): boolean {
   const entry = ensureEntry(taskId);
+  injectOptions(entry, options);
+  return entry.controller.send(text);
+}
+
+/** 编辑重发：截断锚点 user 消息及其后旧分支，替换后作为全新一轮重跑（对齐 LiveAgent）。 */
+export function editResend(
+  taskId: string,
+  anchorMessageId: string,
+  text: string,
+  options: PoolSendOptions,
+): boolean {
+  const entry = entries.get(taskId);
+  // 锚点不存在（任务未水合/已截断）时拒绝，原历史保持不变。
+  if (!entry || !entry.state.messages.some((m) => m.id === anchorMessageId && m.role === "user")) {
+    return false;
+  }
+  injectOptions(entry, options);
+  return entry.controller.editResend(anchorMessageId, text);
+}
+
+function injectOptions(entry: PoolEntry, options: PoolSendOptions): void {
   // 审批协调器按任务注入：「总是允许」免审集合挂在池条目上（任务级内存态）。
   const approval: ApprovalCoordinator = {
     request: (req) => entry.controller.requestApproval(req),
@@ -362,7 +394,6 @@ export function send(taskId: string, text: string, options: PoolSendOptions): bo
     },
   };
   entry.sendOptions = { ...options, approval };
-  return entry.controller.send(text);
 }
 
 /** 解决指定任务当前挂起的审批（allow/always/reject）。无挂起时静默。 */
