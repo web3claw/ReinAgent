@@ -251,9 +251,12 @@ export const useAppStore = create<AppState>((set) => ({
       const targetTask = activeTaskId ? state.tasks.find((t) => t.id === activeTaskId) : null;
       return {
         activeTaskId,
-        // 从自动化页等非工作台视图激活任务（点击侧栏任务/新建任务）时切回聊天工作台；
-        // 自动化自身的派发走 createTask（不经此 action），不会打断页面停留。
-        currentView: state.currentView === "automations" ? "workbench" : state.currentView,
+        // 从资源中心页（自动化/Skills/MCP/记忆）激活任务（点击侧栏任务/新建任务）时
+        // 切回聊天工作台；自动化自身的派发走 createTask（不经此 action），不会打断页面停留。
+        currentView:
+          state.currentView === "workbench" || state.currentView === "settings"
+            ? state.currentView
+            : "workbench",
         // 切到已有任务严格跟随任务自身项目（无项目如实为 null，绝不残留上一个任务的项目）；
         // 切回草稿态（null）保留当前所选项目（供新任务默认归属）。
         selectedProject: targetTask ? (targetTask.project ?? null) : state.selectedProject,
