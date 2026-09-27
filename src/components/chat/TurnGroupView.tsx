@@ -198,6 +198,8 @@ export interface TurnGroupViewProps {
   onCancelEdit?: () => void;
   /** 以原始提问重发该轮（重试 = 截断该回复及其后内容后重跑）。 */
   onRetryFrom?: (messageId: string) => void;
+  /** 从某条回复创建分支（复制前缀进新任务并切换）。 */
+  onBranchFrom?: (messageId: string) => void;
   /** 发送/流式中禁用全部行内动作（对齐 LiveAgent isSending）。 */
   actionsDisabled?: boolean;
 }
@@ -394,6 +396,7 @@ function TurnGroupViewImpl({
   onStartEdit,
   onCancelEdit,
   onRetryFrom,
+  onBranchFrom,
   actionsDisabled = false,
 }: TurnGroupViewProps) {
   const { t, locale } = useTranslation();
@@ -531,6 +534,7 @@ function TurnGroupViewImpl({
           actionsDisabled={actionsDisabled}
           onAppendSend={onEditSend}
           onRetryFrom={onRetryFrom}
+          onBranchFrom={onBranchFrom}
         />
       ) : null}
 

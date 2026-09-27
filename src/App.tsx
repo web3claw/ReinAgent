@@ -475,6 +475,58 @@ export default function App() {
     [activeTaskId, state.messages, buildTurnOptions],
   );
 
+  /**
+   * 从某条回复创建分支（对齐 LiveAgent useBranchConversation / branch.rs 语义）：
+   * 把此回复及之前的全部消息复制到一个新任务，原任务保持不变，随后切换到新任务。
+   * 复制用持久化的权威行（conversation_load → conversation_sync 原样转存）。
+   */
+  const handleBranchFrom = useCallback(
+    async (messageId: string) => {
+      const sourceTaskId = activeTaskId;
+      if (!sourceTaskId) return;
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const rows = await invoke<
+          {
+            msg_id: string;
+            seq: number;
+            role: string;
+            status: string;
+            started_at: number | null;
+            ended_at: number | null;
+            tool_name: string | null;
+            tool_call_id: string | null;
+            is_error: boolean | null;
+            truncated_by: string | null;
+            error: string | null;
+            thinking_started_at: number | null;
+            thinking_duration_ms: number | null;
+            parts: { part_index: number; kind: string; payload: string }[];
+          }[]
+        >("conversation_load", { taskId: sourceTaskId });
+        const anchorIndex = rows.findIndex((r) => r.msg_id === messageId);
+        if (anchorIndex === -1) return;
+        // 保留锚点回复及其之前的全部行；seq 重排保证新任务内连续
+        const prefixRows = rows.slice(0, anchorIndex + 1).map((r, i) => ({ ...r, seq: i }));
+        const sourceTask = tasks.find((t) => t.id === sourceTaskId);
+        const newTaskId = createTask(
+          "新分支",
+          sourceTask?.project ?? null,
+          sourceTask?.providerId,
+          sourceTask?.modelId,
+          sourceTask?.thinkingLevel,
+          sourceTask?.approvalMode,
+        );
+        await invoke("conversation_sync", { taskId: newTaskId, messages: prefixRows });
+        setActiveTaskId(newTaskId);
+        setFollowSignal((c) => c + 1);
+      } catch (err) {
+        console.error("[branch] failed:", err);
+      }
+    },
+    [activeTaskId, tasks, createTask, setActiveTaskId],
+  );
+
   const handleSend = (
     text: string,
     images?: { base64: string; mimeType: string }[],
@@ -644,6 +696,7 @@ export default function App() {
                       onEditSend={handleSend}
                       onEditResend={handleEditResend}
                       onRetryFrom={handleRetryFrom}
+                      onBranchFrom={handleBranchFrom}
                       followSignal={followSignal}
                       workspaceRoot={effectiveWorkspaceRoot}
                     />

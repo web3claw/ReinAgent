@@ -3,7 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import type { TimelineEntry, ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { MarkdownText } from "./MarkdownText";
 import { ToolCallCard } from "./ToolCallCard";
-import { Copy, Check, Pencil, ThumbsUp, ThumbsDown, Play, RotateCw, Undo2, Loader2 } from "lucide-react";
+import { Copy, Check, Pencil, Play, RotateCw, Undo2, Loader2, GitBranch } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { ImageLightbox } from "./ImageLightbox";
 import { EditableUserMessageBubble } from "./EditableUserMessageBubble";
@@ -38,6 +38,8 @@ export interface MessageItemProps {
   onEditResend?: (messageId: string, text: string, attachments: UserAttachmentRef[]) => void;
   /** 以原始提问重发该条所在轮（对齐 LiveAgent retry：截断该回复及其后内容后重跑）。 */
   onRetryFrom?: (messageId: string) => void;
+  /** 从某条回复创建分支（复制前缀进新任务并切换）。 */
+  onBranchFrom?: (messageId: string) => void;
   /** 追加发送新消息（「已达最大步数 → 继续」按钮沿用普通发送路径）。 */
   onAppendSend?: (text: string) => void;
 }
@@ -57,11 +59,21 @@ function MessageItemImpl({
   onCancelEdit,
   onEditResend,
   onRetryFrom,
+  onBranchFrom,
   onAppendSend,
 }: MessageItemProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
   const [retryConfirmOpen, setRetryConfirmOpen] = useState(false);
+  const [branchConfirmOpen, setBranchConfirmOpen] = useState(false);
+  // 动作栏右侧时间戳（YYYY-MM-DD HH:mm，对齐 LiveAgent；无打点不显示）
+  const messageTime = (() => {
+    const ms = message.endedAt ?? message.startedAt;
+    if (typeof ms !== "number" || !Number.isFinite(ms)) return "";
+    const d = new Date(ms);
+    const pad = (n: number) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  })();
   // 回退本轮代码改动（检查点行内按钮，对齐 LiveAgent Undo2 + Loader2）。
   // ★ Hook 必须在顶部无条件调用（组件有 tool/user/assistant 三个提前 return 分支）。
   const rewind = useCheckpointRewindAction(message.role === "user" ? message.id : undefined);
@@ -211,19 +223,6 @@ function MessageItemImpl({
             {copied && <span className="text-[11px] text-green-500">{t("copied")}</span>}
           </button>
 
-          {onEditResend && (
-            <button
-              type="button"
-              onClick={() => onStartEdit?.(message.id)}
-              disabled={actionsDisabled}
-              title={t("edit")}
-              aria-label={t("edit")}
-              className="p-1.5 rounded-md hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors flex items-center gap-1 text-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
-            >
-              <Pencil className="w-3.5 h-3.5" />
-            </button>
-          )}
-
           {rewind && (
             <button
               type="button"
@@ -238,6 +237,19 @@ function MessageItemImpl({
               ) : (
                 <Undo2 className="w-3.5 h-3.5" />
               )}
+            </button>
+          )}
+
+          {onEditResend && (
+            <button
+              type="button"
+              onClick={() => onStartEdit?.(message.id)}
+              disabled={actionsDisabled}
+              title={t("edit")}
+              aria-label={t("edit")}
+              className="p-1.5 rounded-md hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors flex items-center gap-1 text-xs cursor-pointer disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              <Pencil className="w-3.5 h-3.5" />
             </button>
           )}
         </div>
@@ -297,9 +309,10 @@ function MessageItemImpl({
         ) : null}
       </div>
 
-      {/* 助手消息动作栏：完成态悬停显现（复制、点赞、点踩、确认弹层重试） */}
+      {/* 助手消息动作栏：常显（复制 / 确认弹层重试 / 确认弹层创建分支 + 右侧时间戳，
+          对齐 LiveAgent TranscriptMessageActions 三图标 + 时间格式 YYYY-MM-DD HH:mm） */}
       {message.status !== "streaming" ? (
-        <div className="flex items-center gap-1 mt-2 opacity-0 transition-opacity group-hover/assistant-row:opacity-100 focus-within:opacity-100 text-[var(--text-dim)]">
+        <div className="flex items-center gap-1 mt-2 text-[var(--text-dim)]">
           <button
             type="button"
             onClick={handleCopy}
@@ -308,20 +321,6 @@ function MessageItemImpl({
           >
             {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
             {copied && <span className="text-[11px] text-green-500">{t("copied")}</span>}
-          </button>
-          <button
-            type="button"
-            className="p-1 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--text)] transition-colors flex items-center text-xs cursor-pointer"
-            title="赞"
-          >
-            <ThumbsUp className="w-3.5 h-3.5" />
-          </button>
-          <button
-            type="button"
-            className="p-1 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--text)] transition-colors flex items-center text-xs cursor-pointer"
-            title="踩"
-          >
-            <ThumbsDown className="w-3.5 h-3.5" />
           </button>
           {onRetryFrom && !actionsDisabled && (
             <Popover.Root open={retryConfirmOpen} onOpenChange={setRetryConfirmOpen}>
@@ -366,6 +365,55 @@ function MessageItemImpl({
                 </Popover.Content>
               </Popover.Portal>
             </Popover.Root>
+          )}
+          {onBranchFrom && !actionsDisabled && (
+            <Popover.Root open={branchConfirmOpen} onOpenChange={setBranchConfirmOpen}>
+              <Popover.Trigger asChild>
+                <button
+                  type="button"
+                  title={t("branch")}
+                  className="p-1 rounded-md hover:bg-[var(--surface-hover)] hover:text-[var(--text)] transition-colors flex items-center text-xs cursor-pointer"
+                >
+                  <GitBranch className="w-3.5 h-3.5" />
+                </button>
+              </Popover.Trigger>
+              <Popover.Portal>
+                <Popover.Content
+                  align="start"
+                  sideOffset={6}
+                  className="z-50 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-3 shadow-2xl"
+                >
+                  <div className="text-xs font-medium text-[var(--text)]">{t("branchConfirmTitle")}</div>
+                  <div className="mt-1.5 text-xs leading-relaxed text-[var(--text-secondary)]">
+                    {t("branchConfirmDescription")}
+                  </div>
+                  <div className="mt-3 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setBranchConfirmOpen(false)}
+                      className="h-7 cursor-pointer rounded-lg border border-[var(--border)] px-2.5 text-xs text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)]"
+                    >
+                      {t("cancel")}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBranchConfirmOpen(false);
+                        onBranchFrom(message.id);
+                      }}
+                      className="h-7 cursor-pointer rounded-lg bg-[var(--brand)] px-2.5 text-xs text-white transition-opacity hover:opacity-90"
+                    >
+                      {t("branch")}
+                    </button>
+                  </div>
+                </Popover.Content>
+              </Popover.Portal>
+            </Popover.Root>
+          )}
+          {messageTime && (
+            <span className="ml-auto whitespace-nowrap text-xs tabular-nums text-[var(--text-dim)] opacity-70">
+              {messageTime}
+            </span>
           )}
         </div>
       ) : null}

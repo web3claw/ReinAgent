@@ -72,6 +72,8 @@ export interface MessageListProps {
   onEditResend?: (messageId: string, text: string, attachments: import("../../lib/chat/attachments").UserAttachmentRef[]) => void;
   /** 以原始提问重发该轮。 */
   onRetryFrom?: (messageId: string) => void;
+  /** 从某条回复创建分支（复制前缀进新任务并切换）。 */
+  onBranchFrom?: (messageId: string) => void;
   /** 变化时强制恢复贴底跟随并置底（编辑重发/重试后对齐 LiveAgent stickToBottom）。 */
   followSignal?: number;
 }
@@ -98,6 +100,7 @@ export function MessageList({
   onEditSend,
   onEditResend,
   onRetryFrom,
+  onBranchFrom,
   followSignal,
 }: MessageListProps) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -265,6 +268,8 @@ export function MessageList({
   onEditResendRef.current = onEditResend;
   const onRetryFromRef = useRef(onRetryFrom);
   onRetryFromRef.current = onRetryFrom;
+  const onBranchFromRef = useRef(onBranchFrom);
+  onBranchFromRef.current = onBranchFrom;
   const stableEditSend = useCallback((text: string) => onEditSendRef.current?.(text), []);
   const stableEditResend = useCallback(
     (messageId: string, text: string, attachments: import("../../lib/chat/attachments").UserAttachmentRef[]) => {
@@ -273,6 +278,7 @@ export function MessageList({
     [],
   );
   const stableRetryFrom = useCallback((messageId: string) => onRetryFromRef.current?.(messageId), []);
+  const stableBranchFrom = useCallback((messageId: string) => onBranchFromRef.current?.(messageId), []);
 
   // 内容高度变化（live tail 流式长高）且仍跟随 → 贴底（instant）。
   // RO 常驻不随 delta 重挂：内容增长本身就会触发 RO 回调。
@@ -324,6 +330,7 @@ export function MessageList({
                 onStartEdit={handleStartEdit}
                 onCancelEdit={handleCancelEdit}
                 onRetryFrom={stableRetryFrom}
+                onBranchFrom={stableBranchFrom}
                 isEditing={editingMessageKey === turn.userMessage?.id}
                 actionsDisabled={isStreaming}
                 streaming={false}
@@ -347,6 +354,7 @@ export function MessageList({
             onStartEdit={handleStartEdit}
             onCancelEdit={handleCancelEdit}
             onRetryFrom={stableRetryFrom}
+            onBranchFrom={stableBranchFrom}
             isEditing={editingMessageKey === liveTurn.userMessage?.id}
             actionsDisabled={isStreaming}
             streaming

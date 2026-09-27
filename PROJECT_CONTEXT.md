@@ -291,6 +291,7 @@ ReinAgent 架构全景
 - **重试详情块已从代码彻底删除（2026-09-27 定版）**：`RetryDetailsBlock` 组件文件、实时渲染、收敛后 `MessageItem` 的渲染与相关 i18n 键全部移除（用户明确要求完全删除而非隐藏；失败原因实时见重连副行）。重试记录（`state.retryAttempts` / 条目 `retryAttempts` part / 序列化）仍保留：实时副行的数据源 + 留档。停止（stop）不固化记录；重试耗尽的 error 收敛也不再有详情块 UI。
 - **轮工时跨重试累加（2026-09-27 修复）**：重试重建的空流式行**继承被剪除行的 `startedAt`**（链式传递 = 本轮最初起点），工时不再每次重试从零计时。
 - **错误行合并 + 行内重试按钮（2026-09-27）**：error 收敛行改为单行「`<错误原文> · <errorHint>`」（` · ` 分隔，允许折行），行右侧红色「重试」按钮（RotateCw）直接触发 `onRetryFrom`（截断重发该轮，无确认弹层）。⚠️ `handleRetryFrom` 读取图片时必须先判 `apiMessage.content` 是否为数组（pi-ai 的 UserMessage.content 纯文本时是**字符串**，直接 `.filter` 会 TypeError 导致按钮无反应）；`errorHint` 不落库，`deserializeRow` 水合时由 `diagnoseError(error)` 重算（否则刷新后友好提示丢失）。
+- **助手动作栏常显 + 创建分支（2026-09-27，对齐 LiveAgent）**：助手消息动作栏**常显**（去 hover 门控），图标改为三枚——复制 / 重试（确认弹层）/ **创建分支**（GitBranch + 确认弹层），点赞点踩移除；行右侧时间戳 `YYYY-MM-DD HH:mm`（取 endedAt ?? startedAt，无打点不显示）。**分支语义（对齐 LiveAgent useBranchConversation/branch.rs）**：把此回复及之前的全部消息复制到一个新任务（标题「新分支」，沿用源任务的项目/模型/推理等级/审批模式），原任务保持不变，随后切换到新任务；实现走既有 IPC（`conversation_load` 取权威行 → 按锚点 msg_id 切前缀、seq 重排 → `conversation_sync` 写入新任务），无需新 Rust 命令。轮状态条文案「工作/已工作」→「处理中/已处理」（中英同步）。
 - **流式加载指示器（2026-09-27，移植 ZCode ChatLoading）**：`ChatLoading.tsx` = lucide `LoaderIcon` + `animate-spin` + 弱化前景色（`--text-dim`），`size="sm"`（16px）用于流式助手正文末尾，替换旧「▋ msg-caret 竖条光标」（`.msg-caret`/blink 动画已从代码删除）；`loading=false` 不渲染。
 
 ### 3. 回退本轮代码改动（checkpoint/rewind，完整移植 LiveAgent checkpoint.rs）
