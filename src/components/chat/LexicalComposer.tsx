@@ -59,6 +59,11 @@ export interface LexicalComposerProps {
   onSelectModel?: (providerId: string, modelId: string) => void;
   hasMessages?: boolean;
   focusRequestTrigger?: number;
+  /**
+   * 外部预填请求（EmptyState 快捷动作卡）：nonce 变化时把 `text` 填进输入框并聚焦，
+   * **不自动发送**——用户可编辑后手动发送。nonce=0 / undefined 表示无请求。
+   */
+  prefillRequest?: { text: string; nonce: number } | null;
   /** 上下文容量指示器数据（真实 usage + 模型 contextWindow；无数据不显示） */
   contextUsage?: ContextUsageData | null;
 }
@@ -107,6 +112,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   onSelectModel,
   hasMessages = false,
   focusRequestTrigger,
+  prefillRequest,
 }) => {
   const { t } = useTranslation();
   const {
@@ -189,6 +195,21 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       textareaRef.current?.focus();
     }
   }, [focusRequestTrigger]);
+
+  // 快捷动作卡预填（EmptyState）：nonce 变化 → 把提示词填入输入框并聚焦，
+  // 光标移到末尾；**不自动发送**（用户可编辑后手动发送）。
+  const prefillNonce = prefillRequest?.nonce ?? 0;
+  useEffect(() => {
+    if (prefillNonce === 0 || !prefillRequest) return;
+    setText(prefillRequest.text);
+    const ta = textareaRef.current;
+    if (ta) {
+      ta.focus();
+      const end = prefillRequest.text.length;
+      ta.setSelectionRange(end, end);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只按 nonce 触发；text 随 nonce 一起到位
+  }, [prefillNonce]);
 
   // Keep focused when mounted in hasMessages mode
   useEffect(() => {

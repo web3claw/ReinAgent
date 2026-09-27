@@ -22,11 +22,21 @@ export function EmptyState({ demo, onQuickPrompt }: EmptyStateProps) {
     return "goodEvening";
   }, [hour]);
 
-  const prompts: { key: TranslationKey; icon: typeof BarChart2 }[] = [
-    { key: "weeklyReport", icon: BarChart2 },
-    { key: "bugFix", icon: Bug },
-    { key: "pptMake", icon: Presentation },
-    { key: "idleTask", icon: Moon },
+  // 快捷动作卡：按钮显示 i18n 标签，点击**只预填**对应的固定提示词进输入框（不自动发送）。
+  // fill 为用户定档的固定文案（2026-09-27）；idleTask 待自动化页面移植后改为页面导航。
+  const prompts: { key: TranslationKey; icon: typeof BarChart2; fill: string }[] = [
+    { key: "weeklyReport", icon: BarChart2, fill: "每周五总结这一周发生的事情。" },
+    {
+      key: "bugFix",
+      icon: Bug,
+      fill: "请分析以下终端报错日志，找出导致该错误的根本原因，并提供可以直接运行的修复代码示例。",
+    },
+    {
+      key: "pptMake",
+      icon: Presentation,
+      fill: "先完整阅读所有文档和代码，掌握整个开发流程和进度，严格遵守开发规则，等待新需求",
+    },
+    { key: "idleTask", icon: Moon, fill: "闲时任务" },
   ];
 
   return (
@@ -54,7 +64,7 @@ export function EmptyState({ demo, onQuickPrompt }: EmptyStateProps) {
               return (
                 <button
                   key={p.key}
-                  onClick={() => onQuickPrompt(t(p.key))}
+                  onClick={() => onQuickPrompt(p.fill)}
                   className="flex items-center gap-2 px-4 py-2 rounded-full border border-[var(--chip-border)] bg-[var(--chip-bg)] hover:bg-[var(--chip-hover)] text-[var(--text-primary)] text-sm cursor-pointer transition-colors shadow-sm"
                 >
                   <Icon className="w-4 h-4" />

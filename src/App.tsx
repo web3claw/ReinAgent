@@ -141,6 +141,10 @@ export default function App() {
 
   const [focusTrigger, setFocusTrigger] = useState(0);
 
+  // 快捷动作卡预填状态（EmptyState → 输入框；hooks 必须在设置页早退 return 之前声明）
+  const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(null);
+  const prefillNonceRef = useRef(0);
+
   // maxSteps 从**任务级**推理等级派生；完全访问模式下不设步数上限。
   // 0 = 无上限（agentRuntime 仅在 maxSteps > 0 时启用硬闸；注意 0 不能写成 undefined——
   // undefined 会在 runAgentTurn 里回退成 DEFAULT_MAX_STEPS=8）。
@@ -592,8 +596,11 @@ export default function App() {
     );
   }
 
+  // 快捷动作卡（EmptyState）：只把提示词填进输入框、聚焦光标到末尾，
+  // **不自动发送**——用户可编辑后手动发送。nonce 单调递增保证重复点击同卡也触发。
   const handleQuickPrompt = (text: string) => {
-    handleSend(text);
+    prefillNonceRef.current += 1;
+    setComposerPrefill({ text, nonce: prefillNonceRef.current });
   };
 
   const handleSelectModel = (nextProviderId: string, nextModelId: string) => {
@@ -654,7 +661,8 @@ export default function App() {
             <div className="flex-1 flex flex-col items-center justify-start pt-28 md:pt-36 px-4 pb-8 overflow-y-auto">
               <div className="w-full px-[120px]">
                 <EmptyState demo={isDemo} onQuickPrompt={handleQuickPrompt} />
-                <div className="mt-8 w-full">
+                {/* 快捷按钮与输入框间距（用户定档：聊天框下移、间距加大） */}
+                <div className="mt-16 w-full">
                   <LexicalComposer
                     isStreaming={isStreaming}
                     onSend={handleSend}
@@ -666,6 +674,7 @@ export default function App() {
                     providers={providers}
                     onSelectModel={handleSelectModel}
                     focusRequestTrigger={focusTrigger}
+                    prefillRequest={composerPrefill}
                     contextUsage={contextUsage}
                     workspaceRoot={effectiveWorkspaceRoot}
                   />
