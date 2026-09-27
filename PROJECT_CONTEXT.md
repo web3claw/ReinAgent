@@ -496,6 +496,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **新增：附件与图片粘贴（2026-09-26，对齐 LiveAgent）**——Rust 命令 `fs_pick_files`（rfd 多选）/ `fs_import_pasted_file`（粘贴图片 base64 落盘 `.ReinAgent/temp/pasted/`）/ `fs_read_image_preview`（≤5MB 缩略图 base64）/ `fs_read_attachment_base64`（≤25MB 发送内联）；前端 Composer 真实附件状态（上限 9、扩展名图片白名单）、textarea onPaste 粘贴图片、缩略图点击 Lightbox 放大（Radix Dialog）、X 删除；发送时文本附件以路径引用追加、**图片转 pi-ai 原生 image content block 内联**（非视觉模型降级为路径引用提示）；后续轮次重建历史时图片不再保留（v1 限制）。
 - **修复：用户气泡图片点击放大失效（2026-09-26）**——MessageItem 的返回结构是「用户分支提前 return + 助手分支 return」，Lightbox 最初只挂在 assistant 分支的树尾，用户气泡分支的树里没有该节点（点击后 setState 生效、组件重渲染，但 JSX 树中无 Lightbox → 无 DOM 变化）。已在用户分支 return 的根 div 内补挂 ImageLightbox（Composer 附件条与消息气泡共用组件）。
 - **任务级隔离 + 审批模式（2026-09-25）**：见已实现清单 #14；`ApprovalMode` 值域由无实效的 always/suggest/auto 替换为 plan/ask/edit/full；全局默认持久化 kv（`reinagent-approval-mode`，缺省 full）。
+- **修复：Linux 编译回归（2026-09-27）**——commit 177ad5a 的 `fs_cmd.rs` `spawn_shell` 用 `if cfg!(target_os = "windows")`（运行时布尔宏，不做条件编译）包裹 Windows 专属代码（`std::os::windows::CommandExt` 的 `raw_arg` / `creation_flags`），两个分支在 Linux 上仍参与类型检查，导致 E0433/E0599、桌面端在 Linux 无法编译启动。已改为 `#[cfg]` / `#[cfg(not)]` 属性条件编译（Windows 分支保留 raw_arg + CREATE_NO_WINDOW 语义，Unix 分支 `sh -c`），`CREATE_NO_WINDOW` 常量同步加 cfg 门；Windows 行为不变，Linux 恢复可编译。
 
 **渲染增强类**：
 - [x] diff 视图 / 代码块的 **Shiki 语法高亮** —— 已随 PreviewPane 移植引入（`shiki@^4` + `@pierre/diffs`，工具卡内联 diff 视图仍为单色形态）
@@ -523,5 +524,31 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 
 **基础设施类**：
 - [ ] worktree 多 agent 并行 + Vite 端口参数化（用户已决策暂用分支方案，见记忆）
+
+
+## 十二、已知问题：Linux 窗口大小/位置记忆失效（2026-09-27 诊断完毕，**用户决策暂缓修复**）
+
+### 1. 症状与环境
+- 症状：Linux 下每次启动都不按上次的窗口大小和位置打开。
+- 环境：GNOME 50.1 / Wayland 会话（`GDK_BACKEND=wayland`）/ 显示器 2560×1440@100% 缩放（工作区约 2493×1400：顶栏+停靠栏占位）/ `tauri-plugin-window-state 2.4.1` + tauri 2.11.5 + tao 0.35.3。
+- 状态文件：`~/.config/com.reinagent.app/.window-state.json`（label `main`，内容 2105×1371@(0,0)，mtime 2026-09-24 07:16 后从未更新）。
+
+### 2. 三层根因（全部实测证实）
+1. **保存侧：非优雅退出 = 永不写盘**。插件仅在 `RunEvent::Exit` 时写文件（lib.rs:503），窗口事件只更新内存缓存。开发流程的 Ctrl/C/SIGTERM/SIGKILL/重启全部丢失——实测 pkill 后文件 mtime 不变。这是「9-24 之后调整的窗口全部没记住」的原因。
+2. **恢复侧（尺寸）：Wayland 下恢复请求被合成器强制覆盖（主凶）**。`WAYLAND_DEBUG=1` 协议级证据：应用启动后确实请求了恢复尺寸 `xdg_surface.set_window_geometry(26, 23, 2105, 1418)`（GTK CSD 客户端装饰使窗口比保存值膨胀约 +47px，1371→1418），**高度 1418 超出工作区 1400**，Mutter 立即回发 `xdg_toplevel.configure(2493, 1400)`（= 工作区大小）强制放大，窗口从此钉在 2493×1400——即用户看到的「每次都是错误尺寸」。对照实验：`GDK_BACKEND=x11`（XWayland，SSD 系统装饰，无 CSD 膨胀）下**尺寸恢复正常**（xdotool 实测 client 2105×1363）。
+3. **恢复侧（位置）**：Wayland 协议层面禁止应用自定位（`gdk_window_move` 是 no-op），保存的 x/y 永远被忽略；X11 下插件的 `set_position` 发生在窗口映射前，仍被 Mutter 初始摆放覆盖（存 0,0 实测开在 305,139）——**映射后（post-map）再定位才有效**。
+- 附：插件恢复逻辑（lib.rs:194-206）有 `available_monitors?` + `set_position(...)?` 的 `?` 级联——任一 Err 会使 set_size 也被跳过（`let _ =` 吞掉错误）；`intersects` 门槛对本例不构成问题。
+
+### 3. 修复方案（已定，待实施）
+**方案 A（推荐，大小+位置都能恢复）**：
+1. `src-tauri/src/lib.rs` 在 Tauri 启动前（Linux 平台）`std::env::set_var("GDK_BACKEND", "x11")` 走 XWayland——SSD 无 CSD 膨胀、位置可设置。当前 100% 缩放下无模糊风险；**若将来启用分数缩放需重新评估 XWayland 渲染质量**。
+2. 保存加固：`on_window_event` 监听 `Resized`/`Moved`，防抖 ~600ms 调用插件现成的 `window.save_window_state(StateFlags::all())`（`WindowExt`，lib.rs:115）——不再依赖优雅退出。
+3. 恢复后移：窗口 show 后（setup 内延迟任务或首个 Resized 事件）再 `set_position` + `set_size`（钳制到工作区内）；X11 下 post-map 的 move 走 ConfigureRequest，Mutter 会真实执行。Windows 端维持插件现状（cfg 门隔离，零影响）。
+
+**方案 B（纯 Wayland 折中）**：只做上述 2+3（不切 X11）——尺寸可恢复（钳制后不再触发合成器覆盖），位置永远记不住（Wayland 硬限制）。
+
+### 4. 复验手段（实施后验收用）
+- Wayland 现状复现：`WAYLAND_DEBUG=1 /tmp/reinagent/target/debug/reinagent` 抓 `set_window_geometry` / `configure` 序列；
+- X11 恢复验证：`GDK_BACKEND=x11` 启动后 `xdotool search --name ReinAgent getwindowgeometry`（本机有 xdotool/xwininfo；GNOME 50 的 Shell Screenshot/Introspect DBus 已确认 AccessDenied 不可用）。
 
 
