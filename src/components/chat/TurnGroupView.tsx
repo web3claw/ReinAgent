@@ -17,7 +17,7 @@
  * 可点击展开。轮 key 变化时组件随 React key 重挂载，折叠态自然复位。
  */
 
-import { ChevronRight, FileText, Search } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { TimelineEntry, ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { MessageItem } from "./MessageItem";
 import { ThinkingBlock } from "./ThinkingBlock";
@@ -31,11 +31,9 @@ import {
   collectTurnFileChanges,
   computeLineChangeStat,
   formatWorkDuration,
-  isExploreTool,
   isReinAgentTempPath,
   pathDirectory,
   resolveTurnWorkState,
-  toolArgPath,
   turnDurationMs,
   type TurnGroup,
 } from "../../lib/chat/turnActivity";
@@ -45,137 +43,11 @@ function isToolEntry(message: TimelineEntry): message is ToolTimelineEntry {
   return message.role === "tool";
 }
 
-/** 折叠体渲染项：普通时间线条目单卡，或连续查阅族工具聚合成的「查阅」卡（对齐 ZCode ExploreToolCallBlock）。 */
-type ActivityItem =
-  | { kind: "tool"; entry: TimelineEntry }
-  | { kind: "explore"; entries: ToolTimelineEntry[] };
-
-function buildActivityItems(activity: TimelineEntry[]): ActivityItem[] {
-  const items: ActivityItem[] = [];
-  let exploreBuffer: ToolTimelineEntry[] = [];
-  const flush = () => {
-    if (exploreBuffer.length > 0) {
-      items.push({ kind: "explore", entries: exploreBuffer });
-      exploreBuffer = [];
-    }
-  };
-  for (const entry of activity) {
-    if (isToolEntry(entry) && isExploreTool(entry.toolName)) {
-      exploreBuffer.push(entry);
-      continue;
-    }
-    flush();
-    items.push({ kind: "tool", entry });
-  }
-  flush();
-  return items;
-}
-
 /**
- * 「查阅」聚合卡：轮内连续的目录列表 / 文件读取调用合并为一张卡，
- * header 显示分类计数（N 列表 · N 文件）；**列表调用不渲染文件数组输出**，
- * 展开体只保留单行摘要（对齐 ZCode ExploreToolCallBlock 的信息取舍）。
+ * 「查阅」聚合卡已移除（2026-09-27 用户决策）：查阅族工具（list_dir / read_file）不再
+ * 聚合为组卡，直接以独立卡渲染（对齐 ZCode ReadToolCallBlock 的独立形态——图标 + 文件名
+ * + 路径；成功不显示状态词，失败才显示「执行失败」并带 tooltip）。
  */
-function ExploreGroupCard({ entries }: { entries: ToolTimelineEntry[] }) {
-  const { t } = useTranslation();
-  const openCodeViewer = useAppStore((state) => state.openCodeViewer);
-  const [open, setOpen] = useState(false);
-
-  const isRunning = entries.some((entry) => entry.status === "running");
-  const isError = entries.some((entry) => Boolean(entry.isError));
-  const listCount = entries.filter((entry) => entry.toolName === "list_dir").length;
-  const fileCount = entries.filter((entry) => entry.toolName === "read_file").length;
-  const buckets: string[] = [];
-  if (listCount > 0) buckets.push(t("exploreBucketList").replace("{count}", String(listCount)));
-  if (fileCount > 0) buckets.push(t("exploreBucketFile").replace("{count}", String(fileCount)));
-  const summary = buckets.join(" · ");
-  const statusWord =
-    isRunning ? t("toolStatusRunning") : isError ? t("toolStatusFailed") : t("toolStatusDone");
-
-  // 运行中：收起摘要实时显示最新一条子调用（对齐 ZCode collapsedChildSummary）
-  const latest = entries[entries.length - 1];
-  const latestPath = latest ? toolArgPath(latest.args) : undefined;
-  const latestIsList = latest?.toolName === "list_dir";
-  const collapsedSummary = isRunning && latest
-    ? latestIsList
-      ? `${t("exploreBucketListLabel")} · ${latestPath || t("exploreCurrentDirectory")}`
-      : `${t("exploreBucketFileLabel")} · ${latestPath ? pathDirectory(latestPath) ?? latestPath : ""}`
-    : null;
-
-  return (
-    <div
-      className="tool-card"
-      data-status={isRunning ? "running" : isError ? "error" : "done"}
-      role="group"
-      aria-label={t("exploreCardLabel")}
-      aria-busy={isRunning || undefined}
-    >
-      <button
-        type="button"
-        className="tool-head tool-head-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((cur) => !cur)}
-      >
-        <Search className="tool-kind-icon" aria-hidden="true" />
-        <span className={`tool-kind ${isRunning ? "animated-gradient-text" : ""}`}>
-          {t("exploreCardLabel")}
-        </span>
-        <span className="explore-summary min-w-0 truncate">
-          {collapsedSummary ?? summary}
-        </span>
-        <span className="tool-status" data-error={isError || undefined}>
-          {statusWord}
-        </span>
-        <ChevronRight
-          className={`w-3.5 h-3.5 ml-0.5 transition-transform text-[var(--text-dim)] ${
-            open ? "rotate-90" : ""
-          }`}
-        />
-      </button>
-      {open && (
-        <div className="explore-children ml-2 border-l border-[var(--border)] pl-3.5">
-          {entries.map((entry) => {
-            const p = toolArgPath(entry.args);
-            const isList = entry.toolName === "list_dir";
-            const fileName = p ? p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p : undefined;
-            const dir = p ? pathDirectory(p) : undefined;
-            return (
-              <div key={entry.id} className="explore-child" title={p}>
-                {isList ? (
-                  <>
-                    <span className="explore-child-kind">{t("exploreBucketListLabel")}</span>
-                    <span className="explore-child-text">
-                      {p && p !== "." ? p : t("exploreCurrentDirectory")}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-3 h-3 shrink-0" aria-hidden="true" />
-                    <button
-                      type="button"
-                      className="explore-child-text cursor-pointer hover:text-[var(--text)]"
-                      onClick={() =>
-                        p && openCodeViewer({ type: "file", title: fileName ?? p, path: p })
-                      }
-                    >
-                      {fileName}
-                    </button>
-                    {dir ? <span className="explore-child-dir">{dir}</span> : null}
-                  </>
-                )}
-                {entry.status === "error" ? (
-                  <span className="tool-status" data-error="true">
-                    {t("toolStatusFailed")}
-                  </span>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export interface TurnGroupViewProps {
   /** 本轮正在流式（代码高亮等昂贵渲染降级，完成后恢复） */
@@ -437,7 +309,6 @@ function TurnGroupViewImpl({
 
   // 折叠交互仅对有内容的轮次生效；运行中强制展开且不可收起（对齐 ZCode 只读展开）。
   const open = isTurnRunning ? true : userToggle === true;
-  const activityItems = useMemo(() => buildActivityItems(group.activity), [group.activity]);
 
   // 重连副行（对齐 LiveAgent：重试等待期间显示、首个内容事件到达才撤下；重试详情
   // 记录只在回合收敛后由 MessageItem 展示）。副行实时携带最新一次失败的错误原因。
@@ -514,12 +385,8 @@ function TurnGroupViewImpl({
           )}
           {(hasBody || liveAnswerInBody) && open && (
             <div className="turn-body">
-              {activityItems.map((item, index) => {
-                if (item.kind === "explore") {
-                  return <ExploreGroupCard key={`explore:${index}`} entries={item.entries} />;
-                }
-                if (item.entry.role === "assistant") {
-                  const entry = item.entry;
+              {group.activity.map((entry) => {
+                if (entry.role === "assistant") {
                   return (
                     <div key={entry.id} className="turn-assistant-activity">
                       <ThinkingBlock entry={entry} liveNowMs={liveNowMs} turnRunning={isTurnRunning} />
@@ -540,8 +407,8 @@ function TurnGroupViewImpl({
                     </div>
                   );
                 }
-                if (isToolEntry(item.entry)) {
-                  return <ToolCallCard key={item.entry.id} entry={item.entry} workspaceRoot={workspaceRoot} />;
+                if (isToolEntry(entry)) {
+                  return <ToolCallCard key={entry.id} entry={entry} workspaceRoot={workspaceRoot} />;
                 }
                 return null;
               })}
