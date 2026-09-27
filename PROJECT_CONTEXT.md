@@ -501,6 +501,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **任务级隔离 + 审批模式（2026-09-25）**：见已实现清单 #14；`ApprovalMode` 值域由无实效的 always/suggest/auto 替换为 plan/ask/edit/full；全局默认持久化 kv（`reinagent-approval-mode`，缺省 full）。
 - **修复：Linux 编译回归（2026-09-27）**——commit 177ad5a 的 `fs_cmd.rs` `spawn_shell` 用 `if cfg!(target_os = "windows")`（运行时布尔宏，不做条件编译）包裹 Windows 专属代码（`std::os::windows::CommandExt` 的 `raw_arg` / `creation_flags`），两个分支在 Linux 上仍参与类型检查，导致 E0433/E0599、桌面端在 Linux 无法编译启动。已改为 `#[cfg]` / `#[cfg(not)]` 属性条件编译（Windows 分支保留 raw_arg + CREATE_NO_WINDOW 语义，Unix 分支 `sh -c`），`CREATE_NO_WINDOW` 常量同步加 cfg 门；Windows 行为不变，Linux 恢复可编译。
 - **修复：工具结果一刀切 8KB 截断导致大文件读不全（2026-09-27，对齐 ZCode 按工具分设上限）**——原 `TOOL_LIMITS.maxResultBytes = 8192` 对**所有工具**统一截断，85KB 的 PROJECT_CONTEXT.md 一次只能读前 8KB，模型被迫用 exec `sed -n` 按 8KB 一段磨十几步（exec 结果同样被 8KB 闸拦住）。已改为**按工具分设**：`read_file` = 2000 行 / 256KB（对齐 ZCode `READ_DEFAULT_MAX_LINES` / `READ_MAX_FILE_SIZE_BYTES`，行数闸 `applyReadLineCap` 先行 + 字节闸二次兜底，details 带 `totalLines/linesTruncated`）、`exec_command` = 30KB（对齐 ZCode bash `MAX_INLINE_OUTPUT_BYTES`）、`list_dir` = 8KB 维持；`buildTextToolResult` 增加每工具 `maxBytes` 参数；read_file/exec 描述文本同步告知模型上限；Rust 侧 `fs_execute` 的 256KB 收集上限保持不变。
+- **改动：快捷动作卡改为「预填不发送」（2026-09-27，用户定档）**——EmptyState 四个快捷按钮（周报总结/报错修复/需求开发/闲时任务）点击后**只把提示词填进输入框**（聚焦 + 光标到末尾，可编辑后手动发送），不再自动发送。实现：`LexicalComposer` 新增 `prefillRequest?: { text, nonce } | null` prop（nonce 变化触发 setText + 聚焦，沿用 `focusRequestTrigger` 模式），App 持有 `composerPrefill` 状态 + 单调 nonce（hooks 声明在设置页早退 return 之前）。**固定填充文案**（`EmptyState.prompts[].fill`，与按钮标签分离）：周报总结→「每周五总结这一周发生的事情。」；报错修复→「请分析以下终端报错日志，找出导致该错误的根本原因，并提供可以直接运行的修复代码示例。」；**pptMake 按钮标签改为「需求开发」**（i18n zh/en 同步），填充→「先完整阅读所有文档和代码，掌握整个开发流程和进度，严格遵守开发规则，等待新需求」；闲时任务暂保留预填、待自动化页面移植后改为页面导航。欢迎页快捷按钮与输入框间距 `mt-8`→`mt-16`（聊天框下移）。
 
 **渲染增强类**：
 - [x] diff 视图 / 代码块的 **Shiki 语法高亮** —— 已随 PreviewPane 移植引入（`shiki@^4` + `@pierre/diffs`，工具卡内联 diff 视图仍为单色形态）
@@ -530,7 +531,9 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - [ ] worktree 多 agent 并行 + Vite 端口参数化（用户已决策暂用分支方案，见记忆）
 
 
-## 十二、已知问题：Linux 窗口大小/位置记忆失效（2026-09-27 诊断完毕，**用户决策暂缓修复**）
+## 十二、已知问题：Linux 窗口大小/位置记忆失效（2026-09-27 诊断完毕；**过渡方案已落地**）
+
+**过渡方案（2026-09-27 用户定档，方案 A/B 仍待后续决策）**：Linux 平台**停用** `tauri-plugin-window-state`（`lib.rs` `with_window_state` cfg 门：非 Linux 才注册插件），每次启动按 `tauri.conf.json` 窗口默认值 **1800×1200 + `center: true`** 启动（工作区 2560×1440 内放得下，不触发合成器强制改尺寸）；Windows 端窗口记忆不受影响。`~/.config/com.reinagent.app/.window-state.json` 旧状态文件在 Linux 上已无效。
 
 ### 1. 症状与环境
 - 症状：Linux 下每次启动都不按上次的窗口大小和位置打开。
