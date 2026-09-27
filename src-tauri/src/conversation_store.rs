@@ -29,6 +29,11 @@ fn db_path() -> PathBuf {
     PathBuf::from(".ReinAgent").join("conversations.db")
 }
 
+/// 供其他模块（如 history_search）复用同一数据库路径。
+pub fn db_path_public() -> PathBuf {
+    db_path()
+}
+
 fn open_db() -> Result<Connection, String> {
     let path = db_path();
     if let Some(parent) = path.parent() {

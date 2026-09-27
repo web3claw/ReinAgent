@@ -31,6 +31,7 @@ base64 = "0.22"
 sha2 = "0.10"
 dunce = "1.0"
 chrono = "0.4"
+ureq = { version = "3", features = ["json"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration

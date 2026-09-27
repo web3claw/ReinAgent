@@ -4,6 +4,10 @@ mod provider_config;
 mod conversation_store;
 mod checkpoint;
 mod automation;
+mod mcp;
+mod memory;
+mod skills;
+mod history_search;
 
 use terminal::TerminalState;
 
@@ -77,7 +81,25 @@ pub fn run() {
             automation::automation_set_enabled,
             automation::automation_run_now,
             automation::automation_list_runs,
-            automation::automation_run_finished
+            automation::automation_run_finished,
+            history_search::chat_history_search,
+            mcp::mcp_save_servers,
+            mcp::mcp_list_servers,
+            mcp::mcp_list_tools,
+            mcp::mcp_call_tool,
+            mcp::mcp_test_server,
+            mcp::mcp_stop_server,
+            memory::memory_list,
+            memory::memory_read,
+            memory::memory_write,
+            memory::memory_update,
+            memory::memory_delete,
+            memory::memory_index_overview,
+            skills::skills_list,
+            skills::skills_read,
+            skills::skills_save,
+            skills::skills_delete,
+            skills::skills_set_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
