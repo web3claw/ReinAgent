@@ -26,6 +26,7 @@ import { getPlainTextPatchFallbackLines } from "../../preview/lib/patchDiffPrevi
 import { inferCodeLanguage } from "../../preview/lib/codeViewer";
 import { useZCodeStore } from "../../preview/store/StoreProvider";
 import {
+  FOLDER_FILE_ICON_SRC,
   FileDisplayIcon,
   resolveFileDisplayDescriptor,
 } from "../../preview/lib/fileDisplay";
@@ -83,9 +84,12 @@ function FileChip({
 function ToolCallCardImpl({
   entry,
   workspaceRoot,
+  showIcon = true,
 }: {
   entry: ToolTimelineEntry;
   workspaceRoot?: string;
+  /** 是否显示左侧类型图标（对齐 ZCode showIcon：查阅聚合卡内的子卡传 false）。 */
+  showIcon?: boolean;
 }) {
   const { t, locale } = useTranslation();
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
@@ -108,16 +112,22 @@ function ToolCallCardImpl({
   );
   const kindLabel = useMemo(
     () => {
+      // read/list 走 i18n 并区分进行时文案（对齐 ZCode read.tsx reading/kind 切换；
+      // 扫光由 ToolLayout 依 isRunning 自动附加）。其余沿用既有中文标签。
+      if (entry.toolName === "read_file") {
+        return isRunning ? t("toolKindReadRunning") : t("toolKindRead");
+      }
+      if (entry.toolName === "list_dir") {
+        return isRunning ? t("toolKindListRunning") : t("toolKindList");
+      }
       const known: Record<string, string> = {
-        read_file: "读取",
-        list_dir: "查阅",
         write_file: "写入",
         edit_file: "编辑",
         exec_command: "终端",
       };
       return known[entry.toolName] ?? entry.toolName;
     },
-    [entry.toolName, locale]
+    [entry.toolName, isRunning, locale, t]
   );
 
   const path = toolArgPath(entry.args);
@@ -140,6 +150,7 @@ function ToolCallCardImpl({
       <ToolLayout
         toolId={entry.toolCallId}
         icon={<SquareTerminal className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
         kindLabel={kindLabel}
         primaryText={null}
         secondaryText={<code className="truncate font-sans">{commandPreview}</code>}
@@ -195,6 +206,7 @@ function ToolCallCardImpl({
       <ToolLayout
         toolId={entry.toolCallId}
         icon={<Pencil className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
         kindLabel={kindLabel}
         primaryText={
           fileName && path ? (
@@ -243,12 +255,14 @@ function ToolCallCardImpl({
     );
   }
 
-  // ---- 读取（对齐 ZCode ReadToolCallBlock：不可展开；chip 点击在右侧面板打开文件）----
+  // ---- 读取（对齐 ZCode ReadToolCallBlock：不可展开；chip 点击在右侧面板打开文件；
+  //      成功不显示状态词，失败才显示「执行失败」+ tooltip——对齐 showFailureStatus 语义）----
   if (entry.toolName === "read_file") {
     return (
       <ToolLayout
         toolId={entry.toolCallId}
         icon={<Search className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
         kindLabel={kindLabel}
         canToggle={false}
         primaryText={
@@ -264,7 +278,49 @@ function ToolCallCardImpl({
         }
         secondaryText={dirPath}
         statusLabel={statusLabelNode}
-        showStatusLabel
+        showFailureStatus={isError}
+        statusTooltip={statusTooltip}
+        isRunning={isRunning}
+      />
+    );
+  }
+
+  // ---- 列出目录（对齐 ZCode read 家族 directory 形态 ReadSummary entryType=directory：
+  //      不可展开 + 文件夹图标 chip + 父目录段次要文本；工作区根（"."）显示「当前目录」；
+  //      目录 chip 不可点击，与 ZCode canOpenPreview 仅 file 一致；
+  //      成功不显示状态词，失败才显示「执行失败」+ tooltip）----
+  if (entry.toolName === "list_dir") {
+    const isCwd = !path || path === "." || path === "./";
+    const descriptor =
+      isCwd || !path
+        ? undefined
+        : resolveFileDisplayDescriptor(path, { basePath: workspaceRoot, kind: "directory" });
+    return (
+      <ToolLayout
+        toolId={entry.toolCallId}
+        icon={<Search className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
+        kindLabel={kindLabel}
+        canToggle={false}
+        primaryText={
+          <span
+            className="inline-flex min-w-0 max-w-full items-center gap-1.5 text-foreground-subtle"
+            title={isCwd ? undefined : path}
+          >
+            <FileDisplayIcon
+              src={descriptor ? descriptor.fileIconSrc : FOLDER_FILE_ICON_SRC}
+              size={16}
+              className="size-4 shrink-0"
+            />
+            <span className="min-w-0 truncate">
+              {descriptor ? descriptor.fileName : t("exploreCurrentDirectory")}
+            </span>
+          </span>
+        }
+        secondaryText={descriptor?.filePath ?? undefined}
+        statusLabel={statusLabelNode}
+        showFailureStatus={isError}
+        statusTooltip={statusTooltip}
         isRunning={isRunning}
       />
     );
@@ -278,6 +334,7 @@ function ToolCallCardImpl({
     <ToolLayout
       toolId={entry.toolCallId}
       icon={<Wrench className="size-4 shrink-0 text-foreground-subtle" />}
+      showIcon={showIcon}
       kindLabel={kindLabel}
       primaryText={null}
       statusLabel={statusLabelNode}

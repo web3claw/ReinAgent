@@ -4,9 +4,8 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
-  Sun, Moon, Plus, Search,
-  Timer, Puzzle, Hash, FolderOpen, Settings, Monitor, Plug, Clock,
-  Filter,
+  Sun, Moon, Plus, Search, Blend, Cable, Brain,
+  Timer, Settings, Monitor, Plug, Clock,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
 
@@ -132,7 +131,14 @@ export function LanguageGlobeIcon({ locale, className = "w-4 h-4" }: { locale: s
 
 export const MOCK_PROJECTS: ProjectGroup[] = [];
 
-export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string | null) => void }) {
+export function WorkspaceSidebar({
+  onNewTask,
+  onOpenSearch,
+}: {
+  onNewTask?: (project?: string | null) => void;
+  /** 打开全局搜索弹窗（放大镜按钮；对齐 LiveAgent ConversationSearchDialog 入口） */
+  onOpenSearch?: () => void;
+}) {
   const { t } = useTranslation();
   const isSidebarOpen = useAppStore(state => state.isSidebarOpen);
   const setCurrentView = useAppStore(state => state.setCurrentView);
@@ -142,7 +148,6 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
   const toggleLocale = useAppStore(state => state.toggleLocale);
   const startNewTaskDraft = useAppStore(state => state.startNewTaskDraft);
   const selectedProject = useAppStore(state => state.selectedProject);
-  const [activeTab, setActiveTab] = useState<'groups' | 'projects'>('projects');
   // 应用版本号（tauri.conf.json version；浏览器模式取不到则不显示）
   const [versionText, setVersionText] = useState("");
   useEffect(() => {
@@ -158,7 +163,10 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
 
   return (
     <div className="flex flex-col w-[260px] h-full bg-[var(--sidebar-bg)] border-r border-[var(--border)] transition-all duration-300">
-      {/* Quick Actions（顶部品牌区已移除：与系统窗口标题栏重复；主题/语言开关移至底栏图标排） */}
+      {/* Quick Actions（顶部品牌区已移除：与系统窗口标题栏重复；主题/语言开关移至底栏图标排）。
+          新建任务行右侧 = 搜索按钮（对齐 LiveAgent：放大镜在侧栏顶部，Ctrl+N 字样已移除）；
+          自动化下方为 Skills / MCP / 记忆（照抄 LiveAgent sidebarShortcuts，图标 lucide 同款）；
+          插件市场占位已删除。 */}
       <div className="flex flex-col gap-1 p-3">
         <button
           onClick={handleNewTask}
@@ -168,63 +176,60 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
             <Plus className="w-4 h-4" />
             <span className="text-sm">{t('newTask')}</span>
           </div>
-          <span className="text-xs opacity-50">Ctrl+N</span>
-        </button>
-        <button className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md">
-          <div className="flex items-center gap-2">
+          <span
+            role="button"
+            aria-label={t('searchConversations')}
+            title={t('searchConversations')}
+            className="p-1 rounded-md transition-colors hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onOpenSearch?.();
+            }}
+          >
             <Search className="w-4 h-4" />
-            <span className="text-sm">{t('search')}</span>
-          </div>
-          <span className="text-xs opacity-50">Ctrl+K</span>
+          </span>
         </button>
-        <button className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md">
+        <button
+          onClick={() => setCurrentView('automations')}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
+        >
           <div className="flex items-center gap-2">
             <Timer className="w-4 h-4" />
             <span className="text-sm">{t('automation')}</span>
           </div>
         </button>
-        <button className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md">
+        <button
+          onClick={() => setCurrentView('skills')}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
+        >
           <div className="flex items-center gap-2">
-            <Puzzle className="w-4 h-4" />
-            <span className="text-sm">{t('pluginMarket')}</span>
+            <Blend className="w-4 h-4" />
+            <span className="text-sm">{t('navSkills')}</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setCurrentView('mcp')}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <Cable className="w-4 h-4" />
+            <span className="text-sm">{t('navMcp')}</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setCurrentView('memory')}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <Brain className="w-4 h-4" />
+            <span className="text-sm">{t('navMemory')}</span>
           </div>
         </button>
       </div>
 
-      {/* Tabs */}
-      <div className="flex items-center justify-between px-3 py-2 mx-3 bg-[var(--bg-elev)] rounded-md">
-        <div className="flex items-center flex-1 gap-1">
-          <button 
-            onClick={() => setActiveTab('groups')}
-            className={`flex items-center justify-center flex-1 py-1 text-sm rounded-md transition-colors ${activeTab === 'groups' ? 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-active)] shadow-sm' : 'text-[var(--sidebar-text)] hover:text-[var(--sidebar-text-active)]'}`}
-          >
-            <Hash className="w-4 h-4 mr-1" />
-            {t('groups')}
-          </button>
-          <button 
-            onClick={() => setActiveTab('projects')}
-            className={`flex items-center justify-center flex-1 py-1 text-sm rounded-md transition-colors ${activeTab === 'projects' ? 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-active)] shadow-sm' : 'text-[var(--sidebar-text)] hover:text-[var(--sidebar-text-active)]'}`}
-          >
-            <FolderOpen className="w-4 h-4 mr-1" />
-            {t('projects')}
-          </button>
-        </div>
-        <div className="flex items-center gap-1 ml-2 text-[var(--sidebar-text)]">
-          <button className="p-1 hover:bg-[var(--sidebar-hover)] rounded-md transition-colors">
-            <Filter className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Project List */}
+      {/* Project List（分组/项目 Tabs 已移除：分组为 WIP 死功能，固定渲染项目任务列表） */}
       <div className="flex-1 overflow-y-auto overflow-x-hidden mt-2 p-2">
-        {activeTab === 'projects' ? (
-          <ProjectList projects={MOCK_PROJECTS} onNewTask={onNewTask} />
-        ) : (
-          <div className="p-3 text-sm text-[var(--sidebar-text)] opacity-50">
-            {t('groups')} (WIP)
-          </div>
-        )}
+        <ProjectList projects={MOCK_PROJECTS} onNewTask={onNewTask} />
       </div>
 
       {/* 底部图标条（对齐 PI-Desktop sidebar-footer）：主题/语言开关 + 齿轮=设置 /
@@ -248,7 +253,10 @@ export function WorkspaceSidebar({ onNewTask }: { onNewTask?: (project?: string 
             <FooterIconButton tooltip={t('navPlugins')}>
               <Plug className="w-3.5 h-3.5" />
             </FooterIconButton>
-            <FooterIconButton tooltip={t('navScheduled')}>
+            <FooterIconButton
+              tooltip={t('navScheduled')}
+              onClick={() => setCurrentView('automations')}
+            >
               <Clock className="w-3.5 h-3.5" />
             </FooterIconButton>
             <FooterIconButton>

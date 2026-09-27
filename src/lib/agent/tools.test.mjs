@@ -19,7 +19,8 @@
  *   5b. ★ stopReason==="length" 截断：该轮 tool call 本体一个都不执行（execute 零调用），
  *       全部转 isError toolResult、循环照常收敛（实测库仍发 tool_execution_start/end，详见该用例）；
  *   6. 结果超 8KB 被截断（content ≤ 8KB、含标记、details 真值、不切断多字节字符）；
- *   7. TOOL_LIMITS 值锁定；
+ *   6b. read_file 行数闸（2000 行）与按工具字节上限（read 256KB / exec 30KB / listDir 8KB）；
+ *   7. TOOL_LIMITS 按工具分设值锁定；
  *   8. getTools() 返回浅拷贝；导出面与常量值。
  *
  * 运行：node --test src/lib/agent/tools.test.mjs
@@ -36,6 +37,7 @@ import {
   DEFAULT_MAX_STEPS,
   TOOL_LIMITS,
   TOOLS,
+  applyReadLineCap,
   buildTextToolResult,
   createTools,
   getTools,
@@ -386,7 +388,7 @@ for (const prefixLen of [0, 1, 2, 3, 4]) {
 test("6 · 结果超 8KB 被截断：UTF-8 字节安全（全对齐组合）、内容为合法前缀、details 真值", async () => {
   for (const { label, text: ORIGINAL } of TRUNCATION_CASES) {
     const originalBytes = utf8.encode(ORIGINAL).length;
-    assert.ok(originalBytes > TOOL_LIMITS.maxResultBytes, `[${label}] 前置：输入必须超 8KB（实际 ${originalBytes}）`);
+    assert.ok(originalBytes > TOOL_LIMITS.listDirBytes, `[${label}] 前置：输入必须超 8KB（实际 ${originalBytes}）`);
 
     const bigTool = {
       name: "big_text",
@@ -407,7 +409,7 @@ test("6 · 结果超 8KB 被截断：UTF-8 字节安全（全对齐组合）、�
     assert.equal(out.includes("\uFFFD"), false, `[${label}] 不得产生替换字符 U+FFFD（说明切断了多字节字符）`);
 
     // (2) 长度上限（截断标记也计入预算）。
-    assert.ok(outBytes <= TOOL_LIMITS.maxResultBytes, `[${label}] content 必须 ≤ 8KB（实际 ${outBytes} 字节）`);
+    assert.ok(outBytes <= TOOL_LIMITS.listDirBytes, `[${label}] content 必须 ≤ 8KB（实际 ${outBytes} 字节）`);
 
     // (4) 截断标记 + details 真值。
     const markerIdx = out.lastIndexOf("\n…[truncated:");
@@ -435,13 +437,62 @@ test("6 · 结果超 8KB 被截断：UTF-8 字节安全（全对齐组合）、�
 // ---------------------------------------------------------------------------
 // 7 · TOOL_LIMITS 边界压测
 // ---------------------------------------------------------------------------
-test("7 · TOOL_LIMITS：maxResultBytes 锁定为 8192", async () => {
+test("7 · TOOL_LIMITS：按工具分设（对齐 ZCode read 256KB/2000 行、bash 30KB）", async () => {
   assert.deepEqual(
     TOOL_LIMITS,
-    { maxResultBytes: 8192 },
+    { readFileBytes: 256 * 1024, readMaxLines: 2000, execBytes: 30_000, listDirBytes: 8192 },
     "TOOL_LIMITS 实际值",
   );
   assert.equal(DEFAULT_MAX_STEPS, 8);
+});
+
+// ---------------------------------------------------------------------------
+// 6b · read_file 行数闸（对齐 ZCode READ_DEFAULT_MAX_LINES=2000）与按工具字节上限
+// ---------------------------------------------------------------------------
+test("6b · applyReadLineCap：超 2000 行截断并注明总行数；按工具字节上限生效", async () => {
+  // 恰好 2000 行（结尾换行不算一行）：不截断。
+  const exactly = applyReadLineCap(
+    Array.from({ length: 2000 }, (_, i) => `L${i}`).join("\n") + "\n",
+  );
+  assert.equal(exactly.truncated, false, "恰好 2000 行不应截断");
+  assert.equal(exactly.totalLines, 2000);
+
+  // 2500 行：保留前 2000 行 + 标记注明总行数。
+  const capped = applyReadLineCap(Array.from({ length: 2500 }, (_, i) => `L${i}`).join("\n"));
+  assert.equal(capped.truncated, true);
+  assert.equal(capped.totalLines, 2500);
+  assert.ok(
+    capped.text.includes("…[truncated: 显示前 2000 行，文件共 2500 行]"),
+    "截断标记应注明行数上限与总行数",
+  );
+  assert.equal(capped.text.split("\n").length, 2001, "2000 行 + 1 行标记");
+  assert.ok(capped.text.startsWith("L0\n"), "保留内容必须是文件头部前缀");
+
+  // 单行无换行的长文本：不触发行数闸（字节闸另行兜底）。
+  const single = applyReadLineCap("no newline here");
+  assert.equal(single.truncated, false);
+  assert.equal(single.totalLines, 1);
+
+  // 按工具字节上限：exec 30KB / read 256KB / listDir 缺省 8KB。
+  const big = "x".repeat(40_000);
+  const execOut = buildTextToolResult(big, {}, TOOL_LIMITS.execBytes);
+  assert.ok(
+    utf8.encode(execOut.content[0].text).length <= TOOL_LIMITS.execBytes,
+    "exec 结果必须 ≤ 30KB",
+  );
+  assert.equal(execOut.details.truncated, true);
+  assert.match(
+    execOut.content[0].text.slice(execOut.content[0].text.lastIndexOf("\n…[truncated:")),
+    /30000/,
+    "exec 截断标记应写明上限 30000",
+  );
+  const readOut = buildTextToolResult(big, {}, TOOL_LIMITS.readFileBytes);
+  assert.equal(readOut.details.truncated, false, "40KB 文本在 256KB read 闸内不截断");
+  const defaultOut = buildTextToolResult(big, {});
+  assert.ok(
+    utf8.encode(defaultOut.content[0].text).length <= TOOL_LIMITS.listDirBytes,
+    "缺省上限 = listDirBytes 8KB",
+  );
 });
 
 // ---------------------------------------------------------------------------

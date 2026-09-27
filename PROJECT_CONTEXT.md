@@ -231,9 +231,9 @@ ReinAgent 架构全景
 - **按轮分组**：`groupTurns(messages)`（`src/lib/chat/turnActivity.ts`）——user 消息开轮至下一条 user 前；轮工时 = 最早 startedAt → 最晚 endedAt（运行中 = now 现算）；MessageList 按轮渲染并持有 1 秒 `setInterval` live tick（仅存在运行中轮时启动，对齐 ZCode 不用 rAF）；
 - **运行中判定含会话级兜底**（2026-09-24 修复闪烁）：多步工具循环的轮与轮之间存在瞬态空窗（上一轮条目已 done、下一轮未建条目），仅凭条目状态判 running 会让状态条/思考块「展开→收缩→展开」闪烁——现由 App 透传 `isStreaming`，将**流式中的最后一轮**钉在 running（`live` prop），整个 Agent 循环期间状态条恒为「工作中」、思考块恒展开，循环结束才统一翻转折叠；
 - **回合工作状态条（TurnGroupView）**：三态文案——运行中「工作中 {时长}」（**锁定展开、按钮 disabled、不渲染箭头**）/ 完成「已工作 {时长}」（**默认折叠、可展开**，运行→完成自动翻转折叠）/ 中止「已停止」；**历史消息无打点时如实显示「已处理」，绝不伪造时长（No-Fallback）**；时长格式化 `formatWorkDuration`（`Math.max(1, round)` 整秒、最多两段最靠前非零单位，中文「3 分 48 秒」/ 英文「3m 48s」）；
-- **折叠体内容**：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本（非末条 assistant 的正文，暗色渲染）；**最终回复正文（轮内最后一条 assistant）始终外显**；
+- **折叠体内容**：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本（非末条 assistant 的正文）；**最终回复正文（轮内最后一条 assistant）在轮结束后外显**。**时间线不变式（2026-09-27，修复卡片位置漂移）**：工具条目在状态机里诞生于所属 assistant 消息之后，运行中最后一条 assistant 的正文**就地**渲染在折叠体的时间线位置（亮色 + ChatLoading，样式对齐 MessageItem 正文；纯文本轮靠 `liveAnswerInBody` 让折叠体仍渲染），轮结束后才由外显 MessageItem 接管——工具卡出现时必然落在正文下方且永不移动，彻底消除轮次切换时「卡片在简述上面↔下面」的跳动（对齐 ZCode `conversationTurnRenderUnits` 的 orderedRows 严格按产出顺序渲染，无「末条钉底」规则）；
 - **思考块（ThinkingBlock）**：header「思考 · 持续了 N 秒」（整秒向上取整；无打点如实显示「持续了几秒」）+ 流式「正在思考」；默认收起；正文最暗文字层（`--text-dim` + 透明度）+ 左导线缩进 + 限高 240px 滚动 + `whitespace-pre-wrap` 纯文本；
-- **「查阅」聚合卡（对齐 ZCode ExploreToolCallBlock）**：轮内**连续**的查阅族工具（`list_dir` 列表 / `read_file` 文件读取，`EXPLORE_TOOL_NAMES`）聚合为一张卡——header = 搜索图标 + 「查阅」+ 分类计数徽标（`N 列表 · N 文件`，仅非零项）+ 状态词 + 折叠箭头；**列表调用不渲染文件数组输出**，展开体只保留单行摘要（列表 → 目录路径；读文件 → 文件名 chip + 目录暗色路径），信息取舍与 ZCode 一致；`buildActivityItems` 把轮内活动切分为普通条目与连续查阅组；
+- **查阅族独立卡（「查阅」聚合卡已按用户决策移除，2026-09-27）**：`list_dir` / `read_file` 不再聚合为组卡（`EXPLORE_TOOL_NAMES`/`buildActivityItems`/`ExploreGroupCard` 已删除），直接以独立卡渲染——**对齐 ZCode `ReadToolCallBlock` 独立形态**：类型标签（`读取`/`列出`，i18n `toolKindRead/List`，运行中 `正在读取/正在列出` 扫光由 ToolLayout 自动附加）+ Material 文件/文件夹图标 chip + 文件名 + 父目录段次要文本（`renderFilePath` 同款）；**成功不显示状态词，失败才显示「执行失败」**（`showFailureStatus` + tooltip 带错误原文，对齐 ZCode read 卡只传 showFailureStatus 的语义）；`read_file` chip 可点击在右侧面板打开文件预览，`list_dir` 目录 chip 不可点击（对齐 ZCode `canOpenPreview` 仅 file）；list_dir 工作区根（`.`）显示「当前目录」；`ToolCallCard` 的 `showIcon` prop 保留（透传 ToolLayout，默认 true）；
 - **工具卡类型化**：header = 类型图标（read/list/write/edit/exec/calc → lucide 图标）+ 类型标签（`toolKindLabel`：读取/查阅/写入/编辑/终端/计算，**未知工具如实回退原名，不臆测分类**）+ 文件 chip（`toolArgPath` 取 basename，title 全路径）/ 终端命令内联摘要（收起即可见命令，`tool-cmd-inline` 尾部截断）+ `+N/－N` diff 统计（LCS 精确口径；绿 `--diff-added` / 红 `--diff-removed` 主题变量）+ 状态词（执行中/已执行/执行失败，i18n）；
 - **终端卡（exec_command）**：`$ 命令`（mono、限高折行）+ 输出区**吸底-冻结引擎**（移植 ZCode ExecuteOutput：运行中每帧贴底；用户上滚 → 冻结跟随保留阅读位；滚回底部 → 恢复跟随；`hasStreamed` 守卫防静态结果误判）；输出区限高 120px 滚动，无输出如实显示「没有输出。」；
 - **编辑/写入卡 diff 视图**：展开为逐行 diff（`computeToolDiffLines` → `computeLineDiff` 行级 LCS，零依赖，`DIFF_MAX_LINES=500` 上限保护）——行号跨增删连续计数 + `+`/`−` 符号列 + 增行绿底（`--diff-added-bg`）/ 删行红底（`--diff-removed-bg`）+ mono 限高 240px 滚动；`write_file` 视为全新增；失败附错误信息；语法高亮（Shiki）暂不引入（ZCode 亦需异步分帧防掉帧，后续单独评估）；保留失败默认展开、运行中无结果不渲染空折叠、`React.memo`；
@@ -272,6 +272,7 @@ ReinAgent 架构全景
 
 - **`text-ui-*` 派生刻度**（语义刻度，新代码优先用）：`--text-ui-xl`(+4) / `--text-ui-lg`(+2) / `--text-ui-base`(=基准) / `--text-ui-caption`(−1) / `--text-ui-sm`(−2) / `--text-ui-xs`(−4)；
 - **Tailwind 标准字阶整体上移**（侧栏/设置页等 `text-xs~xl` 的界面跟随放大）：`xs 16px` / `sm 18px` / `base 20px` / `lg 22px` / `xl 24px`（含配套 `--text-*--line-height`）；
+- **聊天消息内容整体小一号（2026-09-27 用户定档）**：`.md`（消息正文容器，标题/代码均 em 基准自动跟随）、`.turn-intermediate-text`（中间叙述）、`.thinking-trigger`（思考块 header）均用 `--text-ui-sm`（= 基准 −2px = 18px）；用户气泡与输入框本就是 `text-sm`(18px)，与正文对齐；界面其余部分（侧栏/设置页/工具卡摘要行等）维持原刻度不动；
 - 既有组件内零散 px 字号（14px/15px 等）暂保留，后续按需迁移到 `text-ui-*` 刻度；新增样式**禁止直接写死字号**，统一走上述变量。
 
 ## 四点七、编辑重发 / 手动重试 / 回退本轮代码改动（对齐 LiveAgent，2026-09-26）
@@ -386,10 +387,12 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 ## 八、工作区与路径决议机制（对齐 ZCode 规范）
 
 ### 1. 业务工作区决议规则（Workspace Resolution）
+- **活动任务优先（2026-09-27 修订，修复重启回退 DefaultProject）**：有活动任务时，工作区根目录严格跟随**任务自身持久化的 `project` 字段**（`App.tsx` 的 `workspaceProject = activeTask ? activeTask.project : selectedProject`，单一真相源，不依赖 UI 态同步时机）；**草稿态**（无活动任务）才使用 `selectedProject`（侧边栏/输入框所选项目）。
 - **有指定项目**：若当前任务选中了项目（或会话绑定了 Project），则工作区根目录 `workspaceRoot` 为该项目所指定的文件夹路径。
 - **无指定项目（默认回退）**：若任务未指定项目（或点击“不在项目中工作”），工作区根目录自动回退到用户主目录下的：
   👉 `~/.ReinAgent/DefaultProject`（如 Windows 下 `C:\Users\<user>\.ReinAgent\DefaultProject`）。
   - 若该目录不存在，首次文件写入或命令执行时由系统自动创建（`mkdir -p`）。
+- **`selectedProject` 同步纪律（2026-09-27）**：① `hydratePersisted` 恢复持久化字段时必须从恢复的 activeTaskId 同步 `selectedProject`（历史缺陷：漏掉导致重启自动恢复的任务“在项目下显示、工具却落在 DefaultProject”）；② `setActiveTaskId` 切到已有任务严格跟随 `targetTask.project ?? null`（无项目如实为 null，绝不残留上一个任务的项目），切回草稿态保留当前所选。
 - **用户主目录真实来源（No-Fallback，严禁编造路径）**：
   - 前端 `getDefaultWorkspaceRoot()`（`src/lib/agent/workspace.ts`）的三级来源为：① `localStorage["reinagent-user-home"]` 缓存；② Node/Bun 测试环境的 `HOME` / `USERPROFILE` 环境变量；③ **全部缺失时返回空串，绝不返回任何编造的默认路径**（历史遗留的 `/home/web3claw/...` 硬编码兜底已彻底移除）。
   - 应用启动时 `App.tsx` 调用 `initUserHome()`：经 Tauri IPC 命令 `path_home_dir`（`src-tauri/src/fs_cmd.rs`，优先读 `USERPROFILE`，其次 `HOME`，均缺失则真实报错）拉取宿主真实主目录，写入 `reinagent-user-home` 缓存；Web/无头环境下后端不可达时保留既有缓存并返回 null。
@@ -467,7 +470,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 | 3 | 工具卡类型化 header | 类型图标/标签（未知工具回退原名）+ 文件 chip + 命令内联摘要 + `+N/−N`（LCS 精确口径）+ 状态词；**文件 chip 对齐 ZCode renderFileChip**（2026-09-25）：Material Icon Theme 彩色 SVG（`public/material-icons/` 40 个常用扩展名，颜色固化在 SVG，onError 三级回退）+ 文件名可点击（编辑/写入 → 右侧 patch diff；读取 → 文件预览；onMouseDown 阻断行折叠）+ 目录段带尾斜杠更暗一级 + 条件 ±N（added>0 绿 / removed>0 红，零不显示）；顺带修复 edit_file 参数名错配（工具签名 target/replacement vs 代码读 old_string/new_string 导致 ±N 与 diff 恒空，补回退） | `ToolCallCard.tsx`、`fileDisplay.tsx`、`fileDisplayHelpers.ts`（ps1/bat/cmd 别名）、`turnActivity.ts` |
 | 4 | 终端卡 | `$` 命令区（mono 限高折行）+ 输出区**吸底-冻结引擎**（上滚冻结/回底恢复）+「没有输出。」 | `ToolCallCard.tsx` |
 | 5 | 编辑/写入 diff 视图 | 行级 LCS diff（零依赖，500 行上限）+ 行号跨增删连续计数 + 增行绿底/删行红底 + 240px 滚动 | `ToolCallCard.tsx`、`turnActivity.ts` |
-| 6 | 「查阅」聚合卡 | 轮内连续 list_dir/read_file 聚合；header 分类计数徽标（N 列表 · N 文件）；**列表不渲染数组输出**，展开仅单行摘要 | `TurnGroupView.tsx` |
+| 6 | 查阅族独立卡（原「查阅」聚合卡已按用户决策移除，2026-09-27） | list_dir/read_file 直接渲染独立卡（对齐 ZCode ReadToolCallBlock）：图标 + 文件/目录 chip + 路径次要文本；**成功不显示状态词、失败显示「执行失败」+ tooltip**；list_dir = 目录读取形态（文件夹 chip，`.` 显示「当前目录」） | `ToolCallCard.tsx` |
 | 7 | 对话问题导航条 | 用户提问粒度刻度 + Radix Tooltip 预览 + 平滑跳转 + 山峰衰减动效 + 自适应高度（240px/10~24px） | `ConversationNavigator.tsx` |
 | 8 | 时间打点数据层 | assistant/tool 条目 `startedAt/endedAt`、`thinkingStartedAt/thinkingDurationMs`；注入时钟贯通状态机；不参与 toApiMessages | `conversationModel.js/.d.ts` |
 | 9 | streamSimple 修复 | 修复误用裸 `stream` 导致思考被显式禁用的事故（详见 九.4） | `runAgentTurn.ts` |
@@ -496,6 +499,9 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **新增：附件与图片粘贴（2026-09-26，对齐 LiveAgent）**——Rust 命令 `fs_pick_files`（rfd 多选）/ `fs_import_pasted_file`（粘贴图片 base64 落盘 `.ReinAgent/temp/pasted/`）/ `fs_read_image_preview`（≤5MB 缩略图 base64）/ `fs_read_attachment_base64`（≤25MB 发送内联）；前端 Composer 真实附件状态（上限 9、扩展名图片白名单）、textarea onPaste 粘贴图片、缩略图点击 Lightbox 放大（Radix Dialog）、X 删除；发送时文本附件以路径引用追加、**图片转 pi-ai 原生 image content block 内联**（非视觉模型降级为路径引用提示）；后续轮次重建历史时图片不再保留（v1 限制）。
 - **修复：用户气泡图片点击放大失效（2026-09-26）**——MessageItem 的返回结构是「用户分支提前 return + 助手分支 return」，Lightbox 最初只挂在 assistant 分支的树尾，用户气泡分支的树里没有该节点（点击后 setState 生效、组件重渲染，但 JSX 树中无 Lightbox → 无 DOM 变化）。已在用户分支 return 的根 div 内补挂 ImageLightbox（Composer 附件条与消息气泡共用组件）。
 - **任务级隔离 + 审批模式（2026-09-25）**：见已实现清单 #14；`ApprovalMode` 值域由无实效的 always/suggest/auto 替换为 plan/ask/edit/full；全局默认持久化 kv（`reinagent-approval-mode`，缺省 full）。
+- **修复：Linux 编译回归（2026-09-27）**——commit 177ad5a 的 `fs_cmd.rs` `spawn_shell` 用 `if cfg!(target_os = "windows")`（运行时布尔宏，不做条件编译）包裹 Windows 专属代码（`std::os::windows::CommandExt` 的 `raw_arg` / `creation_flags`），两个分支在 Linux 上仍参与类型检查，导致 E0433/E0599、桌面端在 Linux 无法编译启动。已改为 `#[cfg]` / `#[cfg(not)]` 属性条件编译（Windows 分支保留 raw_arg + CREATE_NO_WINDOW 语义，Unix 分支 `sh -c`），`CREATE_NO_WINDOW` 常量同步加 cfg 门；Windows 行为不变，Linux 恢复可编译。
+- **修复：工具结果一刀切 8KB 截断导致大文件读不全（2026-09-27，对齐 ZCode 按工具分设上限）**——原 `TOOL_LIMITS.maxResultBytes = 8192` 对**所有工具**统一截断，85KB 的 PROJECT_CONTEXT.md 一次只能读前 8KB，模型被迫用 exec `sed -n` 按 8KB 一段磨十几步（exec 结果同样被 8KB 闸拦住）。已改为**按工具分设**：`read_file` = 2000 行 / 256KB（对齐 ZCode `READ_DEFAULT_MAX_LINES` / `READ_MAX_FILE_SIZE_BYTES`，行数闸 `applyReadLineCap` 先行 + 字节闸二次兜底，details 带 `totalLines/linesTruncated`）、`exec_command` = 30KB（对齐 ZCode bash `MAX_INLINE_OUTPUT_BYTES`）、`list_dir` = 8KB 维持；`buildTextToolResult` 增加每工具 `maxBytes` 参数；read_file/exec 描述文本同步告知模型上限；Rust 侧 `fs_execute` 的 256KB 收集上限保持不变。
+- **改动：快捷动作卡改为「预填不发送」（2026-09-27，用户定档）**——EmptyState 四个快捷按钮（周报总结/报错修复/需求开发/闲时任务）点击后**只把提示词填进输入框**（聚焦 + 光标到末尾，可编辑后手动发送），不再自动发送。实现：`LexicalComposer` 新增 `prefillRequest?: { text, nonce } | null` prop（nonce 变化触发 setText + 聚焦，沿用 `focusRequestTrigger` 模式），App 持有 `composerPrefill` 状态 + 单调 nonce（hooks 声明在设置页早退 return 之前）。**固定填充文案**（`EmptyState.prompts[].fill`，与按钮标签分离）：周报总结→「每周五总结这一周发生的事情。」；报错修复→「请分析以下终端报错日志，找出导致该错误的根本原因，并提供可以直接运行的修复代码示例。」；**pptMake 按钮标签改为「需求开发」**（i18n zh/en 同步），填充→「先完整阅读所有文档和代码，掌握整个开发流程和进度，严格遵守开发规则，等待新需求」；闲时任务暂保留预填、待自动化页面移植后改为页面导航。欢迎页快捷按钮与输入框间距 `mt-8`→`mt-16`（聊天框下移）。
 
 **渲染增强类**：
 - [x] diff 视图 / 代码块的 **Shiki 语法高亮** —— 已随 PreviewPane 移植引入（`shiki@^4` + `@pierre/diffs`，工具卡内联 diff 视图仍为单色形态）
@@ -523,5 +529,89 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 
 **基础设施类**：
 - [ ] worktree 多 agent 并行 + Vite 端口参数化（用户已决策暂用分支方案，见记忆）
+
+
+## 十二、已知问题：Linux 窗口大小/位置记忆失效（2026-09-27 诊断完毕；**过渡方案已落地**）
+
+**过渡方案（2026-09-27 用户定档，方案 A/B 仍待后续决策）**：Linux 平台**停用** `tauri-plugin-window-state`（`lib.rs` `with_window_state` cfg 门：非 Linux 才注册插件），每次启动按 `tauri.conf.json` 窗口默认值 **1800×1200 + `center: true`** 启动（工作区 2560×1440 内放得下，不触发合成器强制改尺寸）；Windows 端窗口记忆不受影响。`~/.config/com.reinagent.app/.window-state.json` 旧状态文件在 Linux 上已无效。
+
+### 1. 症状与环境
+- 症状：Linux 下每次启动都不按上次的窗口大小和位置打开。
+- 环境：GNOME 50.1 / Wayland 会话（`GDK_BACKEND=wayland`）/ 显示器 2560×1440@100% 缩放（工作区约 2493×1400：顶栏+停靠栏占位）/ `tauri-plugin-window-state 2.4.1` + tauri 2.11.5 + tao 0.35.3。
+- 状态文件：`~/.config/com.reinagent.app/.window-state.json`（label `main`，内容 2105×1371@(0,0)，mtime 2026-09-24 07:16 后从未更新）。
+
+### 2. 三层根因（全部实测证实）
+1. **保存侧：非优雅退出 = 永不写盘**。插件仅在 `RunEvent::Exit` 时写文件（lib.rs:503），窗口事件只更新内存缓存。开发流程的 Ctrl/C/SIGTERM/SIGKILL/重启全部丢失——实测 pkill 后文件 mtime 不变。这是「9-24 之后调整的窗口全部没记住」的原因。
+2. **恢复侧（尺寸）：Wayland 下恢复请求被合成器强制覆盖（主凶）**。`WAYLAND_DEBUG=1` 协议级证据：应用启动后确实请求了恢复尺寸 `xdg_surface.set_window_geometry(26, 23, 2105, 1418)`（GTK CSD 客户端装饰使窗口比保存值膨胀约 +47px，1371→1418），**高度 1418 超出工作区 1400**，Mutter 立即回发 `xdg_toplevel.configure(2493, 1400)`（= 工作区大小）强制放大，窗口从此钉在 2493×1400——即用户看到的「每次都是错误尺寸」。对照实验：`GDK_BACKEND=x11`（XWayland，SSD 系统装饰，无 CSD 膨胀）下**尺寸恢复正常**（xdotool 实测 client 2105×1363）。
+3. **恢复侧（位置）**：Wayland 协议层面禁止应用自定位（`gdk_window_move` 是 no-op），保存的 x/y 永远被忽略；X11 下插件的 `set_position` 发生在窗口映射前，仍被 Mutter 初始摆放覆盖（存 0,0 实测开在 305,139）——**映射后（post-map）再定位才有效**。
+- 附：插件恢复逻辑（lib.rs:194-206）有 `available_monitors?` + `set_position(...)?` 的 `?` 级联——任一 Err 会使 set_size 也被跳过（`let _ =` 吞掉错误）；`intersects` 门槛对本例不构成问题。
+
+### 3. 修复方案（已定，待实施）
+**方案 A（推荐，大小+位置都能恢复）**：
+1. `src-tauri/src/lib.rs` 在 Tauri 启动前（Linux 平台）`std::env::set_var("GDK_BACKEND", "x11")` 走 XWayland——SSD 无 CSD 膨胀、位置可设置。当前 100% 缩放下无模糊风险；**若将来启用分数缩放需重新评估 XWayland 渲染质量**。
+2. 保存加固：`on_window_event` 监听 `Resized`/`Moved`，防抖 ~600ms 调用插件现成的 `window.save_window_state(StateFlags::all())`（`WindowExt`，lib.rs:115）——不再依赖优雅退出。
+3. 恢复后移：窗口 show 后（setup 内延迟任务或首个 Resized 事件）再 `set_position` + `set_size`（钳制到工作区内）；X11 下 post-map 的 move 走 ConfigureRequest，Mutter 会真实执行。Windows 端维持插件现状（cfg 门隔离，零影响）。
+
+**方案 B（纯 Wayland 折中）**：只做上述 2+3（不切 X11）——尺寸可恢复（钳制后不再触发合成器覆盖），位置永远记不住（Wayland 硬限制）。
+
+### 4. 复验手段（实施后验收用）
+- Wayland 现状复现：`WAYLAND_DEBUG=1 /tmp/reinagent/target/debug/reinagent` 抓 `set_window_geometry` / `configure` 序列；
+- X11 恢复验证：`GDK_BACKEND=x11` 启动后 `xdotool search --name ReinAgent getwindowgeometry`（本机有 xdotool/xwininfo；GNOME 50 的 Shell Screenshot/Introspect DBus 已确认 AccessDenied 不可用）。
+
+
+## 十三、自动化定时任务（一期，2026-09-27 落地；对齐 ZCode AutomationsSection）
+
+### 1. 架构
+- **Rust `src-tauri/src/automation.rs`**：
+  - 存储：`~/.ReinAgent/conversations.db` 新增 `automations` / `automation_runs` 两表（独立连接，WAL 多连接并存）；scheduleRule 结构化规则为调度权威（JSON 列），cronExpr 仅展示；
+  - IPC 8 命令：`automation_list / create / update / delete / set_enabled / run_now / list_runs / run_finished`（serde camelCase DTO 与前端 types.ts 一一对应）；
+  - 调度线程（`start_scheduler`，setup 钩子启动）：每 **20s** 轮询（对齐 ZCode POLL_INTERVAL_MS）`enabled=1 且 next_run_at<=now` 的任务 → claim（写 running run 行 + `run_count+1` + 推进 `next_run_at`）→ `app.emit("automation-due", payload)` 派发前端；启动时残留 running 一律收敛 `stopped`（应用重启中断）；next 计算失败退避 1h 并记 last_error。
+- **前端**：
+  - `src/lib/automations/types.ts`（DTO 类型 + `inferPreset` / `applyPreset` / `describeRule` 摘要）与 `store.ts`（zustand：列表缓存 + CRUD + loadSeq 过期响应守卫）；
+  - `AutomationsPage.tsx`（列表页：页头/刷新/创建按钮、状态筛选 pills 全部·进行中·已暂停·失败、卡片网格 `grid-cols-1 lg:grid-cols-2`、卡片=标题+提示词两行+频率徽标+运行计数+下次运行+启停开关+立即运行+行内二次确认删除、空态引导）；
+  - `AutomationEditView.tsx`（创建/编辑：名称、**频率构建器**（预设 pills 每小时·每天·工作日·每周·每月·自定义 + 规则编辑器：间隔/时间/星期 chips/月日 chips）、提示词、模型双下拉（服务商+启用模型）、工作区只读、保存/取消）；
+  - **App 派发器**（`dispatchAutomationRun` + ref + `automation-due` 事件监听一次注册）：到点 → `createTask(title, workspacePath, 模型, approvalMode="full")` → `poolSend(prompt, maxSteps=0)` → 5s 轮询 `getEntrySnapshot` 收敛（done/error/stopped）→ `automation_run_finished` 回报 outcome；
+  - 入口（2026-09-27 修正补全）：**侧栏 Quick Actions 的「自动化」按钮**（Timer 图标，原为无 onClick 的占位——用户点击无反应的根因）+ 侧栏底栏**时钟图标** + 欢迎页**闲时任务按钮**（`onOpenAutomations` 导航，替代预填）；`ViewMode` 扩展 `"automations"`；**页面为主视图形态**（渲染在主内容区、保留侧边栏与顶栏，统计行/终端面板仅 workbench 视图显示，页面根由 `h-screen` 改 `h-full` 填充主区）；**从自动化页激活任务自动切回工作台**（`setActiveTaskId` 内：currentView 为 automations 时任何任务激活/新建任务都切回 workbench——点击侧栏任务即进入对话；自动化自身派发走 `createTask` 内部赋值不经此 action，页面停留不被打断）。
+- **调度规则语义**（ScheduleRule）：`unit: minute|hourly|daily|weekly|monthly`（年/yearly 一期不做）、`interval≥1`、`hour/minute`、`weekdays`（0=周日…6=周六，工作日预设=1-5）、`monthDays`（1-31，月末越界自动跳过）；预设映射：每小时=hourly/1，每天=daily/1，工作日=weekly[1-5]，每周=weekly 单选星期，每月=monthly 单选日期；计算=从 now 起按锚点对齐向后扫描（epoch 分钟/小时/天/周/月对齐），有界防死循环。
+- **样式**：颜色/字号全部走项目语义变量（`--brand/--surface/--text-dim/--border` 等 + `text-ui-*` 刻度），交互对齐 ZCode（卡片 hover 显现动作、切换开关、pills 单选）。
+
+### 2. 已知边界（一期范围外，二期候选）
+- 运行历史 tab（`automation_runs` 已落库、`list_runs` 命令已备，UI 未做）与运行记录跳转会话；
+- ZCode 的 OffPeak 闲时任务 tab、任务模板库、cron 自定义对话框、workspace 选择器（一期工作区取创建时的 `selectedProject`）；
+- 调度要求**应用处于运行状态**（桌面常驻应用语义，与 ZCode 桌面端一致；应用关闭期间到点的任务错过不补跑）。
+
+
+## 十四、LiveAgent 资源中心移植：搜索 / MCP / 记忆 / Skills（一期，2026-09-27）
+
+照抄 LiveAgent（源码 `crates/agent-ui` + `crates/agent-gui/src-tauri`）的四个功能，存储路径全部 `~/.ReinAgent/`。
+
+### 0. 侧栏重排（照抄 LiveAgent ChatHistorySidebar + sidebarShortcuts）
+- 新建任务行右侧 = **放大镜**（原 Ctrl+N 字样删除；点击打开搜索弹窗）；
+- 自动化下新增 **Skills（Blend 图标）/ MCP（Cable）/ 记忆（Brain）** 三个入口（setCurrentView 新增 `skills/mcp/memory` 三视图，页面为主视图形态保留侧栏顶栏）；
+- **插件市场占位删除**（pluginMarket 键移除）。
+
+### 1. 搜索（ConversationSearchDialog 移植）
+- **UI**：居中 Radix Dialog（防抖 180ms、分组结果、空态最近会话 12 个、↑↓/Enter/Esc 键盘导航、`[...]` 片段标记保留、点击结果跳转对应任务并聚焦）。
+- **Rust `src-tauri/src/history_search.rs`**：`chat_history_search` 命令——标题命中（task.payload 提取）加权优先 + 消息全文命中（part 表 text/thinking LIKE，UTF-8 边界安全片段窗口 40 字符），每任务最多 5 条片段、最多 20 组；空查询返回最近任务。FTS5 二期。
+- **接线**：`WorkspaceSidebar onOpenSearch` prop → App 的 `searchOpen` 状态 + `ConversationSearchDialog`（`onOpenTask` = setActiveTaskId + 聚焦）。
+
+### 2. MCP（照抄 LiveAgent commands/integration/mcp.rs 一期子集）
+- **Rust `src-tauri/src/mcp.rs`**：配置存 `~/.ReinAgent/mcp_servers.json`（id/name/enabled/transport stdio|http/command/args/env/url/headers/timeoutMs）；stdio 传输 = spawn 子进程 + 行协议 JSON-RPC（独立 stdout 线程 → mpsc，stderr 尾部 20 行摘要附错误）；HTTP 传输 = ureq streamable POST + `Mcp-Session-Id` 会话头（SSE data: 行解析）；握手 `initialize`(2024-11-05) → `notifications/initialized`；连接池 5 分钟 TTL，`Drop`/`shutdown` 进程树 best-effort kill（Unix `kill -TERM/-KILL -pid`）。6 命令：`mcp_save_servers/list_servers/list_tools/call_tool/test_server/stop_server`。
+- **Agent 集成（`src/lib/mcp/mcpTools.ts`）**：`createMcpTools()` 发送时枚举全部启用服务器（失败服务器如实跳过 + console 记录），工具名 `mcp__<serverId>__<tool>`，执行透传 `mcp_call_tool`（isError/content[] text 拼接；HTTP 错误 throw → 库侧 isError toolResult）；`runAgentTurn` 将 MCP 工具附加到工具数组（`[...tools, ...mcpTools]`），权限分级保守视为 write（未知工具名 → ask/edit 需审批，plan 拦截）。
+- **页面 `McpHubPage.tsx`**：服务器卡片（名称/endpoint 摘要/transport 徽标/启停开关/测试连接（工具计数或错误）/编辑/删除）+ 添加/编辑弹窗（名称/transport/命令/参数/环境变量多行 KEY=value/URL）。
+
+### 3. 记忆（照抄 LiveAgent memory 服务一期子集）
+- **Rust `src-tauri/src/memory.rs`**：存储 `~/.ReinAgent/memory/global/<type>/<id>.md`（frontmatter id/type/title/created/updated + 正文；类型 user/feedback/project/reference；8KB 上限）；文件即真相（无独立索引库，扫描重建）。6 命令：`memory_list/read/write/update/delete/index_overview`。
+- **Agent 集成**：`runAgentTurn` 调 `memory_index_overview` 注入系统提示词 `# Memory Index` 段（每条 `[标题] (类型) 摘要`，最多 50 条；不可达时如实跳过）。
+- **页面 `MemoryPanel.tsx`**：记忆卡片（类型徽标 + 标题 + 三行摘要 + 更新日期）+ 新建/编辑弹窗（标题/类型/正文）+ 行内二次确认删除。
+
+### 4. Skills（照抄 LiveAgent skills 服务一期子集）
+- **Rust `src-tauri/src/skills.rs`**：存储 `~/.ReinAgent/skills/<id>/SKILL.md`（frontmatter name/description + 正文指令；id 消毒防路径穿越）；启停状态 `~/.ReinAgent/skills/.enabled.json`。5 命令：`skills_list/read/save/delete/set_enabled`。
+- **Agent 集成**：`runAgentTurn` 注入 `# Skills` 段（启用技能一行 `- 名称: 描述 (instructions: ~/.ReinAgent/skills/<id>/SKILL.md)`，指引模型经 read_file 读取全文——对齐 LiveAgent 的显式提及 + 读取模式；MemoryManager/SkillsManager 专用管理工具二期）。
+- **页面 `SkillsHubPage.tsx`**：技能卡片（名称/描述/id chip/启停开关/编辑/删除）+ 新建/编辑弹窗（id 目录名/名称/描述/正文 Markdown）。
+
+### 5. 验证与边界
+- 构建 ✓、test:chat 108 / test:agent 39 / test:providers 8 全部通过；Rust cargo check ✓。
+- 二期候选：搜索 FTS5 索引、MCP 商店/导入/OAuth/McpManager 工具、记忆 project 作用域 + LLM 整理（organizer）+ 提取管线、技能商店（ClawHub）/导入/批量操作 + SkillsManager 管理工具。
 
 

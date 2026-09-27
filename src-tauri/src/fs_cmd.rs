@@ -161,6 +161,7 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
         const OUTPUT_CAP_BYTES: usize = 256 * 1024;
         // 进程退出后等待管道收尾的上限：超时取部分输出（防孙进程持管道永久挂起）
         const DRAIN_JOIN_TIMEOUT_MS: u64 = 5000;
+        #[cfg(target_os = "windows")]
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
         let exec_dir = match cwd {
@@ -172,22 +173,33 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
             let _ = fs::create_dir_all(&exec_dir);
         }
 
+        // ★ 条件编译必须用 #[cfg] 属性而非 if cfg!()：后者是运行时布尔宏，
+        //   两个分支在所有平台都要类型检查——std::os::windows 在 Linux 上不存在，
+        //   用 if cfg!() 会导致 Linux 编译失败（E0433/E0599）。
         fn spawn_shell(command: &str, exec_dir: &Path) -> std::io::Result<std::process::Child> {
-            let mut cmd = Command::new(if cfg!(target_os = "windows") { "cmd" } else { "sh" });
-            if cfg!(target_os = "windows") {
+            #[cfg(target_os = "windows")]
+            {
                 // ★ raw_arg：命令行原样透传给 cmd /C。普通 arg() 会按 MSVC 规则把内部引号
                 //   转义成 \"，而 cmd 不认这种转义——findstr /c:"..." 这类带引号的命令会被
                 //   拆坏（表现为 FINDSTR: Cannot open <词>）。
                 use std::os::windows::process::CommandExt;
+                let mut cmd = Command::new("cmd");
                 cmd.raw_arg("/C").raw_arg(command);
                 cmd.creation_flags(CREATE_NO_WINDOW);
-            } else {
-                cmd.arg("-c").arg(command);
+                cmd.current_dir(exec_dir);
+                cmd.stdout(Stdio::piped());
+                cmd.stderr(Stdio::piped());
+                cmd.spawn()
             }
-            cmd.current_dir(exec_dir);
-            cmd.stdout(Stdio::piped());
-            cmd.stderr(Stdio::piped());
-            cmd.spawn()
+            #[cfg(not(target_os = "windows"))]
+            {
+                let mut cmd = Command::new("sh");
+                cmd.arg("-c").arg(command);
+                cmd.current_dir(exec_dir);
+                cmd.stdout(Stdio::piped());
+                cmd.stderr(Stdio::piped());
+                cmd.spawn()
+            }
         }
 
         fn cap_output(mut buf: Vec<u8>) -> Vec<u8> {

@@ -3,6 +3,11 @@ mod fs_cmd;
 mod provider_config;
 mod conversation_store;
 mod checkpoint;
+mod automation;
+mod mcp;
+mod memory;
+mod skills;
+mod history_search;
 
 use terminal::TerminalState;
 
@@ -12,13 +17,32 @@ fn greet(name: &str) -> String {
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
+/// 窗口状态记忆仅在非 Linux 平台注册：Linux/Wayland 下合成器不支持应用自定位、
+/// 且恢复的尺寸会被 CSD 膨胀放大触发合成器强制改尺寸（详见 PROJECT_CONTEXT 十二），
+/// 记忆功能整体失效——停用后每次启动按 tauri.conf.json 的默认 1800×1200 居中。
+#[cfg(not(target_os = "linux"))]
+fn with_window_state(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder.plugin(tauri_plugin_window_state::Builder::default().build())
+}
+
+#[cfg(target_os = "linux")]
+fn with_window_state(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry> {
+    builder
+}
+
 pub fn run() {
-    tauri::Builder::default()
-        .manage(TerminalState::default())
-        .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_store::Builder::new().build())
-        .plugin(tauri_plugin_window_state::Builder::default().build())
-        .invoke_handler(tauri::generate_handler![
+    with_window_state(
+        tauri::Builder::default()
+            .manage(TerminalState::default())
+            .plugin(tauri_plugin_opener::init())
+            .plugin(tauri_plugin_store::Builder::new().build()),
+    )
+    .setup(|app| {
+        // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
+        automation::start_scheduler(app.handle().clone());
+        Ok(())
+    })
+    .invoke_handler(tauri::generate_handler![
             greet,
             terminal::terminal_create,
             terminal::terminal_write,
@@ -49,7 +73,33 @@ pub fn run() {
             checkpoint::checkpoint_list,
             checkpoint::checkpoint_diff_stats,
             checkpoint::checkpoint_rewind_code,
-            checkpoint::checkpoint_clear
+            checkpoint::checkpoint_clear,
+            automation::automation_list,
+            automation::automation_create,
+            automation::automation_update,
+            automation::automation_delete,
+            automation::automation_set_enabled,
+            automation::automation_run_now,
+            automation::automation_list_runs,
+            automation::automation_run_finished,
+            history_search::chat_history_search,
+            mcp::mcp_save_servers,
+            mcp::mcp_list_servers,
+            mcp::mcp_list_tools,
+            mcp::mcp_call_tool,
+            mcp::mcp_test_server,
+            mcp::mcp_stop_server,
+            memory::memory_list,
+            memory::memory_read,
+            memory::memory_write,
+            memory::memory_update,
+            memory::memory_delete,
+            memory::memory_index_overview,
+            skills::skills_list,
+            skills::skills_read,
+            skills::skills_save,
+            skills::skills_delete,
+            skills::skills_set_enabled
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

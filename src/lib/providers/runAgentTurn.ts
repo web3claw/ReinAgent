@@ -7,6 +7,7 @@ import { buildModel } from "./modelFactory";
 import type { ProviderConfig } from "./modelFactory";
 import { getFauxAgentSource } from "./fauxSource";
 import type { ProviderType } from "./catalog";
+import { createMcpTools } from "../mcp/mcpTools";
 
 export type AgentSource = ProviderType | "faux";
 
@@ -207,6 +208,47 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     ...(workspaceRoot ? { workspaceRoot } : {}),
     ...(checkpoint ? { checkpoint } : {}),
   });
+  // MCP 工具接入（对齐 LiveAgent：发送时枚举启用服务器的工具并注入工具循环；
+  // 枚举失败的服务器如实跳过。整轮发送增加一次串行枚举，与 ZCode/LiveAgent 同语义）。
+  let mcpTools: unknown[] = [];
+  try {
+    mcpTools = (await createMcpTools()) as unknown[];
+  } catch (err) {
+    console.warn("[mcp] tool enumeration failed (continuing without MCP):", err);
+  }
+  const allTools = [...tools, ...mcpTools] as typeof tools;
+
+  // 记忆索引注入（对齐 LiveAgent `# Memory Index`）：失败不阻断发送（如实降级为无记忆段）。
+  let memorySection = "";
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    memorySection = await invoke<string>("memory_index_overview");
+  } catch {
+    // Web 模式 / 后端不可达：跳过注入（不伪造内容）
+  }
+
+  // 启用技能注入（对齐 LiveAgent 显式技能提及）：`# Skills` 段 + 名称/描述。
+  let skillsSection = "";
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const skills = await invoke<
+      { id: string; name: string; description: string; enabled: boolean }[]
+    >("skills_list");
+    const enabled = skills.filter((s) => s.enabled);
+    if (enabled.length > 0) {
+      const lines = [
+        "# Skills",
+        "The following skills are available. To use one, read its full instructions via read_file at the path shown, then follow them.",
+        "",
+      ];
+      for (const s of enabled) {
+        lines.push(`- ${s.name}: ${s.description} (instructions: ~/.ReinAgent/skills/${s.id}/SKILL.md)`);
+      }
+      skillsSection = lines.join("\n");
+    }
+  } catch {
+    // 不可达时跳过
+  }
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
   let effectiveSystemPrompt = workspaceRoot
     ? `${prompt}\n\nCurrent workspace root: ${workspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
@@ -222,11 +264,17 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   } else if (approvalMode !== "full") {
     effectiveSystemPrompt += APPROVAL_HINT_PROMPT;
   }
+  if (memorySection.trim().length > 0) {
+    effectiveSystemPrompt += `\n\n${memorySection}`;
+  }
+  if (skillsSection.trim().length > 0) {
+    effectiveSystemPrompt += `\n\n${skillsSection}`;
+  }
 
   const base = {
     systemPrompt: effectiveSystemPrompt,
     messages,
-    tools,
+    tools: allTools,
     maxSteps: maxSteps ?? DEFAULT_MAX_STEPS,
     signal,
     onEvent,

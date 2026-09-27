@@ -6,18 +6,24 @@
  *   2. 回合工作状态条：「工作中 {时长}」（运行中，每秒跳动、锁定展开不可收起）/
  *      「已工作 {时长}」（完成，默认折叠可展开）/「已停止」/「已处理」（历史无打点，No-Fallback）；
  *   3. 折叠体：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本；
- *   4. 最终回复正文（轮内最后一条 assistant，复用 MessageItem 助手分支，始终外显）。
+ *      运行中最后一条 assistant 的正文**就地**渲染在折叠体的时间线位置（亮色 + 流式指示器）；
+ *   4. 最终回复正文（轮内最后一条 assistant，复用 MessageItem 助手分支）：**轮结束后**外显。
+ *
+ * 时间线不变式（对齐 ZCode orderedRows 严格按产出顺序渲染）：工具条目在状态机里诞生于
+ * 所属 assistant 消息之后，因此「运行中正文就地、结束后外显」的首尾位置一致——工具卡
+ * 出现时必然落在正文下方且不再移动，轮次切换不再发生上下跳动（修复卡片位置漂移）。
  *
  * 折叠交互对齐 ZCode：运行中是「只读展开」（不渲染箭头、不可收起）；完成态翻转为默认折叠、
  * 可点击展开。轮 key 变化时组件随 React key 重挂载，折叠态自然复位。
  */
 
-import { ChevronRight, FileText, Search } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import type { TimelineEntry, ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { MessageItem } from "./MessageItem";
 import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
 import { MarkdownText } from "./MarkdownText";
+import { ChatLoading } from "./ChatLoading";
 import { useTranslation } from "../../i18n";
 import { memo, useMemo, useRef, useState } from "react";
 import {
@@ -25,11 +31,9 @@ import {
   collectTurnFileChanges,
   computeLineChangeStat,
   formatWorkDuration,
-  isExploreTool,
   isReinAgentTempPath,
   pathDirectory,
   resolveTurnWorkState,
-  toolArgPath,
   turnDurationMs,
   type TurnGroup,
 } from "../../lib/chat/turnActivity";
@@ -39,137 +43,11 @@ function isToolEntry(message: TimelineEntry): message is ToolTimelineEntry {
   return message.role === "tool";
 }
 
-/** 折叠体渲染项：普通时间线条目单卡，或连续查阅族工具聚合成的「查阅」卡（对齐 ZCode ExploreToolCallBlock）。 */
-type ActivityItem =
-  | { kind: "tool"; entry: TimelineEntry }
-  | { kind: "explore"; entries: ToolTimelineEntry[] };
-
-function buildActivityItems(activity: TimelineEntry[]): ActivityItem[] {
-  const items: ActivityItem[] = [];
-  let exploreBuffer: ToolTimelineEntry[] = [];
-  const flush = () => {
-    if (exploreBuffer.length > 0) {
-      items.push({ kind: "explore", entries: exploreBuffer });
-      exploreBuffer = [];
-    }
-  };
-  for (const entry of activity) {
-    if (isToolEntry(entry) && isExploreTool(entry.toolName)) {
-      exploreBuffer.push(entry);
-      continue;
-    }
-    flush();
-    items.push({ kind: "tool", entry });
-  }
-  flush();
-  return items;
-}
-
 /**
- * 「查阅」聚合卡：轮内连续的目录列表 / 文件读取调用合并为一张卡，
- * header 显示分类计数（N 列表 · N 文件）；**列表调用不渲染文件数组输出**，
- * 展开体只保留单行摘要（对齐 ZCode ExploreToolCallBlock 的信息取舍）。
+ * 「查阅」聚合卡已移除（2026-09-27 用户决策）：查阅族工具（list_dir / read_file）不再
+ * 聚合为组卡，直接以独立卡渲染（对齐 ZCode ReadToolCallBlock 的独立形态——图标 + 文件名
+ * + 路径；成功不显示状态词，失败才显示「执行失败」并带 tooltip）。
  */
-function ExploreGroupCard({ entries }: { entries: ToolTimelineEntry[] }) {
-  const { t } = useTranslation();
-  const openCodeViewer = useAppStore((state) => state.openCodeViewer);
-  const [open, setOpen] = useState(false);
-
-  const isRunning = entries.some((entry) => entry.status === "running");
-  const isError = entries.some((entry) => Boolean(entry.isError));
-  const listCount = entries.filter((entry) => entry.toolName === "list_dir").length;
-  const fileCount = entries.filter((entry) => entry.toolName === "read_file").length;
-  const buckets: string[] = [];
-  if (listCount > 0) buckets.push(t("exploreBucketList").replace("{count}", String(listCount)));
-  if (fileCount > 0) buckets.push(t("exploreBucketFile").replace("{count}", String(fileCount)));
-  const summary = buckets.join(" · ");
-  const statusWord =
-    isRunning ? t("toolStatusRunning") : isError ? t("toolStatusFailed") : t("toolStatusDone");
-
-  // 运行中：收起摘要实时显示最新一条子调用（对齐 ZCode collapsedChildSummary）
-  const latest = entries[entries.length - 1];
-  const latestPath = latest ? toolArgPath(latest.args) : undefined;
-  const latestIsList = latest?.toolName === "list_dir";
-  const collapsedSummary = isRunning && latest
-    ? latestIsList
-      ? `${t("exploreBucketListLabel")} · ${latestPath || t("exploreCurrentDirectory")}`
-      : `${t("exploreBucketFileLabel")} · ${latestPath ? pathDirectory(latestPath) ?? latestPath : ""}`
-    : null;
-
-  return (
-    <div
-      className="tool-card"
-      data-status={isRunning ? "running" : isError ? "error" : "done"}
-      role="group"
-      aria-label={t("exploreCardLabel")}
-      aria-busy={isRunning || undefined}
-    >
-      <button
-        type="button"
-        className="tool-head tool-head-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((cur) => !cur)}
-      >
-        <Search className="tool-kind-icon" aria-hidden="true" />
-        <span className={`tool-kind ${isRunning ? "animated-gradient-text" : ""}`}>
-          {t("exploreCardLabel")}
-        </span>
-        <span className="explore-summary min-w-0 truncate">
-          {collapsedSummary ?? summary}
-        </span>
-        <span className="tool-status" data-error={isError || undefined}>
-          {statusWord}
-        </span>
-        <ChevronRight
-          className={`w-3.5 h-3.5 ml-0.5 transition-transform text-[var(--text-dim)] ${
-            open ? "rotate-90" : ""
-          }`}
-        />
-      </button>
-      {open && (
-        <div className="explore-children ml-2 border-l border-[var(--border)] pl-3.5">
-          {entries.map((entry) => {
-            const p = toolArgPath(entry.args);
-            const isList = entry.toolName === "list_dir";
-            const fileName = p ? p.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || p : undefined;
-            const dir = p ? pathDirectory(p) : undefined;
-            return (
-              <div key={entry.id} className="explore-child" title={p}>
-                {isList ? (
-                  <>
-                    <span className="explore-child-kind">{t("exploreBucketListLabel")}</span>
-                    <span className="explore-child-text">
-                      {p && p !== "." ? p : t("exploreCurrentDirectory")}
-                    </span>
-                  </>
-                ) : (
-                  <>
-                    <FileText className="w-3 h-3 shrink-0" aria-hidden="true" />
-                    <button
-                      type="button"
-                      className="explore-child-text cursor-pointer hover:text-[var(--text)]"
-                      onClick={() =>
-                        p && openCodeViewer({ type: "file", title: fileName ?? p, path: p })
-                      }
-                    >
-                      {fileName}
-                    </button>
-                    {dir ? <span className="explore-child-dir">{dir}</span> : null}
-                  </>
-                )}
-                {entry.status === "error" ? (
-                  <span className="tool-status" data-error="true">
-                    {t("toolStatusFailed")}
-                  </span>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
 
 export interface TurnGroupViewProps {
   /** 本轮正在流式（代码高亮等昂贵渲染降级，完成后恢复） */
@@ -202,6 +80,8 @@ export interface TurnGroupViewProps {
   onBranchFrom?: (messageId: string) => void;
   /** 发送/流式中禁用全部行内动作（对齐 LiveAgent isSending）。 */
   actionsDisabled?: boolean;
+  /** 搜索跳转定位高亮：命中的消息 id（user/assistant 行短暂亮边）。 */
+  highlightMessageId?: string | null;
 }
 
 /** 折叠体内「中间叙述」的暗色正文（非最终回复的 assistant 文本）。 */
@@ -398,6 +278,7 @@ function TurnGroupViewImpl({
   onRetryFrom,
   onBranchFrom,
   actionsDisabled = false,
+  highlightMessageId,
 }: TurnGroupViewProps) {
   const { t, locale } = useTranslation();
   // 用户只折叠/展开「已完成」的轮次；运行中强制展开且不可收起（userToggle 仅完成态生效）。
@@ -413,6 +294,9 @@ function TurnGroupViewImpl({
       ? Math.max(0, liveNowMs - group.startedAt)
       : turnDurationMs(group, liveNowMs);
   const lastAssistant = group.lastAssistant;
+  // 运行中最后一条 assistant 的正文就地渲染进折叠体（见文件头「时间线不变式」）。
+  // 纯文本轮没有思考/工具/中间叙述，靠这个标记让折叠体仍然渲染（否则流式正文不可见）。
+  const liveAnswerInBody = isTurnRunning && lastAssistant !== undefined;
 
   // 状态条恒显示（对齐 ZCode：纯文本回复也有「已工作 X 秒」）；折叠箭头仅在有
   // 可折叠内容（思考/工具/中间叙述）时出现，纯文本回复的状态条只是工时说明。
@@ -428,7 +312,6 @@ function TurnGroupViewImpl({
 
   // 折叠交互仅对有内容的轮次生效；运行中强制展开且不可收起（对齐 ZCode 只读展开）。
   const open = isTurnRunning ? true : userToggle === true;
-  const activityItems = useMemo(() => buildActivityItems(group.activity), [group.activity]);
 
   // 重连副行（对齐 LiveAgent：重试等待期间显示、首个内容事件到达才撤下；重试详情
   // 记录只在回合收敛后由 MessageItem 展示）。副行实时携带最新一次失败的错误原因。
@@ -473,6 +356,7 @@ function TurnGroupViewImpl({
           onCancelEdit={onCancelEdit}
           onEditResend={onEditResend}
           onAppendSend={onEditSend}
+          highlight={highlightMessageId === group.userMessage.id}
         />
       ) : null}
 
@@ -503,23 +387,32 @@ function TurnGroupViewImpl({
           {reconnectLabel && (
             <div className="reconnect-line break-words">{reconnectLabel}</div>
           )}
-          {hasBody && open && (
+          {(hasBody || liveAnswerInBody) && open && (
             <div className="turn-body">
-              {activityItems.map((item, index) => {
-                if (item.kind === "explore") {
-                  return <ExploreGroupCard key={`explore:${index}`} entries={item.entries} />;
-                }
-                if (item.entry.role === "assistant") {
-                  const entry = item.entry;
+              {group.activity.map((entry) => {
+                if (entry.role === "assistant") {
                   return (
                     <div key={entry.id} className="turn-assistant-activity">
                       <ThinkingBlock entry={entry} liveNowMs={liveNowMs} turnRunning={isTurnRunning} />
-                      {entry !== lastAssistant ? <IntermediateText entry={entry} streaming={streaming} /> : null}
+                      {entry !== lastAssistant ? (
+                        <IntermediateText entry={entry} streaming={streaming} />
+                      ) : isTurnRunning ? (
+                        // 运行中的最终回复正文：就地渲染（样式对齐 MessageItem 助手正文），
+                        // 结束后由下方外显的 MessageItem 接管——时间线位置不变。
+                        <div className="w-full text-sm text-[var(--text)] leading-relaxed">
+                          <div className="md">
+                            <MarkdownText text={entry.text} streaming={entry.status === "streaming"} />
+                            {entry.status === "streaming" ? (
+                              <ChatLoading loading size="sm" className="mt-1" />
+                            ) : null}
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   );
                 }
-                if (isToolEntry(item.entry)) {
-                  return <ToolCallCard key={item.entry.id} entry={item.entry} workspaceRoot={workspaceRoot} />;
+                if (isToolEntry(entry)) {
+                  return <ToolCallCard key={entry.id} entry={entry} workspaceRoot={workspaceRoot} />;
                 }
                 return null;
               })}
@@ -528,13 +421,15 @@ function TurnGroupViewImpl({
         </div>
       ) : null}
 
-      {lastAssistant ? (
+      {/* 最终回复：轮结束后外显（运行中正文已在折叠体时间线位置就地渲染，见文件头）。 */}
+      {lastAssistant && !isTurnRunning ? (
         <MessageItem
           message={lastAssistant}
           actionsDisabled={actionsDisabled}
           onAppendSend={onEditSend}
           onRetryFrom={onRetryFrom}
           onBranchFrom={onBranchFrom}
+          highlight={highlightMessageId === lastAssistant.id}
         />
       ) : null}
 

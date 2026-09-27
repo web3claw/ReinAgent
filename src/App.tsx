@@ -2,10 +2,18 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import "./styles/global.css";
 import { useConversationPool } from "./hooks/useConversationPool";
 import {
+  getEntrySnapshot,
   send as poolSend,
   editResend as poolEditResend,
   resolveApproval as poolResolveApproval,
 } from "./lib/chat/conversationPool";
+import { AutomationsPage } from "./components/automations/AutomationsPage";
+import { useAutomationStore } from "./lib/automations/store";
+import { ConversationSearchDialog } from "./components/search/ConversationSearchDialog";
+import { McpHubPage } from "./components/mcp/McpHubPage";
+import { MemoryPanel } from "./components/memory/MemoryPanel";
+import { SkillsHubPage } from "./components/skills/SkillsHubPage";
+import type { AutomationDuePayload } from "./lib/automations/types";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
 import { getRegisteredTurnOffset } from "./components/chat/MessageList";
@@ -141,6 +149,15 @@ export default function App() {
 
   const [focusTrigger, setFocusTrigger] = useState(0);
 
+  // 快捷动作卡预填状态（EmptyState → 输入框；hooks 必须在设置页早退 return 之前声明）
+  const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(null);
+  const prefillNonceRef = useRef(0);
+
+  // 全局会话搜索弹窗（侧栏放大镜触发）
+  const [searchOpen, setSearchOpen] = useState(false);
+  // 搜索跳转定位：目标消息 id（MessageList 滚动定位 + 高亮后置 null）
+  const [scrollTargetMessageId, setScrollTargetMessageId] = useState<string | null>(null);
+
   // maxSteps 从**任务级**推理等级派生；完全访问模式下不设步数上限。
   // 0 = 无上限（agentRuntime 仅在 maxSteps > 0 时启用硬闸；注意 0 不能写成 undefined——
   // undefined 会在 runAgentTurn 里回退成 DEFAULT_MAX_STEPS=8）。
@@ -181,8 +198,12 @@ export default function App() {
   const [chatScrollEl, setChatScrollEl] = useState<HTMLDivElement | null>(null);
 
 
-  const effectiveWorkspaceRoot = resolveWorkspaceRoot(selectedProject);
-  const isWorkspaceUnknown = !selectedProject && !userHome;
+  // 工作区决议（活动任务优先）：活动任务严格跟随任务自身持久化的 project 字段（单一真相源，
+  // 不依赖 UI 态 selectedProject 的同步时机——修复重启水合后自动恢复的任务回退 DefaultProject）；
+  // 草稿态（无活动任务）才使用 selectedProject（侧边栏/输入框所选项目）。
+  const workspaceProject = activeTask ? activeTask.project : selectedProject;
+  const effectiveWorkspaceRoot = resolveWorkspaceRoot(workspaceProject);
+  const isWorkspaceUnknown = !workspaceProject && !userHome;
 
 
 
@@ -390,6 +411,96 @@ export default function App() {
     ],
   );
 
+  // ---- 自动化调度派发（Rust 调度器 automation-due 事件 / 立即运行按钮）----
+  // 到点后：创建任务（绑定自动化的模型与工作区）→ 会话池发送提示词 → 轮询收敛后回报结果。
+  const dispatchAutomationRun = useCallback(
+    (payload: AutomationDuePayload) => {
+      const store = useAppStore.getState();
+      const providerId = payload.modelProvider || settings.provider || "deepseek";
+      const modelId = payload.modelId || settings.modelId || "";
+      const provider = providers.find((p) => p.id === providerId);
+      const apiKey = provider?.apiKey ?? settings.apiKey ?? "";
+      const isDemo = apiKey.trim().length === 0;
+      const taskId = store.createTask(
+        payload.title,
+        payload.workspacePath ?? null,
+        providerId,
+        modelId,
+        undefined,
+        "full",
+      );
+      const accepted = poolSend(taskId, payload.prompt, {
+        source: isDemo ? "faux" : (providerId as never),
+        config: {
+          provider: providerId as never,
+          apiKey,
+          modelId,
+          baseUrl: provider?.baseUrl ?? settings.baseUrl ?? "",
+          hasEffort: true,
+        },
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        maxSteps: 0,
+        workspaceRoot: resolveWorkspaceRoot(payload.workspacePath ?? null),
+        thinkingLevel: undefined,
+        approvalMode: "full",
+      });
+      if (!accepted) {
+        void import("@tauri-apps/api/core").then(({ invoke }) =>
+          invoke("automation_run_finished", { runId: payload.runId, status: "failed", taskId, error: "dispatch rejected" }).catch(() => {}),
+        );
+        return;
+      }
+      // claim 已推进 runCount/nextRunAt/lastRunAt：立即静默刷新列表
+      void useAutomationStore.getState().refresh(true);
+      // 轮询该任务直至收敛，回报运行结果（5s 间隔）
+      const timer = window.setInterval(() => {
+        const snap = getEntrySnapshot(taskId);
+        if (snap.status === "streaming" || snap.messages.length === 0) return;
+        const last = snap.messages[snap.messages.length - 1];
+        if (last.status === "streaming" || last.status === "running") return;
+        window.clearInterval(timer);
+        const outcome =
+          last.status === "done" ? "succeeded" : last.status === "error" ? "failed" : "stopped";
+        void import("@tauri-apps/api/core").then(({ invoke }) =>
+          invoke("automation_run_finished", {
+            runId: payload.runId,
+            status: outcome,
+            taskId,
+            error: last.error ?? null,
+          }).catch(() => {}),
+        );
+        // 运行结束（结果/错误可能落在列表卡片上）：静默刷新
+        void useAutomationStore.getState().refresh(true);
+      }, 5000);
+    },
+    [providers, settings],
+  );
+
+  // ref 保持最新派发器身份：automation-due 事件监听只注册一次
+  const dispatchAutomationRunRef = useRef(dispatchAutomationRun);
+  dispatchAutomationRunRef.current = dispatchAutomationRun;
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const stop = await listen<AutomationDuePayload>("automation-due", (event) => {
+          dispatchAutomationRunRef.current(event.payload);
+        });
+        if (cancelled) stop();
+        else unlisten = stop;
+      } catch (err) {
+        console.warn("[automations] automation-due listen unavailable (web mode)", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
   // 编辑重发后的强制贴底（对齐 LiveAgent stickToBottom on run start）+ 回退 toast。
   const [followSignal, setFollowSignal] = useState(0);
   const [rewindToast, setRewindToast] = useState<{ level: "success" | "error"; message: string } | null>(null);
@@ -577,8 +688,7 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  if (currentView === "settings") {
-    return (
+  if (currentView === "settings") {    return (
       <SettingsPage
         settings={settings}
         status={status}
@@ -588,8 +698,11 @@ export default function App() {
     );
   }
 
+  // 快捷动作卡（EmptyState）：只把提示词填进输入框、聚焦光标到末尾，
+  // **不自动发送**——用户可编辑后手动发送。nonce 单调递增保证重复点击同卡也触发。
   const handleQuickPrompt = (text: string) => {
-    handleSend(text);
+    prefillNonceRef.current += 1;
+    setComposerPrefill({ text, nonce: prefillNonceRef.current });
   };
 
   const handleSelectModel = (nextProviderId: string, nextModelId: string) => {
@@ -608,9 +721,19 @@ export default function App() {
       {/* Sidebar */}
       {isSidebarOpen && (
         <div className="flex-shrink-0 w-[260px] h-full border-r border-[var(--border)]">
-          <WorkspaceSidebar onNewTask={handleNewTask} />
+          <WorkspaceSidebar onNewTask={handleNewTask} onOpenSearch={() => setSearchOpen(true)} />
         </div>
       )}
+
+      {/* 全局会话搜索弹窗（LiveAgent ConversationSearchDialog 移植） */}
+      <ConversationSearchDialog
+        open={searchOpen}
+        onOpenChange={setSearchOpen}
+        onOpenTask={(taskId, messageId) => {
+          setActiveTaskId(taskId);
+          setScrollTargetMessageId(messageId ?? null);
+        }}
+      />
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
@@ -644,13 +767,32 @@ export default function App() {
           </div>
         )}
 
-        {/* Chat / Composer Area */}
+        {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {!hasMessages ? (
+          {currentView === "automations" ? (
+            <AutomationsPage
+              providers={providers}
+              defaultProviderId={settings.provider || "deepseek"}
+              defaultModelId={settings.modelId || ""}
+              workspacePath={selectedProject ?? undefined}
+              onDispatch={dispatchAutomationRun}
+            />
+          ) : currentView === "mcp" ? (
+            <McpHubPage />
+          ) : currentView === "memory" ? (
+            <MemoryPanel />
+          ) : currentView === "skills" ? (
+            <SkillsHubPage />
+          ) : !hasMessages ? (
             <div className="flex-1 flex flex-col items-center justify-start pt-28 md:pt-36 px-4 pb-8 overflow-y-auto">
               <div className="w-full px-[120px]">
-                <EmptyState demo={isDemo} onQuickPrompt={handleQuickPrompt} />
-                <div className="mt-8 w-full">
+                <EmptyState
+                  demo={isDemo}
+                  onQuickPrompt={handleQuickPrompt}
+                  onOpenAutomations={() => setCurrentView("automations")}
+                />
+                {/* 快捷按钮与输入框间距（用户定档：聊天框下移、间距加大） */}
+                <div className="mt-16 w-full">
                   <LexicalComposer
                     isStreaming={isStreaming}
                     onSend={handleSend}
@@ -662,6 +804,7 @@ export default function App() {
                     providers={providers}
                     onSelectModel={handleSelectModel}
                     focusRequestTrigger={focusTrigger}
+                    prefillRequest={composerPrefill}
                     contextUsage={contextUsage}
                     workspaceRoot={effectiveWorkspaceRoot}
                   />
@@ -699,6 +842,8 @@ export default function App() {
                       onBranchFrom={handleBranchFrom}
                       followSignal={followSignal}
                       workspaceRoot={effectiveWorkspaceRoot}
+                      scrollTargetMessageId={scrollTargetMessageId}
+                      onScrollTargetDone={() => setScrollTargetMessageId(null)}
                     />
                   </div>
                   <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">
@@ -737,11 +882,11 @@ export default function App() {
           )}
         </div>
 
-        {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅在有消息的任务视图显示，首页不渲染 */}
-        {hasMessages && <SessionStatsBar stats={sessionStats} />}
+        {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅聊天工作台显示 */}
+        {currentView === "workbench" && hasMessages && <SessionStatsBar stats={sessionStats} />}
 
-        {/* Terminal Pane */}
-        {isTerminalOpen && (
+        {/* Terminal Pane（仅聊天工作台显示） */}
+        {currentView === "workbench" && isTerminalOpen && (
           <div className="h-64 border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-sunken)] overflow-hidden">
             <TerminalPane />
           </div>

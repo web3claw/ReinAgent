@@ -253,7 +253,7 @@ export function toolKindLabel(toolName: string, locale: string = "zh-CN"): strin
   const zh = locale === "zh-CN";
   const known: Record<string, [string, string]> = {
     read_file: [zh ? "读取" : "Read", "read"],
-    list_dir: [zh ? "查阅" : "List", "list"],
+    list_dir: [zh ? "列出" : "List", "list"],
     write_file: [zh ? "写入" : "Write", "write"],
     edit_file: [zh ? "编辑" : "Edit", "edit"],
     exec_command: [zh ? "终端" : "Terminal", "exec"],
@@ -290,14 +290,9 @@ export function toolArgCommand(args: unknown): string | undefined {
   return typeof command === "string" && command.trim().length > 0 ? command : undefined;
 }
 
-// ---- 查阅族聚合（对齐 ZCode ExploreToolCallBlock）----
-
-/** 查阅族工具：目录列表 / 文件读取。轮内连续出现的查阅调用聚合为一张「查阅」卡。 */
-export const EXPLORE_TOOL_NAMES = new Set(["list_dir", "read_file"]);
-
-export function isExploreTool(toolName: string): boolean {
-  return EXPLORE_TOOL_NAMES.has(toolName);
-}
+// ---- 查阅族聚合已移除（2026-09-27 用户决策）----
+// list_dir / read_file 不再聚合为「查阅」组卡，直接以独立卡渲染
+// （对齐 ZCode ReadToolCallBlock 独立形态）。
 
 /** 取路径的目录部分；无目录部分（如 "." 或裸文件名）返回 undefined。 */
 export function pathDirectory(path: string): string | undefined {
