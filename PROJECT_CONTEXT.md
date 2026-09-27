@@ -272,6 +272,7 @@ ReinAgent 架构全景
 
 - **`text-ui-*` 派生刻度**（语义刻度，新代码优先用）：`--text-ui-xl`(+4) / `--text-ui-lg`(+2) / `--text-ui-base`(=基准) / `--text-ui-caption`(−1) / `--text-ui-sm`(−2) / `--text-ui-xs`(−4)；
 - **Tailwind 标准字阶整体上移**（侧栏/设置页等 `text-xs~xl` 的界面跟随放大）：`xs 16px` / `sm 18px` / `base 20px` / `lg 22px` / `xl 24px`（含配套 `--text-*--line-height`）；
+- **聊天消息内容整体小一号（2026-09-27 用户定档）**：`.md`（消息正文容器，标题/代码均 em 基准自动跟随）、`.turn-intermediate-text`（中间叙述）、`.thinking-trigger`（思考块 header）均用 `--text-ui-sm`（= 基准 −2px = 18px）；用户气泡与输入框本就是 `text-sm`(18px)，与正文对齐；界面其余部分（侧栏/设置页/工具卡摘要行等）维持原刻度不动；
 - 既有组件内零散 px 字号（14px/15px 等）暂保留，后续按需迁移到 `text-ui-*` 刻度；新增样式**禁止直接写死字号**，统一走上述变量。
 
 ## 四点七、编辑重发 / 手动重试 / 回退本轮代码改动（对齐 LiveAgent，2026-09-26）
@@ -499,6 +500,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **修复：用户气泡图片点击放大失效（2026-09-26）**——MessageItem 的返回结构是「用户分支提前 return + 助手分支 return」，Lightbox 最初只挂在 assistant 分支的树尾，用户气泡分支的树里没有该节点（点击后 setState 生效、组件重渲染，但 JSX 树中无 Lightbox → 无 DOM 变化）。已在用户分支 return 的根 div 内补挂 ImageLightbox（Composer 附件条与消息气泡共用组件）。
 - **任务级隔离 + 审批模式（2026-09-25）**：见已实现清单 #14；`ApprovalMode` 值域由无实效的 always/suggest/auto 替换为 plan/ask/edit/full；全局默认持久化 kv（`reinagent-approval-mode`，缺省 full）。
 - **修复：Linux 编译回归（2026-09-27）**——commit 177ad5a 的 `fs_cmd.rs` `spawn_shell` 用 `if cfg!(target_os = "windows")`（运行时布尔宏，不做条件编译）包裹 Windows 专属代码（`std::os::windows::CommandExt` 的 `raw_arg` / `creation_flags`），两个分支在 Linux 上仍参与类型检查，导致 E0433/E0599、桌面端在 Linux 无法编译启动。已改为 `#[cfg]` / `#[cfg(not)]` 属性条件编译（Windows 分支保留 raw_arg + CREATE_NO_WINDOW 语义，Unix 分支 `sh -c`），`CREATE_NO_WINDOW` 常量同步加 cfg 门；Windows 行为不变，Linux 恢复可编译。
+- **修复：工具结果一刀切 8KB 截断导致大文件读不全（2026-09-27，对齐 ZCode 按工具分设上限）**——原 `TOOL_LIMITS.maxResultBytes = 8192` 对**所有工具**统一截断，85KB 的 PROJECT_CONTEXT.md 一次只能读前 8KB，模型被迫用 exec `sed -n` 按 8KB 一段磨十几步（exec 结果同样被 8KB 闸拦住）。已改为**按工具分设**：`read_file` = 2000 行 / 256KB（对齐 ZCode `READ_DEFAULT_MAX_LINES` / `READ_MAX_FILE_SIZE_BYTES`，行数闸 `applyReadLineCap` 先行 + 字节闸二次兜底，details 带 `totalLines/linesTruncated`）、`exec_command` = 30KB（对齐 ZCode bash `MAX_INLINE_OUTPUT_BYTES`）、`list_dir` = 8KB 维持；`buildTextToolResult` 增加每工具 `maxBytes` 参数；read_file/exec 描述文本同步告知模型上限；Rust 侧 `fs_execute` 的 256KB 收集上限保持不变。
 
 **渲染增强类**：
 - [x] diff 视图 / 代码块的 **Shiki 语法高亮** —— 已随 PreviewPane 移植引入（`shiki@^4` + `@pierre/diffs`，工具卡内联 diff 视图仍为单色形态）
