@@ -723,3 +723,4 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - ProjectList 两类任务行（项目任务行 + 通用任务行）渲染琥珀色脉冲点（`--status-warn` + animate-pulse，title=approvalRequiredBadge）；点击任务即进入处理（现有行为）。
 - **Tauri 实测**：任务 A 发消息后立即切到任务 B → A 完成（done）触发通知链路、console 零错误；模块/开关/订阅全部验证。**系统通知弹窗本体在 Windows 通知中心**（首次会请求授权），提示音为可听验证项。
 - 验证：`tsc` 0、`build` ✓、五套前端测试全绿（128/43/18/6/12）+ hub 57 + cargo **138**。
+- **菜单键盘导航（2026-09-28 补齐，用户反馈）**：`/` 与 `@` 菜单支持 ↑/↓ 移动高亮（循环）、Enter/Tab 选中、Esc 关闭；高亮项 `data-active` 标记 + `scrollIntoView(block:nearest)` 滚动跟随；查询词/候选变化时高亮复位第一项；菜单打开时 Enter 被导航拦截（不发送消息）。菜单过滤列表提升为组件层 `slashFiltered`（keydown 与渲染共用同一份）。Tauri 实测：两菜单 ↑↓↑ 与 Enter 选中全链路通过。

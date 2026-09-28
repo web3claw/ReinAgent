@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useMemo } from "react";
 import { useTranslation } from "../../i18n";
 import {
   BUILTIN_COMMANDS,
@@ -175,6 +175,11 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const [mentionCandidates, setMentionCandidates] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState("");
   const [mentionLoading, setMentionLoading] = useState(false);
+  // 键盘导航高亮（↑/↓ 移动、Enter/Tab 选中）：斜杠菜单与提及菜单各一个下标
+  const [slashIndex, setSlashIndex] = useState(0);
+  const [mentionIndex, setMentionIndex] = useState(0);
+  const slashMenuRef = useRef<HTMLDivElement>(null);
+  const mentionMenuRef = useRef<HTMLDivElement>(null);
   const [showApprovalMenu, setShowApprovalMenu] = useState(false);
   const [showThinkingMenu, setShowThinkingMenu] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
@@ -274,6 +279,42 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    // 菜单键盘导航（优先于发送语义）：↑/↓ 移动高亮，Enter/Tab 选中
+    if (showSlashMenu && slashFiltered.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setSlashIndex((cur) =>
+          e.key === "ArrowDown"
+            ? (cur + 1) % slashFiltered.length
+            : (cur - 1 + slashFiltered.length) % slashFiltered.length,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        const cmd = slashFiltered[Math.min(slashIndex, slashFiltered.length - 1)];
+        const args = text.trim().split(/\s+/).slice(1).join(" ");
+        if (cmd.kind === "builtin") runBuiltinCommand(cmd, args);
+        else applyCustomCommand(cmd, args);
+        return;
+      }
+    }
+    if (showMentionMenu && mentionCandidates.length > 0) {
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        setMentionIndex((cur) =>
+          e.key === "ArrowDown"
+            ? (cur + 1) % mentionCandidates.length
+            : (cur - 1 + mentionCandidates.length) % mentionCandidates.length,
+        );
+        return;
+      }
+      if (e.key === "Enter" || e.key === "Tab") {
+        e.preventDefault();
+        insertMention(mentionCandidates[Math.min(mentionIndex, mentionCandidates.length - 1)]);
+        return;
+      }
+    }
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       submit();
@@ -341,6 +382,32 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     }, 200);
     return () => window.clearTimeout(timer);
   }, [showMentionMenu, mentionQuery, workspaceRoot]);
+
+  // 斜杠菜单过滤结果（组件层计算：keydown 导航与菜单渲染共用同一份列表）
+  const slashFiltered = useMemo(
+    () => filterCommands([...BUILTIN_COMMANDS, ...customCommands], slashQuery),
+    [customCommands, slashQuery],
+  );
+  // 高亮项变化时滚动进可视区
+  useEffect(() => {
+    if (!showSlashMenu) return;
+    slashMenuRef.current
+      ?.querySelector('[data-active="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [slashIndex, showSlashMenu]);
+  useEffect(() => {
+    if (!showMentionMenu) return;
+    mentionMenuRef.current
+      ?.querySelector('[data-active="true"]')
+      ?.scrollIntoView({ block: "nearest" });
+  }, [mentionIndex, showMentionMenu, mentionCandidates]);
+  // 查询词/候选变化或菜单开合时，高亮回到第一项
+  useEffect(() => {
+    setSlashIndex(0);
+  }, [slashQuery, showSlashMenu]);
+  useEffect(() => {
+    setMentionIndex(0);
+  }, [mentionQuery, showMentionMenu, mentionCandidates]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
@@ -616,7 +683,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       {/* @ Mention Menu（真实现：glob 工作区文件，选中后把 @路径 插入输入框；
           发送时 App 层读取内容并挂到 user 消息尾部 —— 对齐 ZCode/LiveAgent 的提及注入） */}
       {showMentionMenu && (
-        <div className="absolute bottom-full left-4 mb-2 w-80 max-h-64 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
+        <div ref={mentionMenuRef} data-menu="mention" className="absolute bottom-full left-4 mb-2 w-80 max-h-64 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
           <div className="sticky top-0 px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)] bg-[var(--capsule-bg)] flex items-center gap-1.5">
             <AtSign className="w-3.5 h-3.5" />
             <span>{t("mentionTitle")}</span>
@@ -627,12 +694,15 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
               {mentionLoading ? t("mentionSearching") : t("mentionNoResults")}
             </div>
           ) : (
-            mentionCandidates.map((candidate) => (
+            mentionCandidates.map((candidate, index) => (
               <button
                 key={candidate}
                 type="button"
+                data-active={index === mentionIndex ? "true" : undefined}
                 onClick={() => insertMention(candidate)}
-                className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface)] text-[var(--text-primary)] flex items-center gap-2"
+                className={`w-full text-left px-3 py-1.5 text-[var(--text-primary)] flex items-center gap-2 ${
+                  index === mentionIndex ? "bg-[var(--surface-hover)]" : "hover:bg-[var(--surface)]"
+                }`}
                 title={candidate}
               >
                 <FileCode className="w-3.5 h-3.5 shrink-0 text-blue-500" />
@@ -646,28 +716,30 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       {/* Slash Command Menu（真实现）：内置命令（宿主执行）+ 工作区自定义命令
           （.ReinAgent/commands/*.md，模板展开填入输入框） */}
       {showSlashMenu && (() => {
-        const allCommands = [...BUILTIN_COMMANDS, ...customCommands];
-        const filtered = filterCommands(allCommands, slashQuery);
+        const filtered = slashFiltered;
         // 参数串 = 用户在命令名后输入的内容（`/review foo` 的 `foo`）
         const args = text.trim().split(/\s+/).slice(1).join(" ");
         return (
-          <div className="absolute bottom-full left-4 mb-2 w-80 max-h-64 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
+          <div ref={slashMenuRef} data-menu="slash" className="absolute bottom-full left-4 mb-2 w-80 max-h-64 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
             <div className="sticky top-0 px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)] bg-[var(--capsule-bg)]">
               {t("slashTitle")}
             </div>
             {filtered.length === 0 ? (
               <div className="px-3 py-2 text-[var(--text-secondary)]">{t("slashNoResults")}</div>
             ) : (
-              filtered.map((cmd) => (
+              filtered.map((cmd, index) => (
                 <button
                   key={`${cmd.kind}-${cmd.name}`}
                   type="button"
+                  data-active={index === slashIndex ? "true" : undefined}
                   onClick={() =>
                     cmd.kind === "builtin"
                       ? runBuiltinCommand(cmd, args)
                       : applyCustomCommand(cmd, args)
                   }
-                  className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface)] text-[var(--text-primary)] flex flex-col"
+                  className={`w-full text-left px-3 py-1.5 text-[var(--text-primary)] flex flex-col ${
+                    index === slashIndex ? "bg-[var(--surface-hover)]" : "hover:bg-[var(--surface)]"
+                  }`}
                 >
                   <span className="font-medium flex items-center gap-1.5">
                     <span className="font-mono">/{cmd.name}</span>
