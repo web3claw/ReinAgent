@@ -158,7 +158,7 @@
 10. ~~**WebFetch / WebSearch**（含域名白名单与结果缓存）~~ ✅ 2026-09-28（Rust `web_tools.rs`：DDG 无 Key 搜索 + ureq 抓取 + 15min 缓存 + SSRF 防护 + 代理设置；UI 联网搜索聚合行「已搜索 N 次·N 个来源」）。§11.8 增量未做：来源行点击外链打开。
 11. ~~**工具级策略**（allow/ask/deny 三态 + Hub 内切换）~~ ✅ 2026-09-28（ee7fb11：任务级 toolPolicies + MCP Hub 卡 serverPolicy 切换）。
 12. ~~**AGENTS.md + gitStatus 注入**（落位 meta_user 块）~~ **主体** ✅ 2026-09-28（3d49fc7：agents_md.rs 四级回退扫描 + meta_user 注入）；gitStatus 快照未纳入（需异步 git + 缓存，见 PROMPTS.md 待办）。
-13. **用量统计图表**（日趋势 / 模型分布 / 热力图）。
+13. ~~**用量统计图表**（日趋势 / 模型分布 / 热力图）~~ ✅ 2026-09-28（**复刻 ZCode 一致**：源码直移 settings/usage-stats + Recharts + 52 周热力图每日/每周/累计 + 汇总条五指标 streak/peak/最长聊天 + 每日分模型趋势 + donut 份额；Rust 快照同形 AppUsageSnapshot）。未做增量：Coding Plan 远端配额面板、工具用量榜。
 14. **记忆 Organizer 接线 + Extraction 管线**（Rust 表/命令与 UI 已备，缺 LLM 编排与聊天后钩子）。
 15. **排队消息面板 + 任务通知**：忙时排队（表头/上移/编辑撤回/打断并执行/删除，§11.5）+ 完成系统通知/提示音/侧栏交互角标（倒计时填充、hover snooze，§11.7）。
 

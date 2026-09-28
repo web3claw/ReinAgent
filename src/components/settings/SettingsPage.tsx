@@ -5,6 +5,7 @@ import { useTranslation } from '../../i18n';
 import { isNotificationSoundEnabled, setNotificationSoundEnabled } from '../../lib/chat/taskNotifications';
 import { getWebProxy, setWebProxy } from '../../lib/web/webProxy';
 import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
+import { AppUsagePanel } from './usage-stats/AppUsagePanel';
 import { useAppStore } from '../../store/useAppStore';
 import {
   Settings as SettingsIcon,
@@ -15,7 +16,8 @@ import {
   Info,
   ArrowLeft,
   Moon,
-  Sun
+  Sun,
+  ChartColumn
 } from 'lucide-react';
 
 interface SettingsPageProps {
@@ -29,13 +31,14 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
   const { t } = useTranslation();
   const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
   const [proxyInput, setProxyInput] = useState(getWebProxy());
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'usage' | 'about'>('general');
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
   const navItems = [
     { id: 'general', label: t('settingsGeneral'), icon: SettingsIcon },
     { id: 'appearance', label: t('settingsAppearance'), icon: Palette },
     { id: 'provider', label: t('settingsProvider'), icon: Server },
+    { id: 'usage', label: t('settingsUsage'), icon: ChartColumn },
     { id: 'terminal', label: t('settingsTerminal'), icon: Terminal },
     { id: 'agent', label: t('settingsAgent'), icon: Brain },
     { id: 'about', label: t('settingsAbout'), icon: Info },
@@ -165,6 +168,12 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
                 <h2 className="text-xl font-semibold">{t('settingsProvider')}</h2>
               </div>
               <ModelProviderSettings settings={settings} status={status} onChange={onChange} />
+            </div>
+          )}
+
+          {activeTab === 'usage' && (
+            <div className="space-y-6">
+              <AppUsagePanel />
             </div>
           )}
 

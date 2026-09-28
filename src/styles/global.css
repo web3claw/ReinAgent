@@ -1637,3 +1637,40 @@ select option {
   max-height: 320px;
   overflow-y: auto;
 }
+
+/* ---------- 用量统计图表色板（P1-7 复刻 ZCode styles.css，明暗两套跟随 data-theme） ---------- */
+/* ⚠ 必须用标准 @theme（非 inline）：inline 会把值内联进工具类，[data-theme] 的 dark
+   覆盖会失效（实测踩过——border-hover 恒为亮色 fallback，列 hover 高亮弱到不可见） */
+@theme {
+  --color-warning: var(--status-warn);
+  --color-destructive: var(--danger);
+  /* 对齐 ZCode border-hover：明 = 中性暗 20%、dark = 亮白 30%（下方覆盖） */
+  --color-border-hover: color-mix(in oklab, #0f172a 20%, transparent);
+  /* 应用用量图表独立色板（避免复用终端 ANSI 色造成高饱和堆叠）——明 */
+  --color-usage-chart-1: var(--color-sky-600);
+  --color-usage-chart-2: var(--color-teal-600);
+  --color-usage-chart-3: var(--color-violet-600);
+  --color-usage-chart-4: var(--color-rose-500);
+  --color-usage-chart-5: var(--color-indigo-500);
+  --color-usage-chart-6: var(--color-cyan-600);
+  /* 热力图 sky 单蓝色阶（level0 用中性可见灰——纯 surface 会与卡片背景融合不可见） */
+  --color-usage-heatmap-0: color-mix(in oklab, #0f172a 8%, transparent);
+  --color-usage-heatmap-1: color-mix(in oklab, var(--color-sky-500) 18%, var(--color-surface));
+  --color-usage-heatmap-2: color-mix(in oklab, var(--color-sky-500) 36%, var(--color-surface));
+  --color-usage-heatmap-3: color-mix(in oklab, var(--color-sky-600) 58%, var(--color-surface));
+  --color-usage-heatmap-4: color-mix(in oklab, var(--color-sky-700) 82%, var(--color-surface));
+}
+
+/* dark 主题：图表色提亮一档（对齐 ZCode dark 段） */
+[data-theme="dark"] {
+  --color-usage-chart-1: var(--color-sky-500);
+  --color-usage-chart-2: var(--color-teal-400);
+  --color-usage-chart-3: var(--color-violet-400);
+  --color-usage-chart-4: var(--color-rose-400);
+  --color-usage-chart-5: var(--color-indigo-400);
+  --color-usage-chart-6: var(--color-cyan-400);
+  /* 对齐 ZCode dark：border-hover = 30% 亮白（列 hover 高亮可辨） */
+  --color-border-hover: color-mix(in oklab, #ffffff 30%, transparent);
+  /* 暗色下空格用亮白低混（亮色主题用上方默认段的暗色混色） */
+  --color-usage-heatmap-0: color-mix(in oklab, #ffffff 7%, transparent);
+}

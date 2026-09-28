@@ -16,6 +16,9 @@ mod skills;
 mod history_search;
 mod hub_http;
 mod web_tools;
+mod usage_stats;
+#[cfg(test)]
+mod usage_stats_tests;
 #[cfg(test)]
 mod web_tools_tests;
 
@@ -87,6 +90,7 @@ pub fn run() {
             bg_process::bg_list,
             web_tools::web_fetch,
             web_tools::web_search,
+            usage_stats::usage_snapshot,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,
             conversation_store::conversation_delete,

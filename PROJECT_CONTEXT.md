@@ -797,3 +797,27 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **右侧目录面板**：codeViewerSource 联合类型加 `{type:"subagents", title, focusId?}`；CodeViewerPaneHost 对应分支渲染 `SubagentsPanel`（实时 useSyncExternalStore 订阅）：Running/Ended 分组（ZCode TUI SubagentsSection 形态）、运行行 Stop 按钮（后台运行）、行点击进详情（id/类型/状态/时长/tokens/工具调用数/后台标记 + 任务全文 + 报告/错误）。agent 工具卡 `summaryAction`（「在右侧打开子代理面板」）聚焦对应运行。
 - **Tauri 实测**：后台启动立即返回 id → 父轮继续 → 30s 后 subagent_output 查询 → completed + 触顶 ⚠ 如实转述；主模型正确识别「Explore 只读无法写文件」的能力边界并给出替代方案；面板详情视图全字段渲染正确。
 - 验证：前端 310/310 + `tsc` 0（新增 subagentRegistry.test.mjs 3 例 + 后台端到端 1 例）。
+
+### 8.11.1 用量面板复刻 ZCode（用户要求「一模一样」，2026-09-28）
+- **做法**：直接复制 ZCode 源码（packages/ui/src/settings/usage-stats/ + components/ui/chart.tsx + tokenNumberFormat）到 `src/components/settings/usage-stats/`，仅适配 import 路径与两个兼容层——**图表逻辑零改动**。
+- **兼容层**（差异全部收口）：`usageIntl.tsx`（同名 `useZCodeIntl`，内部 t+占位替换，settings.usage.* 键走宽松查询）；`usageTooltip.tsx`（ControlHintTooltip → lw Tooltip，⚠️ Radix Tooltip 必须 Provider——lw/ui/tooltip 已含）；`usageErrorBoundary.tsx`（ScopedErrorBoundary 最小替代，resetKeys 变化自动重试）；`useAppUsageStats.ts`（ZCode 走 service→RPC，我们直接 invoke `usage_snapshot`，保留版本号防竞态）。
+- **快照契约**：Rust `usage_query` 重写为 ZCode `AppUsageSnapshot` 同形（summary 全字段含 streak/peak/longestSession/favoriteModel、heatmap 52 周自然周（周日起）+ level 分级（>75%→4/>50%→3/>25%→2）、dailyModelUsage 按日分模型、models 带 share；无 tools 数据 v1 空）。旧 usage_refresh 命令/自绘 UsageStatsSection 已删。
+- **依赖**：`recharts@3.10.1`（ZCode 同款图表库；chart.tsx 复制版带 initialDimension 扩展）。图表 lazy + LoadBoundary（ZCode 因 decimal.js-light 在 Electron Linux 容器崩才 lazy——我们沿用同一防护）。
+- **CSS**：global.css 追加 usage 色板（--color-usage-chart-1..6 / --color-usage-heatmap-0..4，sky 系 + color-mix surface，明暗两套 data-theme）；Tailwind 六共享色（foreground/surface/muted 等）此前已对齐 ZCode 语义，移植组件类名几乎直接可用。⚠️ Tabs pill 的 `data-active:` 变体要改成 `data-[state=active]:`（Radix 形态）。
+- **⚠️ Rust 坑**：聚合 SQL 带 `?2` 占位就必须传两个参数（day/tool 每日查询改 `?1`）；`findLast` 需 es2023 lib（改 `[...arr].reverse().find`）。
+- **实测**：驱动设置页→用量统计，汇总条 5 指标/热力图（13 个月份标签）/每日每周累计/时间范围 pill/双 Recharts 图全部渲染；截图存 /tmp 比对用户提供的 ZCode 截图，布局样式一致。数字：总 10.7 万/峰值 9.1 万/最长聊天 1 小时 8 分/连续 1 天。
+- 验证：Rust 153/153（快照形状测试重写）+ `tsc` 0 + 前端 310/310。
+
+- **8.11.1 追加修复（用户实测反馈）**：① 热力图空格不可见——level0 色原样照抄 ZCode（sky 0% + surface = 纯 surface），但我们的 --surface 是实色 #1e2028 与卡片背景完全同色（ZCode 的 surface 是 3% neutral-950 **半透明**叠色才可见）；修复：明/dark 两套 data-theme 分别用暗/亮白低混色。② hover 迟迟不出提示——每格自带 lw Tooltip 的 Provider 且未设 delayDuration（Radix 默认 700ms）；修复：usageTooltip 重写为 Radix 直用 + **共享 UsageTooltipProvider（delayDuration=0）**包 UsageHeatmap 顶层。CDP 验证：364 格 backgroundColor 与卡片背景 distinct、hover 即时出「2026年9月29日\n0 tokens · 0 轮消息」。
+- **8.11.1 追加修复②（列/格 hover 高亮不可辨）**：行为代码本就在（weekly/cumulative 列 `group/usage-heatmap-column` 整列高亮、daily 单格 hover），真正根因是 **`@theme inline` 把 --color-border-hover 的值内联进工具类**，[data-theme="dark"] 的覆盖恒不生效，实际用的 fallback --border 与格子背景几乎同亮度。修复：usage 色板移出 inline 块用标准 `@theme`（工具类输出 var 引用，主题覆盖生效），border-hover 对齐 ZCode dark 值 = 30% 亮白 / 明 = 20% 暗色。CDP 实测：weekly hover 整列 7 格 borderTopColor 统一变 30% 白（hover 前透明）、daily hover 仅单格变、邻格不变，tooltip 均即时。
+
+### 8.11 P1-7 用量统计图表（2026-09-28，Tauri 实测闭环）
+- **架构（对齐 ZCode usage-observability，但零写入链路改动）**：不建新写入点——`usage_stats.rs` 的 `usage_backfill_sync` **幂等回填**既有 `part` 表（`api_message` assistant 原件 → main_turn 行；`tool_result` 中 agent 工具的 `details.usage` → subagent 行，model 列存 subagentType），`INSERT OR IGNORE`（id=`task:msg`）；打开面板时 `usage_refresh` 先回填再 SQL 聚合，数据即时最新。
+- **事实表**：`model_usage`（conversation_store 迁移幂等追加，字段对齐 ZCode migration 0010 精简版：query_source/provider/model/started_at/input/output/cache_read/cache_write/total）。**口径**：total = input + output（cache 是 breakdown 不叠加，对齐 ZCode）；缓存命中率 = cacheRead/(input+cacheRead)（pi-ai input 不含缓存）。30 天滚动 prune。
+- **⚠️ 实测抓出**：pi-ai AssistantMessage 的模型名字段是 **`model`**（不是 modelId）——首版回填 77 条 model=''；修复为 model→modelId→modelName 链 + 回填时 UPDATE 纠正历史空名行（IGNORE 不会自愈）。
+- **聚合**：`usage_query` SQL 层完成 totals / 按模型分组（降序）/ 日归桶（`dayIndex=(started_at+tzOffsetMs)/86400000`，tz 由前端传）。无 cost 维度（对齐 ZCode）。
+- **UI**：设置页新增「用量统计」分区（`UsageStatsSection.tsx`）：范围 Tabs（7d/30d/all）+ 汇总条（总 tokens/请求/命中率/输出）+ **热力图**（CSS Grid 14 周，level 0-4 按 max 归一）+ **日趋势**（自绘 SVG 折线近 30 天）+ **模型分布**（自绘 SVG 环形 + 图例份额）。**零新依赖**（不引 Recharts——ZCode 被 decimal.js-light 容器坑过才 lazy，我们直接自绘更稳）。子代理行显示「子代理 · <type>」。
+- **测试**：`usage_stats_tests.rs` 3 例（回填幂等+字段提取、聚合口径+日桶、范围过滤）；⚠️ 测试时间必须贴近 now——回填内含 30 天 prune，1970 年代测试数据会被当场清掉（首个失败即此因）。
+- **Tauri 实测**：真实回填 77 条历史记录；模型名纠正后三个模型正确分列（deepseek-v4.1-flash 73.1% / glm-5.3-flash 26.9% / deepseek-chat 0%）；设置页导航 → 汇总条/热力图/趋势/环形全部渲染；范围切换正常。
+- 验证：Rust 153/153（+3）+ `tsc` 0 + 前端 310/310。
+- **8.11.1 追加修复③（趋势图只显示有数据的天）**：dailyModelUsage 原 SQL GROUP BY 只返回有用量行的天（两天数据 = 两个点连线）；ZCode 的 30d/7d 协议结果是**连续每日序列**（其源码注释专门记过这个回归）。修复：usage_query 按 range 补齐——7d/30d 从范围起点到今天每天一行（无数据 models 空），all 从最早数据日补。测试断言同步（7d=7 天、all=4 天连续）。

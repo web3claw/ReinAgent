@@ -80,6 +80,9 @@ fn open_db() -> Result<Connection, String> {
          );",
     )
     .map_err(|e| format!("Failed to init schema: {}", e))?;
+    // 用量事实表（P1-7，幂等追加迁移，对齐 ZCode migration 0010 精简版）
+    conn.execute_batch(crate::usage_stats::MODEL_USAGE_SCHEMA)
+        .map_err(|e| format!("Failed to init usage schema: {}", e))?;
     Ok(conn)
 }
 
