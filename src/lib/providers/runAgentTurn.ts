@@ -87,11 +87,13 @@ export function buildEnvironmentSection(
  */
 export function buildMetaUserBlock(parts: {
   currentDate?: string;
+  agentsMdSection?: string;
   memorySection?: string;
   skillsSection?: string;
 }): string | undefined {
   const sections = [
     parts.currentDate,
+    parts.agentsMdSection,
     parts.memorySection,
     parts.skillsSection,
   ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
@@ -339,9 +341,32 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     effectiveSystemPrompt += APPROVAL_HINT_PROMPT;
   }
   // 记忆/技能不进系统提示词（ZCode 同款 meta_user 通道）：系统提示词保持静态，
-  // 二者随 currentDate 包 <system-reminder> 并入首条 user 消息（见 base.messages）。
+  // 三者随 currentDate 包 <system-reminder> 并入首条 user 消息（见 base.messages）。
+  // 工作区指令文件（AGENTS.md / CLAUDE.md，ZCode request-user-context 语义）：
+  // 内容同样挂 meta_user；读取失败/不存在时如实跳过。
+  let agentsMdSection = "";
+  if (workspaceRoot) {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const files = await invoke<
+        { source: string; path: string; content: string; truncated: boolean }[]
+      >("agents_md_read", { workspaceRoot });
+      for (const file of files) {
+        const truncMark = file.truncated
+          ? "\n…[truncated: 指令文件超过 64KB，仅注入前 64KB]"
+          : "";
+        agentsMdSection += `<instruction-file source="${file.source}" path="${file.path}">\n${file.content}${truncMark}\n</instruction-file>\n\n`;
+      }
+      if (agentsMdSection.trim().length > 0) {
+        agentsMdSection = `# Project instructions (from workspace instruction files — authoritative for this workspace)\n\n${agentsMdSection.trim()}`;
+      }
+    } catch (err) {
+      console.warn("[agents-md] read failed (continuing without):", err);
+    }
+  }
   const metaUserBlock = buildMetaUserBlock({
     currentDate: `# currentDate\nToday's date is ${new Date().toDateString()}.`,
+    agentsMdSection,
     memorySection,
     skillsSection,
   });

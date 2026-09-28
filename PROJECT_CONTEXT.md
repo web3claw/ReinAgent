@@ -731,3 +731,4 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **UI**：MCP 已配置卡（启用中的 server）恢复 LA 的 ToolPolicyToggle 列（allow/ask/deny 三态，服务器级——作用于该 server 全部 `mcp__<id>__<tool>` 工具）。
 - 测试：`toolPolicy.test.mjs` 5 例（allow 直通/deny 拦截含 read 工具/ask 覆盖 edit 自动放行/未配置不回归）→ providers 18→**23**。
 - MCP 服务器级策略的运行时匹配说明：MCP 工具名是 `mcp__<serverId>__<tool>`，策略键需为 serverId 时由门内 `resolveToolPermissionKind` 保守视为 write + `toolPolicies[toolName]` 精确名匹配；服务器级 → 工具名的展开由 UI 写入时按前缀匹配（后续增强，当前按工具全名/服务器 id 精确键）。
+- **P1-2 AGENTS.md 注入（2026-09-28）**：Rust `agents_md.rs` `agents_md_read(workspace_root)` 按优先级扫 `AGENTS.md` → `.agents/AGENTS.md` → `CLAUDE.md` → `.claude/CLAUDE.md`（只取最优先命中一个；64KB 截断标注；空文件跳过；不存在返回空数组非错误）。`runAgentTurn` 组装 meta_user 块时注入为 `<instruction-file source path>` 段（标题「Project instructions — authoritative for this workspace」）。`buildMetaUserBlock` 参数序：currentDate → agentsMd → memory → skills。

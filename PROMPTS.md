@@ -227,7 +227,7 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 | 记忆注入（`# Memory Index` 分桶 + `## Memory` 规则段） | `src/lib/memory/prompts/{shared,injection}.ts`（LA prompts/injection 原文移植；五桶 30 条/桶、置信度/新鲜度标记、16K 截断） | ✅ |
 | MemoryManager 工具（list/read/search/write/update/delete/accept + 证据契约） | `src/lib/memory/memoryManagerTool.ts` + `prompts/managerTool.ts`（Rust MemoryStore 全量移植承接） | ✅ |
 | Skills 注入（`skill://` 协议 + 渐进披露清单） | `lib/skills/index.ts buildSkillsSystemPrompt`（LA 原文移植；`runAgentTurn` 按 hubSettings.skills.enabled+selected 注入） | ✅ |
-| AGENTS.md OVERRIDE 注入 + meta-user 免责 | 待实现（依赖 AGENTS.md 支持） | ⏳ |
+| AGENTS.md OVERRIDE 注入 + meta-user 免责 | `agents_md_read`（Rust 扫 AGENTS.md/.agents/AGENTS.md/CLAUDE.md/.claude/CLAUDE.md，64KB 截断）→ `agentsMdSection` 包 `<instruction-file>` 入 meta_user 块（见 2.1） | ✅ 2026-09-28（OVERRIDE 优先级语义待增） |
 | Context management（压缩） | 待实现（依赖会话压缩） | ⏳ |
 | meta_user 注入结构（current-date/request-user-context/skills 三段） | `buildMetaUserBlock` + `prependMetaUserBlock`（见 2.1）；AGENTS.md/gitStatus 落位已备 | ✅（部分） |
 | system-reminder 防伪造包装 | meta_user 块（currentDate/记忆/技能）已采用 <system-reminder> 包装（见 2.1） | ✅（部分） |
