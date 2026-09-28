@@ -1,5 +1,8 @@
 @import "tailwindcss";
 
+/* LiveAgent Hub 移植：dark: 变体跟随 data-theme 换肤（移植组件大量使用 dark: 前缀类） */
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
 :root, [data-theme="dark"] {
   --bg: #12141a;
   --bg-elev: #191c24;
@@ -1055,23 +1058,47 @@ select option {
 
 /* ---------- ZCode PreviewPane 移植的 token 桥接 ----------
    移植组件使用 ZCode 语义工具类（bg-panel/text-foreground-subtle 等），
-   这里通过 @theme inline 映射到宿主语义变量，跟随 data-theme 换肤。 */
+   这里通过 @theme inline 映射到宿主语义变量，跟随 data-theme 换肤。
+   background/foreground/border/card/popover 六个共享色支持 .hub-scope 覆盖：
+   Skills/MCP/记忆三个 Hub 页面包裹 .hub-scope，作用域内解析为 LiveAgent
+   原版中性色板（与 LiveAgent 截图一致），作用域外维持既有色板不变。 */
 @theme inline {
-  --color-background: var(--bg);
-  --color-foreground: var(--text);
+  --color-background: var(--lw-background, var(--bg));
+  --color-foreground: var(--lw-foreground, var(--text));
   --color-foreground-subtle: var(--text-secondary);
   --color-foreground-subtlest: var(--text-dim);
-  --color-border: var(--border);
+  --color-border: var(--lw-border, var(--border));
   --color-panel: var(--bg-elev);
-  --color-card: var(--bg-card);
+  --color-card: var(--lw-card, var(--bg-card));
+  --color-card-foreground: var(--lw-foreground, var(--text));
   --color-surface: var(--surface);
   --color-surface-hover: var(--surface-hover);
   --color-hover: var(--bg-hover);
-  --color-input: var(--border);
-  --color-popover: var(--bg-elev);
-  --color-popover-foreground: var(--text);
+  --color-input: var(--lw-border, var(--border));
+  --color-popover: var(--lw-popover, var(--bg-elev));
+  --color-popover-foreground: var(--lw-popover-foreground, var(--text));
+  --color-muted: var(--lw-muted, var(--bg-hover));
+  --color-muted-foreground: var(--lw-muted-foreground, var(--text-dim));
+  --color-primary: var(--lw-primary, var(--brand));
+  --color-primary-foreground: var(--lw-primary-foreground, var(--bg));
+  --color-accent: var(--lw-accent, var(--surface-hover));
+  --color-accent-foreground: var(--lw-foreground, var(--text));
+  --color-destructive: var(--lw-destructive, var(--danger));
+  --color-destructive-foreground: var(--lw-destructive-foreground, #ffffff);
+  --color-success: var(--lw-success, var(--status-ok));
+  --color-success-foreground: var(--lw-success-foreground, #ffffff);
+  --color-ring: var(--lw-ring, var(--brand));
+  --color-settings-tile: var(--lw-settings-tile, var(--surface));
+  --color-settings-tile-hover: var(--lw-settings-tile-hover, var(--surface-hover));
+  --color-settings-active: var(--lw-settings-active, var(--settings-nav-active));
+  --color-control-surface: var(--lw-control-surface, var(--surface));
+  --color-segmented-track: var(--lw-segmented-track, var(--settings-nav-active));
+  --color-segmented-selected: var(--lw-segmented-selected, var(--bg-elev));
   --color-diff-added: var(--diff-added);
   --color-diff-removed: var(--diff-removed);
+  /* LiveAgent 紧凑徽标/计数字号（tokens.css --text-tiny = 0.625rem） */
+  --text-tiny: 0.625rem;
+  --text-tiny--line-height: 1.2;
   /* 对齐用户 ZCode 实例的界面字号设置（20px）：全部 text-ui-* 刻度由此派生 */
   --ui-font-size: 20px;
   /* 标准字阶同步上移：侧栏/设置页等使用 Tailwind text-* 的界面整体跟随放大 */
@@ -1092,6 +1119,88 @@ select option {
   --text-ui-sm: calc(var(--ui-font-size) - 2px);
   --text-ui-xs: calc(var(--ui-font-size) - 4px);
 }
+
+/* ---------- LiveAgent Hub 移植色板（Skills / MCP / 记忆 三页专用） ----------
+   值逐项对齐 LiveAgent tokens.css 的 :root（亮色）与 .dark（暗色）块。 */
+.hub-scope {
+  --lw-background: hsl(0 0% 100%);
+  --lw-foreground: hsl(222.2 84% 4.9%);
+  --lw-card: hsl(0 0% 100%);
+  --lw-popover: hsl(0 0% 100%);
+  --lw-popover-foreground: hsl(222.2 84% 4.9%);
+  --lw-primary: hsl(222.2 47.4% 11.2%);
+  --lw-primary-foreground: hsl(210 40% 98%);
+  --lw-muted: hsl(210 40% 96.1%);
+  --lw-muted-foreground: hsl(215.4 16.3% 46.9%);
+  --lw-accent: hsl(210 40% 96.1%);
+  --lw-destructive: #b91c1c;
+  --lw-destructive-foreground: #ffffff;
+  --lw-success: #065f46;
+  --lw-success-foreground: #ffffff;
+  --lw-border: hsl(214.3 31.8% 91.4%);
+  --lw-ring: hsl(222.2 84% 4.9%);
+  --lw-settings-tile: hsl(0 0% 96.5%);
+  --lw-settings-tile-hover: hsl(0 0% 94%);
+  --lw-settings-active: hsl(0 0% 88.5%);
+  --lw-control-surface: hsl(0 0% 100%);
+  --lw-segmented-track: hsl(0 0% 88.5%);
+  --lw-segmented-selected: hsl(0 0% 100%);
+}
+[data-theme="dark"] .hub-scope {
+  --lw-background: hsl(0 0% 9.4%);
+  --lw-foreground: hsl(0 0% 98%);
+  --lw-card: hsl(0 0% 12.9%);
+  --lw-popover: hsl(0 0% 12.9%);
+  --lw-popover-foreground: hsl(0 0% 98%);
+  --lw-primary: hsl(210 30% 96%);
+  --lw-primary-foreground: hsl(222.2 47.4% 11.2%);
+  --lw-muted: hsl(0 0% 15.7%);
+  --lw-muted-foreground: hsl(0 0% 72%);
+  --lw-accent: hsl(0 0% 18.8%);
+  --lw-destructive: #fca5a5;
+  --lw-destructive-foreground: #450a0a;
+  --lw-success: #6ee7b7;
+  --lw-success-foreground: #022c22;
+  --lw-border: hsl(0 0% 26%);
+  --lw-ring: hsl(212.7 26.8% 83.9%);
+  --lw-settings-tile: hsl(0 0% 12.9%);
+  --lw-settings-tile-hover: hsl(0 0% 18.8%);
+  --lw-settings-active: hsl(0 0% 25.5%);
+  --lw-control-surface: hsl(0 0% 18.8%);
+  --lw-segmented-track: hsl(0 0% 9.4%);
+  --lw-segmented-selected: hsl(0 0% 25.5%);
+}
+
+/* LiveAgent Hub 移植：阴影 / 进度动画 / 字面量工具类（tokens.css 同名值） */
+@theme {
+  --shadow-ui-hubchrome-24: inset 0 1px 0 rgb(255 255 255 / 0.6), 0 6px 22px -14px rgb(15 23 42 / 0.18);
+  --shadow-ui-hubchrome-25: inset 0 1px 0 rgb(255 255 255 / 0.06), 0 6px 22px -14px rgb(0 0 0 / 0.55);
+  --shadow-ui-skillshubpage-51: 0 8px 24px -12px rgb(15 23 42 / 0.35);
+  --shadow-ui-mcpregistrybrowser-45: -18px 0 45px -28px rgb(15 23 42 / 0.45);
+  --shadow-ui-mcpregistrybrowser-46: -18px 0 45px -28px rgb(0 0 0 / 0.7);
+  --shadow-ui-memorysettingsdrawer-50: 0 1px 2px rgb(15 23 42 / 0.08), 0 4px 10px -6px rgb(15 23 42 / 0.18);
+  --animate-hub-loading-progress: hub-loading-progress 1.45s ease-in-out infinite;
+  @keyframes hub-loading-progress {
+    0% { transform: translateX(-60%) scaleX(0.35); }
+    50% { transform: translateX(30%) scaleX(0.85); }
+    100% { transform: translateX(145%) scaleX(0.35); }
+  }
+}
+@utility max-w-1320px { max-width: 1320px; }
+@utility grid-cols-form-label { grid-template-columns: 7rem minmax(0, 1fr); }
+@utility grid-cols-mcp-actions { grid-template-columns: auto 2rem 2rem; }
+@utility min-h-360px { min-height: 360px; }
+@utility h-dialog-760px { height: 760px; }
+@utility min-h-228px { min-height: 228px; }
+@utility min-h-48px { min-height: 48px; }
+@utility min-h-40px { min-height: 40px; }
+@utility size-420px { width: 420px; height: 420px; }
+@utility size-360px { width: 360px; height: 360px; }
+@utility rounded-12px { border-radius: 12px; }
+@utility bottom-safe-bottom-offset { bottom: max(0.5rem, env(safe-area-inset-bottom)); }
+/* LA tokens.css 的 --spacing-safe-bottom-Nrem（安全区补偿留白，Skills Hub 批量模式/导入页用） */
+@utility pb-safe-bottom-10rem { padding-bottom: calc(10rem + env(safe-area-inset-bottom)); }
+@utility pb-safe-bottom-5rem { padding-bottom: calc(5rem + env(safe-area-inset-bottom)); }
 
 
 /* ---------- 文件更改摘要卡（对齐 ZCode ConversationFileSummaryPanel 布局） ---------- */
@@ -1279,3 +1388,190 @@ select option {
     outline-color: var(--brand);
   }
 }
+
+/* ============================================================================
+   LiveAgent Hub 移植（追加区）—— 仅允许在此追加 @utility / @theme 行。
+   以下 token 值逐项对齐 LiveAgent crates/agent-ui/src/styles/tokens.css。
+   ========================================================================= */
+
+/* ---------- LiveAgent 语义色补充（secondary 桥接 + hsl-alpha 加载态色板） ---------- */
+@theme inline {
+  --color-secondary: var(--lw-secondary, var(--lw-accent, var(--surface-hover)));
+  --color-secondary-foreground: var(--lw-secondary-foreground, var(--lw-foreground, var(--text)));
+  /* LA：hsl(var(--muted-foreground) / 0.1) 等直读 HSL alpha 的加载态色板；
+     这里以 color-mix 于元素处求值，从而跟随 .hub-scope 作用域色板。 */
+  --color-hsl-border-35: color-mix(in oklab, var(--lw-border, var(--border)) 35%, transparent);
+  --color-hsl-border-55: color-mix(in oklab, var(--lw-border, var(--border)) 55%, transparent);
+  --color-hsl-background-50: color-mix(in oklab, var(--lw-background, var(--bg)) 50%, transparent);
+  --color-hsl-muted-foreground-10: color-mix(in oklab, var(--lw-muted-foreground, var(--text-dim)) 10%, transparent);
+  --color-hsl-foreground-72: color-mix(in oklab, var(--lw-foreground, var(--text)) 72%, transparent);
+}
+
+/* ---------- Hub 载入毛玻璃面 / 背景光晕（tokens.css 同名值） ---------- */
+/* hub-frost-hero 的 linear-gradient 含 var() 逗号 fallback，经 @theme 会被
+   Tailwind 的渐变 stop 解析器破坏，故以 @utility 直定义。 */
+@utility bg-hub-frost-hero {
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--lw-background, var(--bg)) 82%, transparent),
+    color-mix(in oklab, var(--lw-background, var(--bg)) 55%, transparent)
+  );
+}
+@utility bg-hub-frost-hero-dark {
+  background-image: linear-gradient(
+    180deg,
+    color-mix(in oklab, white 6%, transparent),
+    color-mix(in oklab, white 3%, transparent)
+  );
+}
+@theme inline {
+  --background-image-surface-glow-1: radial-gradient(
+    circle at top left,
+    color-mix(in oklab, white 85%, transparent),
+    transparent 60%
+  );
+  --background-image-surface-glow-2: radial-gradient(
+    circle at top left,
+    hsl(222 18% 14% / 0.55),
+    transparent 60%
+  );
+  --background-image-surface-glow-3: radial-gradient(
+    circle at top left,
+    hsl(220 18% 98% / 0.85),
+    transparent 60%
+  );
+  --background-image-surface-glow-4: radial-gradient(
+    circle at top left,
+    hsl(224 20% 14% / 0.55),
+    transparent 60%
+  );
+  --background-image-surface-glow-5: radial-gradient(
+    circle at top left,
+    color-mix(in oklab, white 80%, transparent),
+    transparent 60%
+  );
+  --background-image-surface-glow-6: radial-gradient(
+    circle at top left,
+    hsl(224 18% 14% / 0.5),
+    transparent 60%
+  );
+  --shadow-hub-frost-hero:
+    0 1px 0 rgb(255 255 255 / 0.6) inset,
+    0 8px 28px -18px rgb(0 0 0 / 0.18);
+  --shadow-hub-frost-hero-dark:
+    0 1px 0 rgb(255 255 255 / 0.05) inset,
+    0 8px 28px -18px rgb(0 0 0 / 0.6);
+}
+
+/* ---------- 字面量尺寸 token（tokens.css --spacing-*px / --radius-* / --blur-*） ---------- */
+@theme {
+  --spacing-2px: 2px;
+  --spacing-3px: 3px;
+  --spacing-14px: 14px;
+  --spacing-18px: 18px;
+  --spacing-23px: 23px;
+  --spacing-80px: 80px;
+  --radius-14px: 14px;
+  --blur-18px: 18px;
+  --blur-24px: 24px;
+  /* LA tokens.css 的 ui-duration 系列（骨架屏/扫描点等任意值动画引用） */
+  --ui-duration-20ms: 20ms;
+  --ui-duration-40ms: 40ms;
+  --ui-duration-60ms: 60ms;
+  --ui-duration-80ms: 80ms;
+  --ui-duration-100ms: 100ms;
+  --ui-duration-120ms: 120ms;
+  --ui-duration-150ms: 150ms;
+  --ui-duration-160ms: 160ms;
+  --ui-duration-200ms: 200ms;
+  --ui-duration-220ms: 220ms;
+  --ui-duration-300ms: 300ms;
+  --ui-duration-320ms: 320ms;
+  --ui-duration-400ms: 400ms;
+  --ui-duration-500ms: 500ms;
+  --ui-duration-600ms: 600ms;
+  --ui-duration-1000ms: 1000ms;
+  --ui-duration-1450ms: 1450ms;
+  --ui-duration-1600ms: 1600ms;
+  --ui-duration-2000ms: 2000ms;
+}
+
+/* ---------- 进出场动画（tailwindcss-animate 等效，供 Radix data-[state] 变体使用） ---------- */
+@utility animate-in {
+  animation: tw-enter 150ms cubic-bezier(0.2, 0, 0, 1);
+  @keyframes tw-enter {
+    from {
+      opacity: var(--tw-enter-opacity, 1);
+      transform: translate3d(var(--tw-enter-translate-x, 0), var(--tw-enter-translate-y, 0), 0)
+        scale3d(var(--tw-enter-scale, 1), var(--tw-enter-scale, 1), 1);
+    }
+  }
+}
+@utility animate-out {
+  animation: tw-exit 150ms cubic-bezier(0.4, 0, 1, 1);
+  @keyframes tw-exit {
+    to {
+      opacity: var(--tw-exit-opacity, 1);
+      transform: translate3d(var(--tw-exit-translate-x, 0), var(--tw-exit-translate-y, 0), 0)
+        scale3d(var(--tw-exit-scale, 1), var(--tw-exit-scale, 1), 1);
+    }
+  }
+}
+@utility fade-in-0 { --tw-enter-opacity: 0; }
+@utility fade-out-0 { --tw-exit-opacity: 0; }
+@utility zoom-in-95 { --tw-enter-scale: 0.95; }
+@utility zoom-out-95 { --tw-exit-scale: 0.95; }
+@utility zoom-in-100 { --tw-enter-scale: 1; }
+@utility zoom-out-100 { --tw-exit-scale: 1; }
+@utility slide-in-from-top-2 { --tw-enter-translate-y: -0.5rem; }
+@utility slide-in-from-bottom-2 { --tw-enter-translate-y: 0.5rem; }
+@utility slide-in-from-left-2 { --tw-enter-translate-x: -0.5rem; }
+@utility slide-in-from-right-2 { --tw-enter-translate-x: 0.5rem; }
+@utility slide-in-from-top-8 { --tw-enter-translate-y: -2rem; }
+@utility slide-in-from-bottom-8 { --tw-enter-translate-y: 2rem; }
+@utility slide-in-from-left-8 { --tw-enter-translate-x: -2rem; }
+@utility slide-in-from-right-8 { --tw-enter-translate-x: 2rem; }
+@utility slide-out-to-top-8 { --tw-exit-translate-y: -2rem; }
+@utility slide-out-to-bottom-8 { --tw-exit-translate-y: 2rem; }
+@utility slide-out-to-left-8 { --tw-exit-translate-x: -2rem; }
+@utility slide-out-to-right-8 { --tw-exit-translate-x: 2rem; }
+
+/* ---------- 层级 / 字号缩放区（LA base.css 同名类） ---------- */
+@utility layer-popover {
+  z-index: var(--layer-popover, 10000);
+  font-size: calc(1rem * var(--zone-font-scale, 1));
+  --text-tiny: calc(0.625rem * var(--zone-font-scale, 1));
+  --text-xs: calc(0.75rem * var(--zone-font-scale, 1));
+  --text-sm: calc(0.875rem * var(--zone-font-scale, 1));
+  --text-base: calc(1rem * var(--zone-font-scale, 1));
+  --text-lg: calc(1.125rem * var(--zone-font-scale, 1));
+  --text-xl: calc(1.25rem * var(--zone-font-scale, 1));
+}
+@utility layer-modal {
+  z-index: var(--layer-modal, 10000);
+}
+@utility layer-toast {
+  z-index: var(--layer-toast, 10010);
+}
+@utility zone-font-scale {
+  font-size: calc(1rem * var(--zone-font-scale, 1));
+  --text-tiny: calc(0.625rem * var(--zone-font-scale, 1));
+  --text-xs: calc(0.75rem * var(--zone-font-scale, 1));
+  --text-sm: calc(0.875rem * var(--zone-font-scale, 1));
+  --text-base: calc(1rem * var(--zone-font-scale, 1));
+  --text-lg: calc(1.125rem * var(--zone-font-scale, 1));
+  --text-xl: calc(1.25rem * var(--zone-font-scale, 1));
+}
+
+/* ---------- 字面量工具类（LA tokens.css / 组件内的非标值） ---------- */
+@utility max-h-85dvh { max-height: 85dvh; }
+@utility top-safe-top { top: max(1rem, env(safe-area-inset-top)); }
+@utility w-inset-3rem { width: calc(100% - 3rem); }
+@utility w-notification { width: min(18rem, calc(100vw - 2rem)); }
+@utility max-h-select-popup {
+  max-height: min(var(--radix-dropdown-menu-content-available-height, 66vh), 66vh);
+}
+@utility pt-safe-top { padding-top: max(1rem, env(safe-area-inset-top)); }
+@utility pb-safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+@utility pt-safe-top-compact { padding-top: max(0.75rem, env(safe-area-inset-top)); }
+@utility pb-safe-bottom-compact { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }

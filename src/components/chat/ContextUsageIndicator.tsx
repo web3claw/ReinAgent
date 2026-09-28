@@ -76,21 +76,29 @@ export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
             </span>
           </div>
 
-          {/* 多段进度条：同一主色按排名逐级淡化（对齐 ZCode CONTEXT_PROGRESS_TONE_COLORS） */}
+          {/* 多段进度条（对齐 ZCode Progress 双口径）：轨道上「指示条宽度 = 真实
+              used/window 百分比」，构成分段（各分类占内容总量的比例）用 flexBasis
+              画在指示条内部、按排名逐级淡化——0.2% 用量时指示条只是轨道起点的一小段，
+              而不是把构成比铺满整条轨道。 */}
           <div className="h-2 rounded-full overflow-hidden bg-[var(--bg-sunken)] flex">
-            {sorted
-              .map((cat, rank) => ({ cat, rank }))
-              .filter(({ cat }) => (cat.chars ?? 0) > 0)
-              .map(({ cat, rank }) => (
-                <span
-                  key={cat.key}
-                  style={{
-                    width: `${cat.percent}%`,
-                    backgroundColor: tone(rank),
-                    minWidth: 2,
-                  }}
-                />
-              ))}
+            <div
+              className="flex h-full min-w-[2px] overflow-hidden rounded-full"
+              style={{ width: `${pct}%` }}
+            >
+              {sorted
+                .map((cat, rank) => ({ cat, rank }))
+                .filter(({ cat }) => (cat.chars ?? 0) > 0)
+                .map(({ cat, rank }) => (
+                  <span
+                    key={cat.key}
+                    className="h-full shrink-0"
+                    style={{
+                      flexBasis: `${cat.percent}%`,
+                      backgroundColor: tone(rank),
+                    }}
+                  />
+                ))}
+            </div>
           </div>
 
           {/* 分类明细行：彩点 + 名称 + 百分比 */}

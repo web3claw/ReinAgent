@@ -8,6 +8,7 @@ mod mcp;
 mod memory;
 mod skills;
 mod history_search;
+mod hub_http;
 
 use terminal::TerminalState;
 
@@ -40,6 +41,11 @@ pub fn run() {
     .setup(|app| {
         // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
         automation::start_scheduler(app.handle().clone());
+        // 内置技能种子（对齐 LiveAgent setup：skills-installer / skills-creator /
+        // liveagent-code-review 写入 ~/.ReinAgent/skills，失败不阻断启动）
+        if let Err(error) = skills::ensure_builtin_agent_skills_sync() {
+            eprintln!("failed to seed builtin skills: {error}");
+        }
         Ok(())
     })
     .invoke_handler(tauri::generate_handler![
@@ -83,23 +89,44 @@ pub fn run() {
             automation::automation_list_runs,
             automation::automation_run_finished,
             history_search::chat_history_search,
+            hub_http::hub_fetch_json,
+            memory::memory_list,
+            memory::memory_read,
+            memory::memory_search,
+            memory::memory_write,
+            memory::memory_update,
+            memory::memory_delete,
+            memory::memory_delete_project,
+            memory::memory_accept,
+            memory::memory_apply_batch,
+            memory::memory_organize_run_create,
+            memory::memory_organize_run_update,
+            memory::memory_organize_run_list,
+            memory::memory_organize_run_read,
+            memory::memory_organize_run_clear_history,
+            memory::memory_organize_due_claim,
+            memory::memory_organize_due_complete,
+            memory::memory_index_overview,
+            memory::memory_paths_info,
+            memory::memory_recent_rejections,
+            memory::memory_today_local_date,
+            memory::memory_today_daily,
+            memory::memory_quota_summary,
+            memory::memory_wipe_all,
             mcp::mcp_save_servers,
             mcp::mcp_list_servers,
             mcp::mcp_list_tools,
             mcp::mcp_call_tool,
             mcp::mcp_test_server,
             mcp::mcp_stop_server,
-            memory::memory_list,
-            memory::memory_read,
-            memory::memory_write,
-            memory::memory_update,
-            memory::memory_delete,
-            memory::memory_index_overview,
-            skills::skills_list,
-            skills::skills_read,
-            skills::skills_save,
-            skills::skills_delete,
-            skills::skills_set_enabled
+            mcp::mcp_restart_server,
+            mcp::mcp_runtime_status,
+            skills::system_manage_skill,
+            skills::system_read_skill_text,
+            skills::system_read_skill_metadata,
+            skills::system_ensure_builtin_skills,
+            skills::mcp_scan_external,
+            skills::mcp_scan_config_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -58,6 +58,12 @@ export function buildContextUsageData(params: {
   systemPrompt: string;
   /** 系统工具 schema JSON 文本 */
   toolsJson: string;
+  /** 本轮注入的技能段文本（buildSkillsSystemPrompt 产物；未启用/未选时为空） */
+  skillsJson?: string;
+  /** 本轮发送的 MCP 工具 schema JSON 文本（启用服务器枚举产物；不可得时为空） */
+  mcpToolsJson?: string;
+  /** meta_user 注入块文本（currentDate + 记忆索引；ZCode meta_user_context 口径） */
+  metaUserJson?: string;
   /** 各类别的真实内容懒构建（点击明细行在右侧面板查看；无内容不传 → 行不可点击） */
   categoryContent?: Record<string, { buildContent: () => string; language?: string }>;
 }): ContextUsageData | null {
@@ -72,15 +78,17 @@ export function buildContextUsageData(params: {
   for (const m of params.messages) {
     msgChars += weightedChars((m.text ?? "") + (m.thinking ?? ""));
   }
-  // 六类恒显（对齐 ZCode 明细行）：技能 / MCP 工具宿主暂无对应内容，如实计 0；
-  // 其他 = meta 注入类内容（宿主暂无）。排序：非零按占比降序，零值行固定在末尾。
+  // 七类对齐 ZCode breakdown 明细（messages/system_prompt/meta_user_context/
+  // skills/system_tool_schemas/mcp_tool_schemas）：技能/MCP/meta_user（currentDate+
+  // 记忆索引）= 本轮实际注入/发送的真实内容，由调用方传入；不可得时如实计 0。
+  // 排序：非零按占比降序，零值行固定在末尾。
   const rawCategories = [
     { key: "messages", labelKey: "contextUsageMessages", chars: msgChars },
     { key: "systemTools", labelKey: "contextUsageSystemTools", chars: weightedChars(params.toolsJson ?? "") },
     { key: "systemPrompt", labelKey: "contextUsageSystemPrompt", chars: weightedChars(params.systemPrompt ?? "") },
-    { key: "skills", labelKey: "contextUsageSkills", chars: 0 },
-    { key: "mcpTools", labelKey: "contextUsageMcpTools", chars: 0 },
-    { key: "other", labelKey: "contextUsageOther", chars: 0 },
+    { key: "skills", labelKey: "contextUsageSkills", chars: weightedChars(params.skillsJson ?? "") },
+    { key: "mcpTools", labelKey: "contextUsageMcpTools", chars: weightedChars(params.mcpToolsJson ?? "") },
+    { key: "metaUser", labelKey: "contextUsageOther", chars: weightedChars(params.metaUserJson ?? "") },
   ];
 
   const nonZero = rawCategories.filter((c) => c.chars > 0);

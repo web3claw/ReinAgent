@@ -63,7 +63,10 @@ function lastUserText(messages: Message[]): string {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (message.role === "user") {
-      return typeof message.content === "string" ? message.content : "";
+      const raw = typeof message.content === "string" ? message.content : "";
+      // 系统侧 meta_user 注入（<system-reminder> 包裹）不属于用户话语：演示回显前剥除
+      const REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>\n*/g;
+      return raw.replace(REMINDER_RE, "").trim();
     }
   }
   return "";

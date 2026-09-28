@@ -178,6 +178,14 @@
 
 **待办**：gitStatus 快照（是否 git 仓库/分支/最近提交）需要异步 git 调用与会话级缓存，暂未纳入。
 
+### 2.1 meta_user 注入结构（2026-09-28，ZCode 同款）
+
+- **系统提示词保持静态**：DEFAULT_SYSTEM_PROMPT + workspace root 行 + Environment 段（+ 模式附加段）。currentDate / 记忆索引 / 技能清单不再拼入系统提示词。
+- **meta_user 块**（`buildMetaUserBlock`）：按序拼 `# currentDate
+Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory Index`（含 `## Memory` 规则段）+ `# Skills`，整体包 `<system-reminder>…</system-reminder>`，经 `prependMetaUserBlock` 并入**首条 user 消息头部**（string 内容前缀拼接；数组内容插入首部独立 text 块，图片等原块保序）。每轮请求重算（选择分段独立注入的进缓存前缀，段变化只作废该轮之后的缓存，与 ZCode cacheHint=dynamic 同语义）。
+- ** faux 演示回显剥除注入块**（`fauxSource.lastUserText`）：<system-reminder> 包裹的内容不是用户话语，演示模式回显前剥离。
+- 待办落位：AGENTS.md 注入、gitStatus 快照、（二期）项目记忆作用域解析都进 meta_user 块。
+
 ### 3. 模式附加提示词
 
 - **计划模式**（`PLAN_MODE_PROMPT`）：只读工具白名单 + 写入/执行被审批门拦截的说明 + 要求输出完整实施计划（改动文件、逐文件修改点、执行步骤）。
@@ -216,10 +224,13 @@
 | Environment（cwd/OS/shell/模型/日期） | `buildEnvironmentSection()` | ✅ |
 | Edit/Read/Write 描述与失败文案 + 相似文件建议 | `tools.js` read/write/edit | ✅ |
 | gitStatus 快照 | 待实现（需异步 git 调用 + 工作区级缓存） | ⏳ |
-| 轻量文件记忆段（memory.ts） | 待实现（依赖记忆功能立项） | ⏳ |
+| 记忆注入（`# Memory Index` 分桶 + `## Memory` 规则段） | `src/lib/memory/prompts/{shared,injection}.ts`（LA prompts/injection 原文移植；五桶 30 条/桶、置信度/新鲜度标记、16K 截断） | ✅ |
+| MemoryManager 工具（list/read/search/write/update/delete/accept + 证据契约） | `src/lib/memory/memoryManagerTool.ts` + `prompts/managerTool.ts`（Rust MemoryStore 全量移植承接） | ✅ |
+| Skills 注入（`skill://` 协议 + 渐进披露清单） | `lib/skills/index.ts buildSkillsSystemPrompt`（LA 原文移植；`runAgentTurn` 按 hubSettings.skills.enabled+selected 注入） | ✅ |
 | AGENTS.md OVERRIDE 注入 + meta-user 免责 | 待实现（依赖 AGENTS.md 支持） | ⏳ |
 | Context management（压缩） | 待实现（依赖会话压缩） | ⏳ |
-| system-reminder 防伪造包装 | 待实现（任何系统侧注入文本时采用） | ⏳ |
+| meta_user 注入结构（current-date/request-user-context/skills 三段） | `buildMetaUserBlock` + `prependMetaUserBlock`（见 2.1）；AGENTS.md/gitStatus 落位已备 | ✅（部分） |
+| system-reminder 防伪造包装 | meta_user 块（currentDate/记忆/技能）已采用 <system-reminder> 包装（见 2.1） | ✅（部分） |
 | 附件 "data not instructions" 免责 | 待实现（附件功能已上线：路径引用 + 图片内联，但发送时尚未附加免责包装） | ⏳ |
 | Todo 描述与提醒 | 暂不适用（无 todo 工具） | — |
 | 子代理/工作流/压缩/计划模式全量提示 | 暂不适用 | — |

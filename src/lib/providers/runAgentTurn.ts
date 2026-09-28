@@ -58,8 +58,9 @@ export const DEFAULT_SYSTEM_PROMPT = [
 ].join("\n");
 
 /**
- * Environment 段（对齐 ZCode env-info）：工作目录 / 操作系统 / shell / 模型名 / 日期。
- * 纯同步构造（navigator 在浏览器可用；node 测试环境自动降级省略对应行）。
+ * Environment 段（对齐 ZCode env-info，injectionTarget=system）：工作目录 /
+ * 操作系统 / shell / 模型名。日期不在此段——ZCode 把 currentDate 归 meta_user
+ * 通道（随记忆/技能一起包 <system-reminder> 并入首条 user 消息，见下）。
  * gitStatus 快照需要异步 git 调用与缓存，暂未纳入（见 PROMPTS.md 待办）。
  */
 export function buildEnvironmentSection(
@@ -75,8 +76,48 @@ export function buildEnvironmentSection(
   }
   lines.push("- Shell: cmd.exe (Windows command prompt) — use cmd syntax (dir, type, findstr, where), not Unix pipelines (grep, head, wc are unavailable)");
   if (modelLabel) lines.push(`- Model: ${modelLabel}`);
-  lines.push(`- Current date: ${new Date().toDateString()}`);
   return lines.join("\n");
+}
+
+/**
+ * meta_user 块（对齐 ZCode 注入结构）：currentDate（ZCode current-date section
+ * 同款文案）+ 记忆索引 + 技能清单（三者在 ZCode 均为 injectionTarget=meta_user），
+ * 包在 `<system-reminder>` 里并入首条 user 消息头部。系统提示词因此保持静态
+ * （提示词缓存友好），系统侧注入与真实用户内容在转录里也不再混为一体。
+ */
+export function buildMetaUserBlock(parts: {
+  currentDate?: string;
+  memorySection?: string;
+  skillsSection?: string;
+}): string | undefined {
+  const sections = [
+    parts.currentDate,
+    parts.memorySection,
+    parts.skillsSection,
+  ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
+  if (sections.length === 0) return undefined;
+  return `<system-reminder>\n${sections.join("\n\n")}\n</system-reminder>`;
+}
+
+/**
+ * 把 meta_user 块并入首条 user 消息（ZCode 的 meta user context 消息在请求里
+ * 同样以 user 角色出现；我们选择并入首条而非独立消息——pi-ai 的 Anthropic
+ * 适配器会合并连续 user 消息，显式并入对所有协议适配器行为一致）。
+ * 纯函数（导出供单测）；找不到 user 消息时原样返回。
+ */
+export function prependMetaUserBlock(messages: Message[], block?: string): Message[] {
+  if (!block) return messages;
+  const index = messages.findIndex((m) => m && m.role === "user");
+  if (index === -1) return messages;
+  const target = messages[index] as Extract<Message, { role: "user" }>;
+  const prefix = `${block}\n\n`;
+  const content =
+    typeof target.content === "string"
+      ? prefix + target.content
+      : [{ type: "text" as const, text: prefix }, ...target.content];
+  const out = messages.slice();
+  out[index] = { ...target, content };
+  return out;
 }
 
 /** 计划模式的系统提示词约束：只读分析 + 输出计划，写入/执行一律被拦截。 */
@@ -218,36 +259,50 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   }
   const allTools = [...tools, ...mcpTools] as typeof tools;
 
-  // 记忆索引注入（对齐 LiveAgent `# Memory Index`）：失败不阻断发送（如实降级为无记忆段）。
+  // 记忆注入（对齐 LiveAgent）：`# Memory Index` 分桶索引 + `## Memory` 工具规则段，
+  // 并挂载 MemoryManager 工具（list/read/search/write/update/delete/accept）。
+  // 后端不可达（Web 模式）时注入为空段、工具调用如实报错（No-Fallback）。
   let memorySection = "";
+  let memoryManagerTool: unknown = null;
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    memorySection = await invoke<string>("memory_index_overview");
-  } catch {
-    // Web 模式 / 后端不可达：跳过注入（不伪造内容）
+    const [{ buildMemoryOverviewSection, buildMemoryToolsSuffixSection }, { createMemoryManagerTool }] =
+      await Promise.all([
+        import("../memory/prompts/injection"),
+        import("../memory/memoryManagerTool"),
+      ]);
+    const overview = await buildMemoryOverviewSection(workspaceRoot || undefined);
+    memorySection = overview ? `${overview}\n\n${buildMemoryToolsSuffixSection()}` : "";
+    memoryManagerTool = createMemoryManagerTool({
+      workdir: workspaceRoot || "",
+      mode: "rw",
+      actor: "tool",
+    });
+  } catch (err) {
+    console.warn("[memory] index overview unavailable (continuing without memory):", err);
   }
 
-  // 启用技能注入（对齐 LiveAgent 显式技能提及）：`# Skills` 段 + 名称/描述。
+  // 技能注入（对齐 LiveAgent）：`skill://` 路径协议 + 用户启用列表的渐进披露清单；
+  // 总开关关闭或未选技能时为空段（与 LA skillsEnabled=false 清空同语义）。
   let skillsSection = "";
   try {
-    const { invoke } = await import("@tauri-apps/api/core");
-    const skills = await invoke<
-      { id: string; name: string; description: string; enabled: boolean }[]
-    >("skills_list");
-    const enabled = skills.filter((s) => s.enabled);
-    if (enabled.length > 0) {
-      const lines = [
-        "# Skills",
-        "The following skills are available. To use one, read its full instructions via read_file at the path shown, then follow them.",
-        "",
-      ];
-      for (const s of enabled) {
-        lines.push(`- ${s.name}: ${s.description} (instructions: ~/.ReinAgent/skills/${s.id}/SKILL.md)`);
-      }
-      skillsSection = lines.join("\n");
+    const { useHubSettings } = await import("../../store/hubSettingsStore");
+    const { enabled, selected } = useHubSettings.getState().settings.skills;
+    if (enabled && selected.length > 0) {
+      const skillsLib = await import("../skills/index");
+      const discovery = await skillsLib.discoverSkills();
+      // buildSkillsSystemPrompt 需要 SkillSummary 元数据（对齐 LA useSendChatTurn）：
+      // 由选中名称解析为已发现技能对象，未命中的名称忽略。
+      const selectedSkills = discovery.skills.filter((skill) => selected.includes(skill.name));
+      skillsSection = skillsLib.buildSkillsSystemPrompt({
+        rootDir: discovery.rootDir,
+        selected: selectedSkills,
+      });
     }
-  } catch {
-    // 不可达时跳过
+  } catch (err) {
+    console.warn("[skills] discovery unavailable (continuing without skills):", err);
+  }
+  if (memoryManagerTool) {
+    allTools.push(memoryManagerTool as (typeof tools)[number]);
   }
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
   let effectiveSystemPrompt = workspaceRoot
@@ -264,16 +319,18 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   } else if (approvalMode !== "full") {
     effectiveSystemPrompt += APPROVAL_HINT_PROMPT;
   }
-  if (memorySection.trim().length > 0) {
-    effectiveSystemPrompt += `\n\n${memorySection}`;
-  }
-  if (skillsSection.trim().length > 0) {
-    effectiveSystemPrompt += `\n\n${skillsSection}`;
-  }
+  // 记忆/技能不进系统提示词（ZCode 同款 meta_user 通道）：系统提示词保持静态，
+  // 二者随 currentDate 包 <system-reminder> 并入首条 user 消息（见 base.messages）。
+  const metaUserBlock = buildMetaUserBlock({
+    currentDate: `# currentDate\nToday's date is ${new Date().toDateString()}.`,
+    memorySection,
+    skillsSection,
+  });
+  const requestMessages = prependMetaUserBlock(messages, metaUserBlock);
 
   const base = {
     systemPrompt: effectiveSystemPrompt,
-    messages,
+    messages: requestMessages,
     tools: allTools,
     maxSteps: maxSteps ?? DEFAULT_MAX_STEPS,
     signal,

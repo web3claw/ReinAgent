@@ -1,4 +1,9 @@
 import { useAppStore } from "../store/useAppStore";
+import { hubZh } from "./hub/zh";
+import { hubEn } from "./hub/en";
+import { hubExtraSkills, hubExtraSkillsEn } from "./hub/extra-skills";
+import { hubExtraMcp, hubExtraMcpEn } from "./hub/extra-mcp";
+import { hubExtraMemory, hubExtraMemoryEn } from "./hub/extra-memory";
 
 export const translations = {
   "zh-CN": {
@@ -217,7 +222,7 @@ export const translations = {
     contextUsageSystemPrompt: "系统提示词",
     contextUsageSkills: "技能",
     contextUsageMcpTools: "MCP 工具",
-    contextUsageOther: "其他",
+    contextUsageOther: "用户上下文",
     contextUsageCacheHitRate: "平均缓存命中率",
     openFolder: "打开文件夹",
     remoteConnect: "远程连接",
@@ -244,6 +249,10 @@ export const translations = {
     branch: "创建分支",
     branchConfirmTitle: "从此回复创建分支？",
     branchConfirmDescription: "将把此回复及之前的对话复制到一个新会话，原会话保持不变。",
+    ...hubZh,
+    ...hubExtraSkills,
+    ...hubExtraMcp,
+    ...hubExtraMemory,
   },
   "en-US": {
     appName: "ReinAgent",
@@ -461,7 +470,7 @@ export const translations = {
     contextUsageSystemPrompt: "System prompt",
     contextUsageSkills: "Skills",
     contextUsageMcpTools: "MCP tools",
-    contextUsageOther: "Other",
+    contextUsageOther: "User context",
     contextUsageCacheHitRate: "Avg cache hit rate",
     openFolder: "Open Folder",
     remoteConnect: "Remote Connection",
@@ -488,18 +497,32 @@ export const translations = {
     branch: "Create Branch",
     branchConfirmTitle: "Branch from this reply?",
     branchConfirmDescription: "Copies this reply and everything before it into a new conversation. The original stays unchanged.",
+    ...hubEn,
+    ...hubExtraSkillsEn,
+    ...hubExtraMcpEn,
+    ...hubExtraMemoryEn,
   },
 } as const;
 
 export type TranslationKey = keyof typeof translations["zh-CN"];
 
+// t 必须按 locale 稳定（模块级缓存）：Hub 移植页的部分 effect 以 t 为依赖
+//（如技能预览抽屉的 readSkillText），每渲染新建函数会让 effect 无限重启、
+// 加载态永不收敛。
+type TranslationT = (key: TranslationKey, fallback?: string) => string;
+const tCache = new Map<unknown, TranslationT>();
+function makeT(dict: unknown): TranslationT {
+  const cached = tCache.get(dict);
+  if (cached) return cached;
+  const fn: TranslationT = (key, fallback) =>
+    (dict as Record<string, string>)[key as string] || fallback || (key as string);
+  tCache.set(dict, fn);
+  return fn;
+}
+
 export function useTranslation() {
   const locale = useAppStore((s) => s.locale);
   const dict = translations[locale] || translations["zh-CN"];
 
-  const t = (key: TranslationKey, fallback?: string): string => {
-    return dict[key] || fallback || key;
-  };
-
-  return { t, locale };
+  return { t: makeT(dict), locale };
 }

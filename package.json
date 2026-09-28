@@ -16,7 +16,8 @@
     "test:settings": "node --test src/lib/settings/settingsStore.test.mjs",
     "test:markdown": "node --test src/lib/markdown/markdownBlocks.test.mjs",
     "test:agent": "node --test src/lib/agent/streamFnAdapter.test.mjs src/lib/agent/agentRuntime.test.mjs src/lib/agent/tools.test.mjs src/lib/agent/workspace.test.mjs",
-    "test:providers": "node --test src/lib/providers/runAgentTurn.test.mjs src/lib/providers/approvalGate.test.mjs"
+    "test:providers": "node --test src/lib/providers/runAgentTurn.test.mjs src/lib/providers/approvalGate.test.mjs",
+    "test:hub": "bun test src/lib/skills/clawHubCategories.test.mjs src/lib/skills/clawHub.test.mjs src/lib/skills/installedSort.test.mjs src/lib/mcpRegistry/index.test.mjs src/lib/memory/schema.test.mjs src/lib/memory/organizer/quota.test.mjs src/lib/memory/organizer/runRecord.test.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.86.0",

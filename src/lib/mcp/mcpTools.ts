@@ -1,36 +1,22 @@
 /**
  * mcpTools —— 把 MCP 服务器的工具接入 Agent 工具循环（对齐 LiveAgent
- * createMcpTools 的枚举策略：所有 enabled 服务器各调一次 mcp_list_tools，
- * 工具名加 `mcp__<server>__` 前缀避免冲突；执行经 `mcp_call_tool` 透传）。
- * 失败的服务器如实跳过并在 console 记录（No-Fallback：不伪造工具）。
+ * createMcpTools 的枚举策略：一次 mcp_list_tools 传全量启用服务器列表，
+ * 工具名加 `mcp__<serverId>__<tool>` 前缀避免冲突；执行经 `mcp_call_tool`
+ * 按 serverId+toolName 透传）。失败的服务器由后端跳过、前端如实记录
+ * （No-Fallback：不伪造工具）。
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { Type } from "typebox";
+import type { McpServerConfig } from "../hub/mcpTypes";
 
-/** Rust `mcp.rs` 的 McpServerConfig（camelCase 一致） */
-export interface McpServerConfig {
-  id: string;
-  name: string;
-  enabled: boolean;
-  transport: "stdio" | "http";
-  command: string;
-  args: string[];
-  env: Record<string, string>;
-  url: string;
-  headers: Record<string, string>;
-  timeoutMs?: number | null;
-}
-
-export interface McpToolInfo {
+/** 后端 mcp_list_tools 的条目（LA McpToolInfo 同构） */
+interface McpToolEntry {
+  serverId: string;
+  serverLabel: string;
   name: string;
   description: string;
   inputSchema: unknown;
-}
-
-interface McpListToolsResult {
-  serverId: string;
-  tools: McpToolInfo[];
 }
 
 /** 组装 toApiMessages 用的 text 结果 */
@@ -54,29 +40,43 @@ export async function createMcpTools(): Promise<unknown[]> {
     console.warn("[mcp] list servers failed (web mode?):", err);
     return [];
   }
+  const enabled = servers.filter((s) => s.enabled);
+  if (enabled.length === 0) return [];
 
-  const tools: unknown[] = [];
-  for (const server of servers.filter((s) => s.enabled)) {
-    let result: McpListToolsResult;
+  let entries: McpToolEntry[];
+  try {
+    entries = await invoke<McpToolEntry[]>("mcp_list_tools", { servers: enabled });
+  } catch (err) {
+    // 全部启用服务器都失败（后端部分失败跳过、全失败才 Err）：如实告知用户
+    // 「启用了却没带上」，不能只留在 console（No-Fallback 铁律）
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn("[mcp] list tools failed (skipped):", err);
     try {
-      result = await invoke<McpListToolsResult>("mcp_list_tools", { server });
-    } catch (err) {
-      console.warn(`[mcp] list tools for ${server.id} failed (skipped):`, err);
-      continue;
+      const { useHubSettings } = await import("../../store/hubSettingsStore");
+      useHubSettings
+        .getState()
+        .setMcpEnumNotice(`MCP 工具枚举失败，本轮未带上 MCP 工具：${message}`);
+    } catch {
+      // store 不可达（极端场景）时保留 console 告警
     }
-    for (const tool of result.tools) {
-      if (!tool.name) continue;
-      tools.push(buildMcpTool(server, tool));
-    }
+    return [];
+  }
+
+  const byServerId = new Map(enabled.map((s) => [s.id, s]));
+  const tools: unknown[] = [];
+  for (const tool of entries) {
+    const server = byServerId.get(tool.serverId);
+    if (!server || !tool.name) continue;
+    tools.push(buildMcpTool(server, tool));
   }
   return tools;
 }
 
 /** 单个 MCP 工具 → pi-agent-core 工具体（name 前缀 mcp__<serverId>__<tool>） */
-function buildMcpTool(server: McpServerConfig, tool: McpToolInfo) {
+function buildMcpTool(server: McpServerConfig, tool: McpToolEntry) {
   const prefixedName = `mcp__${server.id}__${tool.name}`;
   const description =
-    `[MCP:${server.name || server.id}] ${tool.description || tool.name}`.slice(0, 500);
+    `[MCP:${tool.serverLabel || server.id}] ${tool.description || tool.name}`.slice(0, 500);
   return {
     name: prefixedName,
     label: tool.name,
@@ -86,7 +86,7 @@ function buildMcpTool(server: McpServerConfig, tool: McpToolInfo) {
     execute: async (_toolCallId: string, args: unknown) => {
       try {
         const result = await invoke<Record<string, unknown>>("mcp_call_tool", {
-          server,
+          serverId: server.id,
           toolName: tool.name,
           arguments: args ?? {},
         });
@@ -102,7 +102,7 @@ function buildMcpTool(server: McpServerConfig, tool: McpToolInfo) {
         return textResult(isError ? `MCP 工具报告失败：\n${text}` : text, isError);
       } catch (err) {
         throw new Error(
-          `MCP 调用失败（${server.name || server.id}/${tool.name}）: ${
+          `MCP 调用失败（${tool.serverLabel || server.id}/${tool.name}）: ${
             err instanceof Error ? err.message : String(err)
           }`,
         );

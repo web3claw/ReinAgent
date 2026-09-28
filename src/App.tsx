@@ -13,6 +13,13 @@ import { ConversationSearchDialog } from "./components/search/ConversationSearch
 import { McpHubPage } from "./components/mcp/McpHubPage";
 import { MemoryPanel } from "./components/memory/MemoryPanel";
 import { SkillsHubPage } from "./components/skills/SkillsHubPage";
+import { Toaster } from "./components/lw/ui/toaster";
+import { toast } from "./components/lw/ui/toast";
+import { useHubSettings } from "./store/hubSettingsStore";
+
+// 上下文面板 MCP 分类枚举缓存（60s TTL；避免 HoverCard 反复触发服务器连接）
+const MCP_BREAKDOWN_TTL_MS = 60_000;
+let mcpBreakdownCache: { signature: string; at: number; json: string } | null = null;
 import type { AutomationDuePayload } from "./lib/automations/types";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
@@ -25,7 +32,7 @@ import { EmptyState } from "./components/chat/EmptyState";
 import { TerminalPane } from "./components/terminal/TerminalPane";
 import { WorkspaceSidebar } from "./components/sidebar/WorkspaceSidebar";
 import { SettingsPage } from "./components/settings/SettingsPage";
-import { DEFAULT_SYSTEM_PROMPT } from "./lib/providers/runAgentTurn";
+import { DEFAULT_SYSTEM_PROMPT, buildEnvironmentSection } from "./lib/providers/runAgentTurn";
 import type { ApprovalDecision } from "./lib/providers/runAgentTurn";
 import { ApprovalCard } from "./components/chat/ApprovalCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
@@ -68,6 +75,91 @@ export default function App() {
   useEffect(() => {
     loadProvidersConfigFromDisk(settings).then(setProviders).catch(console.error);
   }, [settings?.provider, settings?.modelId, currentView]);
+
+  // Hub 设置切片订阅：技能/MCP 的启用状态变化驱动上下文容量面板的技能/MCP 分类
+  const hubSkillsSettings = useHubSettings((s) => s.settings.skills);
+  const hubMcpServers = useHubSettings((s) => s.settings.mcp.servers);
+
+  // 上下文面板「技能」分类：当前生效的 buildSkillsSystemPrompt 注入文本（与发送链路同源）
+  const [skillsSectionText, setSkillsSectionText] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    if (!hubSkillsSettings.enabled || hubSkillsSettings.selected.length === 0) {
+      setSkillsSectionText("");
+      return;
+    }
+    void (async () => {
+      try {
+        const skillsLib = await import("./lib/skills/index");
+        const discovery = await skillsLib.discoverSkills();
+        const selectedSkills = discovery.skills.filter((skill) =>
+          hubSkillsSettings.selected.includes(skill.name),
+        );
+        const text =
+          selectedSkills.length > 0
+            ? skillsLib.buildSkillsSystemPrompt({ rootDir: discovery.rootDir, selected: selectedSkills })
+            : "";
+        if (!cancelled) setSkillsSectionText(text);
+      } catch (err) {
+        console.warn("[context] skills breakdown unavailable (honest 0):", err);
+        if (!cancelled) setSkillsSectionText("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hubSkillsSettings.enabled, hubSkillsSettings.selected]);
+
+  // 上下文面板「MCP 工具」分类：启用服务器的工具 schema JSON（与发送链路同源；
+  // 模块级 60s TTL 缓存，避免面板刷新反复连接服务器）
+  const [mcpToolsJson, setMcpToolsJson] = useState("");
+  useEffect(() => {
+    const signature = hubMcpServers
+      .map((srv) => `${srv.id}:${srv.enabled ? 1 : 0}:${srv.transport}`)
+      .join("|");
+    const cached = mcpBreakdownCache;
+    if (cached && cached.signature === signature && Date.now() - cached.at < MCP_BREAKDOWN_TTL_MS) {
+      setMcpToolsJson(cached.json);
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      let json = "";
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const enabled = hubMcpServers.filter((srv) => srv.enabled);
+        if (enabled.length > 0) {
+          const entries = await invoke<
+            { serverId: string; serverLabel: string; name: string; description: string; inputSchema: unknown }[]
+          >("mcp_list_tools", { servers: enabled });
+          json = JSON.stringify(entries, null, 2);
+        }
+      } catch (err) {
+        console.warn("[context] mcp breakdown unavailable (honest 0):", err);
+        json = "";
+      }
+      mcpBreakdownCache = { signature, at: Date.now(), json };
+      if (!cancelled) setMcpToolsJson(json);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hubMcpServers]);
+
+  // MCP 工具枚举失败通知（发送链路产生）：toast 告知「启用了却没带上」的原因
+  const mcpEnumNotice = useHubSettings((s) => s.mcpEnumNotice);
+  const mcpEnumNoticeSeenRef = useRef(0);
+  useEffect(() => {
+    if (!mcpEnumNotice) return;
+    if (mcpEnumNotice.at <= mcpEnumNoticeSeenRef.current) return;
+    mcpEnumNoticeSeenRef.current = mcpEnumNotice.at;
+    toast.error(mcpEnumNotice.message, { duration: 8000 });
+  }, [mcpEnumNotice]);
+
+  // Hub 三页（Skills/MCP/记忆）设置层：启动时装载 MCP 服务器列表（Rust JSON 为真相源）
+  useEffect(() => {
+    void useHubSettings.getState().hydrateMcp();
+  }, []);
 
   // 会话级当前模型选择（初始跟随当前任务或系统默认，聊天框切换时仅修改当前任务模型，绝不覆盖系统默认模型）
   const [sessionProviderId, setSessionProviderId] = useState<string>(settings.provider || "deepseek");
@@ -208,6 +300,30 @@ export default function App() {
 
 
 
+  // 上下文面板「用户上下文（meta_user）」分类的记忆段：与 runAgentTurn 注入同源
+  const [memorySectionText, setMemorySectionText] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { buildMemoryOverviewSection, buildMemoryToolsSuffixSection } = await import(
+          "./lib/memory/prompts/injection"
+        );
+        const overview = await buildMemoryOverviewSection(effectiveWorkspaceRoot || undefined);
+        const text = overview
+          ? `${overview}\n\n${buildMemoryToolsSuffixSection()}`
+          : "";
+        if (!cancelled) setMemorySectionText(text);
+      } catch (err) {
+        console.warn("[context] memory breakdown unavailable (honest 0):", err);
+        if (!cancelled) setMemorySectionText("");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveWorkspaceRoot]);
+
   const effectiveThinkingLevel =
     !isReasoningSupported || activeThinkingLevel === "off" || activeThinkingLevel === "default"
       ? undefined
@@ -218,6 +334,14 @@ export default function App() {
 
   // Keep ref of current messages and activeTaskId to prevent closure races and empty overrides
   // 上下文容量：真实 usage（最后一条 assistant apiMessage）+ 模型声明 contextWindow + 字符估算分类
+  // meta_user 块展示文本（currentDate + 记忆段；技能单独成行，与注入结构一致）
+  const metaUserDisplayText = [
+    `# currentDate\nToday's date is ${new Date().toDateString()}.`,
+    memorySectionText,
+  ]
+    .filter((part) => part.trim().length > 0)
+    .join("\n\n");
+
   const contextUsage = useMemo(() => {
     const lastAssistantApi = [...state.messages]
       .reverse()
@@ -256,7 +380,12 @@ export default function App() {
       DEFAULT_SYSTEM_PROMPT +
       (effectiveWorkspaceRoot
         ? `\n\nCurrent workspace root: ${effectiveWorkspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
-        : "");
+        : "") +
+      // ZCode 口径：Environment（env_info）属系统提示词类，计入「系统提示词」行
+      `\n\n${buildEnvironmentSection(
+        effectiveWorkspaceRoot,
+        `${activeProviderId}/${activeModelId}`,
+      )}`;
     const buildToolsExport = (): string => {
       const tools = getTools({ workspaceRoot: effectiveWorkspaceRoot });
       return tools
@@ -274,13 +403,32 @@ export default function App() {
       messages: state.messages,
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       toolsJson: JSON.stringify(getTools({ workspaceRoot: effectiveWorkspaceRoot })),
+      skillsJson: skillsSectionText || undefined,
+      mcpToolsJson: mcpToolsJson || undefined,
+      metaUserJson: metaUserDisplayText || undefined,
       categoryContent: {
         messages: { buildContent: buildMessagesExport, language: "markdown" },
         systemPrompt: { buildContent: buildSystemPromptExport, language: "markdown" },
         systemTools: { buildContent: buildToolsExport, language: "json" },
+        ...(skillsSectionText
+          ? { skills: { buildContent: () => skillsSectionText, language: "markdown" } }
+          : {}),
+        ...(mcpToolsJson
+          ? { mcpTools: { buildContent: () => mcpToolsJson, language: "json" } }
+          : {}),
+        ...(metaUserDisplayText
+          ? { metaUser: { buildContent: () => metaUserDisplayText, language: "markdown" } }
+          : {}),
       },
     });
-  }, [state.messages, currentModel, effectiveWorkspaceRoot]);
+  }, [
+    state.messages,
+    currentModel,
+    effectiveWorkspaceRoot,
+    skillsSectionText,
+    mcpToolsJson,
+    memorySectionText,
+  ]);
 
   // 会话统计：轮数 / 工具步数 / LLM 与工具累计耗时 / token 用量（真实 usage 累加）
   const sessionStats = useMemo(() => {
@@ -325,8 +473,24 @@ export default function App() {
     };
   }, [state.messages, contextUsage]);
 
+  // 记忆页设置抽屉的「驱动模型」选择器选项：全部启用服务商下的启用模型
+  //（value = "providerId::modelId"，group = 服务商名，供 ModelPicker 分组展示）
+  const hubModelOptions = useMemo(
+    () =>
+      providers
+        .filter((p) => p.enabled !== false)
+        .flatMap((p) =>
+          (p.models ?? [])
+            .filter((m) => m.enabled !== false)
+            .map((m) => ({ value: `${p.id}::${m.id}`, label: m.name || m.id, group: p.name })),
+        ),
+    [providers],
+  );
+
   const currentMessagesRef = useRef(state.messages);
   currentMessagesRef.current = state.messages;
+
+
 
   const activeTaskIdRef = useRef(activeTaskId);
   activeTaskIdRef.current = activeTaskId;
@@ -780,7 +944,7 @@ export default function App() {
           ) : currentView === "mcp" ? (
             <McpHubPage />
           ) : currentView === "memory" ? (
-            <MemoryPanel />
+            <MemoryPanel workdir={effectiveWorkspaceRoot || undefined} modelOptions={hubModelOptions} />
           ) : currentView === "skills" ? (
             <SkillsHubPage />
           ) : !hasMessages ? (
@@ -895,6 +1059,11 @@ export default function App() {
 
       {/* 右侧代码/变更预览面板（ZCode PreviewPane 移植） */}
       <CodeViewerPaneHost workspacePath={effectiveWorkspaceRoot || undefined} />
+
+      {/* Hub 三页共用 toast 容器（LiveAgent toast-manager 移植；hub-scope 使弹层吃 LiveAgent 色板） */}
+      <div className="hub-scope fixed z-[10010]">
+        <Toaster dismissLabel={t("common.dismissNotification")} />
+      </div>
 
       {/* 回退结果 toast（对齐 LiveAgent addNotify：成功/问题分级，底部右侧悬浮） */}
       {rewindToast && (

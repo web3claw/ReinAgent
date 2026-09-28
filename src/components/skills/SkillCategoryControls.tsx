@@ -1,0 +1,200 @@
+// LiveAgent 移植：<crates/agent-ui/src/pages/skills-hub/SkillCategoryControls.tsx>
+// 适配：Radix Tabs 状态属性 data-[active]: → data-[state=active]:；图标 lucide-react 同名。
+import type { ComponentType } from "react";
+import {
+  Activity,
+  BookOpen,
+  Brain,
+  Globe,
+  House,
+  Layers,
+  ListChecks,
+  MessageCircle,
+  Package,
+  Palette,
+  Plug,
+  Shield,
+  Wallet,
+  Wrench,
+  Zap,
+} from "lucide-react";
+import { Badge } from "../lw/ui/badge";
+import { Button } from "../lw/ui/button";
+import { SearchHighlight } from "../lw/ui/search-highlight";
+import { Tabs, TabsList, TabsTrigger } from "../lw/ui/tabs";
+import { cn } from "../lw/lib/utils";
+import {
+  CLAWHUB_CATEGORY_SLUGS,
+  type ClawHubCategorySlug,
+  classifyClawHubSkill,
+} from "../../lib/skills/clawHubCategories";
+import type { SkillSummary } from "../../lib/skills/index";
+import { useLocale } from "./useLocale";
+
+export type StoreCategoryValue = "all" | ClawHubCategorySlug;
+
+type CategoryIconComponent = ComponentType<{ className?: string }>;
+
+// 图标与 ClawHub 官网分类侧边栏一一对应（layers/plug/zap/globe/wrench/…）。
+export const STORE_CATEGORY_ICONS: Record<StoreCategoryValue, CategoryIconComponent> = {
+  all: Layers,
+  integrations: Plug,
+  automation: Zap,
+  research: Globe,
+  development: Wrench,
+  productivity: ListChecks,
+  communication: MessageCircle,
+  creative: Palette,
+  knowledge: BookOpen,
+  agents: Brain,
+  operations: Activity,
+  security: Shield,
+  finance: Wallet,
+  lifestyle: House,
+  other: Package,
+};
+
+// 惰性计算而非模块顶层 spread：生产构建下这段代码与 CLAWHUB_CATEGORY_SLUGS
+// 分处不同的 rolldown chunk，顶层 spread 有时会在对方 chunk 初始化完成前
+// 执行，读到 undefined 并抛出 "not iterable"。推迟到调用时读取可以避开。
+let storeCategoryOptionsCache: readonly StoreCategoryValue[] | undefined;
+function getStoreCategoryOptions(): readonly StoreCategoryValue[] {
+  storeCategoryOptionsCache ??= ["all", ...CLAWHUB_CATEGORY_SLUGS];
+  return storeCategoryOptionsCache;
+}
+
+function storeCategoryLabelKey(value: StoreCategoryValue): string {
+  return `settings.skillsStoreCategory${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+// 已安装技能没有 ClawHub 的 topics 字段，用名称+描述做启发式分类。
+export function classifyInstalledSkill(skill: SkillSummary): ClawHubCategorySlug[] {
+  return classifyClawHubSkill({
+    slug: skill.name,
+    displayName: skill.name,
+    summary: skill.description,
+    topics: [],
+  });
+}
+
+export function StoreCategoryChips(props: {
+  value: StoreCategoryValue;
+  counts: ReadonlyMap<StoreCategoryValue, number>;
+  onChange: (value: StoreCategoryValue) => void;
+  className?: string;
+  appearance?: "quiet" | "outlined";
+  showIcons?: boolean;
+}) {
+  const { t } = useLocale();
+  const appearance = props.appearance ?? "quiet";
+  const showIcons = props.showIcons ?? true;
+  return (
+    <div className={cn(props.className)}>
+      <Tabs
+        value={props.value}
+        onValueChange={(value) => {
+          if (getStoreCategoryOptions().includes(value as StoreCategoryValue)) {
+            props.onChange(value as StoreCategoryValue);
+          }
+        }}
+        className="max-w-full"
+      >
+        <TabsList aria-label={t("settings.skillsStoreCategoryAll")} variant="filter">
+          {getStoreCategoryOptions().map((value) => {
+            const CategoryIcon = STORE_CATEGORY_ICONS[value];
+            const count = props.counts.get(value) ?? 0;
+            return (
+              <TabsTrigger
+                key={value}
+                value={value}
+                aria-label={`${t(storeCategoryLabelKey(value))}: ${count}`}
+                className={cn(
+                  "group shrink-0 gap-1 rounded-md px-2",
+                  "text-xs font-medium text-muted-foreground shadow-none",
+                  "hover:text-foreground data-[state=active]:text-foreground data-[state=active]:shadow-none",
+                  appearance === "outlined"
+                    ? "border border-border/70 bg-background hover:border-foreground/20 hover:bg-muted/50 data-[state=active]:border-foreground/25 data-[state=active]:bg-muted data-[state=active]:shadow-xs"
+                    : "border border-transparent hover:bg-muted/60 data-[state=active]:bg-muted",
+                )}
+              >
+                {showIcons ? <CategoryIcon className="size-3.5" /> : null}
+                <span>{t(storeCategoryLabelKey(value))}</span>
+                <Badge variant="muted" size="filter-count">
+                  {count}
+                </Badge>
+              </TabsTrigger>
+            );
+          })}
+        </TabsList>
+      </Tabs>
+    </div>
+  );
+}
+
+export function InstalledSkillCategoryChip(props: {
+  category: ClawHubCategorySlug;
+  onSelect: (category: ClawHubCategorySlug) => void;
+}) {
+  const { t } = useLocale();
+  const CategoryIcon = STORE_CATEGORY_ICONS[props.category];
+  return (
+    <Button
+      variant="ghost"
+      size="sm"
+      onClick={(event) => {
+        event.stopPropagation();
+        props.onSelect(props.category);
+      }}
+      onKeyDown={(event) => event.stopPropagation()}
+      className="h-6 shrink-0 gap-1 px-1.5 text-tiny font-medium text-muted-foreground hover:text-foreground"
+    >
+      <CategoryIcon className="size-2.5" />
+      <span>{t(storeCategoryLabelKey(props.category))}</span>
+    </Button>
+  );
+}
+
+export function SkillCategoryChips(props: {
+  categories: ClawHubCategorySlug[];
+  onSelect: (category: ClawHubCategorySlug) => void;
+}) {
+  const { t } = useLocale();
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {props.categories.map((category) => {
+        const BadgeIcon = STORE_CATEGORY_ICONS[category];
+        return (
+          <Button
+            key={category}
+            variant="ghost"
+            size="sm"
+            onClick={(event) => {
+              event.stopPropagation();
+              props.onSelect(category);
+            }}
+            onKeyDown={(event) => event.stopPropagation()}
+            className="h-6 shrink-0 gap-1 px-1.5 text-tiny font-medium text-muted-foreground hover:text-foreground"
+          >
+            <BadgeIcon className="size-2.5" />
+            <span>{t(storeCategoryLabelKey(category))}</span>
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function SkillTopicBadges(props: { topics?: string[]; searchQuery?: string }) {
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      {(props.topics ?? []).slice(0, 3).map((topic) => (
+        <span
+          key={topic}
+          className="inline-flex h-5 shrink-0 items-center rounded-md bg-muted px-1.5 text-tiny text-muted-foreground"
+        >
+          <SearchHighlight text={topic} query={props.searchQuery ?? ""} />
+        </span>
+      ))}
+    </div>
+  );
+}

@@ -72,7 +72,9 @@ registerHooks({
 });
 
 // 必须在 registerHooks 之后：这是**真实**产品模块（唯一被测对象）。
-const { runAgentTurn } = await import("./runAgentTurn.ts");
+const { runAgentTurn, buildMetaUserBlock, prependMetaUserBlock } = await import(
+  "./runAgentTurn.ts"
+);
 
 /** 从权威消息里拼出正文（仅 text 块）。 */
 function plainTextOf(message) {
@@ -363,5 +365,110 @@ test("5 · maxSteps 显式透传：maxSteps=1 时 faux 在第 1 步中断且 max
 
   assert.equal(result.reachedAgentEnd, true, "maxSteps 触顶时应优雅到达 agent_end");
   assert.equal(result.maxStepsReached, true, "maxSteps=1 应触发 maxStepsReached=true");
+});
+
+// ===========================================================================
+// 6 · meta_user 注入结构（ZCode 同款）
+//   系统侧注入（currentDate/记忆/技能）包 <system-reminder> 并入首条 user 消息，
+//   不得混入系统提示词；faux 回显须剥除注入块（注入不是用户话语）。
+// ===========================================================================
+test("6 · buildMetaUserBlock：空段不产块；有段时 <system-reminder> 包裹且按序拼接", () => {
+  assert.equal(
+    buildMetaUserBlock({ currentDate: "", memorySection: "  ", skillsSection: undefined }),
+    undefined,
+    "全空段应返回 undefined（无注入不得伪造空块）",
+  );
+  const block = buildMetaUserBlock({
+    currentDate: "# currentDate\nToday's date is X.",
+    memorySection: "# Memory Index\n- [a]",
+    skillsSection: "# Skills\n- b",
+  });
+  assert.ok(block, "有段时应产块");
+  assert.ok(block.startsWith("<system-reminder>\n"), "应以 <system-reminder> 开头");
+  assert.ok(block.endsWith("\n</system-reminder>"), "应以 </system-reminder> 结尾");
+  const idxDate = block.indexOf("# currentDate");
+  const idxMemory = block.indexOf("# Memory Index");
+  const idxSkills = block.indexOf("# Skills");
+  assert.ok(idxDate !== -1 && idxMemory !== -1 && idxSkills !== -1, "三段都应在块内");
+  assert.ok(idxDate < idxMemory && idxMemory < idxSkills, "段序应为 currentDate → 记忆 → 技能");
+});
+
+test("6b · prependMetaUserBlock：并入首条 user（string/array 两形态）；无 user / 无块时原样返回", () => {
+  // string 内容：块 + 空行 + 原文
+  const stringCase = prependMetaUserBlock(
+    [{ role: "user", content: "你好", timestamp: 1 }],
+    "<WRAP/>",
+  );
+  assert.equal(stringCase[0].content, "<WRAP/>\n\n你好");
+
+  // 数组内容（图片消息）：注入文本块插在最前，原块保序
+  const arrayCase = prependMetaUserBlock(
+    [
+      {
+        role: "user",
+        content: [
+          { type: "image", data: "abc", mimeType: "image/png" },
+          { type: "text", text: "看图" },
+        ],
+        timestamp: 1,
+      },
+    ],
+    "<WRAP/>",
+  );
+  assert.equal(arrayCase[0].content.length, 3);
+  assert.deepEqual(
+    arrayCase[0].content[0],
+    { type: "text", text: "<WRAP/>\n\n" },
+    "注入应为首部独立 text 块",
+  );
+  assert.deepEqual(arrayCase[0].content[1], {
+    type: "image",
+    data: "abc",
+    mimeType: "image/png",
+  });
+
+  // 无 user 消息 / 无块：原样返回（同一引用）
+  const noUser = [{ role: "assistant", content: [{ type: "text", text: "x" }] }];
+  assert.equal(prependMetaUserBlock(noUser, "<WRAP/>"), noUser, "无 user 时原样返回");
+  const withUser = [userMessage("hi")];
+  assert.equal(prependMetaUserBlock(withUser, undefined), withUser, "无块时原样返回");
+});
+
+test("6c · 端到端：faux 转录首条 user 携带 <system-reminder> 注入，且回显剥除注入块", async () => {
+  const PROMPT = "现在几点？";
+  const result = await runAgentTurn({
+    source: "faux",
+    config: { apiKey: "", modelId: "deepseek-flash" },
+    messages: [userMessage(PROMPT)],
+    systemPrompt: "sys",
+    onEvent: () => {},
+  });
+
+  const first = result.messages.find((m) => m.role === "user");
+  assert.ok(first, "转录应含 user 消息");
+  const firstText =
+    typeof first.content === "string"
+      ? first.content
+      : first.content.filter((b) => b.type === "text").map((b) => b.text).join("");
+  assert.ok(
+    firstText.startsWith("<system-reminder>\n# currentDate"),
+    "首条 user 应以 meta_user 注入块开头（currentDate 恒在）",
+  );
+  assert.ok(firstText.includes(PROMPT), "注入块之后应是原始用户文本");
+  assert.ok(
+    !firstText.includes("# Skills"),
+    "未启用技能时不得伪造 Skills 段（No-Fallback）",
+  );
+
+  // faux 回显剥除注入块：演示正文仍只含用户话语
+  const assistantText = result.messages
+    .filter((m) => m.role === "assistant")
+    .map(plainTextOf)
+    .join("\n");
+  assert.ok(assistantText.includes(`「${PROMPT}」`), "faux 回显应只含用户话语");
+  assert.ok(
+    !assistantText.includes("system-reminder"),
+    "faux 回显不得把注入块当作用户内容回显",
+  );
 });
 
