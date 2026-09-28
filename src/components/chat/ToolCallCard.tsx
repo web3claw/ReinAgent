@@ -14,7 +14,7 @@
  */
 
 import { memo, useMemo } from "react";
-import { Globe, Pencil, Search, SquareTerminal, Wrench, Check, ChevronRight, Circle, ListChecks } from "lucide-react";
+import { Bot, Globe, Pencil, Search, SquareTerminal, Wrench, Check, ChevronRight, Circle, ListChecks } from "lucide-react";
 import type { ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { formatToolArgs } from "../../lib/chat/toolDisplay";
 import { useTranslation } from "../../i18n";
@@ -130,6 +130,7 @@ function ToolCallCardImpl({
         todo_write: "任务清单",
         webfetch: isRunning ? "正在抓取" : "网页抓取",
         websearch: isRunning ? "正在联网搜索" : "联网搜索",
+        agent: isRunning ? "子代理执行中" : "子代理",
       };
       return known[entry.toolName] ?? entry.toolName;
     },
@@ -473,6 +474,57 @@ function ToolCallCardImpl({
         showFailureStatus={isError}
         statusTooltip={statusTooltip}
         isRunning={isRunning}
+        renderContent={() => (
+          <div className="mb-2 space-y-1">
+            {entry.resultText.length > 0 ? (
+              <pre className="tool-result">{entry.resultText}</pre>
+            ) : (
+              <div className="tool-pending">{t("toolNoOutput")}</div>
+            )}
+          </div>
+        )}
+      />
+    );
+  }
+
+  // ---- 子代理（agent，P1-6）：Bot 图标 + description 主文案 + 完成 fact 次要文本 +
+  //      可展开报告全文（对齐 ZCode AgentToolCallBlock 摘要行语义）----
+  if (entry.toolName === "agent") {
+    const description =
+      typeof entry.details?.description === "string"
+        ? entry.details.description
+        : typeof entry.args?.description === "string"
+          ? entry.args.description
+          : "";
+    const subType = typeof entry.details?.subagentType === "string" ? entry.details.subagentType : "";
+    const toolUseCount = typeof entry.details?.toolUseCount === "number" ? entry.details.toolUseCount : null;
+    const durationMs = typeof entry.details?.durationMs === "number" ? entry.details.durationMs : null;
+    const secondary =
+      isRunning || toolUseCount === null
+        ? undefined
+        : `${subType} · ${toolUseCount} 工具调用${durationMs !== null ? ` · ${Math.max(1, Math.round(durationMs / 100) / 10)}s` : ""}`;
+    return (
+      <ToolLayout
+        toolId={entry.toolCallId}
+        icon={<Bot className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
+        kindLabel={kindLabel}
+        primaryText={description ? <span className="truncate">{description}</span> : null}
+        secondaryText={secondary}
+        statusLabel={statusLabelNode}
+        showStatusLabel={isError}
+        showFailureStatus={isError}
+        statusTooltip={statusTooltip}
+        isRunning={isRunning}
+        summaryAction={{
+          ariaLabel: "在右侧打开子代理面板",
+          onActivate: () =>
+            openCodeViewer({
+              type: "subagents",
+              title: "子代理",
+              ...(typeof entry.details?.subagentId === "string" ? { focusId: entry.details.subagentId } : {}),
+            }),
+        }}
         renderContent={() => (
           <div className="mb-2 space-y-1">
             {entry.resultText.length > 0 ? (

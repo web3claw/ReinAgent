@@ -152,7 +152,7 @@
 6. ~~**回合状态条 attention 强制展开**（「等待你的决定」时强制展开 + 隐藏窗口停表）~~ ✅ 2026-09-28（批次 A1）
 
 ### P1 —— 差异化能力
-7. **子代理系统**（Explore / GeneralPurpose / 目录侧栏 / 完成通知）：ZCode `core/subagent/`、LA `lib/subagents/`。**UI 同批做**：回合内子代理卡（LA MetaTags / ZCode AgentToolCallBlock + 「在右侧打开」）、子代理目录侧栏（Running/Ended + 状态图标）、运行中行 + Stop（§11.1）。
+7. **子代理系统**（**两批完成** ✅ 2026-09-28：引擎（嵌套 runTurn / Explore+general-purpose / 结构性禁递归 / 审批门继承）+ 回合内子代理卡 + **后台子代理（run_in_background / subagent_output / 完成通知）+ 目录面板（Running/Ended/Stop/详情）**；**未做增量**：「在右侧打开」完整对话回放（依赖子会话持久化）、自定义 agents/\*.md profile、子代理私有上下文持久化与 resume）：ZCode `core/subagent/`、LA `lib/subagents/`。
 8. **AskUserQuestion + ExitPlanMode 交互闭环**（**部分** ✅ 2026-09-28，05ecc98：工具 + 回合内提问卡已做；ExitPlanMode elicitation / 独立提问弹窗 / PlanModeCard / Plan 开关标记待做）：**UI 同批做**：回合内提问卡（逐题/推荐标/1-N 翻页/其他输入/倒计时自动选，§11.2）+ 提问弹窗（分页/自定义/snooze/来源角标）+ PlanModeCard（三态脊 + 批准并开始执行，§11.3）+ Plan 模式开关标记（灯泡/✕）。
 9. ~~**后台 Bash**（驻留进程 + TaskOutput/TaskStop）~~ ✅ 2026-09-28（Rust `bg_process.rs` 四命令 + `background_bash`/`task_output`/`task_stop` 三工具 + 回合内 turnActivity 标签；Tauri 实测闭环）。§11.5 增量未做：输出侧栏、输入框「后台工作」按钮/耗时标签。
 10. ~~**WebFetch / WebSearch**（含域名白名单与结果缓存）~~ ✅ 2026-09-28（Rust `web_tools.rs`：DDG 无 Key 搜索 + ureq 抓取 + 15min 缓存 + SSRF 防护 + 代理设置；UI 联网搜索聚合行「已搜索 N 次·N 个来源」）。§11.8 增量未做：来源行点击外链打开。

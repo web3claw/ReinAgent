@@ -553,6 +553,7 @@ test("9 · resolveToolPermissionKind：read/write/exec 分级准确，未知工�
   assert.equal(resolveToolPermissionKind("write_file"), "write");
   assert.equal(resolveToolPermissionKind("edit_file"), "write");
   assert.equal(resolveToolPermissionKind("exec_command"), "exec");
+  assert.equal(resolveToolPermissionKind("agent"), "read", "子代理派发免审批（拦截下沉到子代理内部工具）");
   // 保守默认：未知/未来新增工具审批从紧（write 需批准、plan 模式拦截），绝不静默放权。
   assert.equal(resolveToolPermissionKind("some_future_tool"), "write");
   assert.equal(resolveToolPermissionKind(""), "write");

@@ -11,18 +11,18 @@ import { previewPlatform } from "./previewPlatform";
 import type { CodeViewerSource } from "./lib/codeViewer";
 import { resolveWorkspacePath } from "../lib/agent/workspace";
 import { useAppStore } from "../store/useAppStore";
+import { SubagentsPanel } from "../components/chat/SubagentsPanel";
 
 type CodeViewerSourceInput = Extract<
   NonNullable<ReturnType<typeof useAppStore.getState>["codeViewerSource"]>,
-  { type: "file" | "text" | "patch" | "multi-file-diff" }
+  { type: "file" | "text" | "patch" | "multi-file-diff" | "subagents" }
 >;
 
 function buildSource(
-  input: NonNullable<CodeViewerSourceInput>,
+  input: Exclude<NonNullable<CodeViewerSourceInput>, { type: "subagents" }>,
   workspacePath?: string
 ): CodeViewerSource {
-  // 工具参数里的路径可能是相对路径：按会话工作区根目录解析成绝对路径，
-  // 与 Agent 写入文件时使用的解析保持一致（否则后端会兜底拼到 DefaultProject）。
+  // 子代理形态没有 path；其余形态按工作区根解析相对路径
   const resolvePath = (rawPath?: string): string | undefined => {
     if (!rawPath) return undefined;
     if (!workspacePath) return rawPath;
@@ -66,6 +66,33 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
 
   if (!codeViewerSource) {
     return null;
+  }
+
+  // 子代理目录面板（P1-6 增量）：实时订阅 registry，不走 PreviewPane。
+  if (codeViewerSource.type === "subagents") {
+    return (
+      <div className="flex h-full w-[460px] flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+        <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[11px] bg-[var(--bg-sunken)] border border-[var(--border)] text-[var(--text-dim)]">
+              子代理
+            </span>
+            <span className="truncate text-xs text-[var(--text)]">{codeViewerSource.title}</span>
+          </div>
+          <button
+            type="button"
+            onClick={closeCodeViewer}
+            className="flex-shrink-0 rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            aria-label="关闭子代理面板"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <SubagentsPanel focusId={codeViewerSource.focusId} />
+        </div>
+      </div>
+    );
   }
 
   const isPatch = codeViewerSource.type === "patch";

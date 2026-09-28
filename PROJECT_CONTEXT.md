@@ -771,3 +771,29 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **联网搜索聚合行**：`buildActivitySegments`（turnActivity.ts，相邻 websearch 合段，隔任何其他条目即断组）+ `WebSearchGroupCard`（「已搜索 N 次 · N 个来源」+ 运行中扫光 + 部分失败红标 + 展开 query 行/来源行（favicon `/favicon.ico` 兜底 a.favicon.im，收起 5 条 + 「查看其余 N 个」），对齐 LA HostedSearchGroupView）。i18n 10 键（zh/en）。
 - **Tauri 实测**（CDP 裸调 + 模型调用）：搜索 939ms/11 条、广告 0（修复前第一条是 uddg 包装的 Udemy 广告——单测补夹具）；`web_fetch` 抓 rust-lang.org 200/18,594B→5,159 字符可读文本（走代理）；SSRF 实测抓出 host 提取绕过 bug（已修+补测）。
 - 验证：前端 300/300 + `tsc` 0 + Rust 150/150（web_tools 8 例）。
+
+### 8.10 P1-6 子代理系统（第一批：引擎 + 回合内卡，2026-09-28）
+- **形态取舍（调研结论）**：ZCode = 子代理是完整独立 session（事件镜像/右侧回放/恢复，重）；LA = 进程内递归 runner + 结构化卡 + 私有持久化（轻）。选 **LA 形态**：子代理跑 `subagentRunner.ts` 内的嵌套 `runTurn`（agentRuntime），转录只在内存、不写主会话历史，最终报告作为 `agent` 工具的 toolResult 回到主循环。
+- **`src/lib/providers/subagentRunner.ts`**：
+  - `createSubagentTool(deps)`：工具名 `agent`，参数 `{description, prompt, subagent_type?}`（**不暴露 model/run_in_background**——ZCode 教训：历史 tool call 里的旧 override 会长期污染）。类型 Explore / general-purpose，未知类型如实报错不猜测。
+  - **结构性禁递归**：agent 工具由 runAgentTurn 解析出 model 后注入，`getTools()` 注册表里没有 agent——子代理工具集经 `filterToolsFor` 从注册表过滤，天然无递归。
+  - **Explore**：只读白名单（read_file/list_dir/glob/grep/webfetch/websearch）+ 只读提示词 + 不挂审批门（结构性安全）；**general-purpose**：注册表全量 + 继承父审批门/AbortSignal（写操作弹主会话审批 = ZCode「路由回父」语义；父停子停）。
+  - `SUBAGENT_MAX_STEPS=6`（ZCode 默认 4；实测 Deepseek 碎步形态 4 步连「列目录+报告」都触顶，放宽；触顶走 maxStepsReached 事实链）。子代理结果 = 事实头（类型·工具调用数·时长·token 聚合 + 触顶/停止/错误 ⚠）+ 最终报告；`details.kind="subagent"` 带 summary/usage 供 UI。
+  - faux 分支同样注入（runAgentTurn 两条 source 路径）。
+- **权限分级**：`resolveToolPermissionKind("agent") = "read"`（派发免审批，对齐 ZCode needsApproval:false）——实测首版未注册被保守视为 write 弹了审批；拦截下沉到子代理内部工具（general-purpose 继承父 gate，plan 模式下子代理写工具同样被拦），语义安全。
+- **UI**：ToolCallCard agent 分支（Bot 图标 + description 主文案 + 完成后 `类型 · N 工具调用 · Ns` 次要文本 + 展开报告全文）。
+- **测试**：`subagentRunner.test.mjs` 6 例（filterToolsFor 白名单/禁递归前置、summarize 聚合、端到端嵌套 faux、未知类型报错、审批门继承判别、常量与提示词）。
+- **Tauri 实测**：模型真实派发 Explore 子代理（嵌套循环跑 glob/list_dir 调研）→ 报告回传主循环转述；第二轮验证派发不再弹审批；步数触顶 ⚠ 事实链生效（子代理如实报告不完整，主模型如实转告并自己补验证）。
+- **本批未做（后续增量）**：子代理目录侧栏（Running/Ended，需内存 registry 或持久化）、后台子代理（run_in_background + 完成通知）、「在右侧打开」完整回放（依赖子会话持久化）、用户自定义 agents/*.md profile、MCP/记忆工具带入子代理。
+- 验证：前端 306/306 + `tsc` 0。
+
+### 8.10.1 P1-6 增量：后台子代理 + 运行登记表 + 目录面板（2026-09-28）
+- **`src/lib/subagents/subagentRegistry.ts`**（内存登记表，对齐并行池的并发纪律）：
+  - 快照**不可变更新**（getSnapshot 稳定引用）+ notify **微任务合并**（同步多笔变更一轮通知，防 Maximum update depth）；AbortController 存内部 controls 表**不进快照**。
+  - `registerRun/updateRun/finishRun/stopRun/getRun/getRunSignal`；id 形态 `sub-<ms>-<seq>`；`__resetForTests` 测试隔离。
+- **`agent` 工具新增 `run_in_background`**：立即返回 `Background subagent started: <id>` + `subagent_output` 查询提示；嵌套循环脱离父轮继续跑（独立 AbortController，侧栏可停）；后台完成 → registry 收束 + notify 回调（默认实现 = 系统通知 + 提示音，复用 E1 taskNotifications；可注入便于测试）。
+- **`subagent_output` 工具**：按 id 查询状态/耗时/tokens/报告；未 id 如实报错。⚠️ **诚实性修复（实测抓出）**：后台触顶时 summary 可能只是中间叙述——`maxStepsReached` 必须随 finishRun 落 registry，查询输出带「⚠ 触达步数上限：下方内容可能是中间叙述」（首版后台路径丢标记，模型误把过程性文字当报告）。
+- **权限分级**：`subagent_output` = read（⚠️ 又一次踩「未登记新工具被保守视为 write」——连续两批同坑，**新增工具必须同步登记 resolveToolPermissionKind**）。
+- **右侧目录面板**：codeViewerSource 联合类型加 `{type:"subagents", title, focusId?}`；CodeViewerPaneHost 对应分支渲染 `SubagentsPanel`（实时 useSyncExternalStore 订阅）：Running/Ended 分组（ZCode TUI SubagentsSection 形态）、运行行 Stop 按钮（后台运行）、行点击进详情（id/类型/状态/时长/tokens/工具调用数/后台标记 + 任务全文 + 报告/错误）。agent 工具卡 `summaryAction`（「在右侧打开子代理面板」）聚焦对应运行。
+- **Tauri 实测**：后台启动立即返回 id → 父轮继续 → 30s 后 subagent_output 查询 → completed + 触顶 ⚠ 如实转述；主模型正确识别「Explore 只读无法写文件」的能力边界并给出替代方案；面板详情视图全字段渲染正确。
+- 验证：前端 310/310 + `tsc` 0（新增 subagentRegistry.test.mjs 3 例 + 后台端到端 1 例）。

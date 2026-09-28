@@ -856,6 +856,12 @@ export function resolveToolPermissionKind(name) {
     case "webfetch":
     case "websearch":
       return "read";
+    // agent（子代理派发）免审批（对齐 ZCode needsApproval:false）：拦截下沉到子代理
+    // 内部工具——general-purpose 继承父审批门，plan 模式下子代理写工具同样被拦。
+    // subagent_output 纯读内存 registry，同为只读。
+    case "agent":
+    case "subagent_output":
+      return "read";
     case "exec_command":
     case "background_bash":
     case "task_output":

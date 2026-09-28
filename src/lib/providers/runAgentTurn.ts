@@ -9,6 +9,7 @@ import { getFauxAgentSource } from "./fauxSource";
 import type { ProviderType } from "./catalog";
 import { createMcpTools } from "../mcp/mcpTools";
 import { createAskUserQuestionTool } from "../agent/askUserTool";
+import { createSubagentOutputTool, createSubagentTool } from "./subagentRunner";
 
 export type AgentSource = ProviderType | "faux";
 
@@ -340,8 +341,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
   let effectiveSystemPrompt = workspaceRoot
     ? `${prompt}\n\nCurrent workspace root: ${workspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
-    : prompt;
-  // Environment 段（对齐 ZCode env-info）：模型自述 cwd / OS / shell / 模型名 / 日期
+    : prompt;  // Environment 段（对齐 ZCode env-info）：模型自述 cwd / OS / shell / 模型名 / 日期
   const modelLabel =
     config && typeof config === "object" && config.provider && config.modelId
       ? `${config.provider}/${config.modelId}`
@@ -405,17 +405,53 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
 
   if (source === "faux") {
     const faux = await getFauxAgentSource();
+    // 子代理工具（P1-6）：在 faux 分支同样注入（复用 faux model，测试可全链路验证）
+    const toolsWithAgent = [
+      ...base.tools,
+      createSubagentOutputTool(),
+      createSubagentTool({
+        model: faux.model,
+        stream: faux.stream,
+        api: faux.api,
+        label: faux.label,
+        getApiKey: () => undefined,
+        workspaceRoot,
+        signal,
+        thinkingLevel,
+        registryTools: tools as unknown[],
+        beforeToolCall: base.beforeToolCall,
+      }),
+    ];
     return runTurn({
       model: faux.model,
       stream: faux.stream,
       api: faux.api,
       label: faux.label,
       ...base,
+      tools: toolsWithAgent as typeof base.tools,
     });
   }
 
   const model = buildModel(config);
   const stream = await getStreamFnForApi(model.api);
+  // 子代理工具（P1-6）：复用父轮 model/stream/api-key/审批门/AbortSignal；
+  // 注册表工具集里没有 agent——子代理工具集经 filterToolsFor 过滤，结构性禁递归。
+  const toolsWithAgent = [
+    ...base.tools,
+    createSubagentOutputTool(),
+    createSubagentTool({
+      model,
+      stream,
+      api: model.api,
+      label: model.provider || "openai-completions",
+      getApiKey: () => config.apiKey.trim(),
+      workspaceRoot,
+      signal,
+      thinkingLevel,
+      registryTools: tools as unknown[],
+      beforeToolCall: base.beforeToolCall,
+    }),
+  ];
 
   return runTurn({
     model,
@@ -424,5 +460,6 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     label: model.provider || "openai-completions",
     getApiKey: () => config.apiKey.trim(),
     ...base,
+    tools: toolsWithAgent as typeof base.tools,
   });
 }

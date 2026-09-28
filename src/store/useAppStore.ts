@@ -82,6 +82,7 @@ interface AppState {
     | { type: "text"; title: string; content: string; language: string; path?: string }
     | { type: "patch"; title: string; path: string; patch: string }
     | { type: "multi-file-diff"; title: string; path?: string }
+    | { type: "subagents"; title: string; focusId?: string }
     | null;
   openCodeViewer: (
     source:
@@ -89,6 +90,7 @@ interface AppState {
       | { type: "text"; title: string; content: string; language: string; path?: string }
       | { type: "patch"; title: string; path: string; patch: string }
       | { type: "multi-file-diff"; title: string; path?: string }
+      | { type: "subagents"; title: string; focusId?: string }
   ) => void;
   closeCodeViewer: () => void;
 }
