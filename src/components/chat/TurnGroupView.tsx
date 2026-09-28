@@ -44,6 +44,8 @@ import {
 } from "../../lib/chat/turnActivity";
 import { useAppStore } from "../../store/useAppStore";
 import { WebSearchGroupCard } from "./WebSearchGroupCard";
+import { buildAssistantCodeCommentCards, projectAssistantCodeComments } from "../../lib/chat/codeComment/assistantCodeComment";
+import { AssistantCodeCommentCards } from "./AssistantCodeCommentCards";
 
 function isToolEntry(message: TimelineEntry): message is ToolTimelineEntry {
   return message.role === "tool";
@@ -322,6 +324,15 @@ function TurnGroupViewImpl({
       : turnDurationMs(group, liveNowMs);
   })();
   const lastAssistant = group.lastAssistant;
+  const openCodeViewer = useAppStore((state) => state.openCodeViewer);
+  // P2-C2：终态回复的代码评论卡（::code-comment 指令解析；运行中不生成）
+  const codeCommentCards = useMemo(
+    () =>
+      lastAssistant && !isTurnRunning
+        ? buildAssistantCodeCommentCards(lastAssistant.text, workspaceRoot || ".", 50)
+        : [],
+    [lastAssistant, isTurnRunning, workspaceRoot],
+  );
   // 运行中最后一条 assistant 的正文就地渲染进折叠体（见文件头「时间线不变式」）。
   // 纯文本轮没有思考/工具/中间叙述，靠这个标记让折叠体仍然渲染（否则流式正文不可见）。
   const liveAnswerInBody = isTurnRunning && lastAssistant !== undefined;
@@ -472,14 +483,33 @@ function TurnGroupViewImpl({
 
       {/* 最终回复：轮结束后外显（运行中正文已在折叠体时间线位置就地渲染，见文件头）。 */}
       {lastAssistant && !isTurnRunning ? (
-        <MessageItem
-          message={lastAssistant}
-          actionsDisabled={actionsDisabled}
-          onAppendSend={onEditSend}
-          onRetryFrom={onRetryFrom}
-          onBranchFrom={onBranchFrom}
-          highlight={highlightMessageId === lastAssistant.id}
-        />
+        <>
+          <MessageItem
+            message={lastAssistant}
+            actionsDisabled={actionsDisabled}
+            renderText={
+              buildAssistantCodeCommentCards(lastAssistant.text, workspaceRoot || ".", 50).length >= 0
+                ? projectAssistantCodeComments(lastAssistant.text, { streaming: false }).visibleText
+                : lastAssistant.text
+            }
+            onAppendSend={onEditSend}
+            onRetryFrom={onRetryFrom}
+            onBranchFrom={onBranchFrom}
+            highlight={highlightMessageId === lastAssistant.id}
+          />
+          {codeCommentCards.length > 0 && !actionsDisabled ? (
+            <AssistantCodeCommentCards
+              cards={codeCommentCards}
+              onOpenComment={(card) =>
+                openCodeViewer({
+                  type: "file",
+                  title: card.displayPath,
+                  path: card.path,
+                })
+              }
+            />
+          ) : null}
+        </>
       ) : null}
 
       {/* 文件更改摘要卡：仅在整轮结束后显示（对齐 ZCode —— 编辑过程中看各工具卡，跑完出汇总） */}

@@ -45,6 +45,8 @@ export interface MessageItemProps {
   onAppendSend?: (text: string) => void;
   /** 搜索跳转定位高亮（外部下发；短暂亮边框后由父级清除）。 */
   highlight?: boolean;
+  /** 正文渲染覆盖（P2-C2）：代码评论指令原文抹除后的可见文本；不影响 message.text 本体。 */
+  renderText?: string;
 }
 
 /**
@@ -65,6 +67,7 @@ function MessageItemImpl({
   onBranchFrom,
   onAppendSend,
   highlight = false,
+  renderText,
 }: MessageItemProps) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
@@ -275,7 +278,7 @@ function MessageItemImpl({
     >
       <div className="w-full text-sm text-[var(--text)] leading-relaxed">
         <div className="md">
-          <MarkdownText text={message.text} streaming={message.status === "streaming"} />
+          <MarkdownText text={renderText ?? message.text} streaming={message.status === "streaming"} />
           {message.status === "streaming" ? <ChatLoading loading size="sm" className="mt-1" /> : null}
         </div>
 
