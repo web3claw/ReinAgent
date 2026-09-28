@@ -3133,6 +3133,7 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-window-state",
  "tempfile",
+ "tokio",
  "toml 0.9.12+spec-1.1.0",
  "ureq",
  "uuid",

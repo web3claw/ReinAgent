@@ -739,3 +739,19 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **UI `AskQuestionCard.tsx`**（App 审批卡渲染分支：`args.kind === "question"` → 提问卡，否则审批卡）：标题「提问」+ 逐题单选卡（推荐项绿标）+ 「其他」自由输入 + 跳过/提交回答（未答齐禁用提交）。提交 → `resolveApproval(taskId, { answers })`。i18n askQuestionTitle/askOptionRecommended/askCustomPlaceholder/askSubmit/askSkip/askQuestionIncomplete。
 - **挂载条件**：`runAgentTurn` 仅在有 approval 协调器时挂 `ask_user_question`（无协调器场景挂起无人应答）。
 - **Tauri 实测**：ask 模式真实模型调用 → 提问卡挂起（问题+选项+推荐标渲染）→ 点选「继续」提交 → 工具收敛、模型确认收到回答。全链路（挂起→作答→收敛→继续）通过。
+
+### 8.8 P1-4 后台 Bash 三件套（2026-09-28，Tauri 实测闭环）
+- **Rust `src-tauri/src/bg_process.rs`**（4 命令，均为 `spawn_blocking` + `*_sync` 内部函数供测试）：
+  - `bg_spawn(command, cwd)`：`spawn_shell` 启动（Windows `cmd /C` + `CREATE_NO_WINDOW` + `raw_arg`；Unix `sh -c`），stdout/stderr 各一读线程 `pump_stream` 追加进共享 `Arc<Mutex<Vec<u8>>>` 缓冲（**256KB 上限，丢头部保尾部**并累计 dropped），立即返回 `taskId`（`bg-<ms>`）；进程驻留不阻塞回合。
+  - `bg_output(taskId, offset)`：`try_wait` 收割退出状态 → status（running/exited）+ exitCode + 增量 `newOutput` + `totalBytes` + `droppedBytes`。**offset 推进口径：totalBytes**。
+  - `bg_stop(taskId)`：Windows `taskkill /PID <pid> /T /F` 杀进程树；幂等（不存在 → stopped:false）；停止后从注册表移除（**stopped 后历史不可读**，与 ZCode 语义一致）。
+  - `bg_list()`：全部任务（刷新用）。
+  - 单测 `bg_process_tests.rs` 4 例（spawn→增量读→stop 幂等→长驻强杀）全过。
+- **前端 `src/lib/agent/tools.js`**：`background_bash` / `task_output` / `task_stop` 三工具（权限=exec；cwd 经 `resolveWorkspacePath`），回合内 turnActivity 标签「后台命令/任务输出/停止任务」。
+- **⚠️ camelCase 铁律（Tauri 实测抓出的真 bug）**：`BgOutput`/`BgSpawnResult`/`BgStopResult` 均为 `serde(rename_all = "camelCase")` → JS 侧必须读 `taskId/exitCode/newOutput/totalBytes/droppedBytes`；首版写成 snake_case 导致模型看到 `output bytes: undefined`。**新增 Tauri 命令后，前端取值字段名必须对照 Rust 结构体的 serde 改名核对一遍。**
+- **Tauri 实测记录**（CDP 驱动，模型真实调用）：`ping -n 60` 驻留 → taskId 秒回；自然退出后 `status: exited / exit: 0 / output bytes: 3149` 三字段真实填充；`task_stop` 返回 stopped；裸调验证 13,990 字节/301 行明文完整、**全链路无 base64 封装**（模型自称「输出带 base64 标记」系误读）。环境观察：本机 PATH 下 `timeout` 解析到 GNU coreutils（非 Windows timeout.exe），`sleep 6` 可用；全项目输出解码统一 `from_utf8_lossy`（exec/terminal/bg_process 一致，本机系统代码页为 UTF-8）。
+- **同批附带修复（全量回归发现，均非 P1-4 引入）**：
+  - `markdownBlocks.js` ReDoS 真回归：`DEFINITION_LINE_RE` 的 label 体贪婪吞尾+逐字回溯撞 V8 大字符串悬崖（64KB 敌意行 17.5ms，n 翻倍耗时 62×）→ 新增 `hasLinkDefinitionLine`：`]:` indexOf 快筛候选行、逐行跑完整正则（语义等价：能匹配的行必含 `]:`；12 语义用例 + 18 个仓库 md 对拍 0 mismatch）。
+  - `taskModelIsolation.test.mjs` 过期断言（断言已废弃的 localStorage 键 `reinagent-tasks`，任务持久化已迁 SQLite）→ 删除旧键断言保留状态级隔离断言；同文件 `globalThis.window` mock 泄漏污染后续测试文件 → `after()` 还原现场。
+  - 10 个测试文件静态 `import { registerHooks } from "node:module"`（Node 22.15+ API）在 bun 1.4.x 下抛 SyntaxError 且被计为文件级失败 → 改动态导入 + `typeof` 能力检测（bun 原生支持 .ts 无需钩子）；⚠️ 其中 compaction/todoProgress 是 CRLF 行尾，批量替换需按文件实际 EOL。
+- 验证：**全量 297/297 全绿**（修复前 240 pass/10 fail/10 errors——registerHooks 连累 47 个测试没跑起来）+ `tsc` 0 + cargo bg 4/4。

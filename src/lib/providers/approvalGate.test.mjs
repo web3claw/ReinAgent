@@ -9,12 +9,13 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { registerHooks } from "node:module";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 // ---- 让裸 node 能解析「无扩展名的相对导入」（仅相对说明符，裸包不动）----
-registerHooks({
+// Node 直跑需 resolve 钩子补扩展名；bun 原生支持 .ts 且 1.4.x 无 registerHooks —— 动态导入 + 能力检测。
+const { registerHooks } = await import("node:module");
+if (typeof registerHooks === "function") registerHooks({
   resolve(specifier, context, nextResolve) {
     if ((specifier.startsWith("./") || specifier.startsWith("../")) && context.parentURL) {
       const url = new URL(specifier, context.parentURL);

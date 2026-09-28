@@ -1,8 +1,12 @@
-import { test } from "node:test";
+import { test, after } from "node:test";
 import assert from "node:assert/strict";
 
-// Mock localStorage and window in global scope for testing useAppStore
+// Mock localStorage and window in global scope for testing useAppStore。
+// ⚠️ bun test 单进程跑全部文件：这里的全局 mock 若不恢复，会污染后续测试文件
+// （如 tools.test.mjs 的「Node 下 window is not defined」对照断言）——after 中还原。
 const storageMap = new Map();
+const realWindow = globalThis.window;
+const realLocalStorage = globalThis.localStorage;
 globalThis.localStorage = {
   getItem: (key) => storageMap.get(key) ?? null,
   setItem: (key, val) => storageMap.set(key, String(val)),
@@ -10,6 +14,12 @@ globalThis.localStorage = {
   clear: () => storageMap.clear(),
 };
 globalThis.window = globalThis;
+after(() => {
+  if (realWindow === undefined) delete globalThis.window;
+  else globalThis.window = realWindow;
+  if (realLocalStorage === undefined) delete globalThis.localStorage;
+  else globalThis.localStorage = realLocalStorage;
+});
 
 test("独立任务窗口模型记忆：不同任务可以分别设置并记忆不同的模型，互不干扰", async () => {
   storageMap.clear();
@@ -51,14 +61,6 @@ test("独立任务窗口模型记忆：不同任务可以分别设置并记忆�
   assert.equal(taskBCheck?.providerId, "provider-b");
   assert.equal(taskBCheck?.modelId, "model-b");
 
-  // 4. 验证 localStorage 持久化内容正确保存了各自的模型
-  const savedTasksRaw = storageMap.get("reinagent-tasks");
-  assert.ok(savedTasksRaw);
-  const parsedTasks = JSON.parse(savedTasksRaw);
-  const persistedA = parsedTasks.find((t) => t.id === taskIdA);
-  const persistedB = parsedTasks.find((t) => t.id === taskIdB);
-  assert.equal(persistedA.providerId, "provider-c");
-  assert.equal(persistedA.modelId, "model-c");
-  assert.equal(persistedB.providerId, "provider-b");
-  assert.equal(persistedB.modelId, "model-b");
+  // 4. 持久化已迁移至 SQLite（conversations.db tasks 表），localStorage 键
+  //    "reinagent-tasks" 不复存在——隔离语义以上方状态断言为准，此处不再断言旧键。
 });

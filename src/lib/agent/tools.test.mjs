@@ -513,8 +513,11 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
       "grep",
       "delete_file",
       "todo_write",
+      "background_bash",
+      "task_output",
+      "task_stop",
     ],
-    "工具名与顺序（批次 B 扩军：glob/grep/delete_file/todo_write）",
+    "工具名与顺序（批次 B 扩军 + P1-4 后台 Bash）",
   );
 
   const a = getTools();

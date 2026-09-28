@@ -147,17 +147,17 @@
 1. ~~**工具扩军第一批**~~ ✅ 2026-09-28（批次 B：glob/grep/delete_file/todo_write + Todo 卡 + 进度条；工具总数 5→9）
 2. ~~**历史压缩 compact + microcompact**~~ ✅ 2026-09-28（批次 D：阈值 80% 自动压缩 + /compact 手动 + 压缩带 UI + microcompact 裁工具结果）
 3. ~~**模型元数据真实解析**~~ ✅ 2026-09-28（批次 A2：`buildModel` 按真实元数据，未知走「不钳制/不发送/不声明多模态」语义）
-4. **后台任务完成通知 + 审批红点**（系统通知 + 提示音 + 侧栏未读角标）：多任务并行体验闭环。
+4. ~~**后台任务完成通知 + 审批红点**（系统通知 + 提示音 + 侧栏未读角标）~~ ✅ 2026-09-28（批次 E，2f02b19）。
 5. ~~**@提及与斜杠命令实义化**~~ ✅ 2026-09-28（批次 C：真菜单 + 命令文件扫描 + 提及内容注入；/compact 占位待批次 D）
 6. ~~**回合状态条 attention 强制展开**（「等待你的决定」时强制展开 + 隐藏窗口停表）~~ ✅ 2026-09-28（批次 A1）
 
 ### P1 —— 差异化能力
 7. **子代理系统**（Explore / GeneralPurpose / 目录侧栏 / 完成通知）：ZCode `core/subagent/`、LA `lib/subagents/`。**UI 同批做**：回合内子代理卡（LA MetaTags / ZCode AgentToolCallBlock + 「在右侧打开」）、子代理目录侧栏（Running/Ended + 状态图标）、运行中行 + Stop（§11.1）。
-8. **AskUserQuestion + ExitPlanMode 交互闭环**：**UI 同批做**：回合内提问卡（逐题/推荐标/1-N 翻页/其他输入/倒计时自动选，§11.2）+ 提问弹窗（分页/自定义/snooze/来源角标）+ PlanModeCard（三态脊 + 批准并开始执行，§11.3）+ Plan 模式开关标记（灯泡/✕）。
-9. **后台 Bash**（驻留进程 + TaskOutput/TaskStop + 输出侧栏 + 输入框后台工作按钮/耗时标签，§11.5）。
+8. **AskUserQuestion + ExitPlanMode 交互闭环**（**部分** ✅ 2026-09-28，05ecc98：工具 + 回合内提问卡已做；ExitPlanMode elicitation / 独立提问弹窗 / PlanModeCard / Plan 开关标记待做）：**UI 同批做**：回合内提问卡（逐题/推荐标/1-N 翻页/其他输入/倒计时自动选，§11.2）+ 提问弹窗（分页/自定义/snooze/来源角标）+ PlanModeCard（三态脊 + 批准并开始执行，§11.3）+ Plan 模式开关标记（灯泡/✕）。
+9. ~~**后台 Bash**（驻留进程 + TaskOutput/TaskStop）~~ ✅ 2026-09-28（Rust `bg_process.rs` 四命令 + `background_bash`/`task_output`/`task_stop` 三工具 + 回合内 turnActivity 标签；Tauri 实测闭环）。§11.5 增量未做：输出侧栏、输入框「后台工作」按钮/耗时标签。
 10. **WebFetch / WebSearch**（含域名白名单与结果缓存；UI 同批做联网搜索聚合行「已搜索 N 次·N 个来源」，§11.8）。
-11. **工具级策略**（allow/ask/deny 三态 + Hub 内切换，需补 `system.toolPolicies` 设置切片）。
-12. **AGENTS.md + gitStatus 注入**（落位：meta_user 块，见 PROMPTS.md 2.1）。
+11. ~~**工具级策略**（allow/ask/deny 三态 + Hub 内切换）~~ ✅ 2026-09-28（ee7fb11：任务级 toolPolicies + MCP Hub 卡 serverPolicy 切换）。
+12. ~~**AGENTS.md + gitStatus 注入**（落位 meta_user 块）~~ **主体** ✅ 2026-09-28（3d49fc7：agents_md.rs 四级回退扫描 + meta_user 注入）；gitStatus 快照未纳入（需异步 git + 缓存，见 PROMPTS.md 待办）。
 13. **用量统计图表**（日趋势 / 模型分布 / 热力图）。
 14. **记忆 Organizer 接线 + Extraction 管线**（Rust 表/命令与 UI 已备，缺 LLM 编排与聊天后钩子）。
 15. **排队消息面板 + 任务通知**：忙时排队（表头/上移/编辑撤回/打断并执行/删除，§11.5）+ 完成系统通知/提示音/侧栏交互角标（倒计时填充、hover snooze，§11.7）。

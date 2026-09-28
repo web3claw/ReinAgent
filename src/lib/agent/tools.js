@@ -602,7 +602,90 @@ export function createTools(options) {
     },
   };
 
-  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite];
+  // ---- 后台 Bash（P1-4，对齐 ZCode bash-background-*）：启动驻留进程立即返回 taskId；
+  //      输出经 task_output 增量读取；task_stop 终止进程树。任务列表经 bg_list 刷新。----
+  const backgroundBash = {
+    name: "background_bash",
+    label: "后台命令",
+    description:
+      "Start a long-running background process (dev servers, watchers, long builds) and return immediately with a task ID. " +
+      "The process keeps running; read its output later with task_output. " +
+      "Use ONLY for processes that should keep running (npm run dev, watch modes) — for one-shot commands use exec_command.",
+    parameters: Type.Object(
+      {
+        command: Type.String({ description: "要后台执行的命令行（如 npm run dev）" }),
+        cwd: Type.Optional(Type.String({ description: "工作目录（默认当前工作区根）" })),
+      },
+      { required: ["command"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const cwd = params.cwd ? resolveWorkspacePath(params.cwd, getWorkspace()) : getWorkspace();
+      const result = await invoke("bg_spawn", { command: params.command, cwd });
+      return buildTextToolResult(
+        `Background task started: ${result.taskId}
+` +
+          `Read output with task_output(taskId="${result.taskId}"). Stop with task_stop(taskId="${result.taskId}").`,
+        { taskId: result.taskId, command: params.command, cwd },
+      );
+    },
+  };
+
+  const taskOutput = {
+    name: "task_output",
+    label: "任务输出",
+    description:
+      "Read the output of a background task started with background_bash. " +
+      "Pass offset from the previous call to get only new output. status=running means the process is still alive.",
+    parameters: Type.Object(
+      {
+        task_id: Type.String({ description: "后台任务 ID（background_bash 返回的 taskId）" }),
+        offset: Type.Optional(
+          Type.Integer({ minimum: 0, description: "上次读到的总字节数（增量读取）" }),
+        ),
+      },
+      { required: ["task_id"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("bg_output", { taskId: params.task_id, offset: params.offset });
+      // Rust 侧 BgOutput 为 serde camelCase（exitCode/newOutput/totalBytes/droppedBytes）
+      const lines = [
+        `task: ${result.taskId} · status: ${result.status}`,
+        result.exitCode !== null && result.exitCode !== undefined ? `exit: ${result.exitCode}` : null,
+        `output bytes: ${result.totalBytes}${result.droppedBytes > 0 ? ` (dropped ${result.droppedBytes} head bytes over cap)` : ""}`,
+        "",
+        result.newOutput || "(no new output)",
+      ];
+      return buildTextToolResult(lines.filter((l) => l !== null).join("\n"), {
+        taskId: result.taskId,
+        status: result.status,
+        totalBytes: result.totalBytes,
+      }, TOOL_LIMITS.execBytes);
+    },
+  };
+
+  const taskStop = {
+    name: "task_stop",
+    label: "停止任务",
+    description: "Stop a background task started with background_bash (kills the whole process tree).",
+    parameters: Type.Object(
+      {
+        task_id: Type.String({ description: "要停止的后台任务 ID" }),
+      },
+      { required: ["task_id"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("bg_stop", { taskId: params.task_id });
+      const text = result.stopped
+        ? `Task ${params.task_id} stopped.`
+        : `Task ${params.task_id} not found (already stopped or removed).`;
+      return buildTextToolResult(text, { taskId: params.task_id, stopped: result.stopped });
+    },
+  };
+
+  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite, backgroundBash, taskOutput, taskStop];
 }
 
 /**
@@ -642,6 +725,9 @@ export function resolveToolPermissionKind(name) {
     case "todo_write":
       return "read";
     case "exec_command":
+    case "background_bash":
+    case "task_output":
+    case "task_stop":
       return "exec";
     default:
       return "write";

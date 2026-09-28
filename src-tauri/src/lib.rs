@@ -3,6 +3,9 @@ mod fs_cmd;
 mod fs_search;
 mod commands;
 mod agents_md;
+mod bg_process;
+#[cfg(test)]
+mod bg_process_tests;
 mod provider_config;
 mod conversation_store;
 mod checkpoint;
@@ -75,6 +78,10 @@ pub fn run() {
             fs_search::fs_grep,
             commands::commands_scan,
             agents_md::agents_md_read,
+            bg_process::bg_spawn,
+            bg_process::bg_output,
+            bg_process::bg_stop,
+            bg_process::bg_list,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,
             conversation_store::conversation_delete,

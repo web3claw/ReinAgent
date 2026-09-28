@@ -105,13 +105,36 @@ const DEFINITION_LINE_RE = /^[ \t>]*(?:(?:[-+*]|\d{1,9}[.)])[ \t>]*)*\[(?:\\.|[^
  *   宁可多报。
  */
 const DOCUMENT_SCOPED_RES = [
-  DEFINITION_LINE_RE, // 链接引用定义 / GFM 脚注定义（含容器内、列表续行、转义标签）
   /^ {0,3}<(script|pre|style|textarea)(\s|>|$)/im, // HTML type 1
   /^ {0,3}<!--/m, // HTML type 2
   /^ {0,3}<\?/m, // HTML type 3
   /^ {0,3}<![A-Za-z]/m, // HTML type 4
   /^ {0,3}<!\[CDATA\[/m, // HTML type 5
 ];
+
+/**
+ * 链接引用定义 / GFM 脚注定义行探测（DEFINITION_LINE_RE 的安全包装）。
+ *
+ * ⚠ 不能直接对整篇跑 DEFINITION_LINE_RE：label 体 `\[(?:\\.|[^\]\\])+\]:` 会先贪婪
+ *   吞到串尾再逐字符回溯找 `]:`，超长单行会撞 V8 大字符串回溯悬崖（实测 64KB 敌意行
+ *   17ms+，而 <32KB 线性）。定义行必含字面 `]:`，故先用 indexOf 筛出候选行、只对
+ *   候选行逐条跑完整正则 —— 能匹配的行必然含 `]:`，结果与整篇 /m 扫描**等价**，
+ *   但无 `]:` 的巨长行（粘贴的压缩代码等）零正则成本。
+ *
+ * @param {string} text
+ * @returns {boolean}
+ */
+function hasLinkDefinitionLine(text) {
+  let pos = text.indexOf("]:");
+  while (pos !== -1) {
+    const lineStart = text.lastIndexOf("\n", pos) + 1;
+    let lineEnd = text.indexOf("\n", pos);
+    if (lineEnd === -1) lineEnd = text.length;
+    if (DEFINITION_LINE_RE.test(text.slice(lineStart, lineEnd))) return true;
+    pos = text.indexOf("]:", pos + 2);
+  }
+  return false;
+}
 
 /**
  * 文本是否含**文档作用域**构造（含则不应按块切分）。
@@ -125,7 +148,7 @@ export function hasDocumentScopedConstructs(text) {
   for (const re of DOCUMENT_SCOPED_RES) {
     if (re.test(text)) return true;
   }
-  return false;
+  return hasLinkDefinitionLine(text);
 }
 
 /**

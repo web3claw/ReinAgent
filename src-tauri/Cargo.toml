@@ -40,6 +40,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 tempfile = "3"
 dirs = "6"
 toml = "0.9"
+tokio = { version = "1", features = ["rt", "time"] }
 
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
