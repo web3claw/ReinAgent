@@ -1674,3 +1674,9 @@ select option {
   /* 暗色下空格用亮白低混（亮色主题用上方默认段的暗色混色） */
   --color-usage-heatmap-0: color-mix(in oklab, #ffffff 7%, transparent);
 }
+
+/* ---------- 输入区 dock 分离感（P2-A2）：滚动离底时顶部出现边框与阴影 ---------- */
+[data-dock-away="true"] {
+  border-top: 1px solid var(--border);
+  box-shadow: 0 -10px 18px -14px rgba(0, 0, 0, 0.5);
+}

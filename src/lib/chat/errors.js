@@ -77,3 +77,21 @@ export function isRetryableError(message) {
     /(^|\D)(429|500|524|52[0-7])(\D|$)/.test(m)
   );
 }
+
+/**
+ * 错误归因分类（P2-B1）：把底层错误文本归到有限的类别 key（UI 据此显示
+ * 分类徽标；i18n 标签在渲染层）。正则与 diagnoseError 保持同一顺序，
+ * 未命中返回 "unknown"。
+ * @param {string|undefined|null} message
+ * @returns {"auth"|"balance"|"rate-limit"|"server"|"network"|"timeout"|"unknown"}
+ */
+export function errorCategory(message) {
+  const m = message ?? "";
+  if (/401|unauthor|invalid api key|authentication|api key not valid/i.test(m)) return "auth";
+  if (/402|insufficient|balance|quota/i.test(m)) return "balance";
+  if (/429|rate limit|too many requests/i.test(m)) return "rate-limit";
+  if (/502|503|504|bad gateway|service unavailable|failed to forward/i.test(m)) return "server";
+  if (/ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|failed to fetch|socket hang up|network|connection error/i.test(m)) return "network";
+  if (/timeout|timed out|超时/i.test(m)) return "timeout";
+  return "unknown";
+}

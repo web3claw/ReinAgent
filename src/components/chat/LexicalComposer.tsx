@@ -40,6 +40,7 @@ import {
   type ComposerImageInput,
   type UserAttachmentRef,
 } from "../../lib/chat/attachments";
+import { kvGet, kvSet } from "../../lib/storage/db";
 import {
   type ModelItem,
   type ProviderItem,
@@ -72,6 +73,8 @@ export interface LexicalComposerProps {
    * **不自动发送**——用户可编辑后手动发送。nonce=0 / undefined 表示无请求。
    */
   prefillRequest?: { text: string; nonce: number } | null;
+  /** 草稿持久化（P2-A3）：按任务隔离，kv 落库；undefined = 无草稿恢复 */
+  taskId?: string;
   /** 上下文容量指示器数据（真实 usage + 模型 contextWindow；无数据不显示） */
   contextUsage?: ContextUsageData | null;
   /** `/clear`：清空当前任务时间线（App 层执行，含二次确认） */
@@ -114,6 +117,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   isStreaming,
   contextUsage,
   workspaceRoot,
+  taskId,
   onClearConversation,
   onCompactRequest,
   onSend,
@@ -165,6 +169,24 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   };
 
   const [text, setText] = useState("");
+  // ---- 草稿持久化（P2-A3）：任务态按任务隔离、新任务页走全局键，kv 落库 ----
+  const draftKey = taskId ? `reinagent-draft:${taskId}` : "reinagent-draft:__new__";
+  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // 草稿归属切换（任务 ↔ 任务 / ↔ 新任务页）→ 恢复对应草稿
+  useEffect(() => {
+    setText(kvGet(draftKey) ?? "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只随草稿归属切换恢复
+  }, [draftKey]);
+  // 文本变化 → 防抖落 kv（空串清 key）
+  useEffect(() => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    draftTimerRef.current = setTimeout(() => {
+      kvSet(draftKey, text.trim() ? text : "");
+    }, 400);
+    return () => {
+      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    };
+  }, [text, draftKey]);
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   /** `/` 菜单查询词（命令名过滤） */
@@ -268,6 +290,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     );
     if (accepted) {
       setText("");
+      if (draftKey) kvSet(draftKey, "");
       setAttachments([]);
       setShowMentionMenu(false);
       setShowSlashMenu(false);

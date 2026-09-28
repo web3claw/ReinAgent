@@ -5,6 +5,7 @@ import { MarkdownText } from "./MarkdownText";
 import { ToolCallCard } from "./ToolCallCard";
 import { Copy, Check, Pencil, Play, RotateCw, Undo2, Loader2, GitBranch } from "lucide-react";
 import { useTranslation } from "../../i18n";
+import { errorCategory } from "../../lib/chat/errors.js";
 import { ImageLightbox } from "./ImageLightbox";
 import { EditableUserMessageBubble } from "./EditableUserMessageBubble";
 import { ChatLoading } from "./ChatLoading";
@@ -298,6 +299,17 @@ function MessageItemImpl({
         {message.status === "error" ? (
           <div className="msg-error mt-2 flex items-start justify-between gap-3">
             <div className="min-w-0 break-words">
+              {/* 错误归因徽标（P2-B1）：分类 key → i18n 标签 */}
+              {(() => {
+                const category = errorCategory(message.error);
+                if (category === "unknown") return null;
+                const label = (t as (key: string) => string)(`errorCategory.${category}`);
+                return (
+                  <span className="mr-1.5 inline-block rounded border border-[var(--danger-border,rgba(239,68,68,0.3))] px-1.5 py-0.5 text-[11px] font-medium text-red-400 align-baseline">
+                    {label}
+                  </span>
+                );
+              })()}
               {message.error}
               {message.errorHint && message.errorHint !== message.error
                 ? ` · ${message.errorHint}`

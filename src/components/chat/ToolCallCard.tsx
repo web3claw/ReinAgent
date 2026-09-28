@@ -538,9 +538,13 @@ function ToolCallCardImpl({
     );
   }
 
-  // ---- 通用兜底（未知工具等）：参数摘要 + 结果折叠 ----
+  // ---- 通用兜底（未知工具等）：参数摘要 + 结果折叠；结果被字节上限截断时
+  //      显示诚实提示（A4 快照字段提示——完整内容未持久化，无法加载原文）----
   const argsText = formatToolArgs(entry.args);
   const hasResult = entry.resultText.length > 0;
+  const resultTruncated = (entry.details as { truncated?: boolean } | undefined)?.truncated === true;
+  const truncatedBytes =
+    (entry.details as { originalLength?: number } | undefined)?.originalLength ?? 0;
 
   return (
     <ToolLayout
@@ -558,7 +562,17 @@ function ToolCallCardImpl({
         <div className="mb-2 space-y-1">
           {argsText ? <div className="tool-args" title={argsText}>{argsText}</div> : null}
           {hasResult ? (
-            <pre className="tool-result">{entry.resultText}</pre>
+            <>
+              {resultTruncated ? (
+                <p className="rounded-md border border-[var(--border)] bg-[var(--bg-elev)] px-2 py-1 text-xs text-[var(--text-dim)]">
+                  {t("toolResultTruncated").replace(
+                    "{kb}",
+                    (truncatedBytes / 1024).toFixed(1),
+                  )}
+                </p>
+              ) : null}
+              <pre className="tool-result">{entry.resultText}</pre>
+            </>
           ) : (
             <div className="tool-pending">{t("toolNoOutput")}</div>
           )}

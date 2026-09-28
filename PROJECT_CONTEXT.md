@@ -841,3 +841,16 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **编排语义（对齐 LA）**：scan（分页列全+scope 过滤+逐条读 body）→ cluster（≤8 条结构分簇，>8 条 LLM 主题聚类失败回退结构）→ plan（每簇一轮隐藏 LLM：ORGANIZER_PLAN_TOOL 捕获 + 只读 MemoryManager）→ gate（buildDecisions 风控）→ apply（manual=全进待确认队列；scheduled=仅 low-risk 自动 batch）→ run 记录全 phase 落库 + advanceSchedule。
 - **实测**：Run Now → run 创建 → scan(input=1)→cluster→plan 全链路真实执行；plan 阶段主模型未提交整理工具（弱模型工具遵循问题，LA 同有 parseFailures 跳过路径）→ 失败如实落 run 记录（phase=plan、错误 summary）。⚠️ 已知缺口：① report.reviewItems 未随 organize_due_complete 持久化（Rust 序列化面，历史弹窗看详情时补）；② 裸调 due_claim 置 running 后无人执行会卡 6h（stale 回收窗口，正常路径无此形态——调试残留）。
 - 验证：前端 314/314 + `tsc` 0（service/pipeline/prompts 全编译）。
+- **A2 回顶按钮 + dock 分离感 ✅**：`useChatScrollState(scrollEl)`（离底>120px 判定）；回顶圆钮（aria 回到顶部）+ 输入区 `data-dock-away` 顶部边框阴影。⚠️ 两个实测坑：① hook 必须依赖 **scrollEl state**（ref 时序晚于 effect 会静默跳过且永不重挂）；② 内容水合/流式增长**不触发 scroll 事件**——必须 ResizeObserver 监听容器与首子元素（否则初始空内容判定 false 后永不更新）。
+- **A3 草稿持久化 ✅**：LexicalComposer 内部 draftKey（任务态 `reinagent-draft:<taskId>` / 新任务页 `reinagent-draft:__new__`），text 防抖 400ms 落 kv、归属切换恢复、发送清空。⚠️ CDP 测试注意：`Input.dispatchKeyEvent type:char` 与 `insertText` 都**不触发 React onChange**（DOM 值变但受控 state 不更新）——必须用「原型 setter + input 事件」。
+- **A4 快照字段提示 ✅**：`buildTextToolResult` 的 `details.truncated/originalLength` 真值已有；ToolCallCard 通用兜底卡截断时显示「输出超过字节上限已截断（原始约 X KB）」诚实提示（完整内容未持久化，不提供假加载）。
+- **E2E**：A1 查找/计数/导航/分页链 ✓；A2 贴底隐藏 ✓（滚离出现受 MessageList 贴底状态机与程序化滚动交互限制，真实滚轮可用）；A3 reload 恢复 ✓；A4 逻辑+tsc ✓。
+- **批次 B 完成（2026-09-29）**：
+  - **B1 错误归因徽标**：`errors.js errorCategory()` 六类分类（auth/balance/rate-limit/server/network/timeout，正则与 diagnoseError 同序）+ MessageItem 错误行分类徽标（unknown 不显示）+ errors.test.mjs 3 例 + errors.d.ts 声明。
+  - **B2 多任务批量审批**：`PendingApprovalBatchBar.tsx`（≥2 任务挂起时聊天区顶部「{N} 个任务等待审批」+ 全部允许/全部拒绝，循环 pool.resolveApproval）；signature 字符串比对保证快照稳定。
+  - **B3 命令安全模式选择器：已存在确认**——LexicalComposer 的 Approval Mode Dropdown（四档 plan/ask/edit/full 输入框工具栏下拉）即 ZCode V4ComposerModeSwitch / LA CommandSafetyModeSelector 的对应物，无需新做。
+
+## 十七、P2 批次 A 进行中（2026-09-28）
+- **A1a 会话内查找 ✅**：`useConversationFind.ts`（消息正文/思考/工具结果大小写不敏感子串匹配，按消息聚合计数）+ `FindBar.tsx`（fixed 顶部浮条：输入/「n / m」计数/Enter+Shift+Enter 导航/Esc 关闭）；命中跳转复用 MessageList 既有 scrollTargetMessageId 机制（滚动定位+消息高亮）；Ctrl+F/Cmd+F 呼出（输入框聚焦时不劫持）。⚠️ 实测坑：reload 后 composer 自动聚焦，Ctrl+F 被「输入框不劫持」逻辑正确跳过——CDP 测试须先点消息区让 composer 失焦；FindBar 必须 **fixed**（absolute 会随容器滚出视口）。
+- **A1b 加载更早消息 ✅**：Rust `conversation_load_page(task_id, limit, before_seq)`——取 seq<before 的最新 limit 条（升序）+total+has_more+first_seq；pool hydration 默认拉最新 **500 条**（普通会话行为不变），超长会话顶部「加载更早消息（剩 N 条）」按钮增量 prepend；loadOlder 锚点用 entry.oldestSeq（TimelineEntry 无 seq 字段，hydration 时从 rows[0].seq 记录）。⚠️ 快照结构体漏 `rename_all="camelCase"` 时 JS 读 firstSeq=undefined——本验证脚本踩过，pool 代码读 snake_case（has_more）反而正确。
+- **E2E**：588 行灌入验证分页链（page1 500+hasMore=true/firstSeq=88 → page2 88+hasMore=false，去重 588）✓；普通会话（38 行）fullyLoaded 无按钮（行为不变）✓；测试数据已清理恢复 38 行。

@@ -93,6 +93,7 @@ pub fn run() {
             usage_stats::usage_snapshot,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,
+            conversation_store::conversation_load_page,
             conversation_store::conversation_delete,
             conversation_store::task_sync,
             conversation_store::task_list,

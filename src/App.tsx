@@ -3,6 +3,8 @@ import "./styles/global.css";
 import { useConversationPool } from "./hooks/useConversationPool";
 import {
   getEntrySnapshot,
+  getHistoryLoadState,
+  loadOlderMessages,
   send as poolSend,
   editResend as poolEditResend,
   resolveApproval as poolResolveApproval,
@@ -36,6 +38,9 @@ let mcpBreakdownCache: { signature: string; at: number; json: string } | null = 
 import type { AutomationDuePayload } from "./lib/automations/types";
 import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
+import { FindBar } from "./components/chat/FindBar";
+import { PendingApprovalBatchBar } from "./components/chat/PendingApprovalBatchBar";
+import { useChatScrollState } from "./components/chat/useChatScrollState";
 import { getRegisteredTurnOffset } from "./components/chat/MessageList";
 import { ConversationNavigator } from "./components/chat/ConversationNavigator";
 import { CodeViewerPaneHost } from "./preview/CodeViewerPaneHost";
@@ -64,7 +69,7 @@ import { createMemoryOrganizerService, installMemoryOrganizerService } from "./l
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
-  Terminal, PanelLeftClose, PanelLeft, AlertTriangle
+  Terminal, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine
 } from "lucide-react";
 
 export default function App() {
@@ -104,6 +109,25 @@ export default function App() {
 
   // 上下文面板「技能」分类：当前生效的 buildSkillsSystemPrompt 注入文本（与发送链路同源）
   const [skillsSectionText, setSkillsSectionText] = useState("");
+  // 会话内查找（P2-A1）：Ctrl+F / Cmd+F 呼出查找条（输入框聚焦时不劫持）
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
+        const target = e.target as HTMLElement | null;
+        const inEditable =
+          target &&
+          (target.tagName === "INPUT" ||
+            target.tagName === "TEXTAREA" ||
+            target.isContentEditable);
+        if (inEditable) return;
+        e.preventDefault();
+        setFindOpen(true);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     if (!hubSkillsSettings.enabled || hubSkillsSettings.selected.length === 0) {
@@ -271,6 +295,8 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   // 搜索跳转定位：目标消息 id（MessageList 滚动定位 + 高亮后置 null）
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState<string | null>(null);
+  // 会话内查找条（P2-A1，Ctrl+F 呼出）
+  const [findOpen, setFindOpen] = useState(false);
 
   // maxSteps 从**任务级**推理等级派生；完全访问模式下不设步数上限。
   // 0 = 无上限（agentRuntime 仅在 maxSteps > 0 时启用硬闸；注意 0 不能写成 undefined——
@@ -310,6 +336,9 @@ export default function App() {
   // 的相对挂载时序存在竞态——若虚拟列表在 ref 接上之前采样到 null 会永久停摆（行数 0）。
   // ref 回调 setState 保证元素挂载后必然触发一次渲染，让 useVirtualizer 稳定拿到元素。
   const [chatScrollEl, setChatScrollEl] = useState<HTMLDivElement | null>(null);
+  // P2-A2：滚动离底感知（回顶按钮 + 输入区 dock 分离感）——传 state 值（元素挂载后触发重跑）
+  const { awayFromBottom: chatAwayFromBottom, scrollToTop: chatScrollToTop } =
+    useChatScrollState(chatScrollEl);
 
 
   // 工作区决议（活动任务优先）：活动任务严格跟随任务自身持久化的 project 字段（单一真相源，
@@ -1183,6 +1212,7 @@ export default function App() {
                 <div className="mt-16 w-full">
                   <LexicalComposer
                     isStreaming={isStreaming}
+                    taskId={activeTaskId ?? undefined}
                     onSend={handleSend}
                     onStop={stop}
                     providerId={activeProviderId}
@@ -1217,8 +1247,38 @@ export default function App() {
                   data-scroll-viewport
                   className="flex-1 overflow-y-auto min-h-0"
                 >
-                <div className="min-h-full flex flex-col justify-between">
+                <div className="relative min-h-full flex flex-col justify-between">
+                  {/* 会话内查找条（P2-A1，Ctrl+F 呼出） */}
+                  <PendingApprovalBatchBar />
+                  {findOpen ? (
+                    <FindBar
+                      messages={state.messages}
+                      onClose={() => setFindOpen(false)}
+                      onJumpToMessage={setScrollTargetMessageId}
+                    />
+                  ) : null}
                   <div className="w-full px-6 sm:px-8 md:px-12 pt-3 pb-36 flex-1">
+                    {/* 加载更早消息（P2-A1b）：分页 hydration 未到底时显示在时间线顶部 */}
+                    {(() => {
+                      const hist = getHistoryLoadState(activeTaskId);
+                      if (hist.fullyLoaded || hist.loadedCount === 0) return null;
+                      return (
+                        <div className="mb-2 flex justify-center">
+                          <button
+                            type="button"
+                            disabled={hist.loading}
+                            onClick={() => {
+                              if (activeTaskId) void loadOlderMessages(activeTaskId);
+                            }}
+                            className="rounded-full border border-[var(--border)] bg-[var(--bg-elev)] px-4 py-1.5 text-sm text-[var(--text-dim)] transition-colors hover:text-[var(--text)] disabled:opacity-50"
+                          >
+                            {hist.loading
+                              ? t("loadOlderLoading")
+                              : t("loadOlder").replace("{count}", String(Math.max(1, hist.total - hist.loadedCount)))}
+                          </button>
+                        </div>
+                      );
+                    })()}
                     <MessageList
                       messages={state.messages}
                       isStreaming={isStreaming}
@@ -1237,7 +1297,22 @@ export default function App() {
                       onScrollTargetDone={() => setScrollTargetMessageId(null)}
                     />
                   </div>
-                  <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">
+                  {/* 回顶按钮（P2-A2）：滚动离底时显示 */}
+                  {chatAwayFromBottom ? (
+                    <button
+                      type="button"
+                      aria-label="回到顶部"
+                      title="回到顶部"
+                      onClick={chatScrollToTop}
+                      className="absolute bottom-24 right-8 z-20 flex h-9 w-9 items-center justify-center rounded-full border border-[var(--border)] bg-[var(--bg-elev)] text-[var(--text-dim)] shadow-lg transition-colors hover:text-[var(--text)]"
+                    >
+                      <ArrowUpToLine className="h-4 w-4" />
+                    </button>
+                  ) : null}
+                  <div
+                    className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0"
+                    data-dock-away={chatAwayFromBottom ? "true" : undefined}
+                  >
                     {/* 任务清单进度条（对齐 LiveAgent TaskProgressBar）：有清单时显示在输入框上方 */}
                     <TaskProgressBar messages={state.messages} />
                     {/* 提问卡（ask_user_question 工具挂起）：模型等待用户作答 */}

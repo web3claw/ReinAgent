@@ -183,8 +183,7 @@ pub async fn conversation_sync(task_id: String, messages: Vec<MessageRow>) -> Re
 
 /// 按顺序载入一个任务的对话（含内容块，前端重组 TimelineEntry）。
 #[tauri::command]
-pub async fn conversation_load(task_id: String) -> Result<Vec<MessageRow>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+pub async fn conversation_load(task_id: String) -> Result<Vec<MessageRow>, String> {    tauri::async_runtime::spawn_blocking(move || {
         let conn = db_conn()?;
         let mut rows: Vec<MessageRow> = {
             let mut stmt = conn
@@ -247,6 +246,138 @@ pub async fn conversation_load(task_id: String) -> Result<Vec<MessageRow>, Strin
             }
         }
         Ok(rows)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize)]
+pub struct ConversationLoadPageResponse {
+    /// 窗口内的消息行（seq 升序）
+    pub rows: Vec<MessageRow>,
+    /// 该任务的消息总行数
+    pub total: i64,
+    /// 窗口之前是否还有更早的消息（未加载）
+    pub has_more: bool,
+    /// 窗口内最早一行的 seq（下一页 before_seq 参数用）；无行时 null
+    pub first_seq: Option<i64>,
+}
+
+/// 分页加载：取「seq < before_seq」范围内的**最新** limit 条（升序返回）。
+/// before_seq 缺省 = +∞（取最新 limit 条）。用于超长会话的分段 hydration
+/// （P2-A1b）：首屏只拉最新窗口，更早的历史由「加载更早消息」按钮增量拉取。
+#[tauri::command]
+pub async fn conversation_load_page(
+    task_id: String,
+    limit: Option<i64>,
+    before_seq: Option<i64>,
+) -> Result<ConversationLoadPageResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db_conn()?;
+        let limit = limit.unwrap_or(500).clamp(1, 2000);
+        let before = before_seq.unwrap_or(i64::MAX);
+        let total: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM message WHERE task_id = ?1",
+                [&task_id],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT msg_id, seq, role, status, started_at, ended_at, tool_name, tool_call_id, is_error, truncated_by, error, thinking_started_at, thinking_duration_ms
+                 FROM message WHERE task_id = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3",
+            )
+            .map_err(|e| e.to_string())?;
+        let mut rows: Vec<MessageRow> = stmt
+            .query_map(
+                rusqlite::params![task_id, before, limit],
+                |row| {
+                    Ok(MessageRow {
+                        msg_id: row.get(0)?,
+                        seq: row.get(1)?,
+                        role: row.get(2)?,
+                        status: row.get(3)?,
+                        started_at: row.get(4)?,
+                        ended_at: row.get(5)?,
+                        tool_name: row.get(6)?,
+                        tool_call_id: row.get(7)?,
+                        is_error: row.get(8)?,
+                        truncated_by: row.get(9)?,
+                        error: row.get(10)?,
+                        thinking_started_at: row.get(11)?,
+                        thinking_duration_ms: row.get(12)?,
+                        parts: Vec::new(),
+                    })
+                },
+            )
+            .map_err(|e| e.to_string())?
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?;
+        drop(stmt);
+        rows.reverse(); // DESC 取窗口 → 反转为升序
+
+        let mut parts_by_msg: HashMap<String, Vec<MessagePart>> = HashMap::new();
+        if !rows.is_empty() {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT msg_id, part_index, kind, payload FROM part
+                     WHERE task_id = ?1 AND msg_id IN (SELECT msg_id FROM message WHERE task_id = ?1 AND seq < ?2 AND seq >= ?3)
+                     ORDER BY part_index ASC",
+                )
+                .map_err(|e| e.to_string())?;
+            let min_seq = rows.first().map(|r| r.seq).unwrap_or(0);
+            let parts: Vec<(String, i64, String, String)> = stmt
+                .query_map(
+                    rusqlite::params![task_id, before, min_seq],
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, String>(2)?,
+                            row.get::<_, String>(3)?,
+                        ))
+                    },
+                )
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())?;
+            for (msg_id, part_index, kind, payload) in parts {
+                parts_by_msg.entry(msg_id).or_default().push(MessagePart {
+                    part_index,
+                    kind,
+                    payload,
+                });
+            }
+            for row in &mut rows {
+                if let Some(parts) = parts_by_msg.remove(&row.msg_id) {
+                    row.parts = parts;
+                }
+            }
+        }
+
+        let first_seq = rows.first().map(|r| r.seq);
+        // has_more：窗口之前（< first_seq）还有行
+        let has_more = match first_seq {
+            Some(first) => {
+                conn.query_row(
+                    "SELECT EXISTS(SELECT 1 FROM message WHERE task_id = ?1 AND seq < ?2)",
+                    rusqlite::params![task_id, first],
+                    |r| r.get::<_, i64>(0),
+                )
+                .map(|v| v == 1)
+                .map_err(|e| e.to_string())?
+            }
+            None => total > 0,
+        };
+
+        Ok(ConversationLoadPageResponse {
+            rows,
+            total,
+            has_more,
+            first_seq,
+        })
     })
     .await
     .map_err(|e| e.to_string())?

@@ -136,6 +136,23 @@ export const translations = {
     settingsAppearance: "外观主题",
     settingsProvider: "模型服务商",
     settingsUsage: "用量统计",
+    findPlaceholder: "在会话中查找…",
+    findNoHits: "无结果",
+    findPrev: "上一处（Shift+Enter）",
+    findNext: "下一处（Enter）",
+    findClose: "关闭查找",
+    approvalBatchTitle: "{count} 个任务等待审批",
+    approvalBatchAllowAll: "全部允许",
+    approvalBatchRejectAll: "全部拒绝",
+    "errorCategory.auth": "鉴权失败",
+    "errorCategory.balance": "额度不足",
+    "errorCategory.rate-limit": "请求限流",
+    "errorCategory.server": "服务异常",
+    "errorCategory.network": "网络错误",
+    "errorCategory.timeout": "请求超时",
+    toolResultTruncated: "输出超过字节上限已截断（原始约 {kb} KB，完整内容未持久化）",
+    loadOlder: "加载更早消息（剩 {count} 条）",
+    loadOlderLoading: "加载中…",
     settingsMemoryOrganizerStarted: "记忆整理已开始，完成后可在整理历史中查看",
     "settings.usage.lifetimeTotalTokens": "累计 Token 数",
     "settings.usage.lifetimePeakTokens": "峰值 Token 数",
@@ -169,7 +186,7 @@ export const translations = {
     "settings.usage.appUsageLoadingDescription": "正在聚合本地会话历史，请稍候。",
     "settings.usage.emptyTitle": "还没有用量数据",
     "settings.usage.emptyDescription": "所选时间范围内还没有用量记录。",
-    "settings.usage.appUsageRangeScopeNote": "汇总与热力图为累计口径，时间范围作用于下方图表。",
+    "settings.usage.appUsageRangeScopeNote": "汇总与热力图为累计口径，时间范围作用于下方图表。",
     settingsTerminal: "终端配置",
     settingsAgent: "智能体能力",
     settingsAbout: "关于",
@@ -456,6 +473,23 @@ export const translations = {
     settingsAppearance: "Appearance",
     settingsProvider: "Model Provider",
     settingsUsage: "Usage",
+    "errorCategory.auth": "Auth failed",
+    approvalBatchTitle: "{count} task(s) awaiting approval",
+    approvalBatchAllowAll: "Allow all",
+    approvalBatchRejectAll: "Reject all",
+    "errorCategory.balance": "Out of balance",
+    "errorCategory.rate-limit": "Rate limited",
+    "errorCategory.server": "Server error",
+    "errorCategory.network": "Network error",
+    "errorCategory.timeout": "Timed out",
+    findPlaceholder: "Find in conversation…",
+    findNoHits: "No results",
+    findPrev: "Previous (Shift+Enter)",
+    findNext: "Next (Enter)",
+    findClose: "Close find",
+    toolResultTruncated: "Output truncated at the byte cap (original ≈{kb} KB; full text not persisted)",
+    loadOlder: "Load earlier messages ({count} more)",
+    loadOlderLoading: "Loading…",
     settingsMemoryOrganizerStarted: "Memory organization started — check the history when it finishes",
     "settings.usage.lifetimeTotalTokens": "Total Tokens",
     "settings.usage.lifetimePeakTokens": "Peak Day Tokens",

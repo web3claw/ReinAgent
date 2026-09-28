@@ -38,6 +38,10 @@ interface PoolEntry {
   persistTimer: number | null;
   notifyScheduled: boolean;
   lastNotifyAt: number;
+  /** 历史分页加载状态（P2-A1b）：fullyLoaded=无更早历史；total=DB 总行数 */
+  historyFullyLoaded: boolean;
+  historyTotal: number;
+  loadingOlder: boolean;
   /** 「总是允许」免审集合（任务级内存态；重启即失效，对齐一期范围）。 */
   alwaysAllowedTools: Set<string>;
   /** 压缩事件订阅（onCompactionEvent 转发目标） */
@@ -260,6 +264,9 @@ function createEntry(taskId: string): PoolEntry {
     sendOptions: null,
     alwaysAllowedTools: new Set<string>(),
     compactionHandlers: null,
+    historyFullyLoaded: false,
+    historyTotal: 0,
+    loadingOlder: false,
   };
   entry.controller = createConversationController({
     taskId,
@@ -301,10 +308,65 @@ function createEntry(taskId: string): PoolEntry {
       );
     },
   });
-  // 异步水合：从 SQLite 载入历史（幂等——已有消息时保留内存态，对齐 LiveAgent「运行中内存赢过磁盘」）。
+  // 异步水合：从 SQLite 分页载入历史（P2-A1b：默认最新 500 条——超长会话不出
+  // 「加载更早」按钮时行为与全量一致；幂等——已有消息时保留内存态）。
   void (async () => {
     try {
-      const rows = await invoke<{
+      const page = await invoke<{
+        rows: {
+          msg_id: string;
+          seq: number;
+          role: string;
+          status: string;
+          started_at: number | null;
+          ended_at: number | null;
+          tool_name: string | null;
+          tool_call_id: string | null;
+          is_error: boolean | null;
+          truncated_by: string | null;
+          error: string | null;
+          thinking_started_at: number | null;
+          thinking_duration_ms: number | null;
+          parts: { part_index: number; kind: string; payload: string }[];
+        }[];
+        total: number;
+        has_more: boolean;
+      }>("conversation_load_page", { taskId, limit: 500 });
+      if (page.rows.length > 0 && entry.state.messages.length === 0) {
+        const messages = page.rows.map(deserializeRow);
+        const restored = restoreState(messages);
+        entry.state = restored;
+        entry.historyTotal = page.total;
+        entry.historyFullyLoaded = !page.has_more;
+      } else if (page.rows.length === 0) {
+        entry.historyFullyLoaded = true;
+        entry.historyTotal = page.total;
+      }
+    } catch (err) {
+      console.error(`[pool] conversation_load failed for ${taskId}:`, err);
+    } finally {
+      entry.hydrated = true;
+      notify(entry);
+    }
+  })();
+  return entry;
+}
+
+/**
+ * 加载更早的历史（P2-A1b）：把当前窗口之前的最多 500 条 prepend 进时间线。
+ * 返回本次新加载的条数（0 = 已全部加载/无更早）。加载后发送上下文自然包含更全历史。
+ */
+export async function loadOlderMessages(taskId: string): Promise<number> {
+  const entry = entries.get(taskId);
+  if (!entry || entry.loadingOlder) return 0;
+  const oldestSeq = entry.state.messages.reduce(
+    (min, m) => ((m as { seq?: number }).seq !== undefined ? Math.min(min, (m as { seq?: number }).seq as number) : min),
+    Number.POSITIVE_INFINITY,
+  );
+  entry.loadingOlder = true;
+  try {
+    const page = await invoke<{
+      rows: {
         msg_id: string;
         seq: number;
         role: string;
@@ -319,20 +381,49 @@ function createEntry(taskId: string): PoolEntry {
         thinking_started_at: number | null;
         thinking_duration_ms: number | null;
         parts: { part_index: number; kind: string; payload: string }[];
-      }[]>("conversation_load", { taskId });
-      if (rows.length > 0 && entry.state.messages.length === 0) {
-        const messages = rows.map(deserializeRow);
-        const restored = restoreState(messages);
-        entry.state = restored;
-      }
-    } catch (err) {
-      console.error(`[pool] conversation_load failed for ${taskId}:`, err);
-    } finally {
-      entry.hydrated = true;
+      }[];
+      total: number;
+      has_more: boolean;
+    }>("conversation_load_page", {
+      taskId,
+      limit: 500,
+      beforeSeq: Number.isFinite(oldestSeq) ? oldestSeq : undefined,
+    });
+    if (page.rows.length === 0) {
+      entry.historyFullyLoaded = true;
       notify(entry);
+      return 0;
     }
-  })();
-  return entry;
+    const older = page.rows.map(deserializeRow);
+    entry.state = { ...entry.state, messages: [...older, ...entry.state.messages] };
+    entry.historyTotal = page.total;
+    entry.historyFullyLoaded = !page.has_more;
+    notify(entry);
+    return older.length;
+  } catch (err) {
+    console.error(`[pool] loadOlderMessages failed for ${taskId}:`, err);
+    return 0;
+  } finally {
+    entry.loadingOlder = false;
+  }
+}
+
+/** 会话历史加载状态（「加载更早消息」按钮的渲染依据）。 */
+export function getHistoryLoadState(taskId: string | null): {
+  fullyLoaded: boolean;
+  total: number;
+  loading: boolean;
+  loadedCount: number;
+} {
+  if (!taskId) return { fullyLoaded: true, total: 0, loading: false, loadedCount: 0 };
+  const entry = entries.get(taskId);
+  if (!entry) return { fullyLoaded: true, total: 0, loading: false, loadedCount: 0 };
+  return {
+    fullyLoaded: entry.historyFullyLoaded,
+    total: entry.historyTotal,
+    loading: entry.loadingOlder,
+    loadedCount: entry.state.messages.length,
+  };
 }
 
 function pruneIdle(exemptTaskId?: string) {
