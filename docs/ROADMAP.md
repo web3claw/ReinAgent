@@ -46,8 +46,8 @@
 | **历史压缩 compact**（阈值/策略/摘要模型/手动触发/压缩带 UI） | ✅ 双层检查点 | ✅ | ❌ **最紧迫**（长会话撑爆窗口） | LA `lib/chat/compaction/`（policy/engine/summarizer/tokenLedger）+ `CompactionBand.tsx`；ZCode `core/compact/`（policy/manual/prompt） |
 | **microcompact（工具结果裁剪）** | — | ✅ | ❌ | ZCode `runtime/methods/microcompact.ts` |
 | system-reminder 包装 / meta_user 通道 | ✅ | ✅ | ✅（2026-09-28 已对齐） | 本项目 `runAgentTurn.ts buildMetaUserBlock`，见 PROMPTS.md 2.1 |
-| **@提及系统**（文件/技能目录 + 注入） | ✅ | ✅ | ⚠️ 输入框有 @ 壳、无实义 | LA `MentionComposer*`、`mentionInjection.ts`；ZCode `ui/mentions/` |
-| **斜杠命令**（自定义命令文件 + 插件命令） | ✅ | ✅ | ⚠️ 空壳 | LA `skillTools`；ZCode `ui/slashCommandHelpers.ts`、`svc/commands/` |
+| **@提及系统**（文件提及 + 注入） | ✅ | ✅ | ✅ 2026-09-28（文件提及；技能/agent 提及待技能工具后） | LA `MentionComposer*`、`mentionInjection.ts`；ZCode `ui/mentions/` |
+| **斜杠命令**（自定义命令文件 + 内置命令） | ✅ | ✅ | ✅ 2026-09-28（/clear 实义、/compact 占位；插件命令二期） | LA `skillTools`；ZCode `ui/slashCommandHelpers.ts`、`svc/commands/` |
 | AGENTS.md 注入（OVERRIDE + 免责） | ✅ | ✅ | ❌（落位已备：meta_user 块） | ZCode `context/sections/request-user-context.ts` |
 | gitStatus 快照注入 | — | ✅ | ❌（落位已备：meta_user 块） | ZCode `context/sections/env-info.ts` |
 | 会话指引动态段（按可用工具变化） | — | ✅ | ❌ | ZCode `context/dynamic-sections.ts buildSessionGuidanceSection` |
@@ -148,7 +148,7 @@
 2. **历史压缩 compact + microcompact**：长会话硬需求，也是提示词缓存策略的地基（阈值触发 → 摘要模型 → 压缩带 UI → microcompact 裁工具结果）。
 3. ~~**模型元数据真实解析**~~ ✅ 2026-09-28（批次 A2：`buildModel` 按真实元数据，未知走「不钳制/不发送/不声明多模态」语义）
 4. **后台任务完成通知 + 审批红点**（系统通知 + 提示音 + 侧栏未读角标）：多任务并行体验闭环。
-5. **@提及与斜杠命令实义化**：文件/技能提及注入；自定义命令文件解析 + 内置命令（/compact 等）。
+5. ~~**@提及与斜杠命令实义化**~~ ✅ 2026-09-28（批次 C：真菜单 + 命令文件扫描 + 提及内容注入；/compact 占位待批次 D）
 6. ~~**回合状态条 attention 强制展开**（「等待你的决定」时强制展开 + 隐藏窗口停表）~~ ✅ 2026-09-28（批次 A1）
 
 ### P1 —— 差异化能力

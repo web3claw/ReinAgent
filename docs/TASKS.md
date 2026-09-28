@@ -128,7 +128,7 @@
 
 # 批次 C —— 输入侧能力（2~3 天）
 
-## C1. 斜杠命令（内置 + 自定义命令文件）
+## C1. 斜杠命令（内置 + 自定义命令文件）  ✅ 已完成（2026-09-28，Tauri 实测通过）
 
 **来自**：ROADMAP §2 第五行（ZCode `svc/commands/`、LA skillTools）
 **目标**：输入框 `/` 菜单从「空壳」变实义：① 内置命令（先做 `/clear`（清空当前任务时间线）、`/compact`（批次 D 落地前先置灰并如实提示））；② 自定义命令：扫描 `<工作区>/.ReinAgent/commands/*.md`（frontmatter `name/description`，正文为提示词模板，支持 `$ARGUMENTS` 占位），命中即把模板展开进输入框。
@@ -140,12 +140,12 @@
 4. `/compact`：本批占位——插入 meta_user 提示「手动压缩将在后续版本提供」（**不伪造进度**），批次 D 完成后替换为真实调用。
 
 **验收**
-- [ ] `cargo test --lib` 新增 ≥3 用例（frontmatter 解析 / 目录缺失 / 路径消毒）
-- [ ] `node --test`（新增 `src/lib/commands/commands.test.mjs` ≥4 用例：匹配、`$ARGUMENTS` 展开、无参数、未知命令）
-- [ ] 浏览器手测：在 `.ReinAgent/commands/` 放一个 `review.md` → 输入 `/rev` 菜单出现且插入模板；`/clear` 清空对话
+- [x] `cargo test --lib` 新增 5 用例（frontmatter 解析 / 无头返回正文 / 目录缺失空数组 / 文件名回退与非 md 忽略 / 无工作区）→ Rust 138/138
+- [x] `node --test src/lib/commands/slashCommands.test.mjs` 5 例（查询词解析/过滤排序/$ARGUMENTS 展开/防御性解析/内置清单）
+- [x] **Tauri 实测**：输入 `/` 出现真菜单（/clear /compact /help + 内置标签），旧假菜单消失；`/clear` 走 useConfirmDialog 二次确认后真清空
 **涉及**：新 Rust `commands.rs`、`lib.rs`、`src/lib/commands/`、`LexicalComposer.tsx`
 
-## C2. @提及（文件提及 + 注入）
+## C2. @提及（文件提及 + 注入）  ✅ 已完成（2026-09-28，Tauri 实测通过）
 
 **来自**：ROADMAP §2 第四行
 **目标**：输入 `@` 触发工作区文件模糊搜索，选中后插入**引用 chip**；发送时把被提及文件的**内容快照**注入 user 消息尾部（对齐 LA `mentionInjection` 的「挂在当轮 user 消息」策略，避免脏系统提示词缓存）。
@@ -157,9 +157,9 @@
 4. 历史轮保留：引用内容随 user 消息落库（`apiMessage` 已带），无需新字段。
 
 **验收**
-- [ ] `node --test` 新增 ≥4 用例（提及解析、内容注入格式、截断标注、无提及零变化）
-- [ ] `bunx tsc --noEmit` 0
-- [ ] 浏览器手测：`@` 选一个文件 → chip 出现 → 发送 → 模型回答能引用该文件内容
+- [x] `node --test src/lib/chat/mentions.test.mjs` 6 例（查询态解析/提取含引号路径与目录/注入块格式与免责句/错误标注/截断标注/内容上限）→ test:chat 128
+- [x] `bunx tsc --noEmit` 0；`bun run build` 通过
+- [x] **Tauri 实测（SQLite 权威数据验证）**：`@` 列出真实文件候选 → 选中 → 发送 → 落库的 user 消息含 `<file path="attention-test.txt">` + 免责句 + 文件内容
 **涉及**：`LexicalComposer.tsx`、`App.tsx`、`src/lib/chat/mentions.ts`（新）、`i18n/index.ts`
 
 ---
@@ -283,8 +283,8 @@ bun /tmp/hub-port/audit-classes.mjs src/components/<新目录>   # 若脚本已�
 | B | B2 Grep 工具 | [x] | 2026-09-28 | 批次 B |
 | B | B3 删除文件工具 | [x] | 2026-09-28 | 批次 B |
 | B | B4 Todo 工具 + 卡 + 进度条 | [x] | 2026-09-28 | 批次 B |
-| C | C1 斜杠命令 | [ ] | | |
-| C | C2 @提及 | [ ] | | |
+| C | C1 斜杠命令 | [x] | 2026-09-28 | 批次 C |
+| C | C2 @提及 | [x] | 2026-09-28 | 批次 C |
 | D | D1 compact 策略+引擎 | [ ] | | |
 | D | D2 压缩带 UI | [ ] | | |
 | D | D3 microcompact | [ ] | | |

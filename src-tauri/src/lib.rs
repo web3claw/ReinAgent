@@ -1,6 +1,7 @@
 mod terminal;
 mod fs_cmd;
 mod fs_search;
+mod commands;
 mod provider_config;
 mod conversation_store;
 mod checkpoint;
@@ -70,6 +71,7 @@ pub fn run() {
             fs_cmd::fs_delete_file,
             fs_search::fs_glob,
             fs_search::fs_grep,
+            commands::commands_scan,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,
             conversation_store::conversation_delete,

@@ -401,6 +401,14 @@ export function resolveApproval(taskId: string, decision: ApprovalDecision): voi
   entries.get(taskId)?.controller.resolveApproval(decision);
 }
 
+/** 清空指定任务的时间线（controller.clear：中止在途轮 + 重置为空态；持久化由防抖 sync 落库）。 */
+export function clearConversation(taskId: string): void {
+  const entry = entries.get(taskId);
+  if (!entry) return;
+  entry.controller.clear();
+  schedulePersist(entry);
+}
+
 /** 停止指定任务的在途流式（只作用于显式给定的任务）。 */
 export function stop(taskId: string): void {
   entries.get(taskId)?.controller.stop();

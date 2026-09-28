@@ -15,6 +15,7 @@ import { MemoryPanel } from "./components/memory/MemoryPanel";
 import { SkillsHubPage } from "./components/skills/SkillsHubPage";
 import { Toaster } from "./components/lw/ui/toaster";
 import { TaskProgressBar } from "./components/chat/TaskProgressBar";
+import { useConfirmDialog } from "./components/ui/ConfirmDialog";
 import { toast } from "./components/lw/ui/toast";
 import { useHubSettings } from "./store/hubSettingsStore";
 
@@ -46,6 +47,7 @@ import { buildContextUsageData } from "./lib/chat/contextUsage";
 import { getTools } from "./lib/agent/tools";
 import { CheckpointRewindProvider, formatCheckpointRewoundNotification } from "./lib/chat/checkpointRewind";
 import { buildOutgoingPayload } from "./lib/chat/attachments";
+import { appendMentionBlock, resolveMentions } from "./lib/chat/mentionResolver";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, PanelLeftClose, PanelLeft, AlertTriangle
@@ -80,6 +82,9 @@ export default function App() {
   // Hub 设置切片订阅：技能/MCP 的启用状态变化驱动上下文容量面板的技能/MCP 分类
   const hubSkillsSettings = useHubSettings((s) => s.settings.skills);
   const hubMcpServers = useHubSettings((s) => s.settings.mcp.servers);
+
+  // /clear 的二次确认弹窗（复用 checkpoint 回退同款 useConfirmDialog）
+  const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirmDialog();
 
   // 上下文面板「技能」分类：当前生效的 buildSkillsSystemPrompt 注入文本（与发送链路同源）
   const [skillsSectionText, setSkillsSectionText] = useState("");
@@ -817,7 +822,50 @@ export default function App() {
     [activeTaskId, tasks, createTask, setActiveTaskId],
   );
 
+  /** `/clear`：二次确认后清空当前任务时间线（对齐 ZCode /clear 语义）。 */
+  const handleClearConversation = useCallback(async () => {
+    if (!activeTaskId) return;
+    const confirmed = await confirmDialog({
+      title: t("clearConfirmTitle"),
+      description: t("clearConfirmDesc"),
+      confirmLabel: t("confirmDelete"),
+      cancelLabel: t("cancel"),
+    });
+    if (!confirmed) return;
+    const { clearConversation } = await import("./lib/chat/conversationPool");
+    clearConversation(activeTaskId);
+  }, [activeTaskId, confirmDialog, t]);
+
+  /** `/compact`：压缩引擎属批次 D，此处如实提示而非伪造进度（No-Fallback）。 */
+  const handleCompactRequest = useCallback(() => {
+    toast.error(t("compactPhase2"), { duration: 5000 });
+  }, [t]);
+
   const handleSend = (
+    text: string,
+    images?: { base64: string; mimeType: string }[],
+    userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
+  ) => {
+    // @提及：先读取被引用文件/目录内容，挂到 user 消息尾部（对齐 ZCode/LiveAgent 注入语义）。
+    // 解析失败不阻断发送（注入块内已如实标注 unavailable）。
+    if (/@/.test(text)) {
+      void (async () => {
+        let outgoing = text;
+        try {
+          const { block } = await resolveMentions(text, effectiveWorkspaceRoot || "");
+          outgoing = appendMentionBlock(text, block);
+        } catch (err) {
+          console.warn("[mentions] resolve failed (sending without context block):", err);
+        }
+        sendNow(outgoing, images, userAttachments);
+      })();
+      return true;
+    }
+    return sendNow(text, images, userAttachments);
+  };
+
+  /** 实际发送（handleSend 的同步主体；提及解析完成后调用的那段）。 */
+  const sendNow = (
     text: string,
     images?: { base64: string; mimeType: string }[],
     userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
@@ -984,6 +1032,8 @@ export default function App() {
                     onSelectModel={handleSelectModel}
                     focusRequestTrigger={focusTrigger}
                     prefillRequest={composerPrefill}
+                    onClearConversation={() => void handleClearConversation()}
+                    onCompactRequest={handleCompactRequest}
                     contextUsage={contextUsage}
                     workspaceRoot={effectiveWorkspaceRoot}
                   />
@@ -1050,6 +1100,10 @@ export default function App() {
                       onSelectModel={handleSelectModel}
                       hasMessages={true}
                       contextUsage={contextUsage}
+                      // 工作区根：@提及候选、附件默认目录都依赖它（此前漏传 ⇒ 提示「root 不能为空」）
+                      workspaceRoot={effectiveWorkspaceRoot}
+                      onClearConversation={() => void handleClearConversation()}
+                      onCompactRequest={handleCompactRequest}
                     />
                   </div>
                 </div>
@@ -1082,6 +1136,9 @@ export default function App() {
       <div className="hub-scope fixed z-[10010]">
         <Toaster dismissLabel={t("common.dismissNotification")} />
       </div>
+
+      {/* /clear 二次确认弹窗 */}
+      {confirmDialogNode}
 
       {/* 回退结果 toast（对齐 LiveAgent addNotify：成功/问题分级，底部右侧悬浮） */}
       {rewindToast && (

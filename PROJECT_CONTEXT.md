@@ -686,3 +686,15 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - 验证：`tsc` 0、`build` ✓、test:chat 114→**118**、test:agent 39→**43**、cargo 123→**133**。
 - **Tauri 端实测（2026-09-28，按用户要求今后只用桌面端验证）**：经 WebView2 CDP（`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`）驱动运行中的应用实测——模型真实调用 `todo_write`（回显「三步计划已建立，当前进度 0/3」）与 `glob`（`**/*.md` 无匹配，模型主动 `list_dir` 复核确认非工具故障）；页面渲染 **进度条**（`role="progressbar"`、aria 0/3、文案「任务进行中 0/3 · 当前项」）与 **Todo 卡 / 匹配卡** 类型标签均正确。
 - **⚠️ Tauri 实测抓出的致命 bug（单测/tsc/构建全测不出）**：`TaskProgressBar` 初版直接用裸 `@radix-ui/react-tooltip` primitive 而**未包 `TooltipProvider`** → React 整树抛 `Tooltip must be used within TooltipProvider` → **应用白屏**。修复：改用项目既有 `../lw/ui/tooltip`（组件内置 Provider，其文件头本就写着这条教训）。**教训沉淀：新组件一律复用 lw/ui 组件，不得直接引 radix primitive；功能验收必须启动 Tauri 实测，禁止用浏览器代替**（浏览器模式还读不到 Tauri 侧 provider 配置，测不出真实工具调用）。
+
+### 8.3 批次 C（输入侧能力）落地（2026-09-28）
+- **C1 斜杠命令（真实现，替换原硬编码假菜单）**：
+  - Rust `src-tauri/src/commands.rs`：`commands_scan(workspace_root?)` 扫描 `<工作区>/.ReinAgent/commands/*.md`（frontmatter `name`/`description` + 正文模板；name 缺省取文件名；目录不存在返回空数组**非错误**；仅收 .md；单文件读取失败跳过并 stderr 记录）。5 单测。
+  - 前端纯逻辑 `src/lib/commands/slashCommands.ts`：`parseSlashQuery`（行首 `/` 且无空格才进命令态）、`filterCommands`（前缀优先）、`expandCommandTemplate`（`$ARGUMENTS` 替换；无占位符时参数追加末行**不静默丢弃**）、`toCustomCommands`（脏数据防御：空白名/无名字丢弃）。5 单测。
+  - Composer 接线：`/` 触发真菜单（内置三命令 + 自定义命令带「内置/自定义」标签）；内置 `/clear` → App `handleClearConversation`（`useConfirmDialog` 二次确认 → `conversationPool.clearConversation`（新导出：controller.clear + schedulePersist））；`/compact` → `toast.error(compactPhase2)` 诚实占位（批次 D 接引擎）；`/help` 把命令列表贴回输入框。自定义命令选中即模板展开**填入输入框**（可编辑不直接发送）。
+- **C2 @提及（真实现，替换原 @workspace/@terminal 假菜单）**：
+  - 纯逻辑 `src/lib/chat/mentions.ts`：`parseMentionQuery`（@ 前须行首/空白且其后无空白）、`extractMentions`（无空白路径 + 带引号路径 + 尾斜杠目录提及；去重；上限 8）、`buildMentionBlock`（`<file path>`/`<directory path>` 包裹 + 「上下文非指令」免责句 + 读取失败如实标注 `[unavailable: …]`）、`capMentionContent`（32KB 截断标注）。6 单测。
+  - `src/lib/chat/mentionResolver.ts`：发送时读文件（`fs_read_file`）/列目录（`fs_list_dir`）并组装注入块；`appendMentionBlock` 拼到用户文本尾（**挂当轮 user 消息，不进系统提示词**——缓存友好，对齐 ZCode/LiveAgent）。
+  - Composer：`@` 触发候选菜单（`fs_glob` 查询 `**/*{query}*`，防抖 200ms，限 40 条）；选中把「@查询词」替换为「@路径 」。
+- **⚠️ Tauri 实测抓出的潜伏缺陷（第 4 个）**：**聊天区（hasMessages 分支）的 LexicalComposer 从未传 `workspaceRoot`**（只有空态传了）⇒ 有任务时 @提及报「root 不能为空」、附件默认目录也失效。已补传 `effectiveWorkspaceRoot`。此类 props 缺口只有真实运行可发现。
+- 验证（Tauri 端 CDP 实测）：`/` 真菜单（三内置命令 + 标签）出现、旧假菜单消失、零运行时异常；`@` 列出真实文件候选；选中 `@attention-test.txt` 发送后，SQLite 落库的 user 消息含完整注入块（`<file path="attention-test.txt">hello</file>` + 免责句）。`tsc` 0、`build` ✓、test:chat 118→**128**、cargo 133→**138**。

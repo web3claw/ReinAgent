@@ -1,5 +1,14 @@
 import React, { useRef, useState, useEffect } from "react";
 import { useTranslation } from "../../i18n";
+import {
+  BUILTIN_COMMANDS,
+  expandCommandTemplate,
+  filterCommands,
+  parseSlashQuery,
+  toCustomCommands,
+  type SlashCommand,
+} from "../../lib/commands/slashCommands";
+import { parseMentionQuery } from "../../lib/chat/mentions";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import type { ContextUsageData } from "../../lib/chat/contextUsage";
 import { useAppStore } from "../../store/useAppStore";
@@ -8,7 +17,6 @@ import {
   Square,
   Plus,
   AtSign,
-  Terminal,
   FileText,
   FileCode,
   Image as ImageIcon,
@@ -66,6 +74,10 @@ export interface LexicalComposerProps {
   prefillRequest?: { text: string; nonce: number } | null;
   /** 上下文容量指示器数据（真实 usage + 模型 contextWindow；无数据不显示） */
   contextUsage?: ContextUsageData | null;
+  /** `/clear`：清空当前任务时间线（App 层执行，含二次确认） */
+  onClearConversation?: () => void;
+  /** `/compact`：手动压缩上下文（App 层执行；未接线时如实提示） */
+  onCompactRequest?: () => void;
 }
 
 interface ThinkingOption {
@@ -102,6 +114,8 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   isStreaming,
   contextUsage,
   workspaceRoot,
+  onClearConversation,
+  onCompactRequest,
   onSend,
   onStop,
   providerId = "deepseek",
@@ -153,6 +167,14 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const [text, setText] = useState("");
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
+  /** `/` 菜单查询词（命令名过滤） */
+  const [slashQuery, setSlashQuery] = useState("");
+  /** 工作区自定义命令（.ReinAgent/commands/*.md，扫描一次缓存） */
+  const [customCommands, setCustomCommands] = useState<SlashCommand[]>([]);
+  /** `@` 菜单的候选文件（glob 结果，随查询词刷新） */
+  const [mentionCandidates, setMentionCandidates] = useState<string[]>([]);
+  const [mentionQuery, setMentionQuery] = useState("");
+  const [mentionLoading, setMentionLoading] = useState(false);
   const [showApprovalMenu, setShowApprovalMenu] = useState(false);
   const [showThinkingMenu, setShowThinkingMenu] = useState(false);
   const [showModelMenu, setShowModelMenu] = useState(false);
@@ -268,32 +290,109 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     }
   };
 
+  // ---- 自定义斜杠命令：工作区 .ReinAgent/commands/*.md（对齐 ZCode 命令文件）----
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const entries = await invoke<{ name?: unknown; description?: unknown; body?: unknown }[]>(
+          "commands_scan",
+          { workspaceRoot: workspaceRoot ?? null },
+        );
+        if (!cancelled) setCustomCommands(toCustomCommands(entries));
+      } catch (err) {
+        // 无 Tauri（Web 模式）或目录不可读：自定义命令为空即可，内置命令仍可用
+        console.warn("[commands] scan failed (custom commands disabled):", err);
+        if (!cancelled) setCustomCommands([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [workspaceRoot]);
+
+  // ---- @ 提及候选：glob 工作区文件（防抖 200ms；仅在提及态查询）----
+  const mentionQueryRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!showMentionMenu) return;
+    const query = mentionQueryRef.current ?? "";
+    setMentionLoading(true);
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        try {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const pattern = query ? `**/*${query}*` : "**/*";
+          const result = await invoke<{ entries: { path: string; is_dir: boolean }[] }>("fs_glob", {
+            root: workspaceRoot ?? "",
+            pattern,
+            limit: 80,
+          });
+          setMentionCandidates(
+            result.entries.slice(0, 40).map((e) => (e.is_dir ? e.path + "/" : e.path)),
+          );
+        } catch (err) {
+          console.warn("[mentions] glob failed:", err);
+          setMentionCandidates([]);
+        } finally {
+          setMentionLoading(false);
+        }
+      })();
+    }, 200);
+    return () => window.clearTimeout(timer);
+  }, [showMentionMenu, mentionQuery, workspaceRoot]);
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setText(val);
 
-    const lastChar = val.slice(-1);
-    if (lastChar === "@") {
-      setShowMentionMenu(true);
-      setShowSlashMenu(false);
-    } else if (lastChar === "/") {
-      setShowSlashMenu(true);
-      setShowMentionMenu(false);
-    } else if (val === "" || val.endsWith(" ")) {
-      setShowMentionMenu(false);
-      setShowSlashMenu(false);
+    // 真菜单：命令态 = 以 / 开头且未出现空格；提及态 = @ 前是行首/空白且其后无空白
+    const slash = parseSlashQuery(val);
+    const mention = parseMentionQuery(val);
+    setShowSlashMenu(slash !== null);
+    setShowMentionMenu(mention !== null);
+    setSlashQuery(slash ?? "");
+    if (mention !== null && mention !== mentionQueryRef.current) {
+      mentionQueryRef.current = mention;
+      setMentionQuery(mention); // 触发候选刷新
     }
   };
 
-  const insertMention = (item: string) => {
-    setText((prev) => prev + item + " ");
-    setShowMentionMenu(false);
+  /** 选中自定义命令：模板展开后**填入输入框**（可编辑，不直接发送）。 */
+  const applyCustomCommand = (cmd: SlashCommand, args: string) => {
+    setText(expandCommandTemplate(cmd.body ?? "", args));
+    setShowSlashMenu(false);
     textareaRef.current?.focus();
   };
 
-  const insertSlashCommand = (cmd: string) => {
-    setText((prev) => prev.replace(/\/$/, "") + cmd + " ");
+  /** 选中内置命令：交给 App 层执行（清空/压缩/帮助）。 */
+  const runBuiltinCommand = (cmd: SlashCommand, args: string) => {
     setShowSlashMenu(false);
+    if (cmd.name === "clear") {
+      onClearConversation?.();
+      setText("");
+      return;
+    }
+    if (cmd.name === "compact") {
+      onCompactRequest?.();
+      setText("");
+      return;
+    }
+    // help：把可用命令列表贴回输入框（不发送）
+    const lines = [
+      "可用斜杠命令：",
+      ...BUILTIN_COMMANDS.map((c) => `/${c.name} — ${c.description}`),
+      ...customCommands.map((c) => `/${c.name} — ${c.description}`),
+    ];
+    setText(lines.join("\n"));
+    textareaRef.current?.focus();
+    void args;
+  };
+
+  const insertMention = (item: string) => {
+    // 把「@查询词」替换为「@路径 」（带空格收尾，便于继续输入）
+    setText((prev) => prev.replace(/@[^\s@]*$/, `@${item} `));
+    setShowMentionMenu(false);
     textareaRef.current?.focus();
   };
 
@@ -514,55 +613,75 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       )}
 
       {/* Mention Dropdown */}
+      {/* @ Mention Menu（真实现：glob 工作区文件，选中后把 @路径 插入输入框；
+          发送时 App 层读取内容并挂到 user 消息尾部 —— 对齐 ZCode/LiveAgent 的提及注入） */}
       {showMentionMenu && (
-        <div className="absolute bottom-full left-4 mb-2 w-56 rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50 animate-in fade-in slide-in-from-bottom-2">
-          <div className="px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)] flex items-center gap-1.5">
+        <div className="absolute bottom-full left-4 mb-2 w-80 max-h-64 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
+          <div className="sticky top-0 px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)] bg-[var(--capsule-bg)] flex items-center gap-1.5">
             <AtSign className="w-3.5 h-3.5" />
-            <span>Mention context</span>
+            <span>{t("mentionTitle")}</span>
+            {mentionLoading ? <span className="text-[10px] opacity-60">…</span> : null}
           </div>
-          <button
-            type="button"
-            onClick={() => insertMention("workspace")}
-            className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface)] text-[var(--text-primary)] flex items-center gap-2"
-          >
-            <FileCode className="w-3.5 h-3.5 text-blue-500" />
-            <span>@workspace</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => insertMention("terminal")}
-            className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface)] text-[var(--text-primary)] flex items-center gap-2"
-          >
-            <Terminal className="w-3.5 h-3.5 text-emerald-500" />
-            <span>@terminal</span>
-          </button>
+          {mentionCandidates.length === 0 ? (
+            <div className="px-3 py-2 text-[var(--text-secondary)]">
+              {mentionLoading ? t("mentionSearching") : t("mentionNoResults")}
+            </div>
+          ) : (
+            mentionCandidates.map((candidate) => (
+              <button
+                key={candidate}
+                type="button"
+                onClick={() => insertMention(candidate)}
+                className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface)] text-[var(--text-primary)] flex items-center gap-2"
+                title={candidate}
+              >
+                <FileCode className="w-3.5 h-3.5 shrink-0 text-blue-500" />
+                <span className="truncate">{candidate}</span>
+              </button>
+            ))
+          )}
         </div>
       )}
 
-      {/* Slash Command Dropdown */}
-      {showSlashMenu && (
-        <div className="absolute bottom-full left-4 mb-2 w-64 rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50 animate-in fade-in slide-in-from-bottom-2">
-          <div className="px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)]">
-            <span>Quick Commands</span>
+      {/* Slash Command Menu（真实现）：内置命令（宿主执行）+ 工作区自定义命令
+          （.ReinAgent/commands/*.md，模板展开填入输入框） */}
+      {showSlashMenu && (() => {
+        const allCommands = [...BUILTIN_COMMANDS, ...customCommands];
+        const filtered = filterCommands(allCommands, slashQuery);
+        // 参数串 = 用户在命令名后输入的内容（`/review foo` 的 `foo`）
+        const args = text.trim().split(/\s+/).slice(1).join(" ");
+        return (
+          <div className="absolute bottom-full left-4 mb-2 w-80 max-h-64 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
+            <div className="sticky top-0 px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)] bg-[var(--capsule-bg)]">
+              {t("slashTitle")}
+            </div>
+            {filtered.length === 0 ? (
+              <div className="px-3 py-2 text-[var(--text-secondary)]">{t("slashNoResults")}</div>
+            ) : (
+              filtered.map((cmd) => (
+                <button
+                  key={`${cmd.kind}-${cmd.name}`}
+                  type="button"
+                  onClick={() =>
+                    cmd.kind === "builtin"
+                      ? runBuiltinCommand(cmd, args)
+                      : applyCustomCommand(cmd, args)
+                  }
+                  className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface)] text-[var(--text-primary)] flex flex-col"
+                >
+                  <span className="font-medium flex items-center gap-1.5">
+                    <span className="font-mono">/{cmd.name}</span>
+                    <span className="text-[10px] rounded px-1 py-0.5 bg-[var(--surface)] text-[var(--text-secondary)]">
+                      {cmd.kind === "builtin" ? t("slashBuiltin") : t("slashCustom")}
+                    </span>
+                  </span>
+                  <span className="text-[10px] text-[var(--text-secondary)]">{cmd.description}</span>
+                </button>
+              ))
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => insertSlashCommand("/edit")}
-            className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface)] text-[var(--text-primary)] flex flex-col"
-          >
-            <span className="font-medium text-emerald-500">/edit [path]</span>
-            <span className="text-[10px] text-[var(--text-secondary)]">Edit a target file</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => insertSlashCommand("/terminal")}
-            className="w-full text-left px-3 py-1.5 hover:bg-[var(--surface)] text-[var(--text-primary)] flex flex-col"
-          >
-            <span className="font-medium text-blue-500">/terminal [command]</span>
-            <span className="text-[10px] text-[var(--text-secondary)]">Execute bash command</span>
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Textarea */}
       <textarea

@@ -12,7 +12,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "test:chat": "node --test src/lib/chat/conversationModel.test.mjs src/lib/chat/conversationModel.s4.test.mjs src/lib/chat/conversationModel.s7.test.mjs src/lib/chat/conversationController.test.mjs src/lib/chat/conversationController.race.test.mjs src/lib/chat/conversationController.approval.test.mjs src/lib/chat/conversationController.editresend.test.mjs src/lib/chat/stateBridge.test.mjs src/lib/chat/toolDisplay.test.mjs src/lib/chat/titleGenerator.test.mjs src/lib/chat/conversationNavigatorHelpers.test.mjs src/lib/chat/turnActivity.test.mjs src/lib/chat/todoProgress.test.mjs",
+    "test:chat": "node --test src/lib/chat/conversationModel.test.mjs src/lib/chat/conversationModel.s4.test.mjs src/lib/chat/conversationModel.s7.test.mjs src/lib/chat/conversationController.test.mjs src/lib/chat/conversationController.race.test.mjs src/lib/chat/conversationController.approval.test.mjs src/lib/chat/conversationController.editresend.test.mjs src/lib/chat/stateBridge.test.mjs src/lib/chat/toolDisplay.test.mjs src/lib/chat/titleGenerator.test.mjs src/lib/chat/conversationNavigatorHelpers.test.mjs src/lib/chat/turnActivity.test.mjs src/lib/chat/todoProgress.test.mjs src/lib/chat/mentions.test.mjs src/lib/commands/slashCommands.test.mjs",
     "test:settings": "node --test src/lib/settings/settingsStore.test.mjs",
     "test:markdown": "node --test src/lib/markdown/markdownBlocks.test.mjs",
     "test:agent": "node --test src/lib/agent/streamFnAdapter.test.mjs src/lib/agent/agentRuntime.test.mjs src/lib/agent/tools.test.mjs src/lib/agent/workspace.test.mjs",
