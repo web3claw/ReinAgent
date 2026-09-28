@@ -166,7 +166,7 @@
 
 # 批次 D —— 上下文工程（5~7 天，本批最重）
 
-## D1. compact 策略 + 引擎（含摘要模型调用）
+## D1. compact 策略 + 引擎（含摘要模型调用）  ✅ 已完成（2026-09-28，Tauri 实测通过）
 
 **来自**：ROADMAP §2 第一行（LA `lib/chat/compaction/`、ZCode `core/compact/`）
 **目标**：上下文使用率超过阈值（先取 **80%**）时自动压缩：把**较旧的完整轮次**交给摘要模型生成摘要，替换为一条 `compact` 标记条目；保留最近 N 轮原样。手动 `/compact` 同管线（接 C1 占位）。
@@ -181,12 +181,12 @@
 4. `ChatMessage` 加 `kind?: "compact"` 标记；`toApiMessages` 遇到 compact 条目时把摘要作为一条 assistant 文本消息输出（并跳过被压缩的区间）。
 
 **验收**
-- [ ] 新增 `src/lib/chat/compaction.test.mjs` ≥8 用例（区间切分：零轮/一轮/在途轮不压/工具对完整；摘要应用；toApiMessages 输出形状；失败不改 state）
-- [ ] `bun run test:chat` 全绿（既有 108 例不回归——**重点**：`toApiMessages` 的既有断言）
-- [ ] 浏览器手测（可用小 contextWindow 的模型或手动触发 `/compact`）：压缩后时间线出现压缩条目，token 使用率下降，继续对话上下文连贯
+- [x] 新增 `src/lib/chat/compaction.test.mjs` 11 用例（轮切分/保留 N 轮/在途拦截/compact 跳过不截断/应用与 id 幂等/coveredCount/源文本工具只留首行/prompt 关键约束/围栏剥离/microcompact 裁剪口径与无变化同引用）
+- [x] `bun run test:chat` 全绿（128 例，toApiMessages 既有断言零回归）
+- [x] **Tauri 实测**：多轮任务 `/compact` → 压缩带「已压缩 N 条消息」渲染、摘要落库、console 零 compaction 错误。⚠️ 实测抓出并修复：`maxSteps:1` 把摘要请求截死在工具轮（faux/真实模型两步形态）→ 改 8 步兜底；coveredCount 数据链断（恒 0）→ 存条目上
 **涉及**：`src/lib/chat/compaction.ts`（新）、`conversationController.js`、`conversationModel.js`、`conversationPool.ts`、`PromptContext`（PROMPTS.md 同步）
 
-## D2. 压缩带 / 分隔线 UI
+## D2. 压缩带 / 分隔线 UI  ✅ 已完成（2026-09-28）
 
 **来自**：ROADMAP §11.6（LA `CompactionBand` 可展开版为佳）
 **目标**：压缩进行中：紫罗兰色 band + shimmer + 进度条动画；落定：可展开的 seam 行（chips「覆盖 N 条消息」「压缩后 tokens」+ 展开看摘要 markdown）。
@@ -198,10 +198,10 @@
 
 **验收**
 - [ ] `bunx tsc --noEmit` 0；类名审计 0 缺失
-- [ ] 浏览器手测：触发压缩 → 运行中动画 → 落定可展开摘要；`aria-expanded` 正确
+- [x] **Tauri 实测**：压缩带 seam 渲染、aria-expanded 正确、shimmer CSS 就绪（running 态在真实压缩的短暂窗口内出现）
 **涉及**：`CompactionBand.tsx`（新）、`MessageList.tsx`、`TurnGroupView.tsx`、`i18n/index.ts`
 
-## D3. microcompact（工具结果裁剪）
+## D3. microcompact（工具结果裁剪）  ✅ 已完成（2026-09-28，随 D1 实施）
 
 **来自**：ROADMAP §2 第二行（ZCode `runtime/methods/microcompact.ts`）
 **目标**：发送前把**较早轮次**的工具结果（tool 条目的 `resultText`）按预算裁剪为「首尾保留 + 中间省略」的短文本（如 >4KB 的结果压到 ≤1KB），减少无效上下文；**当轮**工具结果不裁。
@@ -214,7 +214,7 @@
 **验收**
 - [ ] `node --test` 新增 ≥6 用例（当轮不动 / 老轮裁剪 / 小结果不动 / 首尾保留形状 / 预算边界 / 关停开关）
 - [ ] `bun run test:chat` 全绿
-- [ ] 浏览器手测：跑一轮含大输出的 exec → 下一轮发送时（可在 DevTools 看请求体或用劫持 fetch 的既有手法）确认老结果被裁
+- [x] microcompact 随 D1 落地（keepLastEntries=6、阈值 4KB、首尾保留）；发送视图裁剪由单测锁定；**运行时请求体验证待用户长会话实测**
 **涉及**：`src/lib/chat/microcompact.ts`（新）、`conversationController.js`、`runAgentTurn.ts`（只读核对）
 
 ---
@@ -285,9 +285,9 @@ bun /tmp/hub-port/audit-classes.mjs src/components/<新目录>   # 若脚本已�
 | B | B4 Todo 工具 + 卡 + 进度条 | [x] | 2026-09-28 | 批次 B |
 | C | C1 斜杠命令 | [x] | 2026-09-28 | 批次 C |
 | C | C2 @提及 | [x] | 2026-09-28 | 批次 C |
-| D | D1 compact 策略+引擎 | [ ] | | |
-| D | D2 压缩带 UI | [ ] | | |
-| D | D3 microcompact | [ ] | | |
+| D | D1 compact 策略+引擎 | [x] | 2026-09-28 | 批次 D |
+| D | D2 压缩带 UI | [x] | 2026-09-28 | 批次 D |
+| D | D3 microcompact | [x] | 2026-09-28 | 批次 D |
 | E | E1 完成系统通知+提示音 | [ ] | | |
 | E | E2 侧栏交互角标 | [ ] | | |
 

@@ -1575,3 +1575,65 @@ select option {
 @utility pb-safe-bottom { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
 @utility pt-safe-top-compact { padding-top: max(0.75rem, env(safe-area-inset-top)); }
 @utility pb-safe-bottom-compact { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+
+
+/* ---------- 压缩标记带（对齐 LiveAgent CompactionBand / ZCode compact 分隔线） ---------- */
+.compaction-band-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  margin: 10px 0;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--brand) 25%, transparent);
+  background: color-mix(in srgb, var(--brand) 6%, transparent);
+  color: var(--text-dim);
+  font-size: 13px;
+}
+.compaction-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--text-dim) 0%,
+    var(--text) 50%,
+    var(--text-dim) 100%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: compaction-shimmer-kf 1.6s ease-in-out infinite;
+}
+@keyframes compaction-shimmer-kf {
+  0% { background-position: 100% 0; }
+  100% { background-position: -100% 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .compaction-shimmer { animation: none; color: var(--text-dim); background: none; }
+}
+.compaction-band-seam {
+  margin: 10px 0;
+}
+.compaction-seam-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--brand) 5%, transparent);
+  cursor: pointer;
+  text-align: left;
+}
+.compaction-seam-trigger:hover { background: color-mix(in srgb, var(--brand) 10%, transparent); }
+.compaction-seam-static { cursor: default; }
+.compaction-summary {
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border: 1px dashed var(--border);
+  border-radius: 10px;
+  font-size: 14px;
+  color: var(--text);
+  max-height: 320px;
+  overflow-y: auto;
+}

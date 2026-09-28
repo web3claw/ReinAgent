@@ -429,3 +429,6 @@ export function collectTurnFileChanges(entries: TimelineEntry[]): TurnFileChange
   }
   return files;
 }
+
+/** 轮内压缩标记再导出（TurnGroupView 的渲染判定走 UI 侧 compaction 模块，这里仅类型便利）。 */
+export { isCompactEntry } from "./compaction.ts";

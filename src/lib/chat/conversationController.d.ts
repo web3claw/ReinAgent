@@ -44,6 +44,8 @@ export interface ConversationControllerOptions {
   taskId?: string;
   /** 轮边界回调（检查点 begin_turn 打点；缺省=无）。 */
   onTurnBegin?: (turnId: string) => void;
+  /** 压缩生命周期事件（started/done/failed/skipped），供池转发 UI */
+  onCompactionEvent?: (event: { type: string; manual?: boolean; error?: string; turnCount?: number; summaryChars?: number }) => void;
 }
 
 export interface ConversationController {
@@ -61,6 +63,8 @@ export interface ConversationController {
   /** 加载或切换到指定消息列表。 */
   loadState: (messages: import("./conversationModel").TimelineEntry[]) => void;
   /** 审批门挂起入口（runAgentTurn 的协调器回调到这）。 */
+  /** 手动压缩（忙时 false） */
+  compactNow: () => boolean;
   requestApproval: (req: import("./conversationModel").PendingApproval) => Promise<
     import("../providers/runAgentTurn").ApprovalDecision
   >;

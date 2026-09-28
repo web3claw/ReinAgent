@@ -43,8 +43,8 @@
 
 | 功能 | LiveAgent | ZCode | ReinAgent | 参考定位 |
 |---|---|---|---|---|
-| **历史压缩 compact**（阈值/策略/摘要模型/手动触发/压缩带 UI） | ✅ 双层检查点 | ✅ | ❌ **最紧迫**（长会话撑爆窗口） | LA `lib/chat/compaction/`（policy/engine/summarizer/tokenLedger）+ `CompactionBand.tsx`；ZCode `core/compact/`（policy/manual/prompt） |
-| **microcompact（工具结果裁剪）** | — | ✅ | ❌ | ZCode `runtime/methods/microcompact.ts` |
+| **历史压缩 compact**（阈值/策略/摘要模型/手动触发/压缩带 UI） | ✅ 双层检查点 | ✅ | ✅ 2026-09-28（批次 D） | LA `lib/chat/compaction/`（policy/engine/summarizer/tokenLedger）+ `CompactionBand.tsx`；ZCode `core/compact/`（policy/manual/prompt） |
+| **microcompact（工具结果裁剪）** | — | ✅ | ✅ 2026-09-28（批次 D） | ZCode `runtime/methods/microcompact.ts` |
 | system-reminder 包装 / meta_user 通道 | ✅ | ✅ | ✅（2026-09-28 已对齐） | 本项目 `runAgentTurn.ts buildMetaUserBlock`，见 PROMPTS.md 2.1 |
 | **@提及系统**（文件提及 + 注入） | ✅ | ✅ | ✅ 2026-09-28（文件提及；技能/agent 提及待技能工具后） | LA `MentionComposer*`、`mentionInjection.ts`；ZCode `ui/mentions/` |
 | **斜杠命令**（自定义命令文件 + 内置命令） | ✅ | ✅ | ✅ 2026-09-28（/clear 实义、/compact 占位；插件命令二期） | LA `skillTools`；ZCode `ui/slashCommandHelpers.ts`、`svc/commands/` |
@@ -145,7 +145,7 @@
 
 ### P0 —— 补核心能力（"家底"级，建议优先）
 1. ~~**工具扩军第一批**~~ ✅ 2026-09-28（批次 B：glob/grep/delete_file/todo_write + Todo 卡 + 进度条；工具总数 5→9）
-2. **历史压缩 compact + microcompact**：长会话硬需求，也是提示词缓存策略的地基（阈值触发 → 摘要模型 → 压缩带 UI → microcompact 裁工具结果）。
+2. ~~**历史压缩 compact + microcompact**~~ ✅ 2026-09-28（批次 D：阈值 80% 自动压缩 + /compact 手动 + 压缩带 UI + microcompact 裁工具结果）
 3. ~~**模型元数据真实解析**~~ ✅ 2026-09-28（批次 A2：`buildModel` 按真实元数据，未知走「不钳制/不发送/不声明多模态」语义）
 4. **后台任务完成通知 + 审批红点**（系统通知 + 提示音 + 侧栏未读角标）：多任务并行体验闭环。
 5. ~~**@提及与斜杠命令实义化**~~ ✅ 2026-09-28（批次 C：真菜单 + 命令文件扫描 + 提及内容注入；/compact 占位待批次 D）
@@ -226,7 +226,7 @@
 
 | 项 | LA | ZCode | 我们 | 说明与参考 |
 |---|---|---|---|---|
-| **压缩带 / seam（回合内）** | ✅ 紫罗兰 band：运行中 shimmer + 进度条，落定可展开（chips「覆盖 N 条消息」「压缩后 tokens」+ 展开挂摘要 markdown） | ✅ `TimelineMarkerRowView` compact 分隔线（两侧细线 + 居中 pill；running 流光；状态 running/completed/completedAuto/skipped/failed/interrupted，不可展开） | ❌ 【新】（与 P0 compact 同批做） | LA `components/chat/CompactionBand.tsx`、`CompactionSeamRow.tsx`；ZCode `v4/ConversationRowView.tsx`(L1666-1890) |
+| **压缩带 / seam（回合内）** | ✅ 紫罗兰 band：运行中 shimmer + 进度条，落定可展开（chips「覆盖 N 条消息」+ 展开挂摘要 markdown） | ✅ compact 分隔线 | ✅ 2026-09-28（批次 D2；chips「覆盖 N 条消息」+ 展开） | LA `components/chat/CompactionBand.tsx`、`CompactionSeamRow.tsx`；ZCode `v4/ConversationRowView.tsx`(L1666-1890) |
 | **ContextCheckpointCard（压缩分隔卡）** | ✅ 回合之间居中卡：标题 +「N 条消息/已压缩」+ 点击展开摘要 + 显示生成来源 provider/model | — | ❌ 【新】 | LA `components/chat/ContextCheckpointCard.tsx` |
 
 ### 11.7 通知与恢复

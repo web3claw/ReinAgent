@@ -40,6 +40,10 @@ interface PoolEntry {
   lastNotifyAt: number;
   /** 「总是允许」免审集合（任务级内存态；重启即失效，对齐一期范围）。 */
   alwaysAllowedTools: Set<string>;
+  /** 压缩事件订阅（onCompactionEvent 转发目标） */
+  compactionHandlers: Set<
+    (event: { type: string; manual?: boolean; error?: string; turnCount?: number }) => void
+  > | null;
 }
 
 /** 空闲条目上限（LRU 驱逐，豁免流式中），对齐 LiveAgent MAX_IDLE_CONVERSATION_RUNTIME_CACHE_ENTRIES */
@@ -254,6 +258,7 @@ function createEntry(taskId: string): PoolEntry {
     lastNotifyAt: 0,
     sendOptions: null,
     alwaysAllowedTools: new Set<string>(),
+    compactionHandlers: null,
   };
   entry.controller = createConversationController({
     taskId,
@@ -263,6 +268,15 @@ function createEntry(taskId: string): PoolEntry {
       invoke("checkpoint_begin_turn", { conversationId: taskId, turnId }).catch((err) =>
         console.warn("[pool] checkpoint_begin_turn failed:", err),
       );
+    },
+    onCompactionEvent: (event: { type: string; manual?: boolean; error?: string; turnCount?: number }) => {
+      entry.compactionHandlers?.forEach((handler) => {
+        try {
+          handler(event);
+        } catch (err) {
+          console.error("[pool] compaction handler failed:", err);
+        }
+      });
     },
     getState: () => entry.state,
     setState: (updater) => {
@@ -399,6 +413,24 @@ function injectOptions(entry: PoolEntry, options: PoolSendOptions): void {
 /** 解决指定任务当前挂起的审批（allow/always/reject）。无挂起时静默。 */
 export function resolveApproval(taskId: string, decision: ApprovalDecision): void {
   entries.get(taskId)?.controller.resolveApproval(decision);
+}
+
+/** 手动压缩指定任务的历史（controller.compactNow；忙时返回 false）。 */
+export function compactConversation(taskId: string): boolean {
+  return entries.get(taskId)?.controller.compactNow() ?? false;
+}
+
+/** 订阅压缩事件（started/done/failed/skipped；供 UI 压缩带与 toast）。 */
+export function onCompactionEvent(
+  taskId: string,
+  handler: (event: { type: string; manual?: boolean; error?: string; turnCount?: number }) => void,
+): () => void {
+  const entry = entries.get(taskId);
+  if (!entry) return () => {};
+  // 事件经 controller deps 的 onCompactionEvent 转发到 entry.compactionHandlers
+  entry.compactionHandlers = entry.compactionHandlers ?? new Set();
+  entry.compactionHandlers.add(handler);
+  return () => entry.compactionHandlers?.delete(handler);
 }
 
 /** 清空指定任务的时间线（controller.clear：中止在途轮 + 重置为空态；持久化由防抖 sync 落库）。 */

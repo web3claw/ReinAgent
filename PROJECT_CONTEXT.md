@@ -698,3 +698,15 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - Composer：`@` 触发候选菜单（`fs_glob` 查询 `**/*{query}*`，防抖 200ms，限 40 条）；选中把「@查询词」替换为「@路径 」。
 - **⚠️ Tauri 实测抓出的潜伏缺陷（第 4 个）**：**聊天区（hasMessages 分支）的 LexicalComposer 从未传 `workspaceRoot`**（只有空态传了）⇒ 有任务时 @提及报「root 不能为空」、附件默认目录也失效。已补传 `effectiveWorkspaceRoot`。此类 props 缺口只有真实运行可发现。
 - 验证（Tauri 端 CDP 实测）：`/` 真菜单（三内置命令 + 标签）出现、旧假菜单消失、零运行时异常；`@` 列出真实文件候选；选中 `@attention-test.txt` 发送后，SQLite 落库的 user 消息含完整注入块（`<file path="attention-test.txt">hello</file>` + 免责句）。`tsc` 0、`build` ✓、test:chat 118→**128**、cargo 133→**138**。
+
+### 8.4 批次 D（上下文工程）落地（2026-09-28）
+- **压缩引擎 `src/lib/chat/compaction.ts`（纯逻辑，11 单测）**：
+  - `findCompactionRange`：按轮切分（user 开轮口径同 groupTurns），保留最近 `KEEP_RECENT_TURNS=4` 轮原样；**在途轮截断连续段**（其后的轮不压）、**已压缩轮跳过不截断**（初版 break 语义会让 compact 轮之后的轮永远压不了，实测后改为 continue）；绝不切进工具调用对。
+  - `buildCompactionSource`（工具条目只留结果首行 200 字）+ `buildCompactionPrompt`（对齐 ZCode：保留文件路径/决策/未完成任务；**安全约束逐字保留**；不编造）。
+  - `applyCompaction`：区间替换为 `kind:"compact"` 的 assistant 条目（id=`compact-<start>` 幂等；**`coveredCount`=被压缩消息总数存条目上**——初版渲染层重算恒 0，实测抓出后改为写入）；摘要同时落 apiMessage（刷新后可回灌）。
+  - `microcompactMessages`：发送前裁较早轮 >4KB 的工具结果（首 800 + 尾 400 字符 + 省略标注），keepLastEntries=6 内不裁；**只影响发送视图不改时间线**；无变化返回原引用。
+- **controller 接线**：`launchTurn(turnId, {autoCompact})` 发送前检查上一条 assistant 的 usage/contextWindow ≥ `COMPACTION_TRIGGER_RATIO=0.8` → 先压缩再发送；`compactNow()` 手动入口（忙时 false）；摘要调用走 runAgentTurn 通道（**systemPrompt 换成纯摘要引擎提示、不给 workspaceRoot**；⚠️ `maxSteps:1` 会把 faux/真实模型的摘要请求截死在工具轮（faux 两步形态：工具轮+正文轮）→ 实测抓出后改 8 步兜底）；失败**保持原状**（No-Fallback）+ `onCompactionEvent` 事件（started/done/failed/skipped）经池转发。
+- **池**：`compactConversation(taskId)` + `onCompactionEvent(taskId, handler)`（entry.compactionHandlers 集合转发）。
+- **UI**：`CompactionBand.tsx`（running shimmer 文案 / settled 可展开 seam：chips「已压缩 N 条消息」+ 摘要 markdown，全部语义变量 + prefers-reduced-motion 退化）；`TurnGroupView` 轮首 compact 条目渲染为 band、activity 渲染跳过之；`/compact` 接真实现（无内容 toast 诚实提示）。
+- **Tauri 实测**：多轮任务（5 轮对话）`/compact` → 压缩带「已压缩 1 条消息」正确渲染、摘要落 SQLite、console 零 compaction 错误；2 轮任务 `/compact` 诚实报「没有可压缩的轮」。**实测抓出并修复 3 个 bug**：maxSteps:1 截断摘要（空内容）、coveredCount 数据链断（恒 0）、初版 compact-break 语义（压过一轮后永远不能再压）。
+- 验证：`tsc` 0、`build` ✓、test:chat 118→**128**（compaction 11 例）、cargo 138。

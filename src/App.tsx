@@ -836,10 +836,17 @@ export default function App() {
     clearConversation(activeTaskId);
   }, [activeTaskId, confirmDialog, t]);
 
-  /** `/compact`：压缩引擎属批次 D，此处如实提示而非伪造进度（No-Fallback）。 */
+  /** `/compact`：手动压缩（引擎=批次 D compaction.ts；忙时/无内容如实提示）。 */
   const handleCompactRequest = useCallback(() => {
-    toast.error(t("compactPhase2"), { duration: 5000 });
-  }, [t]);
+    if (!activeTaskId) return;
+    void (async () => {
+      const { compactConversation } = await import("./lib/chat/conversationPool");
+      const accepted = compactConversation(activeTaskId);
+      if (!accepted) {
+        toast.error(t("compactionNothing"), { duration: 4000 });
+      }
+    })();
+  }, [activeTaskId, t]);
 
   const handleSend = (
     text: string,

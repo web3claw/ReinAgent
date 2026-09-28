@@ -24,6 +24,8 @@ import { ThinkingBlock } from "./ThinkingBlock";
 import { ToolCallCard } from "./ToolCallCard";
 import { MarkdownText } from "./MarkdownText";
 import { ChatLoading } from "./ChatLoading";
+import { CompactionBand } from "./CompactionBand";
+import { isCompactEntry } from "../../lib/chat/compaction";
 import { useTranslation } from "../../i18n";
 import { memo, useMemo, useRef, useState } from "react";
 import {
@@ -377,6 +379,14 @@ function TurnGroupViewImpl({
 
   return (
     <div className="turn-group">
+      {/* 压缩标记带：轮首的 compact 条目（applyCompaction 产物）渲染为可展开 seam */}
+      {group.activity.some((entry) => isCompactEntry(entry)) ? (
+        <CompactionBand
+          state="settled"
+          coveredCount={(group.activity.find((e) => isCompactEntry(e)) as (typeof group.activity)[number] & { coveredCount?: number })?.coveredCount}
+          summary={group.activity.find((e) => isCompactEntry(e))?.text}
+        />
+      ) : null}
       {group.userMessage ? (
         <MessageItem
           message={group.userMessage}
@@ -420,6 +430,7 @@ function TurnGroupViewImpl({
           {(hasBody || liveAnswerInBody) && open && (
             <div className="turn-body">
               {group.activity.map((entry) => {
+                if (isCompactEntry(entry)) return null; // 压缩带已在轮首渲染
                 if (entry.role === "assistant") {
                   return (
                     <div key={entry.id} className="turn-assistant-activity">

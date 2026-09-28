@@ -45,6 +45,15 @@ import {
 import { isRetryableError } from "../chat/errors.js";
 import { pushRetryAttempt } from "./conversationModel.js";
 import { markTurnEntrance } from "./entranceOnce.js";
+import {
+  COMPACTION_TRIGGER_RATIO,
+  applyCompaction,
+  buildCompactionPrompt,
+  buildCompactionSource,
+  extractSummary,
+  findCompactionRange,
+  microcompactMessages,
+} from "./compaction.ts";
 
 /**
  * 展开 Error 的 cause 链为「主消息 ← 原因 ← …」的完整描述。
@@ -172,9 +181,44 @@ export function createConversationController(deps) {
    * 启动一轮 Agent 循环（send 与 editResend 共用的流水线）。
    * @param {string} turnId 本轮用户消息的稳定 id（检查点边界与重试归因使用）。
    */
-  function launchTurn(turnId) {
+  function launchTurn(turnId, launchOptions = {}) {
     const controller = createAbortController();
     abortRef = controller;
+    // 发送前上下文预算：
+    // - microcompact：裁较早轮的大工具结果（只影响本轮发送视图，不改时间线）；
+    // - 自动压缩：上一轮结束时的使用率超阈值 → 先压缩再发送（异步，压完即发）。
+    //   简化实现：microcompact 在 toApiMessages 后立即生效；autoCompact 用「上一条
+    //   assistant 的 usage / contextWindow」判定，压完把新历史交给本轮。
+    const { autoCompact = false } = launchOptions;
+    const baseGetHistory = () => {
+      const raw = toApiMessages(getState());
+      return microcompactMessages(raw);
+    };
+    const microcompactRef = { value: null };
+    if (autoCompact) {
+      void (async () => {
+        try {
+          const state = getState();
+          const lastUsage = [...state.messages]
+            .reverse()
+            .find((m) => m.role === "assistant" && m.apiMessage?.usage)?.apiMessage?.usage;
+          const contextWindow = getOptions()?.config?.contextWindow;
+          if (
+            lastUsage &&
+            typeof contextWindow === "number" &&
+            contextWindow > 0
+          ) {
+            const used = Number(lastUsage.input ?? 0) + Number(lastUsage.cacheRead ?? 0) + Number(lastUsage.output ?? 0);
+            if (used / contextWindow >= COMPACTION_TRIGGER_RATIO) {
+              const done = await runCompaction({ manual: false });
+              if (done) microcompactRef.value = null; // 压缩后重算（压缩条目已是权威）
+            }
+          }
+        } catch (err) {
+          console.warn("[compaction] auto check failed (sending as-is):", err);
+        }
+      })();
+    }
     /** 本轮的写回是否已过期（已被新一轮取代 / 被清空）。 */
     const isStale = () => abortRef !== controller;
 
@@ -199,7 +243,7 @@ export function createConversationController(deps) {
         while (true) {
           // 每次尝试重建历史：当前 user 条目（含图片块 apiMessage）已在时间线中，
           // toApiMessages 会带上它；失败/中止的 assistant 及其后随 toolResult 会被剔除。
-          const history = toApiMessages(getState());
+          const history = baseGetHistory();
           let contentCommitted = false;
           let errorMessage; // 本次尝试的失败原因（throw 或 errorMessage 两路归一）
           try {
@@ -425,8 +469,107 @@ export function createConversationController(deps) {
       beginAssistant(appendUser(current, text, userAttachments, userMessage), now()),
     );
     deps.onTurnBegin?.(turnId);
-    launchTurn(turnId);
+    launchTurn(turnId, { autoCompact: true });
     return true;
+  }
+
+  /**
+   * 手动压缩（/compact 或未来 UI 入口）：不等阈值，直接压。
+   * @returns 是否受理（忙时拒绝）
+   */
+  function compactNow() {
+    if (getState().status === "streaming") return false;
+    void runCompaction({ manual: true });
+    return true;
+  }
+
+  /**
+   * 执行压缩：找区间 → 调摘要模型 → 应用。失败不压缩（No-Fallback：保持原状 + 如实 warn）。
+   * 摘要调用复用 runAgentTurn 通道（无工具、maxSteps=1、无历史）。
+   */
+  async function runCompaction({ manual = false } = {}) {
+    const state = getState();
+    const messages = state.messages;
+    const range = findCompactionRange(messages);
+    if (!range) {
+      if (manual) {
+        console.warn("[compaction] 没有可压缩的轮（轮数不足或全部在途/已压缩）");
+        deps.onCompactionEvent?.({ type: "compaction_skipped", reason: "nothing-to-compact", manual });
+      }
+      return false;
+    }
+    deps.onCompactionEvent?.({ type: "compaction_started", manual, turnCount: range.turnCount });
+    try {
+      const options = getOptions();
+      const source = buildCompactionSource(messages, range);
+      const result = await runAgentTurn({
+        source: options.source,
+        config: options.config,
+        messages: [
+          { role: "user", content: buildCompactionPrompt(source), timestamp: Date.now() },
+        ],
+        systemPrompt: "You are a summarization engine. Output ONLY the summary text.",
+        // 步数给足：faux 等会先调一个工具轮再出正文轮，maxSteps:1 会把摘要截死在
+        // 工具轮（实测教训——「摘要模型返回空内容」的真凶）。压缩是纯文本请求，
+        // 正常模型 1 轮完成；给 8 的兜底不改变这一点。
+        maxSteps: 8,
+        // 不给 workspaceRoot/工具语义：摘要请求无需工具与目录
+        workspaceRoot: undefined,
+        thinkingLevel: undefined,
+        approvalMode: "full",
+        onEvent: () => {},
+      });
+      if (result.errorMessage) throw new Error(result.errorMessage);
+      const lastAssistant = [...(result.messages || [])].reverse().find((m) => m.role === "assistant");
+      const summary = extractSummary(
+        typeof lastAssistant?.content === "string"
+          ? lastAssistant.content
+          : (lastAssistant?.content || [])
+              .filter((b) => b.type === "text")
+              .map((b) => b.text)
+              .join(""),
+      );
+      if (!summary) throw new Error("摘要模型返回空内容");
+      const at = now();
+      setState((prev) => {
+        const applied = applyCompaction(prev.messages, range, summary, at);
+        // 压缩条目作为权威 assistant 落 apiMessage（刷新后 toApiMessages 仍可回灌）
+        const withApi = applied.map((m) =>
+          m.id === `compact-${range.startIndex}`
+            ? {
+                ...m,
+                apiMessage: {
+                  role: "assistant",
+                  content: [{ type: "text", text: summary }],
+                  api: options.config?.provider || "compact",
+                  provider: options.config?.provider || "compact",
+                  model: options.config?.modelId || "compact",
+                  usage: {},
+                  stopReason: "stop",
+                  timestamp: at,
+                },
+              }
+            : m,
+        );
+        return { ...prev, messages: withApi };
+      });
+      deps.onCompactionEvent?.({
+        type: "compaction_done",
+        manual,
+        turnCount: range.turnCount,
+        summaryChars: summary.length,
+      });
+      return true;
+    } catch (err) {
+      // No-Fallback：失败保持原状，绝不伪造摘要
+      console.warn("[compaction] 失败（保持原状）:", err instanceof Error ? err.message : err);
+      deps.onCompactionEvent?.({
+        type: "compaction_failed",
+        manual,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      return false;
+    }
   }
 
   /**
@@ -493,5 +636,5 @@ export function createConversationController(deps) {
     return true;
   }
 
-  return { send, editResend, stop, clear, loadState, requestApproval, resolveApproval };
+  return { send, editResend, stop, clear, loadState, requestApproval, resolveApproval, compactNow };
 }
