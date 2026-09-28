@@ -7,7 +7,7 @@
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import * as Dialog from "@radix-ui/react-dialog";
-import { X } from "lucide-react";
+import { X } from 'lucide-react';
 
 export interface ConfirmDialogOptions {
   title: ReactNode;
@@ -35,11 +35,27 @@ function ConfirmDialogImpl({
   onCancel,
   onConfirm,
 }: ConfirmDialogOptions & { onCancel: () => void; onConfirm: () => void }) {
+  const confirmRef = useRef<HTMLButtonElement>(null);
+
   return (
     <Dialog.Root open onOpenChange={(open) => { if (!open) onCancel(); }}>
       <Dialog.Portal>
         <Dialog.Overlay className="fixed inset-0 z-[90] bg-black/60 backdrop-blur-xs" />
-        <Dialog.Content className="fixed left-1/2 top-1/2 z-[91] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl">
+        <Dialog.Content
+          // 打开时把焦点直接放到「确认」按钮：否则 Radix 默认聚焦首个可聚焦元素（取消），
+          // 用户按 Enter 触发的是取消——感知为「回车不能确认」
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            confirmRef.current?.focus();
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              onConfirm();
+            }
+          }}
+          className="fixed left-1/2 top-1/2 z-[91] w-[calc(100vw-2rem)] max-w-md -translate-x-1/2 -translate-y-1/2 rounded-xl border border-[var(--border)] bg-[var(--surface)] p-5 shadow-2xl"
+        >
           <Dialog.Title className="break-words pr-10 text-base font-medium text-[var(--text)]">
             {title}
           </Dialog.Title>
@@ -73,13 +89,13 @@ function ConfirmDialogImpl({
           <div className="mt-4 flex justify-end gap-2">
             {hideCancel ? null : (
               <Dialog.Close
-                autoFocus
                 className="h-8 cursor-pointer rounded-lg border border-[var(--border)] px-3 text-xs text-[var(--text)] transition-colors hover:bg-[var(--surface-hover)]"
               >
                 {cancelLabel}
               </Dialog.Close>
             )}
             <button
+              ref={confirmRef}
               type="button"
               onClick={onConfirm}
               className="h-8 cursor-pointer rounded-lg bg-[var(--danger)] px-3 text-xs text-white transition-opacity hover:opacity-90"

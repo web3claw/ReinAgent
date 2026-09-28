@@ -21,7 +21,11 @@ import {
   sendSystemNotification,
   summarizeOutcome,
 } from "./lib/chat/taskNotifications";
-import { subscribeTaskTerminal, type TaskTerminalEvent } from "./lib/chat/conversationPool";
+import {
+  subscribeTaskTerminal,
+  onCompactionEvent,
+  type TaskTerminalEvent,
+} from "./lib/chat/conversationPool";
 import { useConfirmDialog } from "./components/ui/ConfirmDialog";
 import { toast } from "./components/lw/ui/toast";
 import { useHubSettings } from "./store/hubSettingsStore";
@@ -716,6 +720,20 @@ export default function App() {
     };
     return subscribeTaskTerminal(handle);
   }, [activeTaskId]);
+
+  // ---- 压缩事件反馈（/compact 与自动压缩：skipped/failed/done 都给可见反馈）----
+  useEffect(() => {
+    if (!activeTaskId) return;
+    return onCompactionEvent(activeTaskId, (event) => {
+      if (event.type === "compaction_done") {
+        toast.success(t("compactionDone").replace("{count}", String(event.turnCount ?? 0)), { duration: 4000 });
+      } else if (event.type === "compaction_failed") {
+        toast.error(t("compactionFailed").replace("{error}", event.error ?? ""), { duration: 6000 });
+      } else if (event.type === "compaction_skipped" && event.manual) {
+        toast.error(t("compactionNothing"), { duration: 4000 });
+      }
+    });
+  }, [activeTaskId, t]);
 
   // 编辑重发后的强制贴底（对齐 LiveAgent stickToBottom on run start）+ 回退 toast。
   const [followSignal, setFollowSignal] = useState(0);
