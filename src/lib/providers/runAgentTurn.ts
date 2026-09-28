@@ -135,6 +135,8 @@ export interface RunAgentTurnParams {
   thinkingLevel?: import("../agent/agentRuntime").RunTurnDeps["thinkingLevel"];
   /** 本轮审批模式（任务级，发送时冻结）。缺省 "full"（完全访问，零审批开销）。 */
   approvalMode?: ApprovalMode;
+  /** 工具级审批策略（工具名 → allow/ask/deny）；未配置的工具走审批模式默认。 */
+  toolPolicies?: Record<string, "allow" | "ask" | "deny">;
   /** 审批协调器（由会话池注入；缺省时不注入审批门，工具直通）。 */
   approval?: ApprovalCoordinator;
   /** 检查点上下文（对齐 LiveAgent）：本轮写文件前捕获前像，供「回退本轮代码改动」。 */
@@ -182,20 +184,36 @@ async function getStreamFnForApi(api: string) {
 export function createApprovalGate(
   approvalMode: ApprovalMode,
   approval: ApprovalCoordinator,
+  /** 工具级策略（优先于审批模式默认；deny 直接拦、allow 直接放、ask 走既有挂起） */
+  toolPolicies?: Record<string, "allow" | "ask" | "deny">,
 ): (ctx: BeforeToolCallContext, signal?: AbortSignal) => Promise<{ block?: boolean; reason?: string } | undefined> {
   return async (ctx, signal) => {
     const toolName = ctx.toolCall.name;
     const kind = resolveToolPermissionKind(toolName);
 
-    if (kind === "read" || approvalMode === "full") return undefined;
-    if (approvalMode === "plan") {
+    // 工具级策略优先于模式默认（对齐 ZCode tool-policy broker 语义）
+    const policy = toolPolicies?.[toolName];
+    if (policy === "allow") return undefined;
+    if (policy === "deny") {
+      return {
+        block: true,
+        reason: `[Tool Policy] 工具 ${toolName} 已被工具级策略设置为 deny（拒绝）。请改用其它方案或与用户确认策略设置。`,
+      };
+    }
+    // 显式 ask 策略：把该工具视作需要审批（即使模式本来会放行——edit 对 write、full 对一切），
+    // 通过降级 effectiveMode 让下方统一审批路径接管
+    const effectiveMode: ApprovalMode =
+      policy === "ask" && (approvalMode === "edit" || approvalMode === "full") ? "ask" : approvalMode;
+
+    if (kind === "read" || effectiveMode === "full") return undefined;
+    if (effectiveMode === "plan") {
       return {
         block: true,
         reason:
           "[Plan Mode] 已拦截：当前任务处于计划模式，禁止写入/修改文件与执行命令。请继续只读调研并输出实施计划，不要重试该调用。",
       };
     }
-    if (approvalMode === "edit" && kind === "write") return undefined;
+    if (effectiveMode === "edit" && kind === "write") return undefined;
     if (approval.isAlwaysAllowed(toolName)) return undefined;
 
     // 挂起等待用户决策；abort 时以 reject 收场（钩子负责尊重 abort signal）。
@@ -242,6 +260,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     thinkingLevel,
     approvalMode = "full",
     approval,
+    toolPolicies,
     checkpoint,
   } = params;
 
@@ -340,7 +359,11 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     maxRetries: 2,
     maxRetryDelayMs: 60000,
     // 审批门：非 full 模式（且有协调器）才注入；full 下零开销直通。
-    beforeToolCall: approval && approvalMode !== "full" ? createApprovalGate(approvalMode, approval) : undefined,
+    // 工具级策略在 full 模式下依然生效（deny/allow 是显式用户意图，优先于模式）。
+    beforeToolCall:
+      approval && (approvalMode !== "full" || toolPolicies)
+        ? createApprovalGate(approvalMode, approval, toolPolicies)
+        : undefined,
   };
 
   if (source === "faux") {

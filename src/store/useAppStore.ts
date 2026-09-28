@@ -24,6 +24,8 @@ export interface AppTask {
   thinkingLevel?: ThinkingLevel;
   /** 任务级审批模式覆盖；缺省=跟随全局默认。 */
   approvalMode?: ApprovalMode;
+  /** 工具级审批策略（工具名 → allow/ask/deny）；未配置的工具回退审批模式默认。 */
+  toolPolicies?: Record<string, "allow" | "ask" | "deny">;
 }
 
 interface AppState {
@@ -68,6 +70,7 @@ interface AppState {
   updateTaskModel: (id: string, providerId: string, modelId: string) => void;
   updateTaskThinkingLevel: (id: string, level: ThinkingLevel) => void;
   updateTaskApprovalMode: (id: string, mode: ApprovalMode) => void;
+  updateTaskToolPolicy: (id: string, toolName: string, policy: "allow" | "ask" | "deny" | null) => void;
   deleteTask: (id: string) => void;
   toggleTaskPin: (id: string) => void;
   startNewTaskDraft: (project?: string | null) => void;
@@ -340,6 +343,26 @@ export const useAppStore = create<AppState>((set) => ({
       const nextTasks = state.tasks.map((t) =>
         t.id === id ? { ...t, thinkingLevel: level, updatedAt: Date.now() } : t
       );
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  updateTaskToolPolicy: (id, toolName, policy) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) => {
+        if (t.id !== id) return t;
+        const nextPolicies = { ...(t.toolPolicies ?? {}) };
+        if (policy === null) delete nextPolicies[toolName];
+        else nextPolicies[toolName] = policy;
+        return { ...t, toolPolicies: nextPolicies, updatedAt: Date.now() };
+      });
       if (typeof window !== "undefined") {
         try {
           syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));

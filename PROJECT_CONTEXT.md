@@ -724,3 +724,10 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **Tauri 实测**：任务 A 发消息后立即切到任务 B → A 完成（done）触发通知链路、console 零错误；模块/开关/订阅全部验证。**系统通知弹窗本体在 Windows 通知中心**（首次会请求授权），提示音为可听验证项。
 - 验证：`tsc` 0、`build` ✓、五套前端测试全绿（128/43/18/6/12）+ hub 57 + cargo **138**。
 - **菜单键盘导航（2026-09-28 补齐，用户反馈）**：`/` 与 `@` 菜单支持 ↑/↓ 移动高亮（循环）、Enter/Tab 选中、Esc 关闭；高亮项 `data-active` 标记 + `scrollIntoView(block:nearest)` 滚动跟随；查询词/候选变化时高亮复位第一项；菜单打开时 Enter 被导航拦截（不发送消息）。菜单过滤列表提升为组件层 `slashFiltered`（keydown 与渲染共用同一份）。Tauri 实测：两菜单 ↑↓↑ 与 Enter 选中全链路通过。
+
+### 8.6 P1-1 工具级策略（2026-09-28）
+- **存储**：`AppTask.toolPolicies?: Record<toolName, "allow"|"ask"|"deny">`（任务级，随任务落库；`updateTaskToolPolicy` 增改删一体）。MCP 服务器级策略存 `McpSettings.serverPolicy?: Record<serverId, policy>`（**纯前端字段**：App `setSettings` 只把 `servers` 发给 Rust，serverPolicy 不进 mcp_servers.json；hydrate 时从上一份切片保留）。
+- **审批门语义（runAgentTurn `createApprovalGate` 新增第三参 toolPolicies）**：`allow` 直通（**full 模式下也生效**——显式用户意图优先于模式）；`deny` 拦截并告知模型策略设置；`ask` 把 effectiveMode 降为 ask（edit 对 write / full 对一切的自动放行被策略覆盖，强制挂起审批）。gate 注入条件放宽：`approval && (mode !== "full" || toolPolicies)`。
+- **UI**：MCP 已配置卡（启用中的 server）恢复 LA 的 ToolPolicyToggle 列（allow/ask/deny 三态，服务器级——作用于该 server 全部 `mcp__<id>__<tool>` 工具）。
+- 测试：`toolPolicy.test.mjs` 5 例（allow 直通/deny 拦截含 read 工具/ask 覆盖 edit 自动放行/未配置不回归）→ providers 18→**23**。
+- MCP 服务器级策略的运行时匹配说明：MCP 工具名是 `mcp__<serverId>__<tool>`，策略键需为 serverId 时由门内 `resolveToolPermissionKind` 保守视为 write + `toolPolicies[toolName]` 精确名匹配；服务器级 → 工具名的展开由 UI 写入时按前缀匹配（后续增强，当前按工具全名/服务器 id 精确键）。

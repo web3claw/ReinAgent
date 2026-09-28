@@ -128,7 +128,13 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
   hydrateMcp: async () => {
     try {
       const servers = await invoke<McpServerConfig[]>("mcp_list_servers");
-      set((state) => ({ settings: { ...state.settings, mcp: { servers, selected: [] } } }));
+      set((state) => ({
+        settings: {
+          ...state.settings,
+          // serverPolicy 是纯前端字段，从上一份 mcp 切片保留（hydrate 不覆盖用户配置）
+          mcp: { servers, selected: [], serverPolicy: state.settings.mcp.serverPolicy },
+        },
+      }));
     } catch (err) {
       // Web/无头环境后端不可达：保留空列表（页面会用空态），如实告警
       console.warn("[hubSettings] mcp_list_servers unavailable:", err);
