@@ -732,3 +732,10 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - 测试：`toolPolicy.test.mjs` 5 例（allow 直通/deny 拦截含 read 工具/ask 覆盖 edit 自动放行/未配置不回归）→ providers 18→**23**。
 - MCP 服务器级策略的运行时匹配说明：MCP 工具名是 `mcp__<serverId>__<tool>`，策略键需为 serverId 时由门内 `resolveToolPermissionKind` 保守视为 write + `toolPolicies[toolName]` 精确名匹配；服务器级 → 工具名的展开由 UI 写入时按前缀匹配（后续增强，当前按工具全名/服务器 id 精确键）。
 - **P1-2 AGENTS.md 注入（2026-09-28）**：Rust `agents_md.rs` `agents_md_read(workspace_root)` 按优先级扫 `AGENTS.md` → `.agents/AGENTS.md` → `CLAUDE.md` → `.claude/CLAUDE.md`（只取最优先命中一个；64KB 截断标注；空文件跳过；不存在返回空数组非错误）。`runAgentTurn` 组装 meta_user 块时注入为 `<instruction-file source path>` 段（标题「Project instructions — authoritative for this workspace」）。`buildMetaUserBlock` 参数序：currentDate → agentsMd → memory → skills。
+
+### 8.7 P1-3 AskUserQuestion 工具 + 回合内提问卡（2026-09-28）
+- **工具 `src/lib/agent/askUserTool.ts`**：`ask_user_question`（1..4 题 × 2..4 选项，≤1 推荐/题，允许自由输入缺省 true；schema maxLength 约束）。execute 走 `approval.request({ args: { kind: "question", questions } })` **挂起**；resolve 值三种：结构化 `{answers:[{question,answer}]}` → 回显 Q/A 收敛；`"reject"` → 跳过提示收敛；null/undefined → 未回答收敛（全部 No-Fallback 文本）。`isAskUserAnswer` 类型守卫。
+- **通道放宽**：`ApprovalCoordinator.request` / controller `resolveApproval` / pool `resolveApproval` 接受 `ApprovalDecision | Record<string, unknown>`（审批字符串不变；结构化对象仅在 gate 消费层视为放行——回答负载由工具自身经 request 的 resolve 拿回）。
+- **UI `AskQuestionCard.tsx`**（App 审批卡渲染分支：`args.kind === "question"` → 提问卡，否则审批卡）：标题「提问」+ 逐题单选卡（推荐项绿标）+ 「其他」自由输入 + 跳过/提交回答（未答齐禁用提交）。提交 → `resolveApproval(taskId, { answers })`。i18n askQuestionTitle/askOptionRecommended/askCustomPlaceholder/askSubmit/askSkip/askQuestionIncomplete。
+- **挂载条件**：`runAgentTurn` 仅在有 approval 协调器时挂 `ask_user_question`（无协调器场景挂起无人应答）。
+- **Tauri 实测**：ask 模式真实模型调用 → 提问卡挂起（问题+选项+推荐标渲染）→ 点选「继续」提交 → 工具收敛、模型确认收到回答。全链路（挂起→作答→收敛→继续）通过。

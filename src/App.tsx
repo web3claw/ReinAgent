@@ -48,6 +48,7 @@ import { SettingsPage } from "./components/settings/SettingsPage";
 import { DEFAULT_SYSTEM_PROMPT, buildEnvironmentSection } from "./lib/providers/runAgentTurn";
 import type { ApprovalDecision } from "./lib/providers/runAgentTurn";
 import { ApprovalCard } from "./components/chat/ApprovalCard";
+import { AskQuestionCard } from "./components/chat/AskQuestionCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { kvGet } from "./lib/storage/db";
 import { useAppStore } from "./store/useAppStore";
@@ -1138,8 +1139,23 @@ export default function App() {
                   <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">
                     {/* 任务清单进度条（对齐 LiveAgent TaskProgressBar）：有清单时显示在输入框上方 */}
                     <TaskProgressBar messages={state.messages} />
+                    {/* 提问卡（ask_user_question 工具挂起）：模型等待用户作答 */}
+                    {state.pendingApproval &&
+                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind === "question" ? (
+                      <AskQuestionCard
+                        questions={((state.pendingApproval as { args?: { questions?: never[] } }).args?.questions ?? []) as never}
+                        onAnswer={(answers) => {
+                          if (activeTaskId)
+                            poolResolveApproval(activeTaskId, { answers });
+                        }}
+                        onSkip={() => {
+                          if (activeTaskId) poolResolveApproval(activeTaskId, "reject");
+                        }}
+                      />
+                    ) : null}
                     {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
-                    {state.pendingApproval && (
+                    {state.pendingApproval &&
+                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind !== "question" && (
                       <ApprovalCard
                         request={state.pendingApproval}
                         onDecide={(decision: ApprovalDecision) => {

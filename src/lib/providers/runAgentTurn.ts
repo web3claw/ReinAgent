@@ -8,6 +8,7 @@ import type { ProviderConfig } from "./modelFactory";
 import { getFauxAgentSource } from "./fauxSource";
 import type { ProviderType } from "./catalog";
 import { createMcpTools } from "../mcp/mcpTools";
+import { createAskUserQuestionTool } from "../agent/askUserTool";
 
 export type AgentSource = ProviderType | "faux";
 
@@ -29,7 +30,8 @@ export type ApprovalDecision = "allow" | "always" | "reject";
  * request 挂起等待 UI 决策、isAlwaysAllowed/allowAlways 维护免审集合。
  */
 export interface ApprovalCoordinator {
-  request: (req: ApprovalRequest) => Promise<ApprovalDecision>;
+  /** resolve 值：allow/always/reject；ask_user_question 工具的挂起 resolve 结构化回答对象 */
+  request: (req: ApprovalRequest) => Promise<ApprovalDecision | Record<string, unknown>>;
   isAlwaysAllowed: (toolName: string) => boolean;
   allowAlways: (toolName: string) => void;
 }
@@ -219,9 +221,9 @@ export function createApprovalGate(
     if (approval.isAlwaysAllowed(toolName)) return undefined;
 
     // 挂起等待用户决策；abort 时以 reject 收场（钩子负责尊重 abort signal）。
-    const decision = await new Promise<ApprovalDecision>((resolve) => {
+    const decision = await new Promise<ApprovalDecision | Record<string, unknown>>((resolve) => {
       let settled = false;
-      const settle = (value: ApprovalDecision) => {
+      const settle = (value: ApprovalDecision | Record<string, unknown>) => {
         if (settled) return;
         settled = true;
         signal?.removeEventListener("abort", onAbort);
@@ -245,6 +247,9 @@ export function createApprovalGate(
       };
     }
     if (decision === "always") approval.allowAlways(toolName);
+    // 结构化回答（ask_user_question 工具的挂起通道）：不是审批决策——放行该工具调用，
+    // 回答对象由工具自身经 approval.request 的 resolve 值取回。
+    if (typeof decision === "object" && decision !== null) return undefined;
     return undefined;
   };
 }
@@ -279,6 +284,13 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     console.warn("[mcp] tool enumeration failed (continuing without MCP):", err);
   }
   const allTools = [...tools, ...mcpTools] as typeof tools;
+  // AskUserQuestion 工具（P1-3）：模型向用户提问，挂起等待提问卡作答。
+  // 仅在有审批协调器时挂（协调器由池注入——Web 无后端场景不挂，工具不存在即不误调）。
+  if (approval) {
+    allTools.push(createAskUserQuestionTool({
+      request: (req) => approval.request(req),
+    }) as (typeof tools)[number]);
+  }
 
   // 记忆注入（对齐 LiveAgent）：`# Memory Index` 分桶索引 + `## Memory` 工具规则段，
   // 并挂载 MemoryManager 工具（list/read/search/write/update/delete/accept）。

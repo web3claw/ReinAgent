@@ -412,8 +412,12 @@ function injectOptions(entry: PoolEntry, options: PoolSendOptions): void {
 }
 
 /** 解决指定任务当前挂起的审批（allow/always/reject）。无挂起时静默。 */
-export function resolveApproval(taskId: string, decision: ApprovalDecision): void {
-  entries.get(taskId)?.controller.resolveApproval(decision);
+export function resolveApproval(
+  taskId: string,
+  decision: ApprovalDecision | Record<string, unknown>,
+): void {
+  // 结构化回答对象（ask_user 提问卡）与字符串决策同样经 controller.resolve 透传
+  entries.get(taskId)?.controller.resolveApproval(decision as never);
 }
 
 /** 手动压缩指定任务的历史（controller.compactNow；忙时返回 false）。 */
