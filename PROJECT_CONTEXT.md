@@ -755,3 +755,19 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - `taskModelIsolation.test.mjs` 过期断言（断言已废弃的 localStorage 键 `reinagent-tasks`，任务持久化已迁 SQLite）→ 删除旧键断言保留状态级隔离断言；同文件 `globalThis.window` mock 泄漏污染后续测试文件 → `after()` 还原现场。
   - 10 个测试文件静态 `import { registerHooks } from "node:module"`（Node 22.15+ API）在 bun 1.4.x 下抛 SyntaxError 且被计为文件级失败 → 改动态导入 + `typeof` 能力检测（bun 原生支持 .ts 无需钩子）；⚠️ 其中 compaction/todoProgress 是 CRLF 行尾，批量替换需按文件实际 EOL。
 - 验证：**全量 297/297 全绿**（修复前 240 pass/10 fail/10 errors——registerHooks 连累 47 个测试没跑起来）+ `tsc` 0 + cargo bg 4/4。
+
+### 8.9 P1-5 WebFetch / WebSearch（2026-09-28，Tauri 实测闭环）
+- **调研结论**：ZCode/LA 的 WebSearch 都依赖 **provider 服务端原生搜索**（Anthropic `web_search` 工具注入/SSE 解析），我们的 OpenAI 兼容网关不支持 → 走**纯客户端路线**：Rust 出网（WebView 直连有 CORS）+ 无 Key 的 DuckDuckGo HTML 端点。ZCode WebFetch 的客户端实现思路（15min 缓存/100k 截断/结构化错误/egress 防护）直接移植。
+- **Rust `src-tauri/src/web_tools.rs`**（2 命令，spawn_blocking + `*_sync`）：
+  - `web_fetch(url, max_bytes?)`：URL 规范化（无 scheme 补 https、http 强制升级 https、拒凭证/超长/本地与保留地址）→ ureq GET（30s 超时、2MB 响应体硬上限 `take(max+1)` 超限即断）→ 文本类 MIME 校验 → HTML 经 `html2text` 转纯文本。UA 用标识 UA `ReinAgent-WebFetch/0.1`（对齐 ZCode）。
+  - `web_search(query, allowed_domains?, blocked_domains?, max_results?)`：`html.duckduckgo.com/html/?q=` GET → 正则解析 `result__a` 链接 + `result__snippet` 摘要 → `uddg=` 百分号解码还原真实 URL → 广告剔除 + 客户端域名后缀过滤（白/黑名单不可同给，对齐 ZCode）→ 默认 10 条（上限 25）。**搜索 UA 必须用浏览器 UA**（标识 UA 收 202 反爬挑战页，实测）。
+  - **广告过滤双保险**：外层直链 `duckduckgo.com/y.js` + **uddg 解码后兜底再查一次**（DDG 常把广告包在跳转里，实测抓出）。
+  - **SSRF 防护**：`is_blocked_host`（localhost/.local/.internal、IPv4 私网/环回/CGNAT/基准网段、IPv6 ::1/fc00::/7/fe80::/10/::ffff: 映射）。⚠️ 实测踩坑：host 提取最初用 `rsplit(':').next()` 取到的是**端口**（"127.0.0.1:9333"→"9333"），带端口 URL 绕过拦截——必须 `split(':').next()`（`extract_host`），IPv6 方括号形态单独处理。
+  - 单测 `web_tools_tests.rs` 8 例（实体解码/DDG 解析含包装广告/域名过滤/URL 规范化/SSRF 段位）。
+- **代理支持（用户网络环境硬需求，实测 DDG 直连超时）**：`resolve_proxy()` 三级——kv 设置 `reinagent-web-proxy` 优先（非法值**如实报错**不静默直连）→ 环境变量（`Proxy::try_from_env`）→ 直连。设置页「联网代理」输入框（`src/lib/web/webProxy.ts`，kv 持久化，失焦/回车保存）。
+- **前端工具（tools.js）**：`webfetch {url, prompt?}` + `websearch {query, allowed_domains?, blocked_domains?}`（权限=read 级）。webfetch 带**模块级 15min TTL 缓存**（LRU touch + FIFO 50 条上限，对齐 ZCode 进程级缓存语义），结果文本经 `TOOL_LIMITS.webFetchBytes`(30KB)/`webSearchBytes`(16KB) 截断；websearch 结果附 REMINDER（回答后必须以 Sources: 列表给链接，对齐 ZCode）。`prompt` 参数作为「关注点」提示随内容返回（不额外调模型——ZCode 用会话模型低档位回答，我们简化为内容直返）。
+- **UI**：
+  - `ToolCallCard` 新增 websearch（Globe + query + 结果数）与 webfetch（Globe + URL + `HTTP 状态 · 字节 · 缓存`）专属卡。
+  - **联网搜索聚合行**：`buildActivitySegments`（turnActivity.ts，相邻 websearch 合段，隔任何其他条目即断组）+ `WebSearchGroupCard`（「已搜索 N 次 · N 个来源」+ 运行中扫光 + 部分失败红标 + 展开 query 行/来源行（favicon `/favicon.ico` 兜底 a.favicon.im，收起 5 条 + 「查看其余 N 个」），对齐 LA HostedSearchGroupView）。i18n 10 键（zh/en）。
+- **Tauri 实测**（CDP 裸调 + 模型调用）：搜索 939ms/11 条、广告 0（修复前第一条是 uddg 包装的 Udemy 广告——单测补夹具）；`web_fetch` 抓 rust-lang.org 200/18,594B→5,159 字符可读文本（走代理）；SSRF 实测抓出 host 提取绕过 bug（已修+补测）。
+- 验证：前端 300/300 + `tsc` 0 + Rust 150/150（web_tools 8 例）。

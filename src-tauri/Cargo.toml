@@ -33,6 +33,7 @@ sha2 = "0.10"
 dunce = "1.0"
 chrono = "0.4"
 ureq = { version = "3", features = ["json"] }
+html2text = "0.14"
 uuid = { version = "1", features = ["v4"] }
 regex = "1"
 walkdir = "2"

@@ -29,6 +29,7 @@ import { isCompactEntry } from "../../lib/chat/compaction";
 import { useTranslation } from "../../i18n";
 import { memo, useMemo, useRef, useState } from "react";
 import {
+  buildActivitySegments,
   buildUnifiedPatch,
   collectTurnFileChanges,
   computeLineChangeStat,
@@ -42,6 +43,7 @@ import {
   type TurnGroup,
 } from "../../lib/chat/turnActivity";
 import { useAppStore } from "../../store/useAppStore";
+import { WebSearchGroupCard } from "./WebSearchGroupCard";
 
 function isToolEntry(message: TimelineEntry): message is ToolTimelineEntry {
   return message.role === "tool";
@@ -335,6 +337,8 @@ function TurnGroupViewImpl({
   );
   const showHeader = group.activity.length > 0;
   const hasBody = hasThinking || hasTools || hasIntermediateText;
+  // 连续 websearch 合并为聚合段（联网搜索聚合行，其余条目逐条渲染）
+  const activitySegments = useMemo(() => buildActivitySegments(group.activity), [group.activity]);
 
   // 需用户介入（挂起审批/等人类工具）时强制展开并显式告知（对齐 LiveAgent attention）。
   const attentionRequired = isAttentionRequired(group, pendingApproval);
@@ -429,7 +433,11 @@ function TurnGroupViewImpl({
           )}
           {(hasBody || liveAnswerInBody) && open && (
             <div className="turn-body">
-              {group.activity.map((entry) => {
+              {activitySegments.map((segment) => {
+                if (segment.kind === "webSearchGroup") {
+                  return <WebSearchGroupCard key={`wsg-${segment.entries[0].id}`} entries={segment.entries} />;
+                }
+                const entry = segment.entry;
                 if (isCompactEntry(entry)) return null; // 压缩带已在轮首渲染
                 if (entry.role === "assistant") {
                   return (

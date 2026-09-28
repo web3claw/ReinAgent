@@ -10,11 +10,16 @@
  * No-Fallback：历史消息无时间打点时如实返回 undefined（UI 显示「已处理」），绝不伪造时长。
  */
 
-import type { TimelineEntry } from "./conversationModel";
+import type { TimelineEntry, ToolTimelineEntry } from "./conversationModel";
 import type { LineChangeStat } from "../../preview/shared-src/lineChangeStat.ts";
 
 export { computeLineChangeStat } from "../../preview/shared-src/lineChangeStat.ts";
 export type { LineChangeStat };
+
+/** 类型守卫：ChatMessage.role 是联合类型，`===` 比较收不窄，显式谓词收窄到工具条目。 */
+function isToolEntry(e: TimelineEntry): e is ToolTimelineEntry {
+  return e.role === "tool";
+}
 
 /** 一轮对话：一条用户提问 + 其后的全部助手/工具活动。 */
 export interface TurnGroup {
@@ -319,6 +324,8 @@ export function toolKindLabel(toolName: string, locale: string = "zh-CN"): strin
     background_bash: [zh ? "后台命令" : "Background", "exec"],
     task_output: [zh ? "任务输出" : "Task output", "exec"],
     task_stop: [zh ? "停止任务" : "Stop task", "exec"],
+    webfetch: [zh ? "网页抓取" : "Fetch", "web"],
+    websearch: [zh ? "联网搜索" : "Web search", "web"],
     calculate: [zh ? "计算" : "Calculate", "calc"],
   };
   const hit = known[toolName];
@@ -340,6 +347,8 @@ export function toolKindCode(toolName: string): string {
     background_bash: "exec",
     task_output: "exec",
     task_stop: "exec",
+    webfetch: "web",
+    websearch: "web",
     calculate: "calc",
   };
   return known[toolName] ?? "generic";
@@ -438,3 +447,33 @@ export function collectTurnFileChanges(entries: TimelineEntry[]): TurnFileChange
 
 /** 轮内压缩标记再导出（TurnGroupView 的渲染判定走 UI 侧 compaction 模块，这里仅类型便利）。 */
 export { isCompactEntry } from "./compaction.ts";
+
+// ---------------------------------------------------------------------------
+// 联网搜索聚合（P1-5，对齐 LA HostedSearchGroupView 的连续块合并）
+// ---------------------------------------------------------------------------
+
+/** 回合活动渲染段：普通单条目，或合并后的连续 websearch 组。 */
+export type ActivitySegment =
+  | { kind: "single"; entry: TimelineEntry }
+  | { kind: "webSearchGroup"; entries: ToolTimelineEntry[] };
+
+/**
+ * 把回合活动切渲染段：**相邻**的 websearch 工具条目合并成一段（其余条目逐条一段）。
+ * 中间隔了任何其他条目（思考/叙述/别的工具）即断组——与 LA flushPendingSearches 的
+ * 「连续 hostedSearch 块合组」语义一致。
+ */
+export function buildActivitySegments(activity: TimelineEntry[]): ActivitySegment[] {
+  const segments: ActivitySegment[] = [];
+  for (const entry of activity) {
+    const isWebSearch = isToolEntry(entry) && entry.toolName === "websearch";
+    const last = segments[segments.length - 1];
+    if (isWebSearch && last?.kind === "webSearchGroup") {
+      last.entries.push(entry);
+    } else if (isWebSearch) {
+      segments.push({ kind: "webSearchGroup", entries: [entry] });
+    } else {
+      segments.push({ kind: "single", entry });
+    }
+  }
+  return segments;
+}

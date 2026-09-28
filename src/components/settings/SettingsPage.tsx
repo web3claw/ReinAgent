@@ -3,6 +3,7 @@ import { Settings } from '../../lib/settings/store';
 import { SettingsStatus } from '../../lib/settings/useSettings';
 import { useTranslation } from '../../i18n';
 import { isNotificationSoundEnabled, setNotificationSoundEnabled } from '../../lib/chat/taskNotifications';
+import { getWebProxy, setWebProxy } from '../../lib/web/webProxy';
 import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
 import { useAppStore } from '../../store/useAppStore';
 import {
@@ -27,6 +28,7 @@ interface SettingsPageProps {
 export function SettingsPage({ settings, status, onChange, onBack }: SettingsPageProps) {
   const { t } = useTranslation();
   const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
+  const [proxyInput, setProxyInput] = useState(getWebProxy());
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'about'>('general');
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
@@ -107,6 +109,26 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
                     className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${soundEnabled ? 'translate-x-5' : ''}`}
                   />
                 </button>
+              </div>
+              <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="font-medium">{t('webProxyLabel')}</div>
+                  <div className="text-sm text-[var(--text-dim)]">{t('webProxyDesc')}</div>
+                </div>
+                <input
+                  type="text"
+                  value={proxyInput}
+                  placeholder="http://127.0.0.1:7890"
+                  onChange={(e) => setProxyInput(e.target.value)}
+                  onBlur={() => setWebProxy(proxyInput)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      setWebProxy(proxyInput);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  className="w-64 shrink-0 px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--brand)]"
+                />
               </div>
             </div>
           )}

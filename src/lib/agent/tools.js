@@ -44,7 +44,35 @@ export const TOOL_LIMITS = Object.freeze({
   readMaxLines: 2000,
   execBytes: 30_000,
   listDirBytes: 8192,
+  webFetchBytes: 30_000,
+  webSearchBytes: 16_000,
 });
+
+// ---- WebFetch 抓取缓存（模块级：跨工具集实例共享，对齐 ZCode 进程级缓存）----
+const WEBFETCH_CACHE_TTL_MS = 15 * 60 * 1000;
+const WEBFETCH_CACHE_MAX = 50;
+const webFetchCache = new Map();
+
+/** 命中且未过期返回缓存结果（LRU touch）；过期/不存在返回 null。 */
+function webCacheGet(url) {
+  const hit = webFetchCache.get(url);
+  if (!hit) return null;
+  if (Date.now() > hit.expiresAt) {
+    webFetchCache.delete(url);
+    return null;
+  }
+  webFetchCache.delete(url);
+  webFetchCache.set(url, hit);
+  return hit.result;
+}
+
+/** 写入缓存并按 FIFO 上限修剪（LRU touch 已在 get 中把热点挪到队尾）。 */
+function webCacheSet(url, result) {
+  webFetchCache.set(url, { expiresAt: Date.now() + WEBFETCH_CACHE_TTL_MS, result });
+  while (webFetchCache.size > WEBFETCH_CACHE_MAX) {
+    webFetchCache.delete(webFetchCache.keys().next().value);
+  }
+}
 
 /**
  * 单次运行的默认步数上限（决策 D）。S7-5 会把它作为 `runTurn` 的 `maxSteps` 传入。
@@ -685,7 +713,109 @@ export function createTools(options) {
     },
   };
 
-  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite, backgroundBash, taskOutput, taskStop];
+  // ---- WebFetch / WebSearch（P1-5，思路对齐 ZCode WebFetch 客户端实现；
+  //      Rust 侧 web_tools.rs 出网：ureq + SSRF 防护 + DDG 搜索端点。----
+  const webFetchTool = {
+    name: "webfetch",
+    label: "网页抓取",
+    description:
+      "Fetch a URL from the web, convert HTML to readable text, and return the page content. " +
+      "HTTP is upgraded to HTTPS. Local/private network addresses and non-text content types are rejected. " +
+      "Results are cached for 15 minutes (repeat fetches of the same URL are instant).",
+    parameters: Type.Object(
+      {
+        url: Type.String({ description: "要抓取的完整 URL（http/https）" }),
+        prompt: Type.Optional(
+          Type.String({ description: "关注点：希望从页面内容中回答的问题（内容会原样返回，由你自行提炼）" }),
+        ),
+      },
+      { required: ["url"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const requested = params.url.trim();
+      const cached = webCacheGet(requested);
+      if (cached) {
+        const text = [
+          `${cached.finalUrl} · HTTP ${cached.status} · ${cached.contentType || "content-type 未提供"} · 原始 ${cached.bytes} 字节 · 缓存命中（15 分钟内有效）`,
+          params.prompt ? `关注点: ${params.prompt}` : null,
+          "",
+          cached.text || "(页面无文本内容)",
+        ];
+        return buildTextToolResult(text.filter((l) => l !== null).join("\n"), {
+          url: cached.finalUrl,
+          status: cached.status,
+          bytes: cached.bytes,
+          cacheHit: true,
+          prompt: params.prompt ?? null,
+        }, TOOL_LIMITS.webFetchBytes);
+      }
+      const result = await invoke("web_fetch", { url: requested });
+      webCacheSet(requested, result);
+      const text = [
+        `${result.finalUrl} · HTTP ${result.status} · ${result.contentType || "content-type 未提供"} · 原始 ${result.bytes} 字节`,
+        params.prompt ? `关注点: ${params.prompt}` : null,
+        "",
+        result.text || "(页面无文本内容)",
+      ];
+      return buildTextToolResult(text.filter((l) => l !== null).join("\n"), {
+        url: result.finalUrl,
+        status: result.status,
+        contentType: result.contentType,
+        bytes: result.bytes,
+        cacheHit: false,
+        prompt: params.prompt ?? null,
+      }, TOOL_LIMITS.webFetchBytes);
+    },
+  };
+
+  const webSearchTool = {
+    name: "websearch",
+    label: "联网搜索",
+    description:
+      "Search the web and return result blocks with titles, URLs and snippets. " +
+      "You may pass allowed_domains or blocked_domains (never both) to filter results by domain suffix. " +
+      "After answering using results, end with a \"Sources:\" list of the URLs you used as markdown links.",
+    parameters: Type.Object(
+      {
+        query: Type.String({ minLength: 2, description: "搜索查询词" }),
+        allowed_domains: Type.Optional(
+          Type.Array(Type.String(), { description: "仅保留这些域名（后缀匹配）" }),
+        ),
+        blocked_domains: Type.Optional(
+          Type.Array(Type.String(), { description: "剔除这些域名（后缀匹配）" }),
+        ),
+      },
+      { required: ["query"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const result = await invoke("web_search", {
+        query: params.query,
+        allowedDomains: params.allowed_domains,
+        blockedDomains: params.blocked_domains,
+      });
+      const lines = [
+        `${params.query} · ${result.results.length} 条结果（端点共 ${result.totalFound} 条，用时 ${result.durationMs}ms）`,
+        "",
+        ...result.results.map(
+          (r, i) =>
+            `${i + 1}. ${r.title || "(无标题)"}\n   ${r.url}${r.snippet ? `\n   ${r.snippet}` : ""}`,
+        ),
+        "",
+        "REMINDER: 回答引用上述结果后，必须以 \"Sources:\" 列表给出所用 URL 的 markdown 链接。",
+      ];
+      return buildTextToolResult(lines.join("\n"), {
+        query: params.query,
+        resultCount: result.results.length,
+        totalFound: result.totalFound,
+        durationMs: result.durationMs,
+        sources: result.results.map((r) => ({ url: r.url, title: r.title })),
+      }, TOOL_LIMITS.webSearchBytes);
+    },
+  };
+
+  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite, backgroundBash, taskOutput, taskStop, webFetchTool, webSearchTool];
 }
 
 /**
@@ -723,6 +853,8 @@ export function resolveToolPermissionKind(name) {
     case "glob":
     case "grep":
     case "todo_write":
+    case "webfetch":
+    case "websearch":
       return "read";
     case "exec_command":
     case "background_bash":

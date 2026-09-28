@@ -14,7 +14,7 @@
  */
 
 import { memo, useMemo } from "react";
-import { Pencil, Search, SquareTerminal, Wrench, Check, ChevronRight, Circle, ListChecks } from "lucide-react";
+import { Globe, Pencil, Search, SquareTerminal, Wrench, Check, ChevronRight, Circle, ListChecks } from "lucide-react";
 import type { ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { formatToolArgs } from "../../lib/chat/toolDisplay";
 import { useTranslation } from "../../i18n";
@@ -128,6 +128,8 @@ function ToolCallCardImpl({
         grep: isRunning ? "正在搜索" : "搜索",
         delete_file: isRunning ? "正在删除" : "删除",
         todo_write: "任务清单",
+        webfetch: isRunning ? "正在抓取" : "网页抓取",
+        websearch: isRunning ? "正在联网搜索" : "联网搜索",
       };
       return known[entry.toolName] ?? entry.toolName;
     },
@@ -397,6 +399,75 @@ function ToolCallCardImpl({
         kindLabel={kindLabel}
         primaryText={pattern ? <code className="font-mono text-xs">{pattern}</code> : null}
         secondaryText={isRunning ? undefined : `${hitCount}`}
+        statusLabel={statusLabelNode}
+        showStatusLabel={isError}
+        showFailureStatus={isError}
+        statusTooltip={statusTooltip}
+        isRunning={isRunning}
+        renderContent={() => (
+          <div className="mb-2 space-y-1">
+            {entry.resultText.length > 0 ? (
+              <pre className="tool-result">{entry.resultText}</pre>
+            ) : (
+              <div className="tool-pending">{t("toolNoOutput")}</div>
+            )}
+          </div>
+        )}
+      />
+    );
+  }
+
+  // ---- 联网搜索（websearch）：Globe + query 主文案 + 结果数次要文本 + 可展开结果清单 ----
+  if (entry.toolName === "websearch") {
+    const query = typeof entry.args?.query === "string" ? entry.args.query : "";
+    const count = typeof entry.details?.resultCount === "number" ? entry.details.resultCount : null;
+    return (
+      <ToolLayout
+        toolId={entry.toolCallId}
+        icon={<Globe className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
+        kindLabel={kindLabel}
+        primaryText={query ? <code className="font-mono text-xs">{query}</code> : null}
+        secondaryText={isRunning ? undefined : count !== null ? `${count}` : undefined}
+        statusLabel={statusLabelNode}
+        showStatusLabel={isError}
+        showFailureStatus={isError}
+        statusTooltip={statusTooltip}
+        isRunning={isRunning}
+        renderContent={() => (
+          <div className="mb-2 space-y-1">
+            {entry.resultText.length > 0 ? (
+              <pre className="tool-result">{entry.resultText}</pre>
+            ) : (
+              <div className="tool-pending">{t("toolNoOutput")}</div>
+            )}
+          </div>
+        )}
+      />
+    );
+  }
+
+  // ---- 网页抓取（webfetch）：Globe + URL 主文案 + 状态/字节次要文本 + 可展开正文 ----
+  if (entry.toolName === "webfetch") {
+    const rawUrl =
+      typeof entry.details?.url === "string"
+        ? entry.details.url
+        : typeof entry.args?.url === "string"
+          ? entry.args.url
+          : "";
+    const displayUrl = rawUrl.replace(/^https?:\/\//, "").slice(0, 72);
+    const secondary =
+      isRunning || !entry.details || typeof entry.details.status !== "number"
+        ? undefined
+        : `HTTP ${entry.details.status} · ${entry.details.bytes ?? "?"} 字节${entry.details.cacheHit ? " · 缓存" : ""}`;
+    return (
+      <ToolLayout
+        toolId={entry.toolCallId}
+        icon={<Globe className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
+        kindLabel={kindLabel}
+        primaryText={displayUrl ? <span className="truncate font-mono text-xs">{displayUrl}</span> : null}
+        secondaryText={secondary}
         statusLabel={statusLabelNode}
         showStatusLabel={isError}
         showFailureStatus={isError}

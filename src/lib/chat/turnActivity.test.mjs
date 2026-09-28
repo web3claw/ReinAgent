@@ -10,6 +10,7 @@ import {
   computeDiffStat,
   toolKindLabel,
   toolKindCode,
+  buildActivitySegments,
   toolArgPath,
   toolArgCommand,
 } from "./turnActivity.ts";
@@ -267,4 +268,49 @@ test("effectiveWorkMs：隐藏段按与 [start, now] 的交集裁剪（乱序/�
 test("effectiveWorkMs：非法区间（hi<=lo）不计；结果不为负", () => {
   assert.equal(effectiveWorkMs(0, 1000, [[500, 400]]), 1000, "倒置区间不计");
   assert.equal(effectiveWorkMs(0, 1000, [[0, 5000]]), 0, "超长隐藏段封顶为 0 而非负");
+});
+
+// ---- P1-5：buildActivitySegments（连续 websearch 聚合） ----
+
+test("buildActivitySegments：相邻 websearch 合并成组，其余逐条成段", () => {
+  const ws = (id, extra = {}) => msg(id, "tool", "", "done", { toolName: "websearch", args: {}, ...extra });
+  const activity = [
+    msg("a1", "assistant", ""),
+    ws("w1"),
+    ws("w2"),
+    msg("a2", "assistant", "中间叙述"),
+    ws("w3"),
+    msg("t9", "tool", "", "done", { toolName: "read_file", args: {} }),
+  ];
+  const segs = buildActivitySegments(activity);
+  assert.equal(segs.length, 5, "w1/w2 合并、w3 独立（被叙述隔断）");
+  assert.equal(segs[0].kind, "single");
+  assert.equal(segs[1].kind, "webSearchGroup");
+  assert.deepEqual(segs[1].entries.map((e) => e.id), ["w1", "w2"]);
+  assert.equal(segs[2].kind, "single");
+  assert.equal(segs[3].kind, "webSearchGroup");
+  assert.equal(segs[3].entries.length, 1);
+  assert.equal(segs[4].kind, "single");
+});
+
+test("buildActivitySegments：websearch 被其他工具隔断则不合并；空数组出空段", () => {
+  const activity = [
+    msg("w1", "tool", "", "done", { toolName: "websearch", args: {} }),
+    msg("t1", "tool", "", "done", { toolName: "exec_command", args: {} }),
+    msg("w2", "tool", "", "done", { toolName: "websearch", args: {} }),
+  ];
+  const segs = buildActivitySegments(activity);
+  assert.equal(segs.length, 3, "被 exec 隔断 → 两段独立 websearch 组");
+  assert.equal(segs[0].entries.length, 1);
+  assert.equal(segs[2].entries.length, 1);
+  assert.deepEqual(buildActivitySegments([]), []);
+});
+
+test("buildActivitySegments：webfetch 不参与聚合（仅 websearch）", () => {
+  const activity = [
+    msg("f1", "tool", "", "done", { toolName: "webfetch", args: {} }),
+    msg("f2", "tool", "", "done", { toolName: "webfetch", args: {} }),
+  ];
+  const segs = buildActivitySegments(activity);
+  assert.equal(segs.length, 2, "webfetch 逐条渲染，不合组");
 });

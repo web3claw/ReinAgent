@@ -83,7 +83,8 @@ fn open_db() -> Result<Connection, String> {
     Ok(conn)
 }
 
-fn db_conn() -> Result<std::sync::MutexGuard<'static, Connection>, String> {
+/// 打开/获取全局 SQLite 连接（crate 内其他模块需要直读 kv 时复用）。
+pub(crate) fn db_conn() -> Result<std::sync::MutexGuard<'static, Connection>, String> {
     static CONN: std::sync::OnceLock<Mutex<Connection>> = std::sync::OnceLock::new();
     CONN.get_or_init(|| Mutex::new(open_db().expect("Failed to open conversation db")))
         .lock()

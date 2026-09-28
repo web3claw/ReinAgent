@@ -440,7 +440,14 @@ test("6 · 结果超 8KB 被截断：UTF-8 字节安全（全对齐组合）、�
 test("7 · TOOL_LIMITS：按工具分设（对齐 ZCode read 256KB/2000 行、bash 30KB）", async () => {
   assert.deepEqual(
     TOOL_LIMITS,
-    { readFileBytes: 256 * 1024, readMaxLines: 2000, execBytes: 30_000, listDirBytes: 8192 },
+    {
+      readFileBytes: 256 * 1024,
+      readMaxLines: 2000,
+      execBytes: 30_000,
+      listDirBytes: 8192,
+      webFetchBytes: 30_000,
+      webSearchBytes: 16_000,
+    },
     "TOOL_LIMITS 实际值",
   );
   assert.equal(DEFAULT_MAX_STEPS, 8);
@@ -516,8 +523,10 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
       "background_bash",
       "task_output",
       "task_stop",
+      "webfetch",
+      "websearch",
     ],
-    "工具名与顺序（批次 B 扩军 + P1-4 后台 Bash）",
+    "工具名与顺序（批次 B 扩军 + P1-4 后台 Bash + P1-5 联网工具）",
   );
 
   const a = getTools();

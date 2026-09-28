@@ -155,7 +155,7 @@
 7. **子代理系统**（Explore / GeneralPurpose / 目录侧栏 / 完成通知）：ZCode `core/subagent/`、LA `lib/subagents/`。**UI 同批做**：回合内子代理卡（LA MetaTags / ZCode AgentToolCallBlock + 「在右侧打开」）、子代理目录侧栏（Running/Ended + 状态图标）、运行中行 + Stop（§11.1）。
 8. **AskUserQuestion + ExitPlanMode 交互闭环**（**部分** ✅ 2026-09-28，05ecc98：工具 + 回合内提问卡已做；ExitPlanMode elicitation / 独立提问弹窗 / PlanModeCard / Plan 开关标记待做）：**UI 同批做**：回合内提问卡（逐题/推荐标/1-N 翻页/其他输入/倒计时自动选，§11.2）+ 提问弹窗（分页/自定义/snooze/来源角标）+ PlanModeCard（三态脊 + 批准并开始执行，§11.3）+ Plan 模式开关标记（灯泡/✕）。
 9. ~~**后台 Bash**（驻留进程 + TaskOutput/TaskStop）~~ ✅ 2026-09-28（Rust `bg_process.rs` 四命令 + `background_bash`/`task_output`/`task_stop` 三工具 + 回合内 turnActivity 标签；Tauri 实测闭环）。§11.5 增量未做：输出侧栏、输入框「后台工作」按钮/耗时标签。
-10. **WebFetch / WebSearch**（含域名白名单与结果缓存；UI 同批做联网搜索聚合行「已搜索 N 次·N 个来源」，§11.8）。
+10. ~~**WebFetch / WebSearch**（含域名白名单与结果缓存）~~ ✅ 2026-09-28（Rust `web_tools.rs`：DDG 无 Key 搜索 + ureq 抓取 + 15min 缓存 + SSRF 防护 + 代理设置；UI 联网搜索聚合行「已搜索 N 次·N 个来源」）。§11.8 增量未做：来源行点击外链打开。
 11. ~~**工具级策略**（allow/ask/deny 三态 + Hub 内切换）~~ ✅ 2026-09-28（ee7fb11：任务级 toolPolicies + MCP Hub 卡 serverPolicy 切换）。
 12. ~~**AGENTS.md + gitStatus 注入**（落位 meta_user 块）~~ **主体** ✅ 2026-09-28（3d49fc7：agents_md.rs 四级回退扫描 + meta_user 注入）；gitStatus 快照未纳入（需异步 git + 缓存，见 PROMPTS.md 待办）。
 13. **用量统计图表**（日趋势 / 模型分布 / 热力图）。
