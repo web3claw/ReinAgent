@@ -552,6 +552,11 @@ export default function App() {
         modelId: activeModelId,
         baseUrl: activeBaseUrl,
         hasEffort: isReasoningSupported,
+        // 真实元数据透传（No-Fallback）：未声明即为未知，由 buildModel 走
+        // 「未知」语义（不发送 max_tokens / 不声明多模态 / 容量面板不渲染）
+        contextWindow: currentModel?.contextWindow ?? null,
+        maxOutputTokens: currentModel?.maxOutputTokens ?? null,
+        supportsImage: currentModel?.supportsImage ?? null,
       },
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       maxSteps,
@@ -572,6 +577,9 @@ export default function App() {
       effectiveWorkspaceRoot,
       effectiveThinkingLevel,
       activeApprovalMode,
+      currentModel?.contextWindow,
+      currentModel?.maxOutputTokens,
+      currentModel?.supportsImage,
     ],
   );
 
@@ -583,6 +591,8 @@ export default function App() {
       const providerId = payload.modelProvider || settings.provider || "deepseek";
       const modelId = payload.modelId || settings.modelId || "";
       const provider = providers.find((p) => p.id === providerId);
+      // 自动化所用模型的目录元数据（用于真实 contextWindow/maxTokens/supportsImage 透传）
+      const automationModel = provider?.models?.find((m) => m.id === modelId) ?? null;
       const apiKey = provider?.apiKey ?? settings.apiKey ?? "";
       const isDemo = apiKey.trim().length === 0;
       const taskId = store.createTask(
@@ -601,6 +611,10 @@ export default function App() {
           modelId,
           baseUrl: provider?.baseUrl ?? settings.baseUrl ?? "",
           hasEffort: true,
+          // 真实元数据透传（与 buildTurnOptions 同口径，No-Fallback）
+          contextWindow: automationModel?.contextWindow ?? null,
+          maxOutputTokens: automationModel?.maxOutputTokens ?? null,
+          supportsImage: automationModel?.supportsImage ?? null,
         },
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
         maxSteps: 0,
@@ -1005,6 +1019,7 @@ export default function App() {
                       onRetryFrom={handleRetryFrom}
                       onBranchFrom={handleBranchFrom}
                       followSignal={followSignal}
+                      pendingApproval={state.pendingApproval}
                       workspaceRoot={effectiveWorkspaceRoot}
                       scrollTargetMessageId={scrollTargetMessageId}
                       onScrollTargetDone={() => setScrollTargetMessageId(null)}

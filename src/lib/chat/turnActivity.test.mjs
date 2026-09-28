@@ -5,6 +5,8 @@ import {
   formatWorkDuration,
   resolveTurnWorkState,
   turnDurationMs,
+  isAttentionRequired,
+  effectiveWorkMs,
   computeDiffStat,
   toolKindLabel,
   toolKindCode,
@@ -205,4 +207,64 @@ test("computeToolDiffLines edit/write 有数据，其余为 null", () => {
   assert.equal(write.length, 2);
   assert.equal(computeToolDiffLines("read_file", { path: "/a" }), null);
   assert.equal(computeToolDiffLines("edit_file", { old_string: "", new_string: "" }), null);
+});
+
+// ---- A1：attention 判据（挂起审批 / 等人类工具） ----
+
+test("isAttentionRequired：pendingApproval 非空即 true（会话级最强信号）", () => {
+  const turns = groupTurns([msg("u1", "user", "Q"), msg("a1", "assistant", "A", "done")]);
+  assert.equal(isAttentionRequired(turns[0], { toolName: "write_file" }), true);
+  assert.equal(isAttentionRequired(turns[0], null), false);
+  assert.equal(isAttentionRequired(turns[0], undefined), false);
+});
+
+test("isAttentionRequired：running 的等人类工具为 true；done/其他工具为 false", () => {
+  const running = groupTurns([
+    msg("u1", "user", "Q"),
+    msg("t1", "tool", "", "running", { toolName: "ask_user", args: {} }),
+  ]);
+  assert.equal(isAttentionRequired(running[0], null), true, "running 的 ask_user 表示在等用户");
+
+  const done = groupTurns([
+    msg("u1", "user", "Q"),
+    msg("t1", "tool", "", "done", { toolName: "ask_user", args: {} }),
+  ]);
+  assert.equal(isAttentionRequired(done[0], null), false, "已回答完的 ask_user 不再要人介入");
+
+  const other = groupTurns([
+    msg("u1", "user", "Q"),
+    msg("t1", "tool", "", "running", { toolName: "exec_command", args: {} }),
+  ]);
+  assert.equal(isAttentionRequired(other[0], null), false, "普通工具运行中不属于 attention");
+});
+
+test("isAttentionRequired：exit_plan_mode 运行中为 true（计划待批）", () => {
+  const turns = groupTurns([
+    msg("u1", "user", "Q"),
+    msg("t1", "tool", "", "running", { toolName: "exit_plan_mode", args: {} }),
+  ]);
+  assert.equal(isAttentionRequired(turns[0], null), true);
+});
+
+// ---- A1：隐藏窗口停表（effectiveWorkMs） ----
+
+test("effectiveWorkMs：无隐藏时段 = 墙钟；隐藏段被扣除", () => {
+  assert.equal(effectiveWorkMs(1000, 6000, []), 5000, "无隐藏即墙钟");
+  // 全程隐藏 → 工时 0
+  assert.equal(effectiveWorkMs(1000, 6000, [[1000, 6000]]), 0);
+  // 半程隐藏 → 扣一半
+  assert.equal(effectiveWorkMs(1000, 6000, [[2000, 4000]]), 3000);
+});
+
+test("effectiveWorkMs：隐藏段按与 [start, now] 的交集裁剪（乱序/越界容忍）", () => {
+  // 隐藏段起点早于轮起点 / 终点晚于当前：只计交集
+  assert.equal(effectiveWorkMs(5000, 10_000, [[0, 7000]]), 3000);
+  assert.equal(effectiveWorkMs(5000, 10_000, [[8000, Number.POSITIVE_INFINITY]]), 3000);
+  // 乱序多段：先远端后近端
+  assert.equal(effectiveWorkMs(0, 10_000, [[7000, 9000], [1000, 3000]]), 6000);
+});
+
+test("effectiveWorkMs：非法区间（hi<=lo）不计；结果不为负", () => {
+  assert.equal(effectiveWorkMs(0, 1000, [[500, 400]]), 1000, "倒置区间不计");
+  assert.equal(effectiveWorkMs(0, 1000, [[0, 5000]]), 0, "超长隐藏段封顶为 0 而非负");
 });

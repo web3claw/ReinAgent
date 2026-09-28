@@ -111,6 +111,61 @@ export function resolveTurnWorkState(group: TurnGroup): TurnWorkState {
   return "no-duration";
 }
 
+/**
+ * 是否需要用户立即介入（对齐 LiveAgent `attentionRequired` 语义）：
+ * 轮内存在**被阻塞在用户决策上**的工具调用时，状态条强制展开并显示「等待你的决定」。
+ *
+ * 判据（保守、可解释，全部有真实数据支撑，不臆测）：
+ * - `pendingApproval != null`：审批门正挂起等待决策（会话级真相源，最强信号）；
+ * - 或轮内存在 running 态的 `ask_user` / `exit_plan_mode` 类工具条目（这些工具
+ *   本身即「等用户回答/批准」——运行中就意味着在等人）。
+ *
+ * @param group 目标轮
+ * @param pendingApproval 会话级挂起审批（来自 ChatState.pendingApproval）
+ */
+export function isAttentionRequired(
+  group: TurnGroup,
+  pendingApproval?: unknown,
+): boolean {
+  if (pendingApproval !== null && pendingApproval !== undefined) return true;
+  // 等人类工具：运行中即表示在等用户（其名称以工具注册表为准，未知不臆测）
+  const ATTENTION_TOOLS = new Set(["ask_user", "AskUserQuestion", "exit_plan_mode", "ExitPlanMode"]);
+  return group.activity.some(
+    (entry) =>
+      entry.role === "tool" &&
+      entry.status === "running" &&
+      typeof entry.toolName === "string" &&
+      ATTENTION_TOOLS.has(entry.toolName),
+  );
+}
+
+/**
+ * 隐藏窗口停表（对齐 LiveAgent 隐藏窗口停表）：把「墙钟区间」折算为「有效工作时长」——
+ * 页面不可见（切后台/最小化）期间不计入工时。
+ *
+ * 纯函数（可测）：给定轮起点、已累计的隐藏时长记录与当前时刻，返回有效工时。
+ * 运行中调用方传入 `hiddenSpans`（每段 [hiddenAt, visibleAt]），完成态传入一次隐藏总时长。
+ *
+ * @param startedAt 轮起点（ms）
+ * @param nowMs 当前时刻（运行中）或轮终点（完成）
+ * @param hiddenSpans 与 [startedAt, now] 区间相交的隐藏时段（ms 区间，乱序容忍）
+ */
+export function effectiveWorkMs(
+  startedAt: number,
+  nowMs: number,
+  hiddenSpans: Array<[number, number]>,
+): number {
+  const wall = Math.max(0, nowMs - startedAt);
+  if (hiddenSpans.length === 0) return wall;
+  let hidden = 0;
+  for (const [from, to] of hiddenSpans) {
+    const lo = Math.max(from, startedAt);
+    const hi = Math.min(to, nowMs);
+    if (hi > lo) hidden += hi - lo;
+  }
+  return Math.max(0, wall - hidden);
+}
+
 /** 回合工时：运行中 = now - startedAt（实时跳动）；完成 = endedAt - startedAt；无打点 = undefined。 */
 export function turnDurationMs(group: TurnGroup, nowMs?: number): number | undefined {
   if (group.startedAt === undefined) return undefined;

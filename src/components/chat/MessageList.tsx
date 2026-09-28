@@ -79,6 +79,8 @@ export interface MessageListProps {
   onBranchFrom?: (messageId: string) => void;
   /** 变化时强制恢复贴底跟随并置底（编辑重发/重试后对齐 LiveAgent stickToBottom）。 */
   followSignal?: number;
+  /** 会话级挂起审批（透传实时轮：attention 态强制展开状态条）。 */
+  pendingApproval?: unknown;
 }
 
 /**
@@ -105,6 +107,7 @@ export function MessageList({
   onRetryFrom,
   onBranchFrom,
   followSignal,
+  pendingApproval,
   /** 外部定位请求（搜索跳转）：滚动到该消息 + 短暂高亮；滚动完成后置 null */
   scrollTargetMessageId,
   onScrollTargetDone,
@@ -305,6 +308,23 @@ export function MessageList({
     return () => ro.disconnect();
   }, [scrollRef]);
 
+  // ---- 隐藏窗口停表（对齐 LiveAgent）：页面不可见期间不计入运行中轮的工时 ----
+  // 全部隐藏时段记在 ref 里（乱序容忍由 effectiveWorkMs 处理），visibilitychange 维护开闭。
+  const hiddenSpansRef = useRef<Array<[number, number]>>([]);
+  useEffect(() => {
+    const onVisibility = () => {
+      const spans = hiddenSpansRef.current;
+      if (document.visibilityState === "hidden") {
+        spans.push([Date.now(), Number.POSITIVE_INFINITY]);
+      } else {
+        const last = spans[spans.length - 1];
+        if (last && last[1] === Number.POSITIVE_INFINITY) last[1] = Date.now();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, []);
+
   // ---- live tick：只驱动正在流式的轮（历史轮不接收该 prop，避免全列表每秒重渲染）----
   const hasRunningTurn = isStreaming || turns.some((turn) => turn.running);
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
@@ -400,6 +420,8 @@ export function MessageList({
             group={liveTurn}
             live
             liveNowMs={liveNowMs}
+            hiddenSpans={hiddenSpansRef.current}
+            pendingApproval={pendingApproval}
             retryAttempts={retryAttempts}
             retrying={retrying}
             workspaceRoot={workspaceRoot}

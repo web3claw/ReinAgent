@@ -30,7 +30,9 @@ import {
   buildUnifiedPatch,
   collectTurnFileChanges,
   computeLineChangeStat,
+  effectiveWorkMs,
   formatWorkDuration,
+  isAttentionRequired,
   isReinAgentTempPath,
   pathDirectory,
   resolveTurnWorkState,
@@ -82,6 +84,16 @@ export interface TurnGroupViewProps {
   actionsDisabled?: boolean;
   /** 搜索跳转定位高亮：命中的消息 id（user/assistant 行短暂亮边）。 */
   highlightMessageId?: string | null;
+  /**
+   * 会话级挂起审批（ChatState.pendingApproval）：存在时本轮进入 attention 态——
+   * 状态条强制展开、显示「等待你的决定」且不可折叠（对齐 LiveAgent attentionRequired）。
+   */
+  pendingApproval?: unknown;
+  /**
+   * 页面隐藏时段（[hiddenAt, visibleAt]，末段可开区间）：运行中轮的工时折算用
+   * ——隐藏窗口停表（对齐 LiveAgent：切后台/最小化期间不计入工作耗时）。
+   */
+  hiddenSpans?: Array<[number, number]>;
 }
 
 /** 折叠体内「中间叙述」的暗色正文（非最终回复的 assistant 文本）。 */
@@ -279,6 +291,8 @@ function TurnGroupViewImpl({
   onBranchFrom,
   actionsDisabled = false,
   highlightMessageId,
+  pendingApproval,
+  hiddenSpans,
 }: TurnGroupViewProps) {
   const { t, locale } = useTranslation();
   // 用户只折叠/展开「已完成」的轮次；运行中强制展开且不可收起（userToggle 仅完成态生效）。
@@ -289,10 +303,20 @@ function TurnGroupViewImpl({
   const workState = isTurnRunning
     ? "running"
     : resolveTurnWorkState(group);
-  const durationMs =
-    isTurnRunning && group.startedAt !== undefined
+  // 工时折算：隐藏窗口停表（仅当有隐藏记录且能定位轮起点时生效；否则退回墙钟，
+  // 保证历史/无打点轮的既有行为完全不变）。
+  const durationMs = (() => {
+    const spans = hiddenSpans && hiddenSpans.length > 0 ? hiddenSpans : null;
+    if (spans && group.startedAt !== undefined) {
+      const end = isTurnRunning ? liveNowMs : group.endedAt;
+      if (typeof end === "number") {
+        return effectiveWorkMs(group.startedAt, end, spans);
+      }
+    }
+    return isTurnRunning && group.startedAt !== undefined
       ? Math.max(0, liveNowMs - group.startedAt)
       : turnDurationMs(group, liveNowMs);
+  })();
   const lastAssistant = group.lastAssistant;
   // 运行中最后一条 assistant 的正文就地渲染进折叠体（见文件头「时间线不变式」）。
   // 纯文本轮没有思考/工具/中间叙述，靠这个标记让折叠体仍然渲染（否则流式正文不可见）。
@@ -310,8 +334,11 @@ function TurnGroupViewImpl({
   const showHeader = group.activity.length > 0;
   const hasBody = hasThinking || hasTools || hasIntermediateText;
 
-  // 折叠交互仅对有内容的轮次生效；运行中强制展开且不可收起（对齐 ZCode 只读展开）。
-  const open = isTurnRunning ? true : userToggle === true;
+  // 需用户介入（挂起审批/等人类工具）时强制展开并显式告知（对齐 LiveAgent attention）。
+  const attentionRequired = isAttentionRequired(group, pendingApproval);
+  // 折叠交互仅对有内容的轮次生效；运行中或 attention 态强制展开且不可收起。
+  const lockOpen = isTurnRunning || attentionRequired;
+  const open = lockOpen ? true : userToggle === true;
 
   // 重连副行（对齐 LiveAgent：重试等待期间显示、首个内容事件到达才撤下；重试详情
   // 记录只在回合收敛后由 MessageItem 展示）。副行实时携带最新一次失败的错误原因。
@@ -325,7 +352,10 @@ function TurnGroupViewImpl({
       : null;
 
   let headerLabel: string;
-  switch (workState) {
+  if (attentionRequired) {
+    // attention 优先于工时文案：此刻用户在等的事项比「已工作 X 分」更重要
+    headerLabel = t("turnAwaitingDecision");
+  } else switch (workState) {
     case "running":
       headerLabel = t("turnWorking").replace(
         "{duration}",
@@ -361,17 +391,17 @@ function TurnGroupViewImpl({
       ) : null}
 
       {showHeader ? (
-        <div className="turn-header-row" data-state={workState}>
+        <div className="turn-header-row" data-state={workState} data-attention={attentionRequired ? "true" : undefined}>
           {hasBody ? (
             <button
               type="button"
               className="turn-header-trigger"
               aria-expanded={open}
-              disabled={isTurnRunning}
+              disabled={lockOpen}
               onClick={() => setUserToggle((cur) => (cur === null ? true : !cur))}
             >
               <span className="turn-header-label">{headerLabel}</span>
-              {!isTurnRunning && (
+              {!lockOpen && (
                 <ChevronRight
                   className={`w-3.5 h-3.5 transition-transform text-[var(--text-dim)] ${
                     open ? "rotate-90" : ""

@@ -1,6 +1,8 @@
 # ReinAgent 项目全景架构与开发状态白皮书
 
 > **文档定位**：供后续开发 Agent 与工程师快速接手本项目的**单点真相全景指南（Single Source of Truth）**。涵盖系统定位、架构分层、核心交互规范、最新进度、关键状态流转及避坑指南。
+>
+> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./docs/ROADMAP.md)（三方功能差距分析 vs LiveAgent/ZCode + 优先级路线图，2026-09-28）、**[TASKS.md](./docs/TASKS.md)（P0 起步的分步开发任务清单，可验证可测试）**。
 
 ---
 
@@ -670,3 +672,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **卡片诊断按钮**（已配置 tab，启用中的服务器显示 PlugZap 图标）：调 `mcp_test_server(server, persist=true)`，成功显示「连接成功 · N 个工具 · 耗时」，失败行内显示错误原文 + phase（title 全文）。i18n：`mcpHub.cardTestOk/cardTestFailed`（extra-mcp）。
 - **发送链路反馈**：`createMcpTools` 全失败时经 `useHubSettings.setMcpEnumNotice` 通知（lib→store→UI，不持久化），App 订阅后 `toast.error`（8s；seen 时间戳去重）。后端部分失败跳过、全失败才 Err——单服务器部分失败仍不可见（后端 list_tools 丢弃 per-server 错误，二期补结构化返回）。
 - **⚠️ 浮层层级必修课（2026-09-28 用户报「删除点不了」根因）**：Radix popper wrapper 是 `position:fixed; z-index:auto`，而 Hub 页容器带 `relative z-10`（LA 页面结构原样）——z:auto 的浮层被 z:10 页面容器整体压住，表现为**弹层看得见但所有点击落在页面上**（Playwright actionability 报 covered-by，elementFromPoint 实证）。修复：lw `popover.tsx` 的 PopoverContent 与 `dropdown-menu.tsx` 的 popupClassName 补 `layer-popover`（z 10000，LA 原版浮层都有；tooltip/sheet/dialog/alert-dialog/select 移植时已带）。浏览器实测：删除确认弹层点击恢复可用。
+
+### 8.1 批次 A（TASKS.md 首批）落地：A1 attention + A2 模型元数据真实解析（2026-09-28）
+- **A2 模型元数据真实解析（铁律整改完成，PROJECT_CONTEXT 十.4 项关闭）**：`modelFactory.buildModel` 不再写死 `contextWindow: 128000 / maxTokens: 8192 / input: ["text","image"]`；`ProviderConfig` 新增 `contextWindow?/maxOutputTokens?/supportsImage?`，由 `App.buildTurnOptions`（与自动化派发）从模型目录透传。未知语义：`contextWindow` 传 **0**（pi-ai `clampMaxTokensToContext` 对 `<=0` 跳过钳制；容量面板同样以 `<=0` 不渲染）、`maxTokens` 传 **0**（openai 兼容适配器 `if (options?.maxTokens)` 即不发送该字段）、**anthropic-messages 例外**——其 `max_tokens` 为协议必填且 pi-ai 会 `Math.max(1,…)` 兜成 1 token，故未声明时用请求级常量 `ANTHROPIC_REQUIRED_MAX_TOKENS = 32000`（文档注明非元数据、UI 不展示）、`input` 只在 `supportsImage === true` 时含 `image`。测试 `modelFactory.test.mjs` 7 例（含「严禁回退写死值」回归断言），providers 套件 11→18。
+- **A1 回合状态条 attention 强制展开 + 隐藏窗口停表**：`turnActivity.ts` 新增 `isAttentionRequired(group, pendingApproval)`（判据：会话级 `pendingApproval` 非空，或轮内 `ask_user`/`exit_plan_mode` 类工具处于 running——等人类工具运行中即表示在等人；未知工具名不臆测）与 `effectiveWorkMs(startedAt, nowMs, hiddenSpans)`（隐藏时段按与轮区间求交集扣除，乱序/倒置/越界容忍、结果非负）。UI：`TurnGroupView` 加 `pendingApproval`/`hiddenSpans` props——attention 时状态条文案「等待你的决定」（i18n `turnAwaitingDecision`）、`lockOpen` 强制展开且按钮 disabled 不渲染箭头、DOM 标 `data-attention="true"`；`MessageList` 以 `visibilitychange` 维护隐藏时段 ref 并下传实时轮；`App` 透传 `state.pendingApproval`。测试 `turnActivity.test.mjs` 15→29（attention 四态 + 停表交集/边界 6 例）。
