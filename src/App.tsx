@@ -15,6 +15,13 @@ import { MemoryPanel } from "./components/memory/MemoryPanel";
 import { SkillsHubPage } from "./components/skills/SkillsHubPage";
 import { Toaster } from "./components/lw/ui/toaster";
 import { TaskProgressBar } from "./components/chat/TaskProgressBar";
+import {
+  isNotificationSoundEnabled,
+  playNotificationSound,
+  sendSystemNotification,
+  summarizeOutcome,
+} from "./lib/chat/taskNotifications";
+import { subscribeTaskTerminal, type TaskTerminalEvent } from "./lib/chat/conversationPool";
 import { useConfirmDialog } from "./components/ui/ConfirmDialog";
 import { toast } from "./components/lw/ui/toast";
 import { useHubSettings } from "./store/hubSettingsStore";
@@ -684,6 +691,31 @@ export default function App() {
       unlisten?.();
     };
   }, []);
+
+  // ---- 后台任务完成通知（E1，对齐 ZCode taskNotificationOrchestrator）----
+  // 触发：任务跑到终态且（不是当前正在看的任务 或 窗口不可见）；同轮去重。
+  const notifiedRunsRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const handle = (event: TaskTerminalEvent) => {
+      // 审批挂起的「终态」不是真终态——用户决策后还会继续，不通知（角标由 E2 处理）
+      if (event.awaitingDecision) return;
+      const runKey = `${event.taskId}:${event.outcome}:${event.lastAssistantText?.slice(0, 40) ?? ""}`;
+      if (notifiedRunsRef.current.has(runKey)) return;
+      notifiedRunsRef.current.add(runKey);
+      // 上限保护：Set 无限增长没有意义，保留最近 200 条
+      if (notifiedRunsRef.current.size > 200) {
+        notifiedRunsRef.current = new Set(Array.from(notifiedRunsRef.current).slice(-100));
+      }
+      const isActiveVisible = event.taskId === activeTaskId && document.visibilityState === "visible";
+      if (isActiveVisible) return; // 用户正在看的任务完成：不打扰
+      const task = useAppStore.getState().tasks.find((t) => t.id === event.taskId);
+      const title = task?.title ?? "后台任务";
+      const body = summarizeOutcome(event.outcome, event.lastAssistantText, event.error);
+      void sendSystemNotification(title, body);
+      if (isNotificationSoundEnabled()) playNotificationSound();
+    };
+    return subscribeTaskTerminal(handle);
+  }, [activeTaskId]);
 
   // 编辑重发后的强制贴底（对齐 LiveAgent stickToBottom on run start）+ 回退 toast。
   const [followSignal, setFollowSignal] = useState(0);

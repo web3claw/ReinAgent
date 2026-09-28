@@ -710,3 +710,16 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **UI**：`CompactionBand.tsx`（running shimmer 文案 / settled 可展开 seam：chips「已压缩 N 条消息」+ 摘要 markdown，全部语义变量 + prefers-reduced-motion 退化）；`TurnGroupView` 轮首 compact 条目渲染为 band、activity 渲染跳过之；`/compact` 接真实现（无内容 toast 诚实提示）。
 - **Tauri 实测**：多轮任务（5 轮对话）`/compact` → 压缩带「已压缩 1 条消息」正确渲染、摘要落 SQLite、console 零 compaction 错误；2 轮任务 `/compact` 诚实报「没有可压缩的轮」。**实测抓出并修复 3 个 bug**：maxSteps:1 截断摘要（空内容）、coveredCount 数据链断（恒 0）、初版 compact-break 语义（压过一轮后永远不能再压）。
 - 验证：`tsc` 0、`build` ✓、test:chat 118→**128**（compaction 11 例）、cargo 138。
+
+### 8.5 批次 E（通知与红点）落地（2026-09-28，P0 收尾）
+- **E1 后台任务完成系统通知 + 提示音**：
+  - Rust：`tauri-plugin-notification = "2"`（capabilities 加 `notification:default`，lib.rs 注册插件）。
+  - 前端 `src/lib/chat/taskNotifications.ts`：`sendSystemNotification`（权限请求 + 发送，Web 模式静默跳过）、`playNotificationSound`（WebAudio 合成双音 880→1320Hz，无音频资源依赖，失败静默）、`summarizeOutcome`（终态摘要：错误原文/已停止/末条 assistant 文本截 120 字）、开关持久化 kv `reinagent-notification-sound`（缺省开）。
+  - 池：`refreshStreamingSet` 里检测「上一轮在流式、现在不在」的任务 → `subscribeTaskTerminal` 发终态事件（done/error/stopped + 末条 assistant 文本 + error + **awaitingDecision 标记**——审批挂起不算真终态）。
+  - App 接线：订阅终态 → 「不是当前可见任务」才通知（`activeTaskId` + `document.visibilityState` 双判）→ 系统通知 + 提示音；runKey 去重（taskId+outcome+正文前 40 字），Set 上限 200 防泄漏。
+  - 设置页：基础设置加「任务提示音」开关（WebAudio 播放开关，系统通知始终开）。
+- **E2 侧栏审批红点（TaskInteractionBadge 最小版）**：
+  - 池：`subscribePendingApprovals` / `getPendingApprovalTaskIds`（与流式集合同款签名通知，只有集合变化才重算；挂进 flushNotify）。
+  - ProjectList 两类任务行（项目任务行 + 通用任务行）渲染琥珀色脉冲点（`--status-warn` + animate-pulse，title=approvalRequiredBadge）；点击任务即进入处理（现有行为）。
+- **Tauri 实测**：任务 A 发消息后立即切到任务 B → A 完成（done）触发通知链路、console 零错误；模块/开关/订阅全部验证。**系统通知弹窗本体在 Windows 通知中心**（首次会请求授权），提示音为可听验证项。
+- 验证：`tsc` 0、`build` ✓、五套前端测试全绿（128/43/18/6/12）+ hub 57 + cargo **138**。

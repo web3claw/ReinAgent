@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Settings } from '../../lib/settings/store';
 import { SettingsStatus } from '../../lib/settings/useSettings';
 import { useTranslation } from '../../i18n';
+import { isNotificationSoundEnabled, setNotificationSoundEnabled } from '../../lib/chat/taskNotifications';
 import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
 import { useAppStore } from '../../store/useAppStore';
 import {
@@ -25,6 +26,7 @@ interface SettingsPageProps {
 
 export function SettingsPage({ settings, status, onChange, onBack }: SettingsPageProps) {
   const { t } = useTranslation();
+  const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'about'>('general');
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
@@ -84,6 +86,26 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
                   className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-dim)] transition-colors text-sm"
                 >
                   Toggle
+                </button>
+              </div>
+              <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{t('notificationSound')}</div>
+                  <div className="text-sm text-[var(--text-dim)]">{t('notificationSoundDesc')}</div>
+                </div>
+                <button
+                  onClick={() => {
+                    const next = !soundEnabled;
+                    setNotificationSoundEnabled(next);
+                    setSoundEnabled(next);
+                  }}
+                  role="switch"
+                  aria-checked={soundEnabled}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${soundEnabled ? 'bg-[var(--brand)]' : 'bg-[var(--border)]'}`}
+                >
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${soundEnabled ? 'translate-x-5' : ''}`}
+                  />
                 </button>
               </div>
             </div>

@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useSyncExternalStore } from 'react';
 import { useTranslation } from '../../i18n';
 import { useAppStore } from '../../store/useAppStore';
-import { subscribeStreaming, getStreamingTaskIds } from '../../lib/chat/conversationPool';
+import { subscribeStreaming, getStreamingTaskIds, subscribePendingApprovals, getPendingApprovalTaskIds } from '../../lib/chat/conversationPool';
 import { kvGet, kvGetJSON, kvSet, kvSetJSON } from '../../lib/storage/db';
 import { Tooltip } from '../ui/Tooltip';
 import {
@@ -158,6 +158,11 @@ export function ProjectList({
     getStreamingTaskIds().join(",")
   );
   const streamingTaskIds = new Set(streamingSignature ? streamingSignature.split(",") : []);
+  // 挂起审批集合（E2 红点）：任务等待用户批准工具调用时，行上显示琥珀点
+  const pendingApprovalSignature = useSyncExternalStore(subscribePendingApprovals, () =>
+    getPendingApprovalTaskIds().join(",")
+  );
+  const pendingApprovalTaskIds = new Set(pendingApprovalSignature ? pendingApprovalSignature.split(",") : []);
   const updateTaskTitle = useAppStore((state) => state.updateTaskTitle);
   const deleteTask = useAppStore((state) => state.deleteTask);
   const toggleTaskPin = useAppStore((state) => state.toggleTaskPin);
@@ -570,6 +575,7 @@ export function ProjectList({
                             );
                           }
 
+                          const needsApproval = pendingApprovalTaskIds.has(task.id);
                           return (
                             <div
                               key={task.id}
@@ -583,6 +589,13 @@ export function ProjectList({
                                   : "text-[var(--sidebar-text-active)] hover:bg-[var(--sidebar-hover)]"
                               }`}
                             >
+                              {needsApproval ? (
+                                <span
+                                  className="absolute left-1 w-1.5 h-1.5 rounded-full bg-[var(--status-warn)] animate-pulse"
+                                  title={t("approvalRequiredBadge")}
+                                  aria-label={t("approvalRequiredBadge")}
+                                />
+                              ) : null}
                               <div className="flex items-center shrink-0 mr-1">
                                 <Tooltip title={isPinned ? t("unpin") : t("pin")} side="top">
                                   <button
@@ -788,17 +801,25 @@ export function ProjectList({
 
               const isConfirmingDelete = pendingDeleteTaskId === task.id;
               const isPinned = !!task.pinned;
+              const needsApproval = pendingApprovalTaskIds.has(task.id);
 
               return (
                 <div
                   key={task.id}
                   onClick={() => setActiveTaskId(task.id)}
-                  className={`flex items-center justify-between w-full px-2.5 py-1.5 rounded-md transition-colors text-base text-left group cursor-pointer ${
+                  className={`relative flex items-center justify-between w-full px-2.5 py-1.5 rounded-md transition-colors text-base text-left group cursor-pointer ${
                     isActive
                       ? 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-active)] font-medium'
                       : 'text-[var(--sidebar-text-active)] hover:bg-[var(--sidebar-hover)]'
                   }`}
                 >
+                  {needsApproval ? (
+                    <span
+                      className="absolute left-0.5 w-1.5 h-1.5 rounded-full bg-[var(--status-warn)] animate-pulse"
+                      title={t("approvalRequiredBadge")}
+                      aria-label={t("approvalRequiredBadge")}
+                    />
+                  ) : null}
                   {/* Left: Pin Button (hover or when pinned) */}
                   <div className="flex items-center shrink-0 mr-1.5">
                     <Tooltip title={isPinned ? t("unpin") : t("pin")} side="top">

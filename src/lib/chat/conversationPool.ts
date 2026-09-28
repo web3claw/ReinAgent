@@ -230,6 +230,7 @@ function notify(entry: PoolEntry) {
 function flushNotify(entry: PoolEntry) {
   for (const listener of entry.listeners) listener();
   refreshStreamingSet();
+  refreshPendingApprovalSet();
 }
 
 function schedulePersist(entry: PoolEntry) {
@@ -472,9 +473,83 @@ function refreshStreamingSet() {
     .sort();
   const signature = ids.join(",");
   if (signature !== streamingSignature) {
+    // 终态检测：上一轮在流式、现在不在的任务 = 刚跑到终态（完成/失败/停止）。
+    // 通知编排（E1）在 App 层订阅此事件——池只负责「谁刚结束」这一事实。
+    const before = new Set(streamingSignature ? streamingSignature.split(",") : []);
+    for (const id of before) {
+      if (ids.includes(id)) continue;
+      const entry = entries.get(id);
+      if (!entry) continue;
+      const outcome =
+        entry.state.status === "error"
+          ? "error"
+          : entry.state.messages.some((m) => m.status === "stopped")
+            ? "stopped"
+            : "done";
+      const lastAssistant = [...entry.state.messages].reverse().find((m) => m.role === "assistant");
+      const pending = entry.state.pendingApproval;
+      const terminal = {
+        taskId: id,
+        outcome: outcome as "done" | "error" | "stopped",
+        lastAssistantText: lastAssistant?.text,
+        error: entry.state.error,
+        /** 审批仍挂起的「终态」不是真终态（用户还要回来决策）——标记给通知层判断 */
+        awaitingDecision: pending !== null && pending !== undefined,
+      };
+      for (const handler of terminalListeners) {
+        try {
+          handler(terminal);
+        } catch (err) {
+          console.error("[pool] terminal handler failed:", err);
+        }
+      }
+    }
     streamingSignature = signature;
     for (const listener of streamingListeners) listener();
   }
+}
+
+/** 任务终态事件（刚离开流式集合的任务）。 */
+export interface TaskTerminalEvent {
+  taskId: string;
+  outcome: "done" | "error" | "stopped";
+  lastAssistantText?: string;
+  error?: string;
+  /** 审批挂起中（不是真完成——用户决策后还会有后续） */
+  awaitingDecision: boolean;
+}
+const terminalListeners = new Set<(event: TaskTerminalEvent) => void>();
+
+export function subscribeTaskTerminal(listener: (event: TaskTerminalEvent) => void): () => void {
+  terminalListeners.add(listener);
+  return () => terminalListeners.delete(listener);
+}
+
+// ---- 挂起审批集合（侧栏红点；对齐 ZCode TaskInteractionBadge 的最小可用版）----
+// 与流式集合同款签名通知：只有集合变化才触发侧栏重算。
+
+let pendingApprovalSignature = "";
+const pendingApprovalListeners = new Set<() => void>();
+
+function refreshPendingApprovalSet() {
+  const ids = Array.from(entries.values())
+    .filter((e) => e.state.pendingApproval !== null && e.state.pendingApproval !== undefined)
+    .map((e) => e.taskId)
+    .sort();
+  const signature = ids.join(",");
+  if (signature !== pendingApprovalSignature) {
+    pendingApprovalSignature = signature;
+    for (const listener of pendingApprovalListeners) listener();
+  }
+}
+
+export function subscribePendingApprovals(listener: () => void): () => void {
+  pendingApprovalListeners.add(listener);
+  return () => pendingApprovalListeners.delete(listener);
+}
+
+export function getPendingApprovalTaskIds(): string[] {
+  return pendingApprovalSignature ? pendingApprovalSignature.split(",") : [];
 }
 
 export function subscribeStreaming(listener: () => void): () => void {

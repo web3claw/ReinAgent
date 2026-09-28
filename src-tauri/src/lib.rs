@@ -38,7 +38,8 @@ pub fn run() {
         tauri::Builder::default()
             .manage(TerminalState::default())
             .plugin(tauri_plugin_opener::init())
-            .plugin(tauri_plugin_store::Builder::new().build()),
+            .plugin(tauri_plugin_store::Builder::new().build())
+            .plugin(tauri_plugin_notification::init()),
     )
     .setup(|app| {
         // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
