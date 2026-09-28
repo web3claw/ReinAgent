@@ -497,7 +497,7 @@ function refreshStreamingSet() {
         outcome: outcome as "done" | "error" | "stopped",
         lastAssistantText: lastAssistant?.text,
         error: entry.state.error,
-        /** 审批仍挂起的「终态」不是真终态（用户还要回来决策）——标记给通知层判断 */
+        /** 审批挂起中（不是真完成——用户决策后还会有后续） */
         awaitingDecision: pending !== null && pending !== undefined,
       };
       for (const handler of terminalListeners) {
@@ -507,15 +507,53 @@ function refreshStreamingSet() {
           console.error("[pool] terminal handler failed:", err);
         }
       }
+      // 聊天后记忆抽取（P1-8，对齐 LA：每轮成功结束后 fire-and-forget，
+      // 历史已持久化【conversation_sync 在状态更新时防抖落库】；失败不阻塞聊天）。
+      if (outcome === "done" && !terminal.awaitingDecision) {
+        void maybeExtractMemory(id, entry);
+      }
     }
     streamingSignature = signature;
     for (const listener of streamingListeners) listener();
   }
 }
 
+/**
+ * 聊天后记忆抽取（P1-8）：终态 done 时由 refreshStreamingSet 触发。
+ * 模型复用当轮 sendOptions 的 provider 配置（主模型凭证）；faux 测试源跳过。
+ */
+async function maybeExtractMemory(taskId: string, entry: PoolEntry): Promise<void> {
+  try {
+    const options = entry.sendOptions;
+    if (!options || options.source === "faux") return; // 测试模型不产记忆
+    const config = options.config;
+    if (!config?.apiKey || !config?.modelId) return;
+    const { buildModel } = await import("../providers/modelFactory");
+    const { getStreamFnForApi } = await import("../providers/runAgentTurn");
+    const { requestMemoryExtraction } = await import("./memory/extractionController");
+    const model = buildModel(config);
+    const stream = await getStreamFnForApi(model.api);
+    requestMemoryExtraction({
+      taskId,
+      sessionId: taskId,
+      workspaceRoot: options.workspaceRoot,
+      messages: entry.state.messages,
+      model: {
+        model,
+        stream,
+        api: model.api,
+        label: model.provider || "openai-completions",
+        getApiKey: () => config.apiKey,
+        thinkingLevel: undefined,
+      },
+    });
+  } catch (err) {
+    console.warn("[pool] memory extraction dispatch failed (non-blocking):", err);
+  }
+}
+
 /** 任务终态事件（刚离开流式集合的任务）。 */
-export interface TaskTerminalEvent {
-  taskId: string;
+export interface TaskTerminalEvent {  taskId: string;
   outcome: "done" | "error" | "stopped";
   lastAssistantText?: string;
   error?: string;

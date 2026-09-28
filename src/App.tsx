@@ -60,6 +60,8 @@ import { getTools } from "./lib/agent/tools";
 import { CheckpointRewindProvider, formatCheckpointRewoundNotification } from "./lib/chat/checkpointRewind";
 import { buildOutgoingPayload } from "./lib/chat/attachments";
 import { appendMentionBlock, resolveMentions } from "./lib/chat/mentionResolver";
+import { createMemoryOrganizerService, installMemoryOrganizerService } from "./lib/memory/organizer/service";
+import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, PanelLeftClose, PanelLeft, AlertTriangle
@@ -85,6 +87,8 @@ export default function App() {
 
   const { t, locale } = useTranslation();
   const { settings, status, update } = useSettings();
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
   
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   useEffect(() => {
@@ -504,6 +508,103 @@ export default function App() {
         ),
     [providers],
   );
+
+  // P1-8：记忆 Organizer 调度服务（Run Now / 定时 one-shot）。providers/settings
+  // 变化时重建（deps 引用最新值）；卸载 dispose 并摘除单例。
+  useEffect(() => {
+    const service = createMemoryOrganizerService({
+      getSettings: () => useHubSettings.getState().settings.memory,
+      advanceSchedule: (nowMs) => {
+        useHubSettings.setState((prev) => {
+          const organizerEnabled =
+            prev.settings.memory.organizerEnabled &&
+            prev.settings.memory.organizerSchedule.frequency !== "none";
+          const nextRunAt = organizerEnabled
+            ? computeNextMemoryOrganizerRunAt(prev.settings.memory.organizerSchedule, nowMs + 1_000)
+            : null;
+          return {
+            settings: {
+              ...prev.settings,
+              memory: {
+                ...prev.settings.memory,
+                organizerLastRunAt: nowMs,
+                organizerNextRunAt: nextRunAt,
+              },
+            },
+          };
+        });
+      },
+      resolveModelDeps: async (memory) => {
+        const selected = memory.organizerModel;
+        const providerId = selected?.customProviderId?.trim() ?? "";
+        const modelId = selected?.model?.trim() ?? "";
+        // organizerModel 未配置（或供应商已不存在）→ 回落主对话模型（LA fallback 语义）
+        if (providerId && modelId) {
+          const provider = providers.find((item) => item.id === providerId);
+          if (provider) {
+            if (!provider.apiKey.trim()) {
+              throw new Error(`记忆整理模型供应商 API Key 为空：${provider.name || provider.id}`);
+            }
+            const apiFormatToType: Record<string, string> = {
+              "openai-chat-completions": "openai",
+              "openai-completions": "openai",
+              "openai-responses": "openai",
+              "anthropic-messages": "anthropic",
+              "google-generative-ai": "gemini",
+            };
+            const { buildModel } = await import("./lib/providers/modelFactory");
+            const { getStreamFnForApi } = await import("./lib/providers/runAgentTurn");
+            const model = buildModel({
+              provider: (apiFormatToType[provider.apiFormat] ?? "openai") as any,
+              apiKey: provider.apiKey,
+              modelId,
+              baseUrl: provider.baseUrl,
+            });
+            const stream = await getStreamFnForApi(model.api);
+            return {
+              model,
+              stream,
+              api: model.api,
+              label: `${provider.id}/${modelId}`,
+              getApiKey: () => provider.apiKey,
+              thinkingLevel: undefined,
+            };
+          }
+        }
+        const fallback = settingsRef.current;
+        if (!fallback.apiKey?.trim()) {
+          throw new Error("主对话模型未配置 API Key，且未选择独立的记忆整理模型。");
+        }
+        const { buildModel } = await import("./lib/providers/modelFactory");
+        const { getStreamFnForApi } = await import("./lib/providers/runAgentTurn");
+        const model = buildModel({
+          provider: fallback.provider as any,
+          apiKey: fallback.apiKey,
+          modelId: fallback.modelId,
+          baseUrl: fallback.baseUrl,
+        });
+        const stream = await getStreamFnForApi(model.api);
+        return {
+          model,
+          stream,
+          api: model.api,
+          label: `${fallback.provider}/${fallback.modelId}`,
+          getApiKey: () => fallback.apiKey,
+          thinkingLevel: undefined,
+        };
+      },
+      getWorkspaceRoot: () => effectiveWorkspaceRoot || "",
+    });
+    installMemoryOrganizerService(service);
+    // 调试/测试入口：CDP 可直接验证执行链（生产无害——仅引用已装实例）
+    (window as any).__memoryOrganizerPoke = () => service.poke();
+    (window as any).__memoryOrganizerConfigure = () => service.configure();
+    service.configure();
+    return () => {
+      installMemoryOrganizerService(null);
+      service.dispose();
+    };
+  }, [providers, effectiveWorkspaceRoot]);
 
   const currentMessagesRef = useRef(state.messages);
   currentMessagesRef.current = state.messages;

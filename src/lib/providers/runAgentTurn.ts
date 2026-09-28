@@ -161,7 +161,7 @@ const APPROVAL_HINT_PROMPT =
  * 且对 DeepSeek 等协议会落入「显式禁用思考」分支（thinking: disabled），
  * 导致模型永远不输出思考过程。
  */
-async function getStreamFnForApi(api: string) {
+export async function getStreamFnForApi(api: string) {
   if (api === "anthropic-messages") {
     const mod = await import("@earendil-works/pi-ai/api/anthropic-messages");
     return mod.streamSimple ?? mod.stream;

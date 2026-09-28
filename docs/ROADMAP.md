@@ -159,7 +159,7 @@
 11. ~~**工具级策略**（allow/ask/deny 三态 + Hub 内切换）~~ ✅ 2026-09-28（ee7fb11：任务级 toolPolicies + MCP Hub 卡 serverPolicy 切换）。
 12. ~~**AGENTS.md + gitStatus 注入**（落位 meta_user 块）~~ **主体** ✅ 2026-09-28（3d49fc7：agents_md.rs 四级回退扫描 + meta_user 注入）；gitStatus 快照未纳入（需异步 git + 缓存，见 PROMPTS.md 待办）。
 13. ~~**用量统计图表**（日趋势 / 模型分布 / 热力图）~~ ✅ 2026-09-28（**复刻 ZCode 一致**：源码直移 settings/usage-stats + Recharts + 52 周热力图每日/每周/累计 + 汇总条五指标 streak/peak/最长聊天 + 每日分模型趋势 + donut 份额；Rust 快照同形 AppUsageSnapshot）。未做增量：Coding Plan 远端配额面板、工具用量榜。
-14. **记忆 Organizer 接线 + Extraction 管线**（Rust 表/命令与 UI 已备，缺 LLM 编排与聊天后钩子）。
+14. **记忆 Organizer 接线 + Extraction 管线**（**Extraction 批** ✅ 2026-09-28：LA 形态管线全链路——聊天后隐藏回合 + SubmitMemoryPlan 校验 + memory_apply_batch 事务落库 + 门控/coalesce 控制器 + pool 终态钩子，实测落库；**待做**：Organizer 编排批——聚类/合并/风控闸/调度挂载/Run Now）。
 15. **排队消息面板 + 任务通知**：忙时排队（表头/上移/编辑撤回/打断并执行/删除，§11.5）+ 完成系统通知/提示音/侧栏交互角标（倒计时填充、hover snooze，§11.7）。
 
 ### P2 —— 完善与打磨

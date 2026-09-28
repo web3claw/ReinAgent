@@ -821,3 +821,23 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 - **Tauri 实测**：真实回填 77 条历史记录；模型名纠正后三个模型正确分列（deepseek-v4.1-flash 73.1% / glm-5.3-flash 26.9% / deepseek-chat 0%）；设置页导航 → 汇总条/热力图/趋势/环形全部渲染；范围切换正常。
 - 验证：Rust 153/153（+3）+ `tsc` 0 + 前端 310/310。
 - **8.11.1 追加修复③（趋势图只显示有数据的天）**：dailyModelUsage 原 SQL GROUP BY 只返回有用量行的天（两天数据 = 两个点连线）；ZCode 的 30d/7d 协议结果是**连续每日序列**（其源码注释专门记过这个回归）。修复：usage_query 按 range 补齐——7d/30d 从范围起点到今天每天一行（无数据 models 空），all 从最早数据日补。测试断言同步（7d=7 天、all=4 天连续）。
+
+## 十五、P1-8 记忆 Extraction 接线（2026-09-28，Tauri 实测闭环）
+- **调研定论**：LA 有完整 Organizer（聚类+合并决策+风控闸+确认队列）与 Extraction（每轮后隐藏回合+SubmitMemoryPlan+事务 batch）；ZCode 只有 Extraction（受限子代理直写 memory 目录）。我们接 **LA 形态**。
+- **已移植件**（记忆 Hub 移植时随行）：Rust organize.rs 全套命令、memory_apply_batch、schema（confidence/evidence 契约）、MemorySettingsDrawer/OrganizerHistoryModal、config.ts 常量、memoryManagerTool。
+- **本批新增（Extraction 管线）**：
+  - `prompts/extraction.ts` + `extraction/gating.ts` + `extraction/planTool.ts` + `extraction/context.ts`：LA 源码直移（仅 import 适配；tsc 全过后零逻辑改动）。
+  - `extraction/extractionEngine.ts`（自写，对齐 LA 流程）：隐藏 runTurn 嵌套回合（同子代理模式）——system=抽取提示词、user=自包含块序（指令→拒绝→候选→本轮已写→工作区变更→对话窗口，稳定前缀吃缓存）、工具=只读 MemoryManager+SubmitMemoryPlan；提交→validateSubmittedPlan→planToApplyBatchArgs→一次 memoryApplyBatch；45s 超时；候选加载失败退化空块继续（如实）。
+  - `chat/memory/extractionController.ts`：每会话至多一个在飞 run、新请求 coalesce、30s 节流、同一用户消息不重抽、LRU 128、短确认词 defer 到引擎裁决、fire-and-forget 绝不阻塞。
+  - **钩子**：pool.refreshStreamingSet 终态 done（非 awaitingDecision）→ maybeExtractMemory——复用当轮 sendOptions 的 provider 配置构建模型（faux 跳过），runAgentTurn 导出 getStreamFnForApi。
+- **⚠️ 坑**：validateSubmittedPlan 签名收整个 submission（非 items 数组）；记忆的 greeting/ack 门控在长度门控**之后**（2 字素「你好」报 too-short 而非 greeting——skip 等价）；⚠️ cat >> PROJECT_CONTEXT.md 时 cwd 漂移会把文件写到 src-tauri/ 下（已修正并 amend）。
+- **Tauri 实测**：发「commit message 用英文祈使句」→ 回合完成自动抽取 → memory_list 出现 `commit-message-style`（type=user/conf=high）。
+- **待做（Organizer 编排批）**：organizer service（scan→cluster→plan→gate→apply）+ prompts/organizer + useMemoryOrganizer 调度挂载 + Run Now 接线；MemorySettingsDrawer 的 organizer 模型选择。
+- 验证：前端 314/314（+4 门控）+ `tsc` 0。
+
+## 十六、P1-8 Organizer 编排批（2026-09-28，编排全链路实测）
+- **移植**：`prompts/organizer.ts` + `organizer/pipeline.ts`（LA 直移，import 适配）+ `organizer/service.ts`（**适配重写**：LA runAssistantWithTools → 我们 runTurn 嵌套；provider 解析注入 `resolveModelDeps`（App 层实现：organizerModel→providers 列表，缺失回落主对话模型）；debug logger 去）。`lib/shared/value.ts` 随 pipeline 引入。
+- **挂载**：App.tsx effect 装 `createMemoryOrganizerService`（deps：getSettings/advanceSchedule/resolveModelDeps/getWorkspaceRoot），providers/workspace 变化重建；`window.__memoryOrganizerPoke` 调试入口。**Run Now**：Drawer handleRunNow 先 `memoryOrganizeRunCreate({trigger:"manual"})`（pending）再 poke 领取（⚠️ 只 poke 不创建——organizerEnabled=false 时 due_claim 不建 run，实测踩过）。
+- **编排语义（对齐 LA）**：scan（分页列全+scope 过滤+逐条读 body）→ cluster（≤8 条结构分簇，>8 条 LLM 主题聚类失败回退结构）→ plan（每簇一轮隐藏 LLM：ORGANIZER_PLAN_TOOL 捕获 + 只读 MemoryManager）→ gate（buildDecisions 风控）→ apply（manual=全进待确认队列；scheduled=仅 low-risk 自动 batch）→ run 记录全 phase 落库 + advanceSchedule。
+- **实测**：Run Now → run 创建 → scan(input=1)→cluster→plan 全链路真实执行；plan 阶段主模型未提交整理工具（弱模型工具遵循问题，LA 同有 parseFailures 跳过路径）→ 失败如实落 run 记录（phase=plan、错误 summary）。⚠️ 已知缺口：① report.reviewItems 未随 organize_due_complete 持久化（Rust 序列化面，历史弹窗看详情时补）；② 裸调 due_claim 置 running 后无人执行会卡 6h（stale 回收窗口，正常路径无此形态——调试残留）。
+- 验证：前端 314/314 + `tsc` 0（service/pipeline/prompts 全编译）。

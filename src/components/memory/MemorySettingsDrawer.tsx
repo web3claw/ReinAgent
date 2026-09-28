@@ -17,9 +17,11 @@ import { AlertTriangle, History, RefreshCw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type MemoryQuotaSummaryResponse,
+  memoryOrganizeRunCreate,
   memoryQuotaSummary,
 } from "../../lib/memory/api";
 import { deriveQuotaLadder } from "../../lib/memory/organizer/quota";
+import { pokeMemoryOrganizer } from "../../lib/memory/organizer/service";
 import { AgentActivationSwitch } from "../lw/settings/AgentActivationSwitch";
 import { ModelPicker, type ModelPickerOption } from "../lw/settings/ModelPicker";
 import {
@@ -300,14 +302,26 @@ export function MemorySettingsDrawer(props: {
     }
   }
 
-  // Organizer 一期边界：不伪造整理运行，仅给出诚实的版本提示。
+  // Run Now（P1-8）：poke 调度服务（memoryOrganizeRunCreate 认领由 service tick 完成），
+  // 结果在整理历史（OrganizerHistoryModal）中查看。
   function handleRunNow() {
     setOrganizerFeedback(null);
-    if (!settings.memory.organizerModel) {
-      setOrganizerFeedback(t("settings.memoryOrganizerNoModel"));
-      return;
+    // 对齐 LA：Run Now 显式创建 manual run（pending），再 poke 让服务领取执行。
+    // organizerModel 未选时回落主对话模型（service.resolveModelDeps fallback 语义）。
+    void memoryOrganizeRunCreate({
+      trigger: "manual",
+      model: settings.memory.organizerModel,
+      scope: settings.memory.organizerScope,
+      mode: settings.memory.organizerMode,
+    }).then(() => pokeMemoryOrganizer()).catch((err) => {
+      console.error("[memory-organizer] run create failed:", err);
+      toast.error(String(err).slice(0, 120));
+    });
+    if (true) {
+      toast.success(t("settings.memoryOrganizerStarted"));
+    } else {
+      toast.error(t("settings.memoryOrganizerPhase2"));
     }
-    toast.error(t("settings.memoryOrganizerPhase2"));
   }
 
   return (
