@@ -312,6 +312,10 @@ export function toolKindLabel(toolName: string, locale: string = "zh-CN"): strin
     write_file: [zh ? "写入" : "Write", "write"],
     edit_file: [zh ? "编辑" : "Edit", "edit"],
     exec_command: [zh ? "终端" : "Terminal", "exec"],
+    glob: [zh ? "匹配" : "Glob", "glob"],
+    grep: [zh ? "搜索" : "Grep", "grep"],
+    delete_file: [zh ? "删除" : "Delete", "delete"],
+    todo_write: [zh ? "任务清单" : "Todo", "todo"],
     calculate: [zh ? "计算" : "Calculate", "calc"],
   };
   const hit = known[toolName];
@@ -326,6 +330,10 @@ export function toolKindCode(toolName: string): string {
     write_file: "write",
     edit_file: "edit",
     exec_command: "exec",
+    glob: "glob",
+    grep: "grep",
+    delete_file: "delete",
+    todo_write: "todo",
     calculate: "calc",
   };
   return known[toolName] ?? "generic";

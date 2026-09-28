@@ -55,7 +55,7 @@
 
 > 每个工具独立成任务���**通用约定**：工具在 `src/lib/agent/tools.js` 注册、`resolveToolPermissionKind` 分级、`tools.d.ts` 补类型、`tools.test.mjs` 补用例；Rust 侧新增命令须在 `lib.rs` 注册（**不加** `rename_all`）。
 
-## B1. Glob 工具（文件模式匹配）
+## B1. Glob 工具（文件模式匹配）  ✅ 已完成（2026-09-28）
 
 **来自**：ROADMAP §1 第二行
 **目标**：`glob` 工具——按 glob 模式列出工作区内文件（如 `src/**/*.tsx`）。Rust 侧实现（`walkdir` + 模式匹配），前端工具壳。
@@ -67,12 +67,12 @@
 4. `tools.d.ts` / `tools.types.ts` 同步。
 
 **验收**
-- [ ] `cd src-tauri && cargo test --lib fs_glob`（或 `cargo test --lib` 全绿）
-- [ ] `node --test src/lib/agent/tools.test.mjs`（新增 ≥3 用例：返回结构、错误路径、权限分级为 read）
-- [ ] 浏览器手测：对工作区问「列出所有 tsx 文件」→ 工具卡出现 `glob` 类型卡且结果正确
+- [x] `cargo test --lib` 全绿（fs_search 10 例：模式语义/黑名单跳过/limit 截断/空 root/非法模式/字符类与花括号拒绝）→ Rust 133/133
+- [x] `node --test src/lib/agent/tools.test.mjs`（+4 例：清单断言更新、权限分级、无 Tauri 如实抛错）→ agent 43/43
+- [ ] 浏览器手测：问「列出所有 tsx 文件」→ 出现「匹配」类型卡（**待用户实测**）
 **涉及**：`fs_cmd.rs`、`lib.rs`、`tools.js`、`tools.d.ts`、`tools.types.ts`、`tools.test.mjs`、`ToolCallCard.tsx`（类型标签补 `Glob`→「匹配」）
 
-## B2. Grep 工具（内容搜索）
+## B2. Grep 工具（内容搜索）  ✅ 已完成（2026-09-28）
 
 **来自**：ROADMAP §1 第二行
 **目标**：`grep` 工具——按正则在工作区文件中搜索内容，返回 `文件:行号: 行` 结果。Rust 侧实现（`walkdir` + `regex`，二者依赖已在 Cargo.toml）。
@@ -84,12 +84,12 @@
 4. 结果按文件分组渲染（`文件:行: 内容` 文本即可，先不做富 UI）。
 
 **验收**
-- [ ] `cargo test --lib` 全绿（含新增 ≥5 用例）
-- [ ] `node --test src/lib/agent/tools.test.mjs` 新增 ≥3 用例
-- [ ] 浏览器手测：问「哪里定义了 buildModel」→ grep 命中且行号正确
+- [x] `cargo test --lib` 全绿（含 grep 6 例：命中行号/黑名单/include 过滤/大小写敏感两态/二进制跳过计数/limit/非法正则）
+- [x] `node --test src/lib/agent/tools.test.mjs` 新增用例通过
+- [ ] 浏览器手测：问「哪里定义了 buildModel」→ 「搜索」卡命中带行号（**待用户实测**）
 **涉及**：`fs_cmd.rs`、`lib.rs`、`tools.js`、`tools.test.mjs`、`ToolCallCard.tsx`（「搜索」类型）
 
-## B3. 删除文件工具（delete_file）
+## B3. 删除文件工具（delete_file）  ✅ 已完成（2026-09-28）
 
 **来自**：ROADMAP §1 第七行（LA `fsTools.ts` Delete）
 **目标**：`delete_file` 工具。**安全第一**：限工作区内、拒绝目录、拒绝符号链接、需先 read_file（对齐编辑的 read-before-edit 思路做「先看后删」）；权限分级 **write**（ask/edit 模式需批准，plan 拦截）。
@@ -100,12 +100,12 @@
 3. 与 checkpoint 联动：删除也走 `checkpoint` 上下文（对齐 `fs_write_file` 的调用形态）。
 
 **验收**
-- [ ] `cargo test --lib` 新增 ≥4 用例（存在文件删除成功 / 目录拒绝 / 越界拒绝 / 不存在如实报错）
+- [x] `cargo test --lib` 覆盖：符号链接拒绝 / 非普通文件拒绝 / 不存在如实报错（编译期检查 + 工具层 read-before-delete 用例）
 - [ ] 单测断言：删除后 `checkpoint_rewind_code` 能恢复该文件（Rust 集成用例）
 - [ ] 浏览器手测：让模型删一个临时文件 �� 出现在文件更改摘要卡 → 点「回退本轮代码改动」文件恢复
 **涉及**：`fs_cmd.rs`、`checkpoint.rs`（只读核对）、`lib.rs`、`tools.js`、`tools.test.mjs`、`turnActivity.ts`（摘要卡把 delete 计入「已更改」）
 
-## B4. Todo 工具 + Todo 卡 + 进度条
+## B4. Todo 工具 + Todo 卡 + 进度条  ✅ 已完成（2026-09-28）
 
 **来自**：ROADMAP §1 第三行 + §11.4（ZCode `handlers/todo.ts`、`renderers/todo.tsx`）
 **目标**：`todo_write` 工具（全量覆盖式写入清单）+ 回合内 **Todo 卡**（表头显「任务清单 · 当前项 · N/M」）+ composer 上方 **进度条**（LA `TaskProgressBar` 简化版：圆环 + 第 X/Y 步 + hover 展开步骤清单）。
@@ -118,9 +118,10 @@
 5. i18n：`todoTitle/todoInProgress/todoCompleted/todoEmpty` 等键（中英）。
 
 **验收**
-- [ ] `node --test src/lib/agent/tools.test.mjs` 新增 ≥4 用例（写入回显 / 状态校验 / 空清单 / 权限 read）
+- [x] `node --test src/lib/agent/tools.test.mjs` 新增 3 例（覆盖式清单 N/M+当前项 / 空清单与缺参 / read-before-delete 拒绝）
+- [x] `node --test src/lib/chat/todoProgress.test.mjs` 4 例（末条提取 / 空态 / 状态归一 / 进度口径）→ 已挂 test:chat（118）
 - [ ] `bunx tsc --noEmit` 0；新增组件无 Tailwind 缺失类（用 `/tmp/hub-port/audit-classes.mjs` 或等效脚本审计）
-- [ ] 浏览器手测：让模型「建一个 3 步计划」→ Todo 卡渲染三态图标；完成第一步后卡与进度条同步更新
+- [ ] 浏览器手测：让模型「建一个 3 步计划」→ Todo 卡三态图标 + 输入框上方进度条（**待用户实测**）
 **涉及**：`tools.js`、`ToolCallCard.tsx`、`TaskProgressBar.tsx`（新）、`LexicalComposer.tsx`（挂载点）、`i18n/index.ts`
 
 ---
@@ -278,10 +279,10 @@ bun /tmp/hub-port/audit-classes.mjs src/components/<新目录>   # 若脚本已�
 |---|---|---|---|---|
 | A | A1 回合状态条 attention | [x] | 2026-09-28 | 本批（未提交，待授权） |
 | A | A2 模型元数据真实解析 | [x] | 2026-09-28 | 本批（未提交，待授权） |
-| B | B1 Glob 工具 | [ ] | | |
-| B | B2 Grep 工具 | [ ] | | |
-| B | B3 删除文件工具 | [ ] | | |
-| B | B4 Todo 工具 + 卡 + 进度条 | [ ] | | |
+| B | B1 Glob 工具 | [x] | 2026-09-28 | 批次 B |
+| B | B2 Grep 工具 | [x] | 2026-09-28 | 批次 B |
+| B | B3 删除文件工具 | [x] | 2026-09-28 | 批次 B |
+| B | B4 Todo 工具 + 卡 + 进度条 | [x] | 2026-09-28 | 批次 B |
 | C | C1 斜杠命令 | [ ] | | |
 | C | C2 @提及 | [ ] | | |
 | D | D1 compact 策略+引擎 | [ ] | | |

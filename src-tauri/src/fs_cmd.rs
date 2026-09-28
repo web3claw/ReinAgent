@@ -153,6 +153,37 @@ pub async fn fs_list_dir(path: String) -> Result<Vec<String>, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// 删除文件（对齐 LiveAgent fsTools 的 Delete）。
+/// 安全链：必须是普通文件（拒绝目录/符号链接）、删除前把前像写入检查点
+/// （使「回退本轮代码改动」能恢复被删文件）、失败如实上抛。
+#[tauri::command]
+pub async fn fs_delete_file(
+    path: String,
+    checkpoint: Option<crate::checkpoint::CheckpointCtx>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        let md = fs::symlink_metadata(&resolved)
+            .map_err(|e| format!("Failed to stat {}: {}", resolved.display(), e))?;
+        if md.file_type().is_symlink() {
+            return Err(format!(
+                "拒绝删除符号链接（可能是逃逸路径）: {}",
+                resolved.display()
+            ));
+        }
+        if !md.is_file() {
+            return Err(format!("只允许删除普通文件（目录请用终端命令）: {}", resolved.display()));
+        }
+        if let Some(ctx) = checkpoint.as_ref() {
+            capture_write_pre_image(&ctx, &resolved);
+        }
+        fs::remove_file(&resolved)
+            .map_err(|e| format!("Failed to delete {}: {}", resolved.display(), e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 #[tauri::command]
 pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {

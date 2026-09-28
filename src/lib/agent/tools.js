@@ -415,7 +415,194 @@ export function createTools(options) {
     },
   };
 
-  return [readFile, writeFile, editFile, listDir, execCommand];
+  // ---- Glob：按模式匹配文件路径（对齐 ZCode handlers/glob.ts）----
+  const globTool = {
+    name: "glob",
+    label: "匹配文件",
+    description:
+      "按 glob 模式匹配工作区内的文件路径（如 `src/**/*.tsx`、`**/*.md`）。\n" +
+      "- 语义：`*` 不跨目录、`**` 跨目录、`?` 单字符；不支持字符类 [ ] 与花括号（会如实报错）。\n" +
+      "- 自动跳过 .git / node_modules / target / dist 等目录；结果按路径排序，默认最多 500 条。\n" +
+      "- 查找文件内容请用 grep（比 exec_command 里拼 findstr/grep 更快更稳）。",
+    parameters: Type.Object(
+      {
+        pattern: Type.String({ description: "glob 模式（相对工作区根，如 src/**/*.ts）" }),
+        path: Type.Optional(Type.String({ description: "搜索根目录（默认当前工作区）" })),
+        limit: Type.Optional(
+          Type.Integer({ minimum: 1, maximum: 5000, description: "返回条数上限（默认 500）" }),
+        ),
+      },
+      { required: ["pattern"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const root = params.path ? resolveWorkspacePath(params.path, getWorkspace()) : getWorkspace();
+      const result = await invoke("fs_glob", {
+        root,
+        pattern: params.pattern,
+        limit: params.limit,
+      });
+      const lines = result.entries.map((e) => (e.is_dir ? e.path + "/" : e.path));
+      const text =
+        lines.length === 0
+          ? "No files matched."
+          : lines.join("\n") +
+            (result.truncated ? "\n…[truncated: 结果超出上限，请收窄模式]" : "");
+      return buildTextToolResult(
+        text,
+        {
+          root: result.root,
+          pattern: params.pattern,
+          matched: result.entries.length,
+          truncated: result.truncated,
+          entries: result.entries,
+        },
+        TOOL_LIMITS.listDirBytes,
+      );
+    },
+  };
+
+  // ---- Grep：按正则搜索文件内容（对齐 ZCode handlers/grep.ts）----
+  const grepTool = {
+    name: "grep",
+    label: "搜索内容",
+    description:
+      "按正则表达式搜索工作区文件内容，返回 `文件:行号: 内容`。\n" +
+      "- 自动跳过二进制文件、.git / node_modules 等目录、超过 2MB 的大文件（跳过数量如实回报）。\n" +
+      "- 默认大小写敏感；用 ignore_case 开启不敏感。include 可按 glob 限定文件（如 `src/**/*.ts`）。\n" +
+      "- 查找文件本身用 glob；不要用 exec_command 拼 findstr/grep。",
+    parameters: Type.Object(
+      {
+        pattern: Type.String({ description: "正则表达式（如 function \\w+）" }),
+        path: Type.Optional(Type.String({ description: "搜索根目录（默认当前工作区）" })),
+        include: Type.Optional(
+          Type.String({ description: "文件 glob 过滤（相对工作区根，如 src/**/*.ts）" }),
+        ),
+        ignore_case: Type.Optional(
+          Type.Boolean({ description: "是否忽略大小写（默认 false）" }),
+        ),
+        limit: Type.Optional(
+          Type.Integer({ minimum: 1, maximum: 2000, description: "命中条数上限（默认 200）" }),
+        ),
+      },
+      { required: ["pattern"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const root = params.path ? resolveWorkspacePath(params.path, getWorkspace()) : getWorkspace();
+      const result = await invoke("fs_grep", {
+        root,
+        pattern: params.pattern,
+        include: params.include,
+        ignoreCase: params.ignore_case,
+        limit: params.limit,
+      });
+      const lines = result.hits.map((h) => `${h.path}:${h.line}: ${h.text}`);
+      const skipped =
+        result.skipped_files > 0
+          ? `\n…[skipped ${result.skipped_files} file(s): binary or too large]`
+          : "";
+      const text =
+        lines.length === 0
+          ? `No matches found for /${params.pattern}/`
+          : lines.join("\n") +
+            (result.truncated ? "\n…[truncated: 命中超上限，请收窄模式或 include]" : "") +
+            skipped;
+      return buildTextToolResult(
+        text,
+        {
+          root: result.root,
+          pattern: params.pattern,
+          hits: result.hits.length,
+          truncated: result.truncated,
+          skippedFiles: result.skipped_files,
+        },
+        TOOL_LIMITS.listDirBytes,
+      );
+    },
+  };
+
+  // ---- 删除文件（对齐 LiveAgent fsTools Delete）----
+  const deleteFile = {
+    name: "delete_file",
+    label: "删除文件",
+    description:
+      "删除工作区内的一个普通文件。\n" +
+      "- You must read_file the file first — deleting what you have not read is refused by design.\n" +
+      "- 拒绝删除目录与符号链接；删除前的文件内容会进入本轮的代码检查点，用户可「回退本轮代码改动」恢复。\n" +
+      "- 批量/目录清理请用 exec_command。",
+    parameters: Type.Object(
+      {
+        path: Type.String({ description: "要删除的文件路径" }),
+      },
+      { required: ["path"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const targetPath = resolveWorkspacePath(params.path, getWorkspace());
+      if (!readPaths.has(targetPath)) {
+        throw new Error(
+          `File has not been read yet. Read it first before deleting it: ${targetPath}`,
+        );
+      }
+      await invoke("fs_delete_file", {
+        path: targetPath,
+        ...(checkpoint ? { checkpoint: { ...checkpoint, root: getWorkspace() } } : {}),
+      });
+      readPaths.delete(targetPath);
+      return buildTextToolResult(`Deleted ${targetPath}`, {
+        path: targetPath,
+        requestedPath: params.path,
+        deleted: true,
+      });
+    },
+  };
+
+  // ---- Todo：任务清单（对齐 ZCode handlers/todo.ts；随轮次落库，无需新持久化字段）----
+  const todoWrite = {
+    name: "todo_write",
+    label: "任务清单",
+    description:
+      "创建或更新本次会话的任务清单（**全量覆盖**语义：每次传入完整清单）。\n" +
+      "- 用于让用户看到你的计划与进度；复杂多步任务开始时先建清单，之后随进展更新状态。\n" +
+      "- 状态取值：pending（待办）/ in_progress（进行中，同一时刻最多一项）/ completed（已完成）。\n" +
+      "- 简单问答不要滥用清单。",
+    parameters: Type.Object(
+      {
+        todos: Type.Array(
+          Type.Object({
+            content: Type.String({ description: "任务描述（简短、可验证）" }),
+            status: Type.Union(
+              [Type.Literal("pending"), Type.Literal("in_progress"), Type.Literal("completed")],
+              { description: "状态" },
+            ),
+          }),
+          { description: "完整清单（覆盖式更新）" },
+        ),
+      },
+      { required: ["todos"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const todos = Array.isArray(params.todos) ? params.todos : [];
+      const done = todos.filter((t) => t.status === "completed").length;
+      const current = todos.find((t) => t.status === "in_progress");
+      const lines = todos.map(
+        (t) =>
+          `${t.status === "completed" ? "[x]" : t.status === "in_progress" ? "[>]" : "[ ]"} ${t.content}`,
+      );
+      const text = [
+        `清单已更新（${done}/${todos.length} 已完成${current ? `，当前：${current.content}` : ""}）`,
+        ...lines,
+      ].join("\n");
+      return buildTextToolResult(text, {
+        todos,
+        completed: done,
+        total: todos.length,
+      });
+    },
+  };
+
+  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite];
 }
 
 /**
@@ -450,6 +637,9 @@ export function resolveToolPermissionKind(name) {
   switch (name) {
     case "read_file":
     case "list_dir":
+    case "glob":
+    case "grep":
+    case "todo_write":
       return "read";
     case "exec_command":
       return "exec";

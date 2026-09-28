@@ -503,8 +503,18 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
   assert.ok(TOOLS.length >= 2, "默认工具数");
   assert.deepEqual(
     TOOLS.map((t) => t.name),
-    ["read_file", "write_file", "edit_file", "list_dir", "exec_command"],
-    "工具名与顺序",
+    [
+      "read_file",
+      "write_file",
+      "edit_file",
+      "list_dir",
+      "exec_command",
+      "glob",
+      "grep",
+      "delete_file",
+      "todo_write",
+    ],
+    "工具名与顺序（批次 B 扩军：glob/grep/delete_file/todo_write）",
   );
 
   const a = getTools();
@@ -522,6 +532,11 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
 // ---------------------------------------------------------------------------
 test("9 · resolveToolPermissionKind：read/write/exec 分级准确，未知工具保守视为 write", () => {
   assert.equal(resolveToolPermissionKind("read_file"), "read");
+  // 批次 B 新工具分级
+  assert.equal(resolveToolPermissionKind("glob"), "read", "glob 只读");
+  assert.equal(resolveToolPermissionKind("grep"), "read", "grep 只读");
+  assert.equal(resolveToolPermissionKind("todo_write"), "read", "todo_write 纯内存态");
+  assert.equal(resolveToolPermissionKind("delete_file"), "write", "delete_file 属写入类（需审批）");
   assert.equal(resolveToolPermissionKind("list_dir"), "read");
   assert.equal(resolveToolPermissionKind("write_file"), "write");
   assert.equal(resolveToolPermissionKind("edit_file"), "write");
@@ -529,4 +544,53 @@ test("9 · resolveToolPermissionKind：read/write/exec 分级准确，未知工�
   // 保守默认：未知/未来新增工具审批从紧（write 需批准、plan 模式拦截），绝不静默放权。
   assert.equal(resolveToolPermissionKind("some_future_tool"), "write");
   assert.equal(resolveToolPermissionKind(""), "write");
+});
+
+// ---------------------------------------------------------------------------
+// B 批工具：glob / grep / delete_file / todo_write（2026-09-28）
+// ---------------------------------------------------------------------------
+test("B1 · glob/grep：Tauri 不可达时如实抛错（Node 环境无 invoke）", async () => {
+  const glob = getTools({ workspaceRoot: "/tmp" }).find((t) => t.name === "glob");
+  const grep = getTools({ workspaceRoot: "/tmp" }).find((t) => t.name === "grep");
+  await assert.rejects(
+    () => glob.execute("c1", { pattern: "**/*.ts" }),
+    (err) => typeof err.message === "string" && err.message.length > 0,
+    "glob 在无 Tauri 环境应如实抛错（不伪造结果）",
+  );
+  await assert.rejects(() => grep.execute("c2", { pattern: "TODO" }));
+});
+
+test("B4 · todo_write：覆盖式清单 + N/M 统计 + 当前项回显", async () => {
+  const todo = getTools({ workspaceRoot: "/tmp" }).find((t) => t.name === "todo_write");
+  const res = await todo.execute("c3", {
+    todos: [
+      { content: "第一步", status: "completed" },
+      { content: "第二步", status: "in_progress" },
+      { content: "第三步", status: "pending" },
+    ],
+  });
+  const text = res.content[0].text;
+  assert.ok(text.includes("1/3 已完成"), `应显示 N/M 统计: ${text}`);
+  assert.ok(text.includes("当前：第二步"), `应回显当前项: ${text}`);
+  assert.ok(text.includes("[x] 第一步") && text.includes("[>] 第二步") && text.includes("[ ] 第三步"));
+  // 覆盖语义：再次传入较短清单后统计随之变化
+  const res2 = await todo.execute("c4", { todos: [{ content: "唯一项", status: "completed" }] });
+  assert.ok(res2.content[0].text.includes("1/1 已完成"), "覆盖式更新应生效");
+});
+
+test("B4 · todo_write：空清单/非法形状不崩（如实回显空清单）", async () => {
+  const todo = getTools({ workspaceRoot: "/tmp" }).find((t) => t.name === "todo_write");
+  const res = await todo.execute("c5", { todos: [] });
+  assert.ok(res.content[0].text.includes("0/0"), `空清单应如实回报: ${res.content[0].text}`);
+  const res2 = await todo.execute("c6", {}); // 缺 todos
+  assert.ok(res2.content[0].text.includes("0/0"), "缺参不应崩，如实回报空清单");
+});
+
+test("B3 · delete_file：未 read 先删被拒（read-before-delete 硬约束）", async () => {
+  const del = getTools({ workspaceRoot: "/tmp" }).find((t) => t.name === "delete_file");
+  await assert.rejects(
+    () => del.execute("c7", { path: "not-read-yet.txt" }),
+    (err) => /has not been read yet/.test(err.message),
+    "未读先删必须被拒",
+  );
 });

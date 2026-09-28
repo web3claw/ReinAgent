@@ -14,7 +14,7 @@
  */
 
 import { memo, useMemo } from "react";
-import { Pencil, Search, SquareTerminal, Wrench } from "lucide-react";
+import { Pencil, Search, SquareTerminal, Wrench, Check, ChevronRight, Circle, ListChecks } from "lucide-react";
 import type { ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { formatToolArgs } from "../../lib/chat/toolDisplay";
 import { useTranslation } from "../../i18n";
@@ -124,6 +124,10 @@ function ToolCallCardImpl({
         write_file: "写入",
         edit_file: "编辑",
         exec_command: "终端",
+        glob: isRunning ? "正在匹配" : "匹配",
+        grep: isRunning ? "正在搜索" : "搜索",
+        delete_file: isRunning ? "正在删除" : "删除",
+        todo_write: "任务清单",
       };
       return known[entry.toolName] ?? entry.toolName;
     },
@@ -322,6 +326,91 @@ function ToolCallCardImpl({
         showFailureStatus={isError}
         statusTooltip={statusTooltip}
         isRunning={isRunning}
+      />
+    );
+  }
+
+  // ---- 任务清单（对齐 ZCode TodoToolCallBlock：表头当前项 + N/M，展开逐项状态图标）----
+  if (entry.toolName === "todo_write") {
+    const todos = Array.isArray((entry.args as { todos?: unknown })?.todos)
+      ? ((entry.args as { todos: Array<{ content?: string; status?: string }> }).todos ?? [])
+      : [];
+    const total = todos.length;
+    const done = todos.filter((t) => t.status === "completed").length;
+    const current = todos.find((t) => t.status === "in_progress");
+    return (
+      <ToolLayout
+        toolId={entry.toolCallId}
+        icon={<ListChecks className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
+        kindLabel={kindLabel}
+        primaryText={current?.content ?? null}
+        secondaryText={total > 0 ? `${done}/${total}` : undefined}
+        statusLabel={null}
+        showStatusLabel={false}
+        isRunning={isRunning}
+        renderContent={() => (
+          <div className="mb-2 space-y-1">
+            {todos.map((todo, index) => {
+              const status = todo.status === "completed" ? "completed" : todo.status === "in_progress" ? "in_progress" : "pending";
+              return (
+                <div key={index} className="flex items-start gap-2 text-xs">
+                  {status === "completed" ? (
+                    <Check className="mt-0.5 size-3.5 shrink-0 text-[var(--status-ok)]" />
+                  ) : status === "in_progress" ? (
+                    <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-[var(--brand)]" />
+                  ) : (
+                    <Circle className="mt-0.5 size-3.5 shrink-0 text-[var(--text-dim)]" />
+                  )}
+                  <span
+                    className={
+                      status === "completed"
+                        ? "text-[var(--text-dim)] line-through"
+                        : "text-[var(--text)]"
+                    }
+                  >
+                    {todo.content ?? ""}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      />
+    );
+  }
+
+  // ---- 搜索类（glob 匹配 / grep 内容搜索）：结果按行展示，行数如实统计 ----
+  if (entry.toolName === "glob" || entry.toolName === "grep") {
+    const pattern =
+      typeof (entry.args as { pattern?: unknown })?.pattern === "string"
+        ? (entry.args as { pattern: string }).pattern
+        : "";
+    const resultLines = entry.resultText.length > 0 ? entry.resultText.split("\n") : [];
+    const hitCount =
+      entry.toolName === "glob" ? resultLines.length : resultLines.filter((l) => /^.+:\d+:/.test(l)).length;
+    return (
+      <ToolLayout
+        toolId={entry.toolCallId}
+        icon={<Search className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
+        kindLabel={kindLabel}
+        primaryText={pattern ? <code className="font-mono text-xs">{pattern}</code> : null}
+        secondaryText={isRunning ? undefined : `${hitCount}`}
+        statusLabel={statusLabelNode}
+        showStatusLabel={isError}
+        showFailureStatus={isError}
+        statusTooltip={statusTooltip}
+        isRunning={isRunning}
+        renderContent={() => (
+          <div className="mb-2 space-y-1">
+            {entry.resultText.length > 0 ? (
+              <pre className="tool-result">{entry.resultText}</pre>
+            ) : (
+              <div className="tool-pending">{t("toolNoOutput")}</div>
+            )}
+          </div>
+        )}
       />
     );
   }

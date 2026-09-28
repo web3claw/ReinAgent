@@ -1,5 +1,6 @@
 mod terminal;
 mod fs_cmd;
+mod fs_search;
 mod provider_config;
 mod conversation_store;
 mod checkpoint;
@@ -66,6 +67,9 @@ pub fn run() {
             fs_cmd::path_home_dir,
             fs_cmd::fs_read_text_file,
             fs_cmd::fs_clean_reinagent_tmp,
+            fs_cmd::fs_delete_file,
+            fs_search::fs_glob,
+            fs_search::fs_grep,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,
             conversation_store::conversation_delete,

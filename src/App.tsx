@@ -14,6 +14,7 @@ import { McpHubPage } from "./components/mcp/McpHubPage";
 import { MemoryPanel } from "./components/memory/MemoryPanel";
 import { SkillsHubPage } from "./components/skills/SkillsHubPage";
 import { Toaster } from "./components/lw/ui/toaster";
+import { TaskProgressBar } from "./components/chat/TaskProgressBar";
 import { toast } from "./components/lw/ui/toast";
 import { useHubSettings } from "./store/hubSettingsStore";
 
@@ -1026,6 +1027,8 @@ export default function App() {
                     />
                   </div>
                   <div className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0">
+                    {/* 任务清单进度条（对齐 LiveAgent TaskProgressBar）：有清单时显示在输入框上方 */}
+                    <TaskProgressBar messages={state.messages} />
                     {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
                     {state.pendingApproval && (
                       <ApprovalCard

@@ -20,13 +20,13 @@
 | 功能 | LiveAgent | ZCode | ReinAgent | 参考定位（LA / ZCode） |
 |---|---|---|---|---|
 | read / write / edit / list_dir | ✅ | ✅ | ✅ | — |
-| **Glob / Grep（模式与内容搜索）** | ✅ | ✅ | ❌ | LA `lib/tools/fsTools.ts`；ZCode `tool/handlers/glob.ts`、`grep.ts` |
-| **Todo 清单工具 + 进度 UI** | ✅ Task* | ✅ | ❌ | LA `lib/tools/taskTools.ts` + TaskProgressBar；ZCode `handlers/todo.ts` |
+| **Glob / Grep（模式与内容搜索）** | ✅ | ✅ | ✅ 2026-09-28 | LA `lib/tools/fsTools.ts`；ZCode `tool/handlers/glob.ts`、`grep.ts` |
+| **Todo 清单工具 + 进度 UI** | ✅ Task* | ✅ | ✅ 2026-09-28 | LA `lib/tools/taskTools.ts` + TaskProgressBar；ZCode `handlers/todo.ts` |
 | **后台 Bash（驻留进程 / TaskOutput / TaskStop / 输出侧栏）** | ✅ ManagedProcess | ✅ | ❌（exec 为同步 120s 阻塞） | LA `lib/tools/processTools.ts`；ZCode `handlers/bash-background-*.ts`、`ui/app-shell/BackgroundBashOutputSidePane.tsx` |
 | **WebFetch / WebSearch** | ✅ hosted search | ✅ | ❌（零联网） | LA `lib/tools/nativeWebSearch.ts`；ZCode `handlers/webfetch*.ts`、`websearch*.ts` |
 | Node REPL 沙箱 | — | ✅ | ❌ | ZCode `handlers/node-repl.ts`、`core/repl/` |
 | 图片 / PDF / 视频读取 | ✅ Image | ✅ | ❌（read_file 仅文本） | ZCode `handlers/read-image.ts`、`read-pdf.ts`、`read-video.ts` |
-| 文件删除 Delete | ✅ | — | ❌ | LA `fsTools.ts` |
+| 文件删除 Delete | ✅ | — | ✅ 2026-09-28 | LA `fsTools.ts` |
 | Skill 工具（按需加载技能全文） | ✅ | ✅ | ❌（现靠 read_file 读 skill://） | LA `lib/tools/skillTools.ts`；ZCode `handlers/skill.ts` |
 | **子代理系统**（Agent/SendMessage/Explore/自定义 profile/持久记忆/运行目录侧栏） | ✅ | ✅ | ❌ | LA `lib/subagents/`、`workspace/subagent_worktree.rs`；ZCode `core/subagent/`、`ui/app-shell/SubagentDirectorySidePane.tsx` |
 | **AskUserQuestion / Clarify 追问卡** | ✅ | ✅ | ❌（模型无法向用户提问） | LA `components/chat/AskUserQuestionCard.tsx`、`clarifyRunner.ts`；ZCode `handlers/ask-user-question.ts`、`V4UserInputDialog.tsx` |
@@ -144,7 +144,7 @@
 ## 九、优先级路线图
 
 ### P0 —— 补核心能力（"家底"级，建议优先）
-1. **工具扩军第一批**：Glob / Grep / Todo（含进度 UI）/ 删除文件。成本低、模型能力提升立竿见影。
+1. ~~**工具扩军第一批**~~ ✅ 2026-09-28（批次 B：glob/grep/delete_file/todo_write + Todo 卡 + 进度条；工具总数 5→9）
 2. **历史压缩 compact + microcompact**：长会话硬需求，也是提示词缓存策略的地基（阈值触发 → 摘要模型 → 压缩带 UI → microcompact 裁工具结果）。
 3. ~~**模型元数据真实解析**~~ ✅ 2026-09-28（批次 A2：`buildModel` 按真实元数据，未知走「不钳制/不发送/不声明多模态」语义）
 4. **后台任务完成通知 + 审批红点**（系统通知 + 提示音 + 侧栏未读角标）：多任务并行体验闭环。
@@ -211,7 +211,7 @@
 
 | 项 | LA | ZCode | 我们 | 说明与参考 |
 |---|---|---|---|---|
-| **Todo 工具卡** | —(仅任务工具) | ✅ 表头 kindLabel「任务清单」+ 当前项 + `已完成/总数`；展开列表每项状态图标（completed 绿勾+删除线 / in_progress 箭头 / pending 空心圆） | ❌ 【新】 | ZCode `ToolCallBlocks/renderers/todo.tsx` |
+| **Todo 工具卡** | —(仅任务工具) | ✅ 表头 kindLabel「任务清单」+ 当前项 + `已完成/总数`；展开列表每项状态图标 | ✅ 2026-09-28（批次 B4） | ZCode `ToolCallBlocks/renderers/todo.tsx` |
 | **Todo/Plan/Goal 状态面板分区** | — | ✅ 侧栏状态面板分区：逐项状态图标、Todo 预览弹层、折叠胶囊显当前 in-progress 项 | ❌ 【新】 | ZCode `v4/ConversationStatusPanel.tsx`(L584-910) |
 
 ### 11.5 后台任务与队列
