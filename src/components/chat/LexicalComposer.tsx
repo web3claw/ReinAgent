@@ -42,6 +42,12 @@ import {
 } from "../../lib/chat/attachments";
 import { kvGet, kvSet } from "../../lib/storage/db";
 import {
+  getSelectionReferences,
+  removeSelectionReference,
+  subscribeSelectionReferences,
+  type SelectionReference,
+} from "../../lib/chat/selectionReference";
+import {
   type ModelItem,
   type ProviderItem,
   formatModelContextWindowLabel,
@@ -191,6 +197,14 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const [showSlashMenu, setShowSlashMenu] = useState(false);
   /** `/` 菜单查询词（命令名过滤） */
   const [slashQuery, setSlashQuery] = useState("");
+  // ---- 选区引用 chips（P2-C1）：订阅任务作用域引用，发送时拼 userselect 尾块 ----
+  const [selectionRefs, setSelectionRefs] = useState<SelectionReference[]>([]);
+  useEffect(() => {
+    const sync = () => setSelectionRefs(getSelectionReferences(taskId ?? ""));
+    sync();
+    return subscribeSelectionReferences(taskId ?? "", sync);
+  }, [taskId]);
+  const removeSelectionRef = (index: number) => removeSelectionReference(taskId ?? "", index);
   /** 工作区自定义命令（.ReinAgent/commands/*.md，扫描一次缓存） */
   const [customCommands, setCustomCommands] = useState<SlashCommand[]>([]);
   /** `@` 菜单的候选文件（glob 结果，随查询词刷新） */
@@ -777,6 +791,31 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </div>
         );
       })()}
+
+      {/* 选区引用 chips（P2-C1）：点击 × 移除 */}
+      {selectionRefs.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 px-4 pt-3">
+          {selectionRefs.map((ref, idx) => (
+            <span
+              key={idx}
+              className="inline-flex max-w-full items-center gap-1.5 rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-2 py-1 text-xs text-[var(--text-secondary)]"
+            >
+              <span className="max-w-[240px] truncate">
+                {ref.text.slice(0, 60)}
+                {ref.text.length > 60 ? "…" : ""}
+              </span>
+              <button
+                type="button"
+                aria-label="移除引用"
+                onClick={() => removeSelectionRef(idx)}
+                className="text-[var(--text-dim)] hover:text-[var(--text)]"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
 
       {/* Textarea */}
       <textarea

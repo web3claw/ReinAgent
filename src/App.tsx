@@ -41,6 +41,8 @@ import { MessageList } from "./components/chat/MessageList";
 import { FindBar } from "./components/chat/FindBar";
 import { PendingApprovalBatchBar } from "./components/chat/PendingApprovalBatchBar";
 import { useChatScrollState } from "./components/chat/useChatScrollState";
+import { useTextSelection } from "./components/chat/useTextSelection";
+import { SelectionActionMenu } from "./components/chat/SelectionActionMenu";
 import { getRegisteredTurnOffset } from "./components/chat/MessageList";
 import { ConversationNavigator } from "./components/chat/ConversationNavigator";
 import { CodeViewerPaneHost } from "./preview/CodeViewerPaneHost";
@@ -65,6 +67,10 @@ import { getTools } from "./lib/agent/tools";
 import { CheckpointRewindProvider, formatCheckpointRewoundNotification } from "./lib/chat/checkpointRewind";
 import { buildOutgoingPayload } from "./lib/chat/attachments";
 import { appendMentionBlock, resolveMentions } from "./lib/chat/mentionResolver";
+import {
+  buildPromptWithSelections,
+  consumeSelectionReferences,
+} from "./lib/chat/selectionReference";
 import { createMemoryOrganizerService, installMemoryOrganizerService } from "./lib/memory/organizer/service";
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
@@ -339,6 +345,8 @@ export default function App() {
   // P2-A2：滚动离底感知（回顶按钮 + 输入区 dock 分离感）——传 state 值（元素挂载后触发重跑）
   const { awayFromBottom: chatAwayFromBottom, scrollToTop: chatScrollToTop } =
     useChatScrollState(chatScrollEl);
+  // P2-C1：选区引用浮层——聊天区选中文本时出现（查找条开着时让位）
+  const selectionState = useTextSelection(chatScrollEl, !findOpen);
 
 
   // 工作区决议（活动任务优先）：活动任务严格跟随任务自身持久化的 project 字段（单一真相源，
@@ -1098,7 +1106,10 @@ export default function App() {
 
     // 草稿提升竞态：setActiveTaskId 后 hook 闭包里的 taskId 仍是旧的（null），
     // 必须用新 taskId 直接调池（池的 ensureEntry 会为新任务建条目）。
-    return poolSend(targetTaskId, text, buildTurnOptions(images, userAttachments));
+    // P2-C1：发送即消费选区引用——正文尾部拼 userselect 尾块（taskId 确定后）。
+    const finalText = buildPromptWithSelections(targetTaskId, text);
+    consumeSelectionReferences(targetTaskId);
+    return poolSend(targetTaskId, finalText, buildTurnOptions(images, userAttachments));
   };
 
   useEffect(() => {
@@ -1248,13 +1259,24 @@ export default function App() {
                   className="flex-1 overflow-y-auto min-h-0"
                 >
                 <div className="relative min-h-full flex flex-col justify-between">
-                  {/* 会话内查找条（P2-A1，Ctrl+F 呼出） */}
+                  {/* 多任务批量审批条（P2-B2） */}
                   <PendingApprovalBatchBar />
+                  {/* 会话内查找条（P2-A1，Ctrl+F 呼出） */}
                   {findOpen ? (
                     <FindBar
                       messages={state.messages}
                       onClose={() => setFindOpen(false)}
                       onJumpToMessage={setScrollTargetMessageId}
+                    />
+                  ) : null}
+                  {/* 选区引用浮层（P2-C1）：消息区选中文本时出现 */}
+                  {selectionState && activeTaskId ? (
+                    <SelectionActionMenu
+                      selection={selectionState}
+                      taskId={activeTaskId}
+                      onAddReference={() => {
+                        window.getSelection()?.removeAllRanges();
+                      }}
                     />
                   ) : null}
                   <div className="w-full px-6 sm:px-8 md:px-12 pt-3 pb-36 flex-1">
