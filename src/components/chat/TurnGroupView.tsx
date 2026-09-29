@@ -502,9 +502,19 @@ function TurnGroupViewImpl({
               cards={codeCommentCards}
               onOpenComment={(card) =>
                 openCodeViewer({
-                  type: "file",
+                  // code-review 预览模式（P2 尾巴 #4）：定位评论行域 + 内联评论覆盖，
+                  // 而非普通文件预览（ZCode AssistantCodeCommentCards 同语义）。
+                  type: "code-review",
                   title: card.displayPath,
                   path: card.path,
+                  review: {
+                    requestId: card.id,
+                    title: card.title,
+                    body: card.body,
+                    ...(card.priority !== undefined ? { priority: card.priority } : {}),
+                    ...(card.startLine !== undefined ? { startLine: card.startLine } : {}),
+                    ...(card.endLine !== undefined ? { endLine: card.endLine } : {}),
+                  },
                 })
               }
             />

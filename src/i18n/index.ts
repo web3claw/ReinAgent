@@ -100,6 +100,11 @@ export const translations = {
     askCustomPlaceholder: "或输入你的回答…",
     askSubmit: "提交回答",
     askSkip: "跳过",
+    codeCommentsOne: "1 条代码评论",
+    codeCommentsMany: "{count} 条代码评论",
+    codeCommentCardsExpand: "展开 {count} 条评论",
+    codeCommentCardsCollapse: "收起评论",
+    codeCommentCardsOpenReview: "打开 {title} 的代码审查",
     askQuestionIncomplete: "请为每个问题选择或输入回答",
     planCardTitle: "实施计划",
     planCardAllowedPrompts: "计划需要的提示式权限：",
@@ -214,7 +219,7 @@ export const translations = {
     "settings.usage.appUsageLoadingDescription": "正在聚合本地会话历史，请稍候。",
     "settings.usage.emptyTitle": "还没有用量数据",
     "settings.usage.emptyDescription": "所选时间范围内还没有用量记录。",
-    "settings.usage.appUsageRangeScopeNote": "汇总与热力图为累计口径，时间范围作用于下方图表。",
+    "settings.usage.appUsageRangeScopeNote": "汇总与热力图为累计口径，时间范围作用于下方图表。",
     settingsTerminal: "终端配置",
     settingsAgent: "智能体能力",
     settingsAbout: "关于",
@@ -465,6 +470,11 @@ export const translations = {
     askCustomPlaceholder: "Or type your answer…",
     askSubmit: "Submit answer",
     askSkip: "Skip",
+    codeCommentsOne: "1 code comment",
+    codeCommentsMany: "{count} code comments",
+    codeCommentCardsExpand: "Expand {count} comments",
+    codeCommentCardsCollapse: "Collapse comments",
+    codeCommentCardsOpenReview: "Open code review for {title}",
     askQuestionIncomplete: "Please select or type an answer for each question",
     planCardTitle: "Implementation Plan",
     planCardAllowedPrompts: "Prompt-based permissions requested by the plan:",

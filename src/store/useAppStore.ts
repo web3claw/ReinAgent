@@ -85,6 +85,19 @@ interface AppState {
     | { type: "subagents"; title: string; focusId?: string }
     | { type: "git"; title: string }
     | { type: "files"; title: string }
+    | {
+        type: "code-review";
+        title: string;
+        path: string;
+        review: {
+          requestId: string;
+          title: string;
+          body: string;
+          priority?: 0 | 1 | 2 | 3;
+          startLine?: number;
+          endLine?: number;
+        };
+      }
     | null;
   openCodeViewer: (
     source:
@@ -95,6 +108,19 @@ interface AppState {
       | { type: "subagents"; title: string; focusId?: string }
       | { type: "git"; title: string }
       | { type: "files"; title: string }
+      | {
+          type: "code-review";
+          title: string;
+          path: string;
+          review: {
+            requestId: string;
+            title: string;
+            body: string;
+            priority?: 0 | 1 | 2 | 3;
+            startLine?: number;
+            endLine?: number;
+          };
+        }
   ) => void;
   closeCodeViewer: () => void;
 }

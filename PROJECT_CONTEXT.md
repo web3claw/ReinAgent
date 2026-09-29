@@ -896,3 +896,8 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **UI**：`PlanModeCard`（计划正文走 MarkdownText 渲染 + allowedPrompts 清单 + 拒绝反馈 textarea +「批准并开始执行」）；App 分发 kind==="plan"（ApprovalCard fallback 同时排除 question/plan）。**批准 = App 层先 `updateTaskApprovalMode(taskId,"ask")` 再 resolve（顺序保证工具收敛后模型的写/执行走新模式门）**；拒绝 resolve {approved:false, feedback}。
   - **E2E（真模型）**：composer 切计划模式→发调研指令→模型 12.5s 后调 exit_plan_mode → 计划卡渲染（markdown 正文+批准/拒绝）→点批准→卡消失+任务模式按钮变「变更前确认」+模型继续流式 ✓。测试后已停回合并把任务模式还原 完全访问。
   - i18n 新键 planCard*（中英）。
+- **P2 尾巴批 3：#4 代码审查预览模式 ✅（2026-09-29，真模型 E2E）**：
+  - **现状盘点**：C2 已移植全部机器（`preview/lib/codeViewer.ts` 的 code-review 源类型 + `previewPaneCodeReview.ts` 投影 + PreviewPane/previewPaneContent 消费链），**唯一缺口是没有任何构造方**——评论卡点击开的是普通 file 预览。
+  - **接线三处**：useAppStore `codeViewerSource`/`openCodeViewer` 联合类型加 code-review 变体（{requestId,title,body,priority?,startLine?,endLine?}）；CodeViewerPaneHost Extract 联合 + buildSource 透传分支（path 按工作区根解析）；TurnGroupView 评论卡点击改开 `type:"code-review"`（requestId=card.id）。
+  - **实测抓出两连真问题并修**：① **弯引号指令整卡丢失**——真模型（GLM）输出 `title=“演示评论”`（成对智能引号），解析器 `allowSmartQuotes` 是 citation 专属 opt-in，code-comment 未开 → 指令静默丢弃无卡。修复：code-comment 解析开 `{allowSmartQuotes:true}`（指令体是自然语言，容忍成对智能引号属解析真实输出；+1 回归单测）。② **C2 漏发 5 个 i18n 键**（codeCommentsOne/Many、codeCommentCardsExpand/Collapse/OpenReview 一直显示原始键名）——补齐中英（文案取 ZCode locales 原文）。
+  - **E2E**：真模型按 #5 声明输出指令 → 卡渲染（"1 条代码评论"）→ 展开点击 → 预览面板 code-review 模式：package.json 加载（data-language=json）+ 评论覆盖层渲染 body + 无越界警告（range 可见）✓。⚠️ 机制备忘：评论卡列表默认**折叠**（头部按钮展开后才有点卡行）。

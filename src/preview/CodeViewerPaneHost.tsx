@@ -17,7 +17,7 @@ import { FilesPanel } from "../components/git/FilesPanel";
 
 type CodeViewerSourceInput = Extract<
   NonNullable<ReturnType<typeof useAppStore.getState>["codeViewerSource"]>,
-  { type: "file" | "text" | "patch" | "multi-file-diff" | "subagents" | "git" | "files" }
+  { type: "file" | "text" | "patch" | "multi-file-diff" | "subagents" | "git" | "files" | "code-review" }
 >;
 
 function buildSource(
@@ -46,6 +46,15 @@ function buildSource(
       type: "file",
       title: input.title,
       path: resolvedPath ?? input.path,
+      ...(workspacePath ? { workspacePath } : {}),
+    };
+  }
+  if (input.type === "code-review") {
+    return {
+      type: "code-review",
+      title: input.title,
+      path: resolvedPath ?? input.path,
+      review: input.review,
       ...(workspacePath ? { workspacePath } : {}),
     };
   }

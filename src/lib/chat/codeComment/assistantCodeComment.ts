@@ -65,7 +65,11 @@ function parsePriority(value: string | undefined): AssistantCodeCommentPriority 
 
 function extractAssistantCodeComments(content: string): AssistantCodeComment[] {
   const protectedRanges = findMarkdownCodeRanges(content);
-  return extractAssistantDirectives(content, CODE_COMMENT_DIRECTIVE_NAME).flatMap((directive) => {
+  // allowSmartQuotes：评论文案是中文模型高频弯引号重灾区（实测 GLM 输出 title=“…”
+  // 直接解析失败丢卡）；指令体本就是自然语言，容忍成对智能引号是解析真实输出。
+  return extractAssistantDirectives(content, CODE_COMMENT_DIRECTIVE_NAME, {
+    allowSmartQuotes: true,
+  }).flatMap((directive) => {
     if (
       !directive.parameters ||
       overlapsAssistantTextRanges(directive.start, directive.start + 1, protectedRanges)

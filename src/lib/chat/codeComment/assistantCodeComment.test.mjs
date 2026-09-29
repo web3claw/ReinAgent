@@ -66,3 +66,17 @@ test("上限 50 张；priority 非法值丢弃", () => {
   assert.equal(cards.length, 50);
   assert.equal(cards.filter((c) => c.title === "好的").length, 1, "合法指令在 55 条噪声后仍被收录");
 });
+
+test("弯引号（智能引号）指令可解析（中文模型真实输出回归）", () => {
+  const content = [
+    "前文。",
+    "",
+    '::code-comment{title=“演示评论” body=“name 字段说明。” file="E:/x/package.json" start=2 priority=3}',
+  ].join("\n");
+  const projection = projectAssistantCodeComments(content, { streaming: false });
+  assert.equal(projection.comments.length, 1, "弯引号 title/body 应正常解析出卡");
+  assert.equal(projection.comments[0].title, "演示评论");
+  assert.equal(projection.comments[0].startLine, 2);
+  assert.equal(projection.comments[0].priority, 3);
+  assert.equal(projection.visibleText.includes("::code-comment"), false);
+});
