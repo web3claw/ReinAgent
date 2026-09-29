@@ -152,28 +152,32 @@
 6. ~~**回合状态条 attention 强制展开**（「等待你的决定」时强制展开 + 隐藏窗口停表）~~ ✅ 2026-09-28（批次 A1）
 
 ### P1 —— 差异化能力
-7. **子代理系统**（**两批完成** ✅ 2026-09-28：引擎（嵌套 runTurn / Explore+general-purpose / 结构性禁递归 / 审批门继承）+ 回合内子代理卡 + **后台子代理（run_in_background / subagent_output / 完成通知）+ 目录面板（Running/Ended/Stop/详情）**；**未做增量**：「在右侧打开」完整对话回放（依赖子会话持久化）、自定义 agents/\*.md profile、子代理私有上下文持久化与 resume）：ZCode `core/subagent/`、LA `lib/subagents/`。
-8. **AskUserQuestion + ExitPlanMode 交互闭环**（**部分** ✅ 2026-09-28，05ecc98：工具 + 回合内提问卡已做；ExitPlanMode elicitation / 独立提问弹窗 / PlanModeCard / Plan 开关标记待做）：**UI 同批做**：回合内提问卡（逐题/推荐标/1-N 翻页/其他输入/倒计时自动选，§11.2）+ 提问弹窗（分页/自定义/snooze/来源角标）+ PlanModeCard（三态脊 + 批准并开始执行，§11.3）+ Plan 模式开关标记（灯泡/✕）。
+7. **子代理系统**（**两批完成** ✅ 2026-09-28：引擎（嵌套 runTurn / Explore+general-purpose / 结构性禁递归 / 审批门继承）+ 回合内子代理卡 + **后台子代理（run_in_background / subagent_output / 完成通知）+ 目录面板（Running/Ended/Stop/详情）**；**回放增量** ✅ 2026-09-29（af0bc27：转录落 conversations.db message/part 表 task_id=`subagent:<id>` + SubagentReplay 完整回放，跨重启可看）；**仍未做**：自定义 agents/\*.md profile、子代理私有上下文持久化与 resume）：ZCode `core/subagent/`、LA `lib/subagents/`。
+8. ~~**AskUserQuestion + ExitPlanMode 交互闭环**~~ ✅ 2026-09-29 收口（7ea0c1d：ExitPlanMode 工具 + 审批门模式分支（仅计划模式可用）+ PlanModeCard 计划批准卡（markdown 渲染 / 批准切 ask 模式 / 拒绝带反馈）+ PLAN_MODE_PROMPT 重写；提问卡/提问工具 05ecc98 已有）：ZCode contracts/tools/plan-mode.ts。
 9. ~~**后台 Bash**（驻留进程 + TaskOutput/TaskStop）~~ ✅ 2026-09-28（Rust `bg_process.rs` 四命令 + `background_bash`/`task_output`/`task_stop` 三工具 + 回合内 turnActivity 标签；Tauri 实测闭环）。§11.5 增量未做：输出侧栏、输入框「后台工作」按钮/耗时标签。
 10. ~~**WebFetch / WebSearch**（含域名白名单与结果缓存）~~ ✅ 2026-09-28（Rust `web_tools.rs`：DDG 无 Key 搜索 + ureq 抓取 + 15min 缓存 + SSRF 防护 + 代理设置；UI 联网搜索聚合行「已搜索 N 次·N 个来源」）。§11.8 增量未做：来源行点击外链打开。
 11. ~~**工具级策略**（allow/ask/deny 三态 + Hub 内切换）~~ ✅ 2026-09-28（ee7fb11：任务级 toolPolicies + MCP Hub 卡 serverPolicy 切换）。
 12. ~~**AGENTS.md + gitStatus 注入**（落位 meta_user 块）~~ **主体** ✅ 2026-09-28（3d49fc7：agents_md.rs 四级回退扫描 + meta_user 注入）；gitStatus 快照未纳入（需异步 git + 缓存，见 PROMPTS.md 待办）。
 13. ~~**用量统计图表**（日趋势 / 模型分布 / 热力图）~~ ✅ 2026-09-28（**复刻 ZCode 一致**：源码直移 settings/usage-stats + Recharts + 52 周热力图每日/每周/累计 + 汇总条五指标 streak/peak/最长聊天 + 每日分模型趋势 + donut 份额；Rust 快照同形 AppUsageSnapshot）。未做增量：Coding Plan 远端配额面板、工具用量榜。
-14. **记忆 Organizer 接线 + Extraction 管线**（**Extraction 批** ✅ 2026-09-28：LA 形态管线全链路——聊天后隐藏回合 + SubmitMemoryPlan 校验 + memory_apply_batch 事务落库 + 门控/coalesce 控制器 + pool 终态钩子，实测落库；**待做**：Organizer 编排批——聚类/合并/风控闸/调度挂载/Run Now）。
-15. **排队消息面板 + 任务通知**：忙时排队（表头/上移/编辑撤回/打断并执行/删除，§11.5）+ 完成系统通知/提示音/侧栏交互角标（倒计时填充、hover snooze，§11.7）。
+14. ~~**记忆 Organizer 接线 + Extraction 管线**~~ ✅ 2026-09-28/29 两批齐（Extraction 批 + **Organizer 编排批**：scan→cluster→plan→gate→apply 全链路 + 调度挂载 + Run Now + 历史弹窗；**独立模型统一解析** 88812f0——organizer 与 extraction 都吃 `MemorySettings.organizerModel`；reviewItems 持久化已实证）。summaryModel（对话总结模型选择器）暂为死设置，待压缩批接线。
+15. **排队消息面板 + 任务通知**：**通知/提示音/侧栏红点** ✅ 批次 E（2f02b19）；**steering 运行中引导 ✅** 批次 F（SteerQueuePanel）。未做：完整排队面板（表头/上移/编辑撤回/打断并执行）、审批角标倒计时填充与 hover snooze。
 
 ### P2 —— 完善与打磨
-16. Git 面板群（分支切换器 / 变更卡 / 提交图谱 / 代码审查 tab）与工作区文件树。
-17. PDF / Office（docx/xlsx/pptx）预览引擎（替换诚实降级 stub）；助手产物预览卡（PPTX 自动打开，§11.8）。
-18. 快捷键系统（录制/冲突检测）、命令面板、托盘、自动更新器。
-19. Hooks（脚本/HTTP + 信任评审）、插件系统；hook 待审横幅（§11.7）。
-20. STT 语音、轨迹回放、白板、Treemapping、Markdown 演示导出。
-21. 草稿持久化与滚动记忆、错误归因横幅（分类 + 证据链，§11.7）、审批卡倒计时与批量动作（§11.9）。
-22. steering（运行中引导消息展示，§11.5）、ClarifyPanel（提示词澄清面板，§11.2）、命令安全模式选择器（§11.8）。
-23. 代码评论卡、选区引用菜单与侧聊、Node REPL 多图网格（§11.8）。
-24. ConversationStatusPanel 分区分组面板、回顶按钮/底部 dock 动画、加载更早消息与会话内查找、快照字段提示（§11.8）。
-25. 工作流卡族、goal 卡与校验分隔线（依赖动态工作流立项，§11.8）。
+16. ~~**Git 面板群与工作区文件树**~~ ✅ 2026-09-29 收口（批次 D 面板/分支切换/变更卡/文件树 + 501c481 **提交图谱**（泳道算法）+ 68350dc **代码审查预览模式**（评论卡→行域高亮+内联覆盖）+ 10s 自动轮询）。
+17. **PDF / Office 预览引擎** ✅ 批次 E（docx-preview + SheetJS，实测算例已清）；**未做增量**：助手产物预览卡（PPTX 自动打开）。
+18. **命令面板 / 托盘 / 自动更新器** ✅ 2026-09-29（a63f48d Ctrl+K 面板 16 命令；9192cb5 托盘 tray-icon+菜单+左键切换显隐、updater 插件+设置卡片+minisign 密钥对）；**未做**：快捷键录制/冲突检测。
+19. **Hooks + 插件系统** ✅ 2026-09-29 v1（bf72791：hook_execute/信任横幅/PreToolUse+UserPromptSubmit+Stop 三事件/宽松输出协议；f4123de：插件=本地目录+plugin.json 清单，贡献 slash 命令与 hooks，设置「插件」tab 安装/启停/卸载 + **单实例锁**）。**未做**：PostToolUse/PermissionRequest/SessionStart 事件、市场源（git/npm/github）、agent/skill 贡献、插件 userConfig。
+20. **STT 语音、轨迹回放、白板、Treemapping、Markdown 演示导出**——暂缓未动。
+21. **草稿持久化** ✅ A3（任务级 kv + 防抖）、**错误归因横幅** ✅ B1（六类分类徽标）、**批量审批** ✅ B2；未做：审批卡倒计时。
+22. **steering** ✅ F1、**命令安全模式选择器** ✅ B3（确认即审批模式下拉）、ClarifyPanel **不立项**（ExitPlanMode 落地后由计划批准卡覆盖同类交互）。
+23. **代码评论卡** ✅ C2（::code-comment 协议 + 提示词声明 6442152 + 弯引号容忍）、**选区引用菜单** ✅ C1；未做：选区侧聊、Node REPL 多图网格。
+24. **回顶按钮/dock 分离** ✅ A2、**加载更早消息** ✅ A1b、**会话内查找** ✅ A1a、**快照字段提示** ✅ A4；未做：ConversationStatusPanel 分区分组面板。
+25. **工作流卡族、goal 卡**——未做（依赖动态工作流立项）。
 
+
+### 九尾巴任务（2026-09-29 一轮收口，#1-#9 全部 ✅）
+用户排序（小→中→大）：#2 git 自动轮询 / #3 提交图谱 / #5 ::code-comment 提示词声明 / #8 Plan 工具化+ExitPlanMode / #4 代码审查预览模式 / #6 记忆管线独立模型 / #1 reviewItems 持久化（复核已修）/ #7 子会话持久化回放 / #9 Hooks+命令面板+托盘+更新器+插件 v1+单实例锁。
+逐项实现细节、提交号与实测记录见 **PROJECT_CONTEXT.md 第十七/十八章「P2 尾巴批 1-9」**。期间顺带修复：压缩会话刷新丢消息（持久化计数器）、会话 composer 草稿键污染、弯引号指令解析、两批缺失 i18n 键、托盘双图标。
 ### 暂缓（单机场景价值低 / 基建重）
 远程网关与 WebUI、设备管理、隧道、SSH 远程工作区、会话分享、Bots 渠道、设置/技能/MCP 远程同步、Coding Plan 订阅类、遥测上报。
 
