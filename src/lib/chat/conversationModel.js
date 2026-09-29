@@ -38,11 +38,19 @@ export function restoreState(messages) {
     }
     return m;
   });
+  // 计数器必须盖过既有最大序号，而非数组长度：压缩/删改后 length < max(id)+1
+  // （例：compact 后仅剩 m10..m17 共 9 条）。按 length 恢复会让新消息重生 m10，
+  // 撞 UNIQUE(task_id, msg_id) 使该任务后续所有持久化事务被整体拒绝。
+  let maxSeq = 0;
+  for (const m of sanitized) {
+    const match = typeof (m && m.id) === "string" ? /^m(\d+)$/.exec(m.id) : null;
+    if (match) maxSeq = Math.max(maxSeq, Number(match[1]) + 1);
+  }
   return {
     messages: sanitized,
     status: "idle",
     error: undefined,
-    nextMessageSeq: sanitized.length,
+    nextMessageSeq: Math.max(maxSeq, sanitized.length),
     // 审批挂起是纯内存态：恢复/切换会话时一律清空（被挂起的轮次本身也已中断）。
     pendingApproval: null,
   };

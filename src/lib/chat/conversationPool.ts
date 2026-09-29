@@ -395,7 +395,23 @@ export async function loadOlderMessages(taskId: string): Promise<number> {
       return 0;
     }
     const older = page.rows.map(deserializeRow);
-    entry.state = { ...entry.state, messages: [...older, ...entry.state.messages] };
+    // 前置的更早消息也要盖进计数器：其序号虽然按创建序必然更小，但「加载更早」
+    // 发生在 restoreState 之后，若计数器曾被错误地按 length 恢复（或未来引入
+    // 非单调 id），新消息会与前置历史撞 id → conversation_sync 整体被拒。
+    let maxOlder = 0;
+    for (const m of older) {
+      const match = typeof m.id === "string" ? /^m(\d+)$/.exec(m.id) : null;
+      if (match) maxOlder = Math.max(maxOlder, Number(match[1]) + 1);
+    }
+    const curSeq =
+      typeof entry.state.nextMessageSeq === "number"
+        ? entry.state.nextMessageSeq
+        : entry.state.messages.length;
+    entry.state = {
+      ...entry.state,
+      messages: [...older, ...entry.state.messages],
+      ...(maxOlder > curSeq ? { nextMessageSeq: maxOlder } : {}),
+    };
     entry.historyTotal = page.total;
     entry.historyFullyLoaded = !page.has_more;
     notify(entry);

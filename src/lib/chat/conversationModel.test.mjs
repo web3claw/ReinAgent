@@ -19,6 +19,7 @@ import {
   lastAssistant,
   toApiMessages,
   appendUser,
+  restoreState,
 } from "./conversationModel.js";
 
 const faux = await import("@earendil-works/pi-ai/providers/faux");
@@ -145,4 +146,37 @@ test("状态机合法性：合法转移正确，非法转移被忽略", () => {
   // 非法：已 idle 再 finish → 原样返回。
   const s5 = finish(s3, doneMessage);
   assert.equal(s5, s3, "已 idle 再 finish 应原样返回");
+});
+
+test("restoreState 计数器盖过最大序号：压缩后 hydration 不得重生旧 id（UNIQUE 撞车回归）", () => {
+  // compact 后的真实形状：summary(id compact-0) + 仅剩的 m10..m17（length=9 < 18）
+  const messages = [
+    { id: "compact-0", role: "assistant", text: "摘要", status: "done" },
+    ...Array.from({ length: 8 }, (_, i) => ({
+      id: `m${10 + i}`,
+      role: i % 2 === 0 ? "user" : "assistant",
+      text: `x${i}`,
+      status: "done",
+    })),
+  ];
+  const restored = restoreState(messages);
+  assert.equal(restored.messages.length, 9);
+  assert.equal(
+    restored.nextMessageSeq,
+    18,
+    "计数器必须是 max(mN)+1=18，而非数组长度 9",
+  );
+
+  // 追加用户消息 + 助手回合：id 必须从 m18 起，绝不与 hydrated 的 m10..m17 重合
+  const withUser = appendUser(restored, "新消息", undefined, undefined);
+  assert.equal(withUser.messages.at(-1).id, "m18");
+  const withAssistant = beginAssistant(withUser, Date.now());
+  assert.equal(withAssistant.messages.at(-1).id, "m19");
+
+  // 无 mN 形状的 id（全部非数字）→ 回退 length，行为不劣化
+  const exotic = restoreState([
+    { id: "compact-0", role: "assistant", text: "a", status: "done" },
+    { id: "compact-1", role: "assistant", text: "b", status: "done" },
+  ]);
+  assert.equal(exotic.nextMessageSeq, 2);
 });
