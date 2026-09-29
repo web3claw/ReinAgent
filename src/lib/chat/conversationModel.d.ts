@@ -144,6 +144,8 @@ export interface ChatState {
   nextMessageSeq?: number;
   /** 当前挂起的待审批请求（null=无）；仅流式中有意义，finish/finishAborted/restore 时清空。 */
   pendingApproval?: PendingApproval | null;
+  /** steering 队列（P2-F1）：流式期间用户追加的引导消息，当前 runAgentTurn 返回后逐条作为新轮发送。 */
+  steerQueue?: string[];
 }
 
 export function initialState(): ChatState;

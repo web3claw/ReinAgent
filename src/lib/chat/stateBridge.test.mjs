@@ -111,7 +111,7 @@ test("不丢更新：两次基于前一状态的 updater 叠加，最终真相�
 // 3) 集成：P2-1 回归
 // ---------------------------------------------------------------------------
 
-test("集成(P2-1)：同一 tick 内 send(A)、send(B) 只受理第一条（不产生两条 streaming 助手）", async () => {
+test("集成(P2-1)：同一 tick 内 send(A)、send(B) 首条开轮、第二条入队（不产生两条 streaming 助手）", async () => {
   const pending = [];
   const flush = () => {
     while (pending.length > 0) pending.shift();
@@ -126,10 +126,11 @@ test("集成(P2-1)：同一 tick 内 send(A)、send(B) 只受理第一条（不�
   // 同一 tick、无 await、无 flush。
   const accepted = [ctrl.send("A"), ctrl.send("B")];
 
-  assert.deepEqual(accepted, [true, false], "同 tick 连发只应受理第一条");
+  assert.deepEqual(accepted, [true, true], "P2-F1：首条开轮、同 tick 第二条入 steering 队列（仍返回 true）");
   const state = bridge.getState();
-  assert.equal(counts(state).users, 1, "只应有一条 user 消息");
+  assert.equal(counts(state).users, 1, "入队不追加 user 消息——仍只有一条");
   assert.equal(counts(state).assistants, 1, "只应有一条 assistant 消息（旧的滞后真相会变成两条 streaming）");
+  assert.deepEqual(state.steerQueue, ["B"], "B 应在 steering 队列中");
 
   flush();
   await waitUntilIdle(() => bridge.getState());
@@ -205,7 +206,7 @@ test("send 在「同步直写」与「批量提交」两种提交语义下行为
   const sync = await run("sync");
   const batch = await run("batch");
 
-  assert.deepEqual(sync.accepted, [true, false], "首选应被受理、同 tick 第二条被拒");
+  assert.deepEqual(sync.accepted, [true, true], "P2-F1：首条受理开轮，同 tick 第二条入 steering 队列（也返回 true）");
   assert.deepEqual(sync.accepted, batch.accepted, "两种提交语义下受理结果应一致");
   assert.equal(sync.users, batch.users);
   assert.equal(sync.assistants, batch.assistants);

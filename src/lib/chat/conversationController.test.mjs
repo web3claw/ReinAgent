@@ -146,9 +146,10 @@ test("忙判定：流式进行中的 send 返回 false，且不追加任何消�
   assert.equal(ctrl.send("慢问题"), true);
 
   const before = getState().messages.length;
-  const rejected = ctrl.send("这条应被拒");
-  assert.equal(rejected, false, "流式中的 send 必须返回 false（供 Composer 决定是否清空输入）");
-  assert.equal(getState().messages.length, before, "被拒的 send 不得追加任何消息");
+  const queued = ctrl.send("这条入 steering 队列");
+  assert.equal(queued, true, "P2-F1：流式中的 send 入队为引导消息（返回 true 供 Composer 清空输入）");
+  assert.equal(getState().messages.length, before, "入队不追加时间线消息（轮收敛后才续跑）");
+  assert.deepEqual(getState().steerQueue, ["这条入 steering 队列"]);
 
   ctrl.stop();
   await waitUntilIdle(getState);

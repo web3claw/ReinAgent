@@ -17,7 +17,7 @@ import { diagnoseError, isAbortReason } from "./errors.js";
 
 /** @returns {import("./conversationModel").ChatState} */
 export function initialState() {
-  return { messages: [], status: "idle", error: undefined, nextMessageSeq: 0, pendingApproval: null };
+  return { messages: [], status: "idle", error: undefined, nextMessageSeq: 0, pendingApproval: null, steerQueue: [] };
 }
 
 /**

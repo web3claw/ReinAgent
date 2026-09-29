@@ -3,6 +3,7 @@ import "./styles/global.css";
 import { useConversationPool } from "./hooks/useConversationPool";
 import {
   getEntrySnapshot,
+  removeSteerMessage as poolRemoveSteerMessage,
   getHistoryLoadState,
   loadOlderMessages,
   send as poolSend,
@@ -40,6 +41,7 @@ import { useSettings } from "./lib/settings/useSettings";
 import { MessageList } from "./components/chat/MessageList";
 import { FindBar } from "./components/chat/FindBar";
 import { PendingApprovalBatchBar } from "./components/chat/PendingApprovalBatchBar";
+import { SteerQueuePanel } from "./components/chat/SteerQueuePanel";
 import { useChatScrollState } from "./components/chat/useChatScrollState";
 import { useTextSelection } from "./components/chat/useTextSelection";
 import { SelectionActionMenu } from "./components/chat/SelectionActionMenu";
@@ -115,23 +117,45 @@ export default function App() {
 
   // 上下文面板「技能」分类：当前生效的 buildSkillsSystemPrompt 注入文本（与发送链路同源）
   const [skillsSectionText, setSkillsSectionText] = useState("");
-  // 会话内查找（P2-A1）：Ctrl+F / Cmd+F 呼出查找条（输入框聚焦时不劫持）
+  // handleNewTask 稳定转发（effect 依赖 [] 而 handleNewTask 在后声明）
+  const handleNewTaskRef = useRef<() => void>(() => {});
+  // 全局快捷键（P2-G1，集中管理；输入框聚焦时仅放行 Escape）：
+  // Ctrl/Cmd+F 查找 · Ctrl/Cmd+T 新任务 · Ctrl/Cmd+Shift+A 聚焦 composer
   useEffect(() => {
+    const inEditable = (target: EventTarget | null): boolean => {
+      const el = target as HTMLElement | null;
+      return Boolean(
+        el &&
+          (el.tagName === "INPUT" ||
+            el.tagName === "TEXTAREA" ||
+            el.isContentEditable),
+      );
+    };
     const onKeyDown = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "f") {
-        const target = e.target as HTMLElement | null;
-        const inEditable =
-          target &&
-          (target.tagName === "INPUT" ||
-            target.tagName === "TEXTAREA" ||
-            target.isContentEditable);
-        if (inEditable) return;
+      const mod = e.ctrlKey || e.metaKey;
+      if (!mod) return;
+      const key = e.key.toLowerCase();
+      // 查找：编辑框聚焦也不放行（浏览器原生查找被替换为会话内查找）
+      if (key === "f") {
         e.preventDefault();
         setFindOpen(true);
+        return;
+      }
+      // 新任务：编辑框聚焦时放行（用户可能在输入——不打断）
+      if (key === "t" && !inEditable(e.target)) {
+        e.preventDefault();
+        handleNewTaskRef.current();
+        return;
+      }
+      // 聚焦 composer：仅非编辑框焦点时
+      if (key === "a" && e.shiftKey && !inEditable(e.target)) {
+        e.preventDefault();
+        setFocusTrigger((c) => c + 1);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- handleNewTask 经 ref 稳定转发
   }, []);
 
   useEffect(() => {
@@ -683,7 +707,10 @@ export default function App() {
       }
     }
   }, [activeTaskId]);
+  // 快捷键转发句柄：handleNewTask 在 effect 之后声明，ref 保证快捷键读到最新闭包
+  handleNewTaskRef.current = () => handleNewTask;
 
+  (window as any).__newTask = () => handleNewTaskRef.current();
   const handleNewTask = (project?: string | null) => {
     // 切回草稿态：在途任务留在池中继续跑（新建任务 ≠ 停止任何会话）
     setActiveTaskId(null);
@@ -1343,6 +1370,14 @@ export default function App() {
                     data-dock-away={chatAwayFromBottom ? "true" : undefined}
                   >
                     {/* 任务清单进度条（对齐 LiveAgent TaskProgressBar）：有清单时显示在输入框上方 */}
+                    {state.steerQueue && state.steerQueue.length > 0 && activeTaskId ? (
+                      <SteerQueuePanel
+                        queue={state.steerQueue}
+                        onRemove={(index) =>
+                          poolRemoveSteerMessage(activeTaskId, index)
+                        }
+                      />
+                    ) : null}
                     <TaskProgressBar messages={state.messages} />
                     {/* 提问卡（ask_user_question 工具挂起）：模型等待用户作答 */}
                     {state.pendingApproval &&

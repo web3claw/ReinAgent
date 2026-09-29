@@ -511,6 +511,11 @@ export function resolveApproval(
   entries.get(taskId)?.controller.resolveApproval(decision as never);
 }
 
+/** P2-F1：撤回一条排队中的 steering 消息。 */
+export function removeSteerMessage(taskId: string, index: number): void {
+  entries.get(taskId)?.controller.removeSteerMessage(index);
+}
+
 /** 手动压缩指定任务的历史（controller.compactNow；忙时返回 false）。 */
 export function compactConversation(taskId: string): boolean {
   return entries.get(taskId)?.controller.compactNow() ?? false;

@@ -65,6 +65,8 @@ export interface ConversationController {
   /** 审批门挂起入口（runAgentTurn 的协调器回调到这）。 */
   /** 手动压缩（忙时 false） */
   compactNow: () => boolean;
+  /** P2-F1：撤回一条排队中的 steering 消息（按下标）。 */
+  removeSteerMessage: (index: number) => void;
   requestApproval: (req: import("./conversationModel").PendingApproval) => Promise<
     import("../providers/runAgentTurn").ApprovalDecision
   >;

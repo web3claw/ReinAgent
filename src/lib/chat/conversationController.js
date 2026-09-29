@@ -130,6 +130,15 @@ export function createConversationController(deps) {
   }
 
   /** 用户主动停止：中断当前轮次并立即收敛为「已停止」。 */
+  /** P2-F1：撤回一条排队中的 steering 消息（按下标）。 */
+  function removeSteerMessage(index) {
+    setState((prev) => {
+      const queue = prev.steerQueue ?? [];
+      if (index < 0 || index >= queue.length) return prev;
+      return { ...prev, steerQueue: queue.filter((_, i) => i !== index) };
+    });
+  }
+
   function stop() {
     // 先解除审批挂起（拒绝语义），再中止轮次——顺序保证钩子等待先有终值。
     resolveApproval("reject");
@@ -430,6 +439,21 @@ export function createConversationController(deps) {
           }
           abortRef = null;
         }
+        // P2-F1 steering：轮收敛后若引导队列非空 → 取一条作为新轮续跑（其余留队）。
+        // 失败/停止/清空的收敛同样续跑吗？不——只有「自然完成」才续跑；停止是用户
+        // 明确中断（队列保留在时间线上方提示可重发），错误行也停下让用户看清楚。
+        if (abortRef === controller) {
+          const queue = getState().steerQueue ?? [];
+          const outcome = getState();
+          const finished =
+            outcome.status === "idle" && !outcome.error && !outcome.pendingApproval;
+          if (queue.length > 0 && finished) {
+            const [next, ...rest] = queue;
+            setState((prev) => ({ ...prev, steerQueue: rest }));
+            // 复用 send 的正常路径（此时 status 已是 idle，不会再次入队）
+            void Promise.resolve().then(() => send(next));
+          }
+        }
       }
     })();
 
@@ -446,7 +470,11 @@ export function createConversationController(deps) {
     const text = typeof rawText === "string" ? rawText.trim() : "";
     if (text.length === 0) return false;
     // 忙判定来自状态派生（唯一真相），而非 abortRef。
-    if (getState().status === "streaming") return false;
+    // P2-F1 steering：流式中不再拒绝——入队为引导消息，当前轮返回后逐条继续。
+    if (getState().status === "streaming") {
+      setState((prev) => ({ ...prev, steerQueue: [...(prev.steerQueue ?? []), text] }));
+      return true;
+    }
 
     const { images, userAttachments } = getOptions();
 
@@ -636,5 +664,6 @@ export function createConversationController(deps) {
     return true;
   }
 
-  return { send, editResend, stop, clear, loadState, requestApproval, resolveApproval, compactNow };
+  return { send,
+    removeSteerMessage, editResend, stop, clear, loadState, requestApproval, resolveApproval, compactNow };
 }

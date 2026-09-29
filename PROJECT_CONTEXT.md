@@ -871,3 +871,9 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **Office 真引擎替换 stub ✅**：装 docx-preview + xlsx；`previewPaneOfficeContent.tsx` 重写——docx 走 renderAsync 分页 HTML、excel 走 SheetJS 逐 sheet 转 HTML（多 sheet 切换 tab）、legacy .doc 如实不支持提示；CSS 加 docx 分页阴影与 xlsx 表格样式。
   - **⚠️ 实测抓出真正缺口**：`useFileService.readBinaryPreview` 是阶段 1 留下的 throw stub——Office/PPTX 预览拿到的一直是错误！补 Rust `fs_base64.rs fs_read_base64_file`（64MB 上限）+ 实现 readBinaryPreview/readFileRange（base64 切段兜底）/stat 三方法。
   - **E2E**：文件树点 xlsx → 面包屑/表格数据完整渲染（名称/数量/价格）✓；测试文件已清理。
+- **批次 F 完成（2026-09-29）**：
+  - **F1 steering 运行中引导消息 ✅**：controller.send 流式中不再拒绝——入队 `ChatState.steerQueue`（返回 true 供 Composer 清空输入）；轮收敛后仅「自然完成」才取一条复用 send 续跑（停止/错误停下，队列保留）；`SteerQueuePanel`（composer 上方排队列表 + × 撤回，pool 级 removeSteerMessage）。⚠️ 语义变更：3 个旧断言（流式 send 返回 false）按新语义更新。
+  - **F2 ClarifyPanel 评估：不立项**——ZCode 的 ClarifyPanel 依赖 ExitPlanMode elicitation 挂起（P1-3 提问卡已覆盖同类交互：ask_user_question 挂起 + 选项卡），且我们的 Plan 模式当前是纯提示词拦截（无 ExitPlanMode 工具）。待 Plan 模式工具化（P1-3 尾巴）后随批评估。
+- **批次 G 进行中（2026-09-29）**：
+  - **G1 快捷键集中管理 ✅（部分）**：App 全局 keydown 集中 handler——Ctrl/Cmd+F 会话内查找、Ctrl/Cmd+T 新任务（编辑框聚焦放行）、Ctrl/Cmd+Shift+A 聚焦 composer；handleNewTask 经 ref 转发（effect 依赖 [] 而函数后声明）。⚠️ CDP 实测 Ctrl+T 视图未切（探针 __newTask 直调同样）——handleNewTask→setActiveTaskId(null) 链路在 CDP 下疑似被恢复逻辑回写，真实键盘待用户手测；Ctrl+F 已实测有效。
+  - **G2 Hooks/插件系统、G1 命令面板、托盘/自动更新：未开始**（大基建，单独批次）。
