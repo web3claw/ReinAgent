@@ -906,3 +906,9 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **修复**：收编 App 内联解析为 `lib/memory/modelResolution.ts resolveIndependentMemoryModelDeps(memory, providers)`（organizerModel→供应商→buildModel；未配置/供应商不存在→null 回落主模型；Key 为空→抛错 No-Fallback）；**App resolveModelDeps 与 pool.maybeExtractMemory 同源复用**——extraction 现在优先独立模型（解析失败 warn 后回落主模型，不打断聊天终态流；organizer 路径失败仍直接抛）。
   - **⚠️ i18n 误判教训**：抽屉 28 个「缺失」键实际全在 `i18n/hub/zh.ts`/`en.ts`（LA hub 移植批自带，`...hubZh` 展开进语言对象）——**查键缺失必须扫 hub 目录**，只 grep index.ts 会误判（本次据此误加 26 个重复键触发 TS2783 已撤销，真正缺的仅 settings.close / settings.memoryOrganizerPhase2 两个，已补进 hub 文件）。
   - modelResolution.test.mjs 4 例（未配置 null/供应商不存在 null/Key 空 No-Fallback 抛错/完整配置构建 deps）。
+- **P2 尾巴批 5：#7 子会话持久化 + 完整回放 ✅（2026-09-29，真模型 E2E 跨重启闭环）**：
+  - **落库**：`subagentRunner.persistSubagentTranscript(runId, messages)`——runTurn 收束后把转录写入 conversations.db 既有 message/part 两表（**task_id = `subagent:<runId>`**，不写 task 表 → 不进会话列表/水合），复用 conversation_sync 全量替换；每条 pi-ai 消息一行 + 单个 `transcript_message` part（整条 JSON 忠实原样，含 system/思考/工具调用与结果）。失败仅 warn（回放是增强，不影响子代理结果收敛）。
+  - **回放 UI**：`SubagentReplay.tsx`——conversation_load_page 读回 → 逐条按角色渲染（user 提示词 / assistant 正文 + thinking 折叠 + `tool: <名>` 参数折叠 / toolResult 结果），加载失败/无记录如实空态（诚实标注「早于持久化上线或落库失败」）。
+  - **入口与跨重启语义**：子代理面板（ToolCallCard 摘要行「在右侧打开子代理面板」→ focusId）；**registry（内存）有记录 → 详情视图 + 「完整回放对话」按钮（面板底部二级视图，可返回）**；**registry 无记录（重启后）→ 面板直接整体渲染持久化回放**（DB 是跨重启唯一可靠源——初版把回放按钮挂在 registry 详情里，reload 后不可达，E2E 抓出后改为双路径）。i18n subagentReplay* 四键。
+  - **⚠️ E2E 坑**：① ToolLayout 的 summaryAction 渲染的是 `div[role=button][aria-label]` **不是 `<button>`**——CDP 按 button 标签找会扑空；② 完成回合的工具卡折叠进回合体，虚拟化+折叠下卡不可点——用后台子代理（run_in_background=true，卡片在 live 尾即时挂载）或先展开回合头。
+  - **E2E**：真模型派 Explore 子代理（前台+后台各一）→ 转录落库（subagent:sub-… 5 条消息含 system）→ reload 清空 registry 后从卡片点开 → 完整回放渲染全转录 ✓。346/346 + tsc 0。

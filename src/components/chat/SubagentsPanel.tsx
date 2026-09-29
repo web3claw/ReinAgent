@@ -11,6 +11,7 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { ArrowLeft, Square } from "lucide-react";
+import { SubagentReplay } from "./SubagentReplay";
 import {
   getSubagentRunSnapshot,
   stopRun,
@@ -40,7 +41,14 @@ function formatDuration(startedAt: number, endedAt?: number): string {
   return `${Math.max(1, Math.round(ms / 100) / 10)}s`;
 }
 
-export function SubagentsPanel({ focusId }: { focusId?: string }) {
+export function SubagentsPanel({
+  focusId,
+  onOpenReplay,
+}: {
+  focusId?: string;
+  /** 打开该运行的完整对话回放（P2 尾巴 #7，面板底部二级视图） */
+  onOpenReplay?: (runId: string) => void;
+}) {
   const records = useSyncExternalStore(subscribeSubagentRuns, getSubagentRunSnapshot, getSubagentRunSnapshot);
   const [selectedId, setSelectedId] = useState<string | null>(focusId ?? null);
 
@@ -51,7 +59,19 @@ export function SubagentsPanel({ focusId }: { focusId?: string }) {
 
   const selected = records.find((r) => r.id === selectedId) ?? null;
   if (selected) {
-    return <SubagentDetail record={selected} onBack={() => setSelectedId(null)} />;
+    return (
+      <SubagentDetail
+        record={selected}
+        onBack={() => setSelectedId(null)}
+        onOpenReplay={onOpenReplay}
+      />
+    );
+  }
+
+  // focusId 指向的运行不在内存 registry（应用重启后点历史卡片）→ 直接走
+  // 持久化回放（conversations.db 是跨重启唯一可靠源；无记录时回放组件如实空态）。
+  if (focusId && !records.some((r) => r.id === focusId)) {
+    return <SubagentReplay runId={focusId} fallbackTitle={focusId} />;
   }
 
   const running = records.filter((r) => r.status === "running");
@@ -138,7 +158,15 @@ function StopButton({ id }: { id: string }) {
   );
 }
 
-function SubagentDetail({ record, onBack }: { record: SubagentRunRecord; onBack: () => void }) {
+function SubagentDetail({
+  record,
+  onBack,
+  onOpenReplay,
+}: {
+  record: SubagentRunRecord;
+  onBack: () => void;
+  onOpenReplay?: (runId: string) => void;
+}) {
   const used = record.usage
     ? record.usage.input + record.usage.output + record.usage.cacheRead + record.usage.cacheWrite
     : null;
@@ -188,6 +216,15 @@ function SubagentDetail({ record, onBack }: { record: SubagentRunRecord; onBack:
           </p>
         )}
       </section>
+      {record.status !== "running" && onOpenReplay ? (
+        <button
+          type="button"
+          onClick={() => onOpenReplay(record.id)}
+          className="w-full rounded-lg border border-[var(--brand)] px-3 py-1.5 text-xs font-medium text-[var(--brand)] transition-opacity hover:opacity-85"
+        >
+          完整回放对话（含工具调用与结果）
+        </button>
+      ) : null}
     </div>
   );
 }

@@ -4,6 +4,7 @@
  * ZCode 移植的 PreviewPane；顶部提供标题栏与关闭按钮（PreviewPane 自身不渲染关闭）。
  */
 import { X } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { BundledLanguage } from "shiki";
 import { PlatformProvider } from "./hooks/usePlatform";
 import { PreviewPane } from "./PreviewPane";
@@ -12,6 +13,7 @@ import type { CodeViewerSource } from "./lib/codeViewer";
 import { resolveWorkspacePath } from "../lib/agent/workspace";
 import { useAppStore } from "../store/useAppStore";
 import { SubagentsPanel } from "../components/chat/SubagentsPanel";
+import { SubagentReplay } from "../components/chat/SubagentReplay";
 import { GitPanel } from "../components/git/GitPanel";
 import { FilesPanel } from "../components/git/FilesPanel";
 
@@ -75,6 +77,12 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
   const codeViewerSource = useAppStore((state) => state.codeViewerSource);
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   const closeCodeViewer = useAppStore((state) => state.closeCodeViewer);
+  // 子代理完整回放（P2 尾巴 #7）：面板内二级视图（focusId 运行 → 回放转录）
+  const [replayRunId, setReplayRunId] = useState<string | null>(null);
+  useEffect(() => {
+    // 每次面板重开/切换源时退出回放态
+    setReplayRunId(null);
+  }, [codeViewerSource]);
 
   if (!codeViewerSource) {
     return null;
@@ -175,8 +183,14 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
           </button>
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto">
-          <SubagentsPanel focusId={codeViewerSource.focusId} />
+          <SubagentsPanel focusId={codeViewerSource.focusId} onOpenReplay={setReplayRunId} />
         </div>
+        {replayRunId ? (
+          <SubagentReplay
+            runId={replayRunId}
+            onBack={() => setReplayRunId(null)}
+          />
+        ) : null}
       </div>
     );
   }

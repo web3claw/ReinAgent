@@ -78,6 +78,44 @@ export interface SubagentRunResult {
   errorMessage?: string;
 }
 
+/**
+ * 子代理转录落库（P2 尾巴 #7）：复用 conversations.db 的 message/part 两表，
+ * task_id = `subagent:<runId>`（不写 task 表 → 不会出现在会话列表/水合里）。
+ * 每条 pi-ai 消息一行、整条 JSON 一个 part（kind="transcript_message"，忠实原样）。
+ * 「在右侧打开」的完整回放从 conversation_load 读回。失败仅 warn——回放是增强，
+ * 不能影响子代理本身的结果收敛。
+ */
+export async function persistSubagentTranscript(runId: string, messages: any[]): Promise<void> {
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    const rows = messages.map((m, index) => ({
+      msg_id: `sm${index}`,
+      seq: index,
+      role: String(m?.role ?? "assistant"),
+      status: "done",
+      started_at: null,
+      ended_at: null,
+      tool_name: null,
+      tool_call_id: null,
+      is_error: null,
+      truncated_by: null,
+      error: null,
+      thinking_started_at: null,
+      thinking_duration_ms: null,
+      parts: [
+        {
+          part_index: 0,
+          kind: "transcript_message",
+          payload: JSON.stringify(m ?? {}),
+        },
+      ],
+    }));
+    await invoke("conversation_sync", { taskId: `subagent:${runId}`, messages: rows });
+  } catch (err) {
+    console.warn(`[subagent] transcript persist failed for ${runId} (replay unavailable):`, err);
+  }
+}
+
 /** 从转录快照聚合子代理运行事实（纯函数，可测）。 */
 export function summarizeSubagentRun(
   messages: any[],
@@ -85,8 +123,7 @@ export function summarizeSubagentRun(
   maxStepsReached: boolean,
   aborted: boolean,
   errorMessage: string | undefined,
-): SubagentRunResult {
-  let content = "";
+): SubagentRunResult {  let content = "";
   let toolUseCount = 0;
   const usage: SubagentUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   for (const m of messages) {
@@ -262,6 +299,8 @@ export function createSubagentTool(deps: SubagentToolDeps) {
           beforeToolCall: type === "general-purpose" ? deps.beforeToolCall : undefined,
           onEvent: () => {},
         });
+        // 转录落库（P2 尾巴 #7）：完成后即可在右侧面板完整回放
+        void persistSubagentTranscript(runId, result.messages);
         const summary = summarizeSubagentRun(
           result.messages,
           now() - startedAt,
