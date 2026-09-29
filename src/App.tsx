@@ -861,6 +861,53 @@ export default function App() {
     return subscribeTaskTerminal(handle);
   }, [activeTaskId]);
 
+  // ---- Stop hooks（P2-G2）：任务终态 fire-and-forget（结果只进 hook 进程）----
+  useEffect(() => {
+    if (!effectiveWorkspaceRoot) return;
+    return subscribeTaskTerminal((event) => {
+      void (async () => {
+        try {
+          const { runWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+          await runWorkspaceHooks(
+            "Stop",
+            { payload: { taskId: event.taskId, outcome: event.outcome, error: event.error ?? null } },
+            effectiveWorkspaceRoot,
+          );
+        } catch (err) {
+          console.warn("[hooks] Stop runner failed:", err);
+        }
+      })();
+    });
+  }, [effectiveWorkspaceRoot]);
+
+  // ---- 工作区 hooks 信任横幅（P2-G2，对齐 ZCode workspace hook trust）----
+  const [hooksPendingTrust, setHooksPendingTrust] = useState<{
+    raw: string;
+    entries: { event: string; command: string }[];
+  } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setHooksPendingTrust(null);
+    if (!effectiveWorkspaceRoot) return;
+    void (async () => {
+      try {
+        const { discoverWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+        const discovered = await discoverWorkspaceHooks(effectiveWorkspaceRoot);
+        if (!cancelled && discovered && discovered.entries.length > 0 && !discovered.trusted) {
+          setHooksPendingTrust({
+            raw: discovered.raw,
+            entries: discovered.entries.map((e) => ({ event: e.event, command: e.command })),
+          });
+        }
+      } catch (err) {
+        console.warn("[hooks] discovery failed:", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [effectiveWorkspaceRoot]);
+
   // ---- 压缩事件反馈（/compact 与自动压缩：skipped/failed/done 都给可见反馈）----
   useEffect(() => {
     if (!activeTaskId) return;
@@ -1043,22 +1090,49 @@ export default function App() {
     images?: { base64: string; mimeType: string }[],
     userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
   ) => {
-    // @提及：先读取被引用文件/目录内容，挂到 user 消息尾部（对齐 ZCode/LiveAgent 注入语义）。
-    // 解析失败不阻断发送（注入块内已如实标注 unavailable）。
-    if (/@/.test(text)) {
+    // UserPromptSubmit hooks（P2-G2）：blocked → toast 说明并不发送（输入已清空，
+    // 乐观受理的取舍在文档记录）；运行器异常不阻断发送。
+    const dispatch = () => {
+      // @提及：先读取被引用文件/目录内容，挂到 user 消息尾部（对齐 ZCode/LiveAgent 注入语义）。
+      // 解析失败不阻断发送（注入块内已如实标注 unavailable）。
+      if (/@/.test(text)) {
+        void (async () => {
+          let outgoing = text;
+          try {
+            const { block } = await resolveMentions(text, effectiveWorkspaceRoot || "");
+            outgoing = appendMentionBlock(text, block);
+          } catch (err) {
+            console.warn("[mentions] resolve failed (sending without context block):", err);
+          }
+          sendNow(outgoing, images, userAttachments);
+        })();
+        return true;
+      }
+      return sendNow(text, images, userAttachments);
+    };
+    if (effectiveWorkspaceRoot) {
       void (async () => {
-        let outgoing = text;
         try {
-          const { block } = await resolveMentions(text, effectiveWorkspaceRoot || "");
-          outgoing = appendMentionBlock(text, block);
+          const { runWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+          const outcome = await runWorkspaceHooks(
+            "UserPromptSubmit",
+            { payload: { prompt: text } },
+            effectiveWorkspaceRoot,
+          );
+          if (outcome.blocked) {
+            toast.error(`[Hook:UserPromptSubmit] ${outcome.reason ?? "blocked"}`.slice(0, 200), {
+              duration: 6000,
+            });
+            return;
+          }
         } catch (err) {
-          console.warn("[mentions] resolve failed (sending without context block):", err);
+          console.warn("[hooks] UserPromptSubmit runner failed (continuing):", err);
         }
-        sendNow(outgoing, images, userAttachments);
+        dispatch();
       })();
       return true;
     }
-    return sendNow(text, images, userAttachments);
+    return dispatch();
   };
 
   /** 实际发送（handleSend 的同步主体；提及解析完成后调用的那段）。 */
@@ -1199,6 +1273,52 @@ export default function App() {
             <span>{t("workspaceUnknown")}</span>
           </div>
         )}
+
+        {/* 工作区 hooks 信任横幅（P2-G2）：待审配置批准后才执行 */}
+        {hooksPendingTrust ? (
+          <div className="flex flex-col gap-1.5 px-4 py-2 text-xs bg-[var(--warn-bg)] border-b border-[var(--warn-border)] text-[var(--warn-text)] flex-shrink-0">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+              <span className="font-medium">工作区声明了 {hooksPendingTrust.entries.length} 条 hook，批准后才会执行：</span>
+            </div>
+            <ul className="list-disc pl-6 space-y-0.5 font-mono">
+              {hooksPendingTrust.entries.map((e, i) => (
+                <li key={i} className="truncate">
+                  [{e.event}] {e.command}
+                </li>
+              ))}
+            </ul>
+            <div className="flex gap-2 mt-1">
+              <button
+                type="button"
+                onClick={() => {
+                  void (async () => {
+                    const { trustWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+                    trustWorkspaceHooks(effectiveWorkspaceRoot || "", hooksPendingTrust.raw);
+                    setHooksPendingTrust(null);
+                    toast.success("已批准工作区 hooks");
+                  })();
+                }}
+                className="rounded-lg border border-[var(--warn-border)] px-3 py-1 font-medium hover:opacity-85"
+              >
+                批准
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  void (async () => {
+                    const { untrustWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+                    untrustWorkspaceHooks(effectiveWorkspaceRoot || "");
+                    setHooksPendingTrust(null);
+                  })();
+                }}
+                className="rounded-lg px-3 py-1 text-[var(--warn-text)]/80 hover:text-[var(--warn-text)]"
+              >
+                拒绝
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">

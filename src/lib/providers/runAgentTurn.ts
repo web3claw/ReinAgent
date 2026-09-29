@@ -210,6 +210,8 @@ export function createApprovalGate(
   approval: ApprovalCoordinator,
   /** 工具级策略（优先于审批模式默认；deny 直接拦、allow 直接放、ask 走既有挂起） */
   toolPolicies?: Record<string, "allow" | "ask" | "deny">,
+  /** 工作区根（PreToolUse hooks 执行 cwd 与配置发现；P2-G2） */
+  hooksWorkspaceRoot?: string,
 ): (ctx: BeforeToolCallContext, signal?: AbortSignal) => Promise<{ block?: boolean; reason?: string } | undefined> {
   return async (ctx, signal) => {
     const toolName = ctx.toolCall.name;
@@ -227,6 +229,35 @@ export function createApprovalGate(
       }
       return undefined;
     }
+
+    // PreToolUse hooks（P2-G2，对齐 ZCode hook 语义）：deny/block 短路拦截；
+    // approve 放行（跳过审批矩阵）；无裁决走正常流程。
+    let hooksApprove = false;
+    if (hooksWorkspaceRoot) {
+      try {
+        const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
+        const hookOutcome = await runWorkspaceHooks(
+          "PreToolUse",
+          { toolName, payload: ctx.args },
+          hooksWorkspaceRoot,
+        );
+        if (hookOutcome.blocked) {
+          const contextSuffix =
+            hookOutcome.additionalContexts.length > 0
+              ? `\n${hookOutcome.additionalContexts.join("\n")}`
+              : "";
+          return {
+            block: true,
+            reason: `[Hook:PreToolUse] 已被工作区 hook 拦截：${hookOutcome.reason ?? "blocked"}${contextSuffix}`,
+          };
+        }
+        hooksApprove = hookOutcome.approve === true;
+      } catch (err) {
+        // hook 执行器自身异常不阻断工具流（诊断在 runWorkspaceHooks 的 runs 里）
+        console.warn("[hooks] PreToolUse runner failed (continuing):", err);
+      }
+    }
+    if (hooksApprove) return undefined;
 
     // 工具级策略优先于模式默认（对齐 ZCode tool-policy broker 语义）
     const policy = toolPolicies?.[toolName];
@@ -434,9 +465,11 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     maxRetryDelayMs: 60000,
     // 审批门：非 full 模式（且有协调器）才注入；full 下零开销直通。
     // 工具级策略在 full 模式下依然生效（deny/allow 是显式用户意图，优先于模式）。
+    // full 且无策略也要装门（P2-G2）：PreToolUse hooks 挂在门最前部，全模式都得跑；
+    // 门内 read/full 早退保持 full 模式零审批语义。
     beforeToolCall:
-      approval && (approvalMode !== "full" || toolPolicies)
-        ? createApprovalGate(approvalMode, approval, toolPolicies)
+      approval
+        ? createApprovalGate(approvalMode, approval, toolPolicies, workspaceRoot)
         : undefined,
   };
 

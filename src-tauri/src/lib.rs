@@ -20,6 +20,7 @@ mod usage_stats;
 mod fs_base64;
 mod fs_tree;
 mod git_panel;
+mod hooks;
 #[cfg(test)]
 mod git_panel_tests;
 #[cfg(test)]
@@ -95,6 +96,7 @@ pub fn run() {
             bg_process::bg_list,
             web_tools::web_fetch,
             web_tools::web_search,
+            hooks::hook_execute,
             usage_stats::usage_snapshot,
             fs_base64::fs_read_base64_file,
             fs_tree::fs_tree_dir,
