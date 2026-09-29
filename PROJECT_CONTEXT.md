@@ -941,3 +941,9 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **G1 handler 重构**：硬编码 if-chain → 遍历注册表按当前绑定匹配（每次按键实时查 kv 缓存，改绑即时生效无需重启）；allowInEditable 语义保留。
   - **设置 UI**：常规 tab `ShortcutsSection`——每行动作 + 绑定按钮 + **录制态**（点击后捕获下一个组合键）+ **冲突检测**（与其它动作绑定重复 → 拒绝并指明占用者）+ 重置默认（回默认 = 删除自定义项）。E2E：改绑查找→Ctrl+J（旧键失效/新键生效）→ 新任务录同款被拒 ✓ → 重置恢复 Ctrl+F ✓。
   - **⚠️ 坑**：i18n 动态 labelKey（shortcutFind 等）必须逐个补键——遗漏渲染原始键名导致 E2E 选择器匹配失败（本轮第 3 次同类坑：**新组件的 t() 键清单在完工时立即核对**）。
+- **P2 尾巴批 12：B⑤ 插件 v2 ✅（2026-09-30，git 安装/userConfig/技能贡献 E2E）**：
+  - **Git 拉取安装**：`plugin_install_from_git`——本地存在的目录直接按路径克隆（git 原生支持）；github `owner/repo` 短形式自动补 https；clone --depth 1 → 清 .git → 校验清单 → 移入插件根。**初版 URL 校验把本地路径拒了**（只认 http/git/短形式），放宽为「本地存在目录优先」。
+  - **清单扩展**：`skills`（相对目录，每子目录一个 SKILL.md）+ `userConfig`（{key: {title/type/default}}）。
+  - **技能贡献**：`skills/index.ts loadSkillsDiscovery` 合并——启用插件的 skills 目录 glob `*/SKILL.md` → SKILL.md frontmatter name/description（宽松解析）→ SkillSummary 追加（readSkillText 按绝对路径可读，技能卡/内容展示全兼容）。**装完插件必须 invalidateSkillsDiscoveryCache**（发现缓存不清则 Skills 页看不到，E2E 抓出后已在安装成功路径失效）。
+  - **userConfig**：值存 kv `reinagent-plugin-options:<name>`；设置「插件」tab 每插件配置编辑器（声明驱动）；**hook stdin payload.pluginOptions** 注入该插件已存值（runHookEntries 按 entry.pluginName 取）；getPluginOptions 合并 manifest 默认值。
+  - **E2E**：git 仓库（commands+skills+userConfig+hook 全贡献）→ 本地路径克隆安装 ✓ → 设置列表徽标（含技能/含斜杠命令/userConfig 编辑器）✓ → 保存 apiToken → kv 实证 ✓ → Skills 页列出 git-plugin-greet ✓。**npm 源未做**（需 npm CLI + tgz 解压，诚实暂缓）；agent 贡献待 P1-6 自定义 profile 批。

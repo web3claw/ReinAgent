@@ -501,7 +501,64 @@ async function managedSkillListToDiscovery(
 async function loadSkillsDiscovery(): Promise<SkillDiscovery> {
   await ensureBuiltinSkills();
   const discovery = await managedSkillListToDiscovery(await manageSkill({ action: "list" }));
+  // 插件技能贡献（P2-G2 v2）：启用插件的 skills 目录（每子目录一个 SKILL.md）
+  // 追加进发现结果；单条失败仅跳过（不拖垮整体发现）。
+  try {
+    const { getEnabledPluginSkillDirs } = await import("../plugins/pluginRegistry");
+    const dirs = await getEnabledPluginSkillDirs();
+    for (const dir of dirs) {
+      try {
+        const glob = await invoke<{ entries: { path: string; is_dir: boolean }[] }>("fs_glob", {
+          root: dir,
+          pattern: "*/SKILL.md",
+          limit: 100,
+        });
+        for (const entry of glob.entries) {
+          if (entry.is_dir) continue;
+          const segments = entry.path.split(/[\\/]+/);
+          const skillFile = `${dir}/${entry.path}`;
+          const baseDir = `${dir}/${segments.slice(0, -1).join("/")}`;
+          try {
+            const content = await invoke<string>("fs_read_file", { path: skillFile });
+            const meta = parsePluginSkillFrontmatter(content);
+            const fallbackName = segments[segments.length - 2] ?? "plugin-skill";
+            discovery.skills.push({
+              name: meta.name || fallbackName,
+              description: meta.description,
+              skillFile,
+              baseDir,
+            });
+          } catch (err) {
+            console.warn("[skills] plugin SKILL.md parse failed:", skillFile, err);
+          }
+        }
+      } catch (err) {
+        console.warn("[skills] plugin skills dir scan failed:", dir, err);
+      }
+    }
+  } catch (err) {
+    console.warn("[skills] plugin skills merge failed:", err);
+  }
   return discovery;
+}
+
+/** SKILL.md frontmatter 的 name/description 宽松提取（缺失回退目录名）。 */
+function parsePluginSkillFrontmatter(text: string): { name: string; description: string } {
+  const trimmed = text.replace(/^\uFEFF/, "");
+  if (!trimmed.startsWith("---")) return { name: "", description: "" };
+  const end = trimmed.indexOf("\n---", 3);
+  if (end === -1) return { name: "", description: "" };
+  let name = "";
+  let description = "";
+  for (const line of trimmed.slice(3, end).split("\n")) {
+    const m = /^(name|description):\s*(.+)$/.exec(line.trim());
+    if (m) {
+      const value = m[2].trim().replace(/^["']|["']$/g, "");
+      if (m[1] === "name") name = value;
+      else description = value;
+    }
+  }
+  return { name, description };
 }
 
 export function getCachedSkillsDiscovery(): SkillDiscovery | null {

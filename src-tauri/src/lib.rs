@@ -129,6 +129,7 @@ pub fn run() {
             hooks::hook_execute,
             plugins::plugin_list,
             plugins::plugin_install_from_dir,
+            plugins::plugin_install_from_git,
             plugins::plugin_uninstall,
             updater::update_check,
             updater::update_install,

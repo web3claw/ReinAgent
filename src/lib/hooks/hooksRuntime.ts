@@ -249,6 +249,17 @@ async function runHookEntries(
 ): Promise<HookOutcome> {
   for (const entry of entries) {
     const hookInput: HookInput = { event, ...input, workspaceRoot: input.workspaceRoot ?? fallbackCwd };
+    // 插件来源的 hook：注入该插件 userConfig 已存值（stdin payload.pluginOptions）
+    let pluginOptions: Record<string, unknown> | undefined;
+    const pluginName = (entry as { pluginName?: unknown }).pluginName;
+    if (typeof pluginName === "string") {
+      try {
+        const { getPluginOptions } = await import("../plugins/pluginRegistry");
+        pluginOptions = getPluginOptions(pluginName, null);
+      } catch {
+        pluginOptions = undefined;
+      }
+    }
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const result = await invoke<{
@@ -260,7 +271,7 @@ async function runHookEntries(
         args: {
           command: entry.command,
           cwd: input.workspaceRoot ?? fallbackCwd,
-          stdinJson: JSON.stringify(hookInput),
+          stdinJson: JSON.stringify(pluginOptions ? { ...hookInput, pluginOptions } : hookInput),
           timeoutMs: entry.timeoutMs,
         },
       });
