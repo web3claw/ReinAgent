@@ -21,6 +21,8 @@ mod fs_base64;
 mod fs_tree;
 mod git_panel;
 mod hooks;
+mod app_tray;
+mod updater;
 #[cfg(test)]
 mod git_panel_tests;
 #[cfg(test)]
@@ -55,9 +57,15 @@ pub fn run() {
             .manage(TerminalState::default())
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_store::Builder::new().build())
-            .plugin(tauri_plugin_notification::init()),
+            .plugin(tauri_plugin_notification::init())
+            .plugin(tauri_plugin_process::init())
+            .plugin(tauri_plugin_updater::Builder::new().build()),
     )
     .setup(|app| {
+        // 系统托盘（P2-G2）：菜单 + 左键切换主窗口显隐；失败如实打日志不阻断启动
+        if let Err(error) = app_tray::setup_tray(app) {
+            eprintln!("failed to setup system tray: {error}");
+        }
         // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
         automation::start_scheduler(app.handle().clone());
         // 内置技能种子（对齐 LiveAgent setup：skills-installer / skills-creator /
@@ -97,6 +105,8 @@ pub fn run() {
             web_tools::web_fetch,
             web_tools::web_search,
             hooks::hook_execute,
+            updater::update_check,
+            updater::update_install,
             usage_stats::usage_snapshot,
             fs_base64::fs_read_base64_file,
             fs_tree::fs_tree_dir,

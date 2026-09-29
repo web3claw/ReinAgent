@@ -5,6 +5,7 @@ import { useTranslation } from '../../i18n';
 import { isNotificationSoundEnabled, setNotificationSoundEnabled } from '../../lib/chat/taskNotifications';
 import { getWebProxy, setWebProxy } from '../../lib/web/webProxy';
 import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
+import { AppUpdaterCard } from './AppUpdaterCard';
 import { AppUsagePanel } from './usage-stats/AppUsagePanel';
 import { useAppStore } from '../../store/useAppStore';
 import {
@@ -210,6 +211,7 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
                   <p>Tech Stack: React 19, TypeScript, Vite, Tailwind CSS v4, Zustand</p>
                 </div>
               </div>
+              <AppUpdaterCard />
             </div>
           )}
         </div>

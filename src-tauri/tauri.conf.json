@@ -20,6 +20,19 @@
     ],
     "security": {
       "csp": null
+    },
+    "trayIcon": {
+      "iconPath": "icons/128x128.png",
+      "iconAsTemplate": false,
+      "tooltip": "ReinAgent"
+    }
+  },
+  "plugins": {
+    "updater": {
+      "windows": {
+        "installMode": "passive"
+      },
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlGN0RFQ0JGOUJERDZBQkIKUldTN2F0MmJ2K3g5bitsSlpQYmVNbUFXWUxWN2VuRktBZmNvWlZyNWpUZXBscjRrcDduVDVIU2YK"
     }
   },
   "bundle": {
