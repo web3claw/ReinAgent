@@ -12,14 +12,16 @@ import type { CodeViewerSource } from "./lib/codeViewer";
 import { resolveWorkspacePath } from "../lib/agent/workspace";
 import { useAppStore } from "../store/useAppStore";
 import { SubagentsPanel } from "../components/chat/SubagentsPanel";
+import { GitPanel } from "../components/git/GitPanel";
+import { FilesPanel } from "../components/git/FilesPanel";
 
 type CodeViewerSourceInput = Extract<
   NonNullable<ReturnType<typeof useAppStore.getState>["codeViewerSource"]>,
-  { type: "file" | "text" | "patch" | "multi-file-diff" | "subagents" }
+  { type: "file" | "text" | "patch" | "multi-file-diff" | "subagents" | "git" | "files" }
 >;
 
 function buildSource(
-  input: Exclude<NonNullable<CodeViewerSourceInput>, { type: "subagents" }>,
+  input: Exclude<NonNullable<CodeViewerSourceInput>, { type: "subagents" | "git" | "files" }>,
   workspacePath?: string
 ): CodeViewerSource {
   // 子代理形态没有 path；其余形态按工作区根解析相对路径
@@ -62,10 +64,85 @@ function buildSource(
 
 export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }) {
   const codeViewerSource = useAppStore((state) => state.codeViewerSource);
+  const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   const closeCodeViewer = useAppStore((state) => state.closeCodeViewer);
 
   if (!codeViewerSource) {
     return null;
+  }
+
+  // Git 面板（P2-D）：分支/变更/提交历史，不走 PreviewPane。
+  if (codeViewerSource.type === "git") {
+    return (
+      <div className="flex h-full w-[460px] flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+        <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[11px] bg-[var(--bg-sunken)] border border-[var(--border)] text-[var(--text-dim)]">
+              Git
+            </span>
+            <span className="truncate text-xs text-[var(--text)]">{codeViewerSource.title}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => openCodeViewer({ type: "files", title: "文件树" })}
+            className="flex-shrink-0 rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+          >
+            文件树
+          </button>
+          <button
+            type="button"
+            onClick={closeCodeViewer}
+            className="flex-shrink-0 rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            aria-label="关闭 Git 面板"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <GitPanel workspacePath={workspacePath} />
+        </div>
+      </div>
+    );
+  }
+
+  // 工作区文件树（P2-D1）：懒加载目录树，不走 PreviewPane。
+  if (codeViewerSource.type === "files") {
+    return (
+      <div className="flex h-full w-[460px] flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+        <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
+          <div className="flex min-w-0 items-center gap-2">
+            <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[11px] bg-[var(--bg-sunken)] border border-[var(--border)] text-[var(--text-dim)]">
+              文件
+            </span>
+            <span className="truncate text-xs text-[var(--text)]">{codeViewerSource.title}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => openCodeViewer({ type: "git", title: "Git" })}
+            className="flex-shrink-0 rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+          >
+            Git
+          </button>
+          <button
+            type="button"
+            onClick={closeCodeViewer}
+            className="flex-shrink-0 rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            aria-label="关闭文件树"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          <FilesPanel
+            workspacePath={workspacePath}
+            onOpenFile={(relPath) => {
+              const path = workspacePath ? `${workspacePath}/${relPath}` : relPath;
+              openCodeViewer({ type: "file", title: relPath, path });
+            }}
+          />
+        </div>
+      </div>
+    );
   }
 
   // 子代理目录面板（P1-6 增量）：实时订阅 registry，不走 PreviewPane。

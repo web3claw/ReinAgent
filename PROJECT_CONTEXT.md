@@ -860,3 +860,9 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **C2 代码评论卡：未开始**（`::code-comment` 行内指令协议解析 + 折叠卡 + 点击定位，ZCode assistantCodeComment.ts/assistantDirectiveParser.ts 可直移）。
 - **C2 代码评论卡 ✅（2026-09-29）**：ZCode `assistantCodeComment.ts` + `assistantDirectiveParser.ts` 直移（`::code-comment{title body file start end priority}` 行内指令；手写 name="value" 扫描器；代码围栏内忽略；流式未闭合尾部隐藏；解析后原文从可见正文抹除——`projectAssistantCodeComments().visibleText`）。文件解析 shim 内联（resolveWorkspacePath，http/file:/~ 失败关闭）。卡片挂 TurnGroupView（终态 lastAssistant）：正文渲染走 visibleText、卡片列表渲染其后、点击开文件预览。**提示词侧**：模型要产出评论需在系统提示词声明协议（暂未声明——待 PROMPTS.md 增补），故当前模型不会自发输出该指令。
 - **解析单测**：assistantCodeComment.test.mjs 5 例（完整指令/围栏内忽略+缺字段/投影抹除/流式防闪现/50 张上限+非法 priority 丢弃）。
+- **批次 D 核心完成（2026-09-29）**：
+  - **Rust `git_panel.rs`**：git_status（porcelain v1 -b 解析+分支提取）/git_branch_list/git_checkout（分支名白名单防注入）/git_log（%H%an%ct%s 分隔协议）；非 git 仓库返回 isGitRepo=false 空态而非错误；spawn git CLI 不引 git2。git_panel_tests.rs 2 例（分支名注入校验含命令包装层/真仓库拒绝原文上抛）。
+  - **`fs_tree.rs` fs_tree_dir**：单层目录（名称+is_dir+size，目录优先排序）——文件树懒加载的后端。
+  - **前端**：`lib/git/api.ts` 封装；`GitPanel.tsx`（分支切换 select+变更列表【?? 绿/D 红/其他 amber】+提交历史，手动刷新）；`FilesPanel.tsx`（懒加载目录树，目录点击逐层展开、文件点击回调开预览）；右侧面板 codeViewerSource 加 "git"/"files" 两类型 + CodeViewerPaneHost 分支渲染 + 面板头部互切按钮（Git↔文件树）；侧栏底栏 Git 入口按钮（onOpenGitPanel）。
+  - **实测**：git_status/branch_list/log 裸调真实数据（dev/main 分支、11 条变更、真实提交历史）；Git 面板渲染 PI-Desktop 工作区（变更 2 条+提交历史）；文件树渲染完整层级（目录优先+根文件）。
+  - **D 尾巴（未做）**：提交图谱可视化 / 代码审查 tab（code-review 预览模式）/ Git 面板刷新自动轮询。

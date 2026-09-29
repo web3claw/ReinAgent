@@ -301,6 +301,7 @@ export default function App() {
   const [searchOpen, setSearchOpen] = useState(false);
   // 搜索跳转定位：目标消息 id（MessageList 滚动定位 + 高亮后置 null）
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState<string | null>(null);
+  const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   // 会话内查找条（P2-A1，Ctrl+F 呼出）
   const [findOpen, setFindOpen] = useState(false);
 
@@ -1149,7 +1150,13 @@ export default function App() {
       {/* Sidebar */}
       {isSidebarOpen && (
         <div className="flex-shrink-0 w-[260px] h-full border-r border-[var(--border)]">
-          <WorkspaceSidebar onNewTask={handleNewTask} onOpenSearch={() => setSearchOpen(true)} />
+          <WorkspaceSidebar
+            onNewTask={handleNewTask}
+            onOpenSearch={() => setSearchOpen(true)}
+            onOpenGitPanel={() =>
+              openCodeViewer({ type: "git", title: effectiveWorkspaceRoot || "Git" })
+            }
+          />
         </div>
       )}
 

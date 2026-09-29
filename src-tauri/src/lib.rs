@@ -17,6 +17,10 @@ mod history_search;
 mod hub_http;
 mod web_tools;
 mod usage_stats;
+mod fs_tree;
+mod git_panel;
+#[cfg(test)]
+mod git_panel_tests;
 #[cfg(test)]
 mod usage_stats_tests;
 #[cfg(test)]
@@ -91,6 +95,11 @@ pub fn run() {
             web_tools::web_fetch,
             web_tools::web_search,
             usage_stats::usage_snapshot,
+            fs_tree::fs_tree_dir,
+            git_panel::git_status,
+            git_panel::git_branch_list,
+            git_panel::git_checkout,
+            git_panel::git_log,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,
             conversation_store::conversation_load_page,

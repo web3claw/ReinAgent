@@ -6,6 +6,7 @@ import { useTranslation } from '../../i18n';
 import {
   Sun, Moon, Plus, Search, Blend, Cable, Brain,
   Timer, Settings, Monitor, Plug, Clock,
+  GitBranch,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
 
@@ -134,10 +135,13 @@ export const MOCK_PROJECTS: ProjectGroup[] = [];
 export function WorkspaceSidebar({
   onNewTask,
   onOpenSearch,
+  onOpenGitPanel,
 }: {
   onNewTask?: (project?: string | null) => void;
   /** 打开全局搜索弹窗（放大镜按钮；对齐 LiveAgent ConversationSearchDialog 入口） */
   onOpenSearch?: () => void;
+  /** 打开右侧 Git 面板（P2-D）。 */
+  onOpenGitPanel?: () => void;
 }) {
   const { t } = useTranslation();
   const isSidebarOpen = useAppStore(state => state.isSidebarOpen);
@@ -250,6 +254,11 @@ export function WorkspaceSidebar({
             <FooterIconButton tooltip={t('settings')} onClick={() => setCurrentView('settings')}>
               <Settings className="w-3.5 h-3.5" />
             </FooterIconButton>
+            {onOpenGitPanel ? (
+              <FooterIconButton tooltip={t('gitOpenPanel')} onClick={onOpenGitPanel}>
+                <GitBranch className="w-3.5 h-3.5" />
+              </FooterIconButton>
+            ) : null}
             <FooterIconButton tooltip={t('navPlugins')}>
               <Plug className="w-3.5 h-3.5" />
             </FooterIconButton>

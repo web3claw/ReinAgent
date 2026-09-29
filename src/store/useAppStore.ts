@@ -83,6 +83,8 @@ interface AppState {
     | { type: "patch"; title: string; path: string; patch: string }
     | { type: "multi-file-diff"; title: string; path?: string }
     | { type: "subagents"; title: string; focusId?: string }
+    | { type: "git"; title: string }
+    | { type: "files"; title: string }
     | null;
   openCodeViewer: (
     source:
@@ -91,6 +93,8 @@ interface AppState {
       | { type: "patch"; title: string; path: string; patch: string }
       | { type: "multi-file-diff"; title: string; path?: string }
       | { type: "subagents"; title: string; focusId?: string }
+      | { type: "git"; title: string }
+      | { type: "files"; title: string }
   ) => void;
   closeCodeViewer: () => void;
 }
