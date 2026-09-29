@@ -13,6 +13,7 @@ import {
 import { AutomationsPage } from "./components/automations/AutomationsPage";
 import { useAutomationStore } from "./lib/automations/store";
 import { ConversationSearchDialog } from "./components/search/ConversationSearchDialog";
+import { CommandPalette, type PaletteCommand } from "./components/chat/CommandPalette";
 import { McpHubPage } from "./components/mcp/McpHubPage";
 import { MemoryPanel } from "./components/memory/MemoryPanel";
 import { SkillsHubPage } from "./components/skills/SkillsHubPage";
@@ -84,6 +85,7 @@ import {
 export default function App() {
   const {
     theme,
+    setTheme,
     isTerminalOpen, toggleTerminal,
     isSidebarOpen, toggleSidebar,
     currentView, setCurrentView,
@@ -140,6 +142,12 @@ export default function App() {
       if (key === "f") {
         e.preventDefault();
         setFindOpen(true);
+        return;
+      }
+      // 命令面板（P2-G2）：编辑框聚焦也放行（全局命令入口）
+      if (key === "k") {
+        e.preventDefault();
+        setPaletteOpen(true);
         return;
       }
       // 新任务：编辑框聚焦时放行（用户可能在输入——不打断）
@@ -329,6 +337,8 @@ export default function App() {
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   // 会话内查找条（P2-A1，Ctrl+F 呼出）
   const [findOpen, setFindOpen] = useState(false);
+  // 命令面板（P2-G2，Ctrl/Cmd+K 呼出）
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // maxSteps 从**任务级**推理等级派生；完全访问模式下不设步数上限。
   // 0 = 无上限（agentRuntime 仅在 maxSteps > 0 时启用硬闸；注意 0 不能写成 undefined——
@@ -1189,7 +1199,36 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
-  if (currentView === "settings") {    return (
+  // ---- 命令面板命令注册表（P2-G2）：闭包持有各 handler，随渲染刷新 ref ----
+  // ⚠ 必须位于 currentView 早退之前（useMemo/useRef 是 hook，顺序不能条件化）
+  const paletteCommandsRef = useRef<PaletteCommand[]>([]);
+  const paletteCommands: PaletteCommand[] = useMemo(
+    () => [
+      { id: "new-task", label: t("paletteNewTask"), keywords: "new task 新建", run: () => handleNewTaskRef.current() },
+      { id: "open-settings", label: t("paletteOpenSettings"), keywords: "settings 设置", run: () => setCurrentView("settings") },
+      { id: "open-workbench", label: t("paletteOpenWorkbench"), keywords: "workbench 工作台 聊天", run: () => setCurrentView("workbench") },
+      { id: "open-automations", label: t("paletteOpenAutomations"), keywords: "automation 自动化 定时", run: () => setCurrentView("automations") },
+      { id: "open-skills", label: t("paletteOpenSkills"), keywords: "skills 技能", run: () => setCurrentView("skills") },
+      { id: "open-mcp", label: t("paletteOpenMcp"), keywords: "mcp 服务器", run: () => setCurrentView("mcp") },
+      { id: "open-memory", label: t("paletteOpenMemory"), keywords: "memory 记忆", run: () => setCurrentView("memory") },
+      { id: "open-git", label: t("paletteOpenGit"), keywords: "git 分支 提交", run: () => openCodeViewer({ type: "git", title: "Git" }) },
+      { id: "open-files", label: t("paletteOpenFiles"), keywords: "files 文件树 目录", run: () => openCodeViewer({ type: "files", title: "文件树" }) },
+      { id: "open-subagents", label: t("paletteOpenSubagents"), keywords: "subagent 子代理", run: () => openCodeViewer({ type: "subagents", title: "子代理" }) },
+      { id: "clear-conversation", label: t("paletteClearConversation"), keywords: "clear 清空 会话", run: () => void handleClearConversation() },
+      { id: "compact-context", label: t("paletteCompactContext"), keywords: "compact 压缩 上下文", run: () => handleCompactRequest() },
+      { id: "toggle-theme", label: t("paletteToggleTheme"), keywords: "theme 主题 深色 浅色 dark light", run: () => setTheme(theme === "dark" ? "light" : "dark") },
+      { id: "toggle-sidebar", label: t("paletteToggleSidebar"), keywords: "sidebar 侧栏", run: () => toggleSidebar() },
+      { id: "focus-composer", label: t("paletteFocusComposer"), keywords: "focus 输入 聚焦", run: () => setFocusTrigger((c) => c + 1) },
+      { id: "find-in-conversation", label: t("paletteFindInConversation"), keywords: "find 查找 搜索", run: () => setFindOpen(true) },
+    ],
+    // handler 闭包随渲染刷新即可（useMemo 依赖从简——面板打开瞬间读最新 ref）
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 见 paletteCommandsRef 赋值
+    [t, theme, currentView, activeTaskId],
+  );
+  paletteCommandsRef.current = paletteCommands;
+
+  if (currentView === "settings") {
+    return (
       <SettingsPage
         settings={settings}
         status={status}
@@ -1240,6 +1279,13 @@ export default function App() {
           setActiveTaskId(taskId);
           setScrollTargetMessageId(messageId ?? null);
         }}
+      />
+
+      {/* 命令面板（P2-G2，Ctrl/Cmd+K） */}
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        commands={paletteCommandsRef.current}
       />
 
       {/* Main Content Area */}
