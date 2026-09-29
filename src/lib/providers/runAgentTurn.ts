@@ -284,6 +284,25 @@ export function createApprovalGate(
     if (effectiveMode === "edit" && kind === "write") return undefined;
     if (approval.isAlwaysAllowed(toolName)) return undefined;
 
+    // PermissionRequest hooks（P2-G2）：本将挂起审批前给 hook 一次裁决机会
+    // （approve = 免审放行；block = 拒绝；无裁决走正常挂起）。
+    if (hooksWorkspaceRoot) {
+      try {
+        const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
+        const outcome = await runWorkspaceHooks(
+          "PermissionRequest",
+          { toolName, payload: { args: ctx.args } },
+          hooksWorkspaceRoot,
+        );
+        if (outcome.blocked) {
+          return { block: true, reason: `[Hook:PermissionRequest] ${outcome.reason ?? "denied by hook"}` };
+        }
+        if (outcome.approve) return undefined;
+      } catch (err) {
+        console.warn("[hooks] PermissionRequest runner failed (continuing):", err);
+      }
+    }
+
     // 挂起等待用户决策；abort 时以 reject 收场（钩子负责尊重 abort signal）。
     const decision = await new Promise<ApprovalDecision | Record<string, unknown>>((resolve) => {
       let settled = false;
@@ -452,6 +471,28 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   });
   const requestMessages = prependMetaUserBlock(messages, metaUserBlock);
 
+  // SessionStart hooks（P2-G2）：回合启动时触发；additionalContext 追加进系统
+  // 提示词尾部；blocked = 本轮拒绝启动（真实错误上抛，绝不静默放行）。
+  if (workspaceRoot) {
+    try {
+      const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
+      const outcome = await runWorkspaceHooks(
+        "SessionStart",
+        { payload: { workspaceRoot } },
+        workspaceRoot,
+      );
+      if (outcome.blocked) {
+        throw new Error(`[Hook:SessionStart] ${outcome.reason ?? "blocked by hook"}`);
+      }
+      if (outcome.additionalContexts.length > 0) {
+        effectiveSystemPrompt += `\n\n[Hook:SessionStart]\n${outcome.additionalContexts.join("\n")}`;
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("[Hook:SessionStart]")) throw err;
+      console.warn("[hooks] SessionStart runner failed (continuing):", err);
+    }
+  }
+
   const base = {
     systemPrompt: effectiveSystemPrompt,
     messages: requestMessages,
@@ -470,6 +511,37 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     beforeToolCall:
       approval
         ? createApprovalGate(approvalMode, approval, toolPolicies, workspaceRoot)
+        : undefined,
+    // PostToolUse hooks（P2-G2）：工具执行后合并插件的 additionalContext 反馈
+    // （append 到结果 content 末尾，模型下一轮能看到；不替换原结果）。
+    afterToolCall:
+      workspaceRoot
+        ? async (ctx: import("@earendil-works/pi-agent-core").AfterToolCallContext) => {
+            try {
+              const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
+              const resultText =
+                ctx.result?.content
+                  ?.filter((block: { type: string }): block is { type: "text"; text: string } => block.type === "text")
+                  .map((block) => block.text)
+                  .join("\n") ?? "";
+              const outcome = await runWorkspaceHooks(
+                "PostToolUse",
+                { toolName: ctx.toolCall.name, payload: { args: ctx.args, resultText, isError: ctx.isError } },
+                workspaceRoot,
+              );
+              if (outcome.additionalContexts.length === 0) return undefined;
+              const feedback = outcome.additionalContexts.join("\n");
+              const original = ctx.result?.content ?? [];
+              return {
+                content: [...original, { type: "text" as const, text: `\n[Hook:PostToolUse] ${feedback}` }],
+                isError: ctx.isError,
+                details: ctx.result?.details,
+              };
+            } catch (err) {
+              console.warn("[hooks] PostToolUse runner failed (continuing):", err);
+              return undefined;
+            }
+          }
         : undefined,
   };
 

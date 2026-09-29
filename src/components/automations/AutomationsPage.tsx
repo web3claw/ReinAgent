@@ -5,12 +5,13 @@
  */
 
 import { useEffect, useState } from "react";
-import { Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Play, Plus, RefreshCw, History, Trash2 } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { useAutomationStore } from "../../lib/automations/store";
 import { describeRule } from "../../lib/automations/types";
 import type { Automation, AutomationDuePayload, AutomationUpsert } from "../../lib/automations/types";
 import { AutomationEditView } from "./AutomationEditView";
+import { AutomationRunsHistory } from "./AutomationRunsHistory";
 import type { ProviderItem } from "../settings/model-provider/types";
 
 export interface AutomationsPageProps {
@@ -21,6 +22,8 @@ export interface AutomationsPageProps {
   defaultModelId: string;
   /** 当前工作区（selectedProject；空 = 默认工作区） */
   workspacePath?: string;
+  /** 打开某次运行产出的会话（切回工作台并激活任务） */
+  onOpenTask: (taskId: string) => void;
 }
 
 type StatusFilter = "all" | "active" | "paused" | "failed";
@@ -36,7 +39,7 @@ export function formatDateTime(ms: number): string {
 }
 
 export function AutomationsPage(props: AutomationsPageProps) {
-  const { onDispatch, providers, defaultProviderId, defaultModelId, workspacePath } = props;
+  const { onDispatch, providers, defaultProviderId, defaultModelId, workspacePath, onOpenTask } = props;
   const { t } = useTranslation();
   const { automations, loading, error, refresh, setEnabled, remove, runNow } =
     useAutomationStore();
@@ -47,6 +50,8 @@ export function AutomationsPage(props: AutomationsPageProps) {
   >(null);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
+  /** 运行历史视图（P2-G2 尾巴） */
+  const [showHistory, setShowHistory] = useState(false);
 
   useEffect(() => {
     void refresh();
@@ -109,6 +114,17 @@ export function AutomationsPage(props: AutomationsPageProps) {
     );
   }
 
+  // ---- 运行历史视图（P2-G2 尾巴）----
+  if (showHistory) {
+    return (
+      <AutomationRunsHistory
+        automations={automations}
+        onBack={() => setShowHistory(false)}
+        onOpenTask={onOpenTask}
+      />
+    );
+  }
+
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden text-[var(--text)]">
       {/* Header（标题 + 副标题 + 右侧动作；返回按钮已移除——侧边栏导航直达） */}
@@ -118,6 +134,14 @@ export function AutomationsPage(props: AutomationsPageProps) {
             <h1 className="text-ui-lg font-semibold text-[var(--text)]">{t("automationsTitle")}</h1>
           </div>
           <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setShowHistory(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-lg border border-[var(--border)] text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
+              title={t("automationsHistoryTitle")}
+            >
+              <History className="h-4 w-4" />
+            </button>
             <button
               type="button"
               onClick={() => void refresh()}

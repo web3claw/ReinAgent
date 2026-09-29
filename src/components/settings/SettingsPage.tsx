@@ -7,6 +7,8 @@ import { getWebProxy, setWebProxy } from '../../lib/web/webProxy';
 import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
 import { AppUpdaterCard } from './AppUpdaterCard';
 import { PluginsSection } from './PluginsSection';
+import { HooksSection } from './HooksSection';
+import { ShortcutsSection } from './ShortcutsSection';
 import { AppUsagePanel } from './usage-stats/AppUsagePanel';
 import { useAppStore } from '../../store/useAppStore';
 import {
@@ -17,6 +19,7 @@ import {
   Brain,
   Info,
   PackageOpen,
+  Webhook,
   ArrowLeft,
   Moon,
   Sun,
@@ -28,13 +31,15 @@ interface SettingsPageProps {
   status: SettingsStatus;
   onChange: (patch: Partial<Settings>) => void;
   onBack: () => void;
+  /** 活动工作区根（hooks 管理读写其 .ReinAgent/config.json） */
+  workspaceRoot?: string;
 }
 
-export function SettingsPage({ settings, status, onChange, onBack }: SettingsPageProps) {
+export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot }: SettingsPageProps) {
   const { t } = useTranslation();
   const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
   const [proxyInput, setProxyInput] = useState(getWebProxy());
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'usage' | 'plugins' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'usage' | 'hooks' | 'plugins' | 'about'>('general');
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
   const navItems = [
@@ -44,6 +49,7 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
     { id: 'usage', label: t('settingsUsage'), icon: ChartColumn },
     { id: 'terminal', label: t('settingsTerminal'), icon: Terminal },
     { id: 'agent', label: t('settingsAgent'), icon: Brain },
+    { id: 'hooks', label: t('hooksTitle'), icon: Webhook },
     { id: 'plugins', label: t('pluginsTitle'), icon: PackageOpen },
     { id: 'about', label: t('settingsAbout'), icon: Info },
   ] as const;
@@ -137,6 +143,7 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
                   className="w-64 shrink-0 px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--brand)]"
                 />
               </div>
+              <ShortcutsSection />
             </div>
           )}
 
@@ -192,6 +199,13 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
             <div className="space-y-6">
               <h2 className="text-xl font-semibold mb-6">{t('settingsAgent')}</h2>
               <div className="text-[var(--text-dim)]">Agent capabilities coming soon</div>
+            </div>
+          )}
+
+          {activeTab === 'hooks' && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold mb-6">{t('hooksTitle')}</h2>
+              <HooksSection workspaceRoot={workspaceRoot} />
             </div>
           )}
 

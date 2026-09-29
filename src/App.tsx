@@ -64,6 +64,11 @@ import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { kvGet } from "./lib/storage/db";
 import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
+import {
+  SHORTCUT_ACTIONS,
+  getShortcutBindings,
+  matchesShortcut,
+} from "./lib/shortcuts/shortcuts";
 import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import { buildContextUsageData } from "./lib/chat/contextUsage";
@@ -122,8 +127,8 @@ export default function App() {
   const [skillsSectionText, setSkillsSectionText] = useState("");
   // handleNewTask 稳定转发（effect 依赖 [] 而 handleNewTask 在后声明）
   const handleNewTaskRef = useRef<() => void>(() => {});
-  // 全局快捷键（P2-G1，集中管理；输入框聚焦时仅放行 Escape）：
-  // Ctrl/Cmd+F 查找 · Ctrl/Cmd+T 新任务 · Ctrl/Cmd+Shift+A 聚焦 composer
+  // 全局快捷键（P2-G1 集中管理 + P2-G2 可自定义绑定）：
+  // 每次按键查当前绑定表（kv 缓存读，廉价）；编辑框聚焦按动作语义放行。
   useEffect(() => {
     const inEditable = (target: EventTarget | null): boolean => {
       const el = target as HTMLElement | null;
@@ -135,31 +140,22 @@ export default function App() {
       );
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (!mod) return;
-      const key = e.key.toLowerCase();
-      // 查找：编辑框聚焦也不放行（浏览器原生查找被替换为会话内查找）
-      if (key === "f") {
+      if (!e.ctrlKey && !e.metaKey) return;
+      const bindings = getShortcutBindings();
+      const run = (actionId: string): boolean => {
+        const def = SHORTCUT_ACTIONS.find((a) => a.id === actionId);
+        if (!def) return false;
+        if (inEditable(e.target) && !def.allowInEditable) return false;
+        if (!matchesShortcut(e, bindings[actionId] ?? "")) return false;
         e.preventDefault();
-        setFindOpen(true);
-        return;
-      }
-      // 命令面板（P2-G2）：编辑框聚焦也放行（全局命令入口）
-      if (key === "k") {
-        e.preventDefault();
-        setPaletteOpen(true);
-        return;
-      }
-      // 新任务：编辑框聚焦时放行（用户可能在输入——不打断）
-      if (key === "t" && !inEditable(e.target)) {
-        e.preventDefault();
-        handleNewTaskRef.current();
-        return;
-      }
-      // 聚焦 composer：仅非编辑框焦点时
-      if (key === "a" && e.shiftKey && !inEditable(e.target)) {
-        e.preventDefault();
-        setFocusTrigger((c) => c + 1);
+        if (actionId === "find") setFindOpen(true);
+        else if (actionId === "newTask") handleNewTaskRef.current();
+        else if (actionId === "palette") setPaletteOpen(true);
+        else if (actionId === "focusComposer") setFocusTrigger((c) => c + 1);
+        return true;
+      };
+      for (const action of SHORTCUT_ACTIONS) {
+        if (run(action.id)) return;
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -1234,6 +1230,7 @@ export default function App() {
         status={status}
         onChange={update}
         onBack={() => setCurrentView("workbench")}
+        workspaceRoot={effectiveWorkspaceRoot || undefined}
       />
     );
   }
@@ -1375,6 +1372,9 @@ export default function App() {
               defaultModelId={settings.modelId || ""}
               workspacePath={selectedProject ?? undefined}
               onDispatch={dispatchAutomationRun}
+              onOpenTask={(taskId) => {
+                setActiveTaskId(taskId);
+              }}
             />
           ) : currentView === "mcp" ? (
             <McpHubPage />

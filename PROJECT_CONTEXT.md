@@ -932,3 +932,12 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **贡献挂接**：① commands → `commands_scan` 加 `extra_dirs` 参数（重构出 `scan_command_dir`），LexicalComposer 扫描时合并启用插件的 commands 目录（斜杠菜单直接出现插件命令，E2E：plugindemo ✓）；② hooks → `runWorkspaceHooks` 合并启用插件条目（**安装=显式用户动作视为已信任**，不走工作区信任横幅；工作区未配置/未信任时插件 hooks 独立照跑）。
   - **⚠️ 坑**：Stop 事件的 input 不带 workspaceRoot → hook cwd 空 → spawn 失败被 fire-and-forget 吞掉（插件 Stop hook 标记文件不出现）——runHookEntries 加 fallbackCwd=工作区根 + App 侧传递。
   - **E2E**：直接 invoke 安装（fs_pick_folder 原生对话框 CDP 不可驱）→ 列表/设置 UI 列出（名称/描述/含斜杠命令徽标）→ 斜杠菜单出现 plugindemo ✓ → 发消息等回合结束 → 插件 Stop hook 标记文件落盘 ✓。市场源（git/npm/github）、agent/skill 贡献后续批次。
+- **P2 尾巴批 10：B 批完善尾巴①②③ ✅（2026-09-29）**：
+  - **① Hooks 管理界面 ✅**：设置新「Hooks」tab（`HooksSection.tsx`，App 传活动工作区根）——条目增删改（event/matcher/command/timeout/启停）+ 保存（saveWorkspaceHooks 保留 config 其它顶层键）+ **单条试运行**（runSingleHookForTest 按事件注入样例负载，显式用户动作不看信任态；结果显示 blocked/exit/timeout/error）+ 未信任内联提示与批准。HookConfigEntry 加 `enabled?`（false 跳过）。E2E：添加→保存→配置落活动工作区 ✓→测试显示拦截+理由 ✓。
+  - **② Hooks 剩余事件 ✅**：PostToolUse（pi-agent-core `afterToolCall` 直通，agentRuntime 透传 + runAgentTurn 组装——additionalContext **append 到结果 content 末尾**，不替换原结果）；PermissionRequest（审批挂起前 hook 裁决：approve 免审/block 拒绝/无裁决正常挂起）；SessionStart（回合启动触发，additionalContext 追加系统提示词尾部，**blocked = 本轮拒绝启动**真实错误上抛）。HooksEventName 拆 RuntimeHookEventName 扩展类型。
+  - **③ 自动化运行历史 ✅**：`AutomationRunsHistory.tsx`（每自动化各拉 automation_list_runs 50 条合并倒序 cap100；状态点/trigger 徽标/错误预览/打开会话 onOpenTask→setActiveTaskId 自动切回工作台）；AutomationsPage 头部 History 按钮切换视图。E2E：空态诚实显示 ✓（孤儿 run 不显示——按自动化聚合查询的合理行为）。
+- **P2 尾巴批 11：B④ 快捷键系统完整版 ✅（2026-09-29，改绑/失效/冲突/重置 E2E）**：
+  - **`lib/shortcuts/shortcuts.ts`**：动作注册表 SHORTCUT_ACTIONS（find/newTask/palette/focusComposer，默认 Ctrl+F/T/K/Shift+A + allowInEditable 语义）+ kv `reinagent-shortcuts` 自定义绑定 + parseShortcut/shortcutFromEvent（必须带修饰键；支持 F1-F12）/matchesShortcut。
+  - **G1 handler 重构**：硬编码 if-chain → 遍历注册表按当前绑定匹配（每次按键实时查 kv 缓存，改绑即时生效无需重启）；allowInEditable 语义保留。
+  - **设置 UI**：常规 tab `ShortcutsSection`——每行动作 + 绑定按钮 + **录制态**（点击后捕获下一个组合键）+ **冲突检测**（与其它动作绑定重复 → 拒绝并指明占用者）+ 重置默认（回默认 = 删除自定义项）。E2E：改绑查找→Ctrl+J（旧键失效/新键生效）→ 新任务录同款被拒 ✓ → 重置恢复 Ctrl+F ✓。
+  - **⚠️ 坑**：i18n 动态 labelKey（shortcutFind 等）必须逐个补键——遗漏渲染原始键名导致 E2E 选择器匹配失败（本轮第 3 次同类坑：**新组件的 t() 键清单在完工时立即核对**）。

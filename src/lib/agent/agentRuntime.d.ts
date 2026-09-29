@@ -65,6 +65,14 @@ export interface RunTurnDeps {
     context: BeforeToolCallContext,
     signal?: AbortSignal,
   ) => Promise<{ block?: boolean; reason?: string; terminate?: boolean } | undefined>;
+  /**
+   * 可选的工具执行后钩子（直通 pi-agent-core `AgentOptions.afterToolCall`）。
+   * P2-G2 hooks 的 PostToolUse 事件挂点；可改写结果 content / 标记错误。
+   */
+  afterToolCall?: (
+    context: import("@earendil-works/pi-agent-core").AfterToolCallContext,
+    signal?: AbortSignal,
+  ) => Promise<import("@earendil-works/pi-agent-core").AfterToolCallResult | undefined>;
 }
 
 /** `runTurn` 的返回值：转录快照 + 本次运行如何结束的可断言事实。 */

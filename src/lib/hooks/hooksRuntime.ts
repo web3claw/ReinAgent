@@ -19,12 +19,16 @@ import { kvGet, kvSet } from "../storage/db";
 
 export const HOOKS_EVENTS = ["PreToolUse", "UserPromptSubmit", "Stop"] as const;
 export type HooksEventName = (typeof HOOKS_EVENTS)[number];
+/** 运行器支持的全部事件（B② 扩展：PostToolUse/PermissionRequest/SessionStart 不进设置下拉，但可执行）。 */
+export type RuntimeHookEventName = HooksEventName | "PostToolUse" | "PermissionRequest" | "SessionStart";
 
 export interface HookConfigEntry {
   event: string;
   matcher?: string;
   command: string;
   timeoutMs?: number;
+  /** false = 停用（配置可保留，运行时跳过）；缺省启用 */
+  enabled?: boolean;
 }
 
 export interface HooksConfigFile {
@@ -32,7 +36,7 @@ export interface HooksConfigFile {
 }
 
 export interface HookInput {
-  event: HooksEventName;
+  event: RuntimeHookEventName;
   /** PreToolUse：工具名（matcher 匹配目标） */
   toolName?: string;
   /** 事件负载（工具参数 / 用户提示词 / 终态信息） */
@@ -143,6 +147,42 @@ export function untrustWorkspaceHooks(workspaceRoot: string): void {
   kvSet(trustKey(workspaceRoot), "");
 }
 
+/** 把条目数组写回工作区 hooks 配置（保留 config.json 里其它顶层键；信任态不因保存改变）。 */
+export async function saveWorkspaceHooks(
+  workspaceRoot: string,
+  entries: HookConfigEntry[],
+): Promise<void> {
+  const path = hooksConfigPath(workspaceRoot);
+  let config: Record<string, unknown> = {};
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    config = JSON.parse(await invoke<string>("fs_read_file", { path })) as Record<string, unknown>;
+  } catch {
+    // 无既有配置（或读取失败）：以全新 config 写入
+  }
+  config.hooks = entries;
+  const { invoke: invokeWrite } = await import("@tauri-apps/api/core");
+  await invokeWrite("fs_write_file", { path, content: JSON.stringify(config, null, 2) });
+}
+
+/** 单条 hook 试运行（设置 UI「测试」按钮；显式用户动作，不看信任态）。 */
+export async function runSingleHookForTest(
+  entry: HookConfigEntry,
+  workspaceRoot: string,
+): Promise<HookOutcome> {
+  const outcome: HookOutcome = { blocked: false, additionalContexts: [], runs: [] };
+  const sampleInput: Omit<HookInput, "event"> =
+    entry.event === "PreToolUse"
+      ? {
+          toolName: entry.matcher || "exec_command",
+          payload: { args: { command: "echo hook-test" } },
+        }
+      : entry.event === "UserPromptSubmit"
+        ? { payload: { prompt: "hook 测试提示词" } }
+        : { payload: { taskId: "test", outcome: "done" } };
+  return runHookEntries([entry], entry.event as HooksEventName, sampleInput, outcome, workspaceRoot);
+}
+
 function matcherMatches(matcher: string | undefined, toolName: string): boolean {
   if (!matcher) return true;
   try {
@@ -173,7 +213,7 @@ function discoverCached(workspaceRoot: string): Promise<DiscoveredHooks | null> 
 
 /** 执行某事件的全部已信任 hooks（顺序、单条超时各自生效；首条 block 即短路）。 */
 export async function runWorkspaceHooks(
-  event: HooksEventName,
+  event: RuntimeHookEventName,
   input: Omit<HookInput, "event">,
   workspaceRoot: string,
 ): Promise<HookOutcome> {
@@ -185,10 +225,16 @@ export async function runWorkspaceHooks(
     return runHookEntries(pluginEntries.filter((h) => h.event === event), event, input, outcome, workspaceRoot);
   }
   const entries = discovered.entries.filter(
-    (h) => h.event === event && (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
+    (h) =>
+      h.event === event &&
+      h.enabled !== false &&
+      (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
   );
   const pluginEntries = (await discoverPluginHooks()).filter(
-    (h) => h.event === event && (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
+    (h) =>
+      h.event === event &&
+      h.enabled !== false &&
+      (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
   );
   return runHookEntries([...entries, ...pluginEntries], event, input, outcome, workspaceRoot);
 }
@@ -196,7 +242,7 @@ export async function runWorkspaceHooks(
 /** 顺序执行 hook 条目（首条 block 短路）；决定写进 outcome。cwd 兜底工作区根（Stop 事件的 input 不带 root）。 */
 async function runHookEntries(
   entries: HookConfigEntry[],
-  event: HooksEventName,
+  event: RuntimeHookEventName,
   input: Omit<HookInput, "event">,
   outcome: HookOutcome,
   fallbackCwd: string,
