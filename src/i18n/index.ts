@@ -219,7 +219,7 @@ export const translations = {
     "settings.usage.appUsageLoadingDescription": "正在聚合本地会话历史，请稍候。",
     "settings.usage.emptyTitle": "还没有用量数据",
     "settings.usage.emptyDescription": "所选时间范围内还没有用量记录。",
-    "settings.usage.appUsageRangeScopeNote": "汇总与热力图为累计口径，时间范围作用于下方图表。",
+    "settings.usage.appUsageRangeScopeNote": "汇总与热力图为累计口径，时间范围作用于下方图表。",
     settingsTerminal: "终端配置",
     settingsAgent: "智能体能力",
     settingsAbout: "关于",

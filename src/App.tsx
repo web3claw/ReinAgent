@@ -598,42 +598,12 @@ export default function App() {
         });
       },
       resolveModelDeps: async (memory) => {
-        const selected = memory.organizerModel;
-        const providerId = selected?.customProviderId?.trim() ?? "";
-        const modelId = selected?.model?.trim() ?? "";
+        // 独立模型解析收编到 lib/memory/modelResolution（pool 的 extraction 同源复用）
+        const independent = await import("./lib/memory/modelResolution").then((m) =>
+          m.resolveIndependentMemoryModelDeps(memory, providers),
+        );
+        if (independent) return independent;
         // organizerModel 未配置（或供应商已不存在）→ 回落主对话模型（LA fallback 语义）
-        if (providerId && modelId) {
-          const provider = providers.find((item) => item.id === providerId);
-          if (provider) {
-            if (!provider.apiKey.trim()) {
-              throw new Error(`记忆整理模型供应商 API Key 为空：${provider.name || provider.id}`);
-            }
-            const apiFormatToType: Record<string, string> = {
-              "openai-chat-completions": "openai",
-              "openai-completions": "openai",
-              "openai-responses": "openai",
-              "anthropic-messages": "anthropic",
-              "google-generative-ai": "gemini",
-            };
-            const { buildModel } = await import("./lib/providers/modelFactory");
-            const { getStreamFnForApi } = await import("./lib/providers/runAgentTurn");
-            const model = buildModel({
-              provider: (apiFormatToType[provider.apiFormat] ?? "openai") as any,
-              apiKey: provider.apiKey,
-              modelId,
-              baseUrl: provider.baseUrl,
-            });
-            const stream = await getStreamFnForApi(model.api);
-            return {
-              model,
-              stream,
-              api: model.api,
-              label: `${provider.id}/${modelId}`,
-              getApiKey: () => provider.apiKey,
-              thinkingLevel: undefined,
-            };
-          }
-        }
         const fallback = settingsRef.current;
         if (!fallback.apiKey?.trim()) {
           throw new Error("主对话模型未配置 API Key，且未选择独立的记忆整理模型。");

@@ -632,32 +632,58 @@ function refreshStreamingSet() {
 
 /**
  * 聊天后记忆抽取（P1-8）：终态 done 时由 refreshStreamingSet 触发。
- * 模型复用当轮 sendOptions 的 provider 配置（主模型凭证）；faux 测试源跳过。
+ * 模型解析（P2 尾巴 #6）：优先「记忆整理」独立模型（记忆设置抽屉配置，与
+ * Organizer 编排批同源共享 resolveIndependentMemoryModelDeps）；未配置回落
+ * 当轮 sendOptions 的主模型凭证。faux 测试源跳过。
  */
 async function maybeExtractMemory(taskId: string, entry: PoolEntry): Promise<void> {
   try {
     const options = entry.sendOptions;
     if (!options || options.source === "faux") return; // 测试模型不产记忆
     const config = options.config;
-    if (!config?.apiKey || !config?.modelId) return;
-    const { buildModel } = await import("../providers/modelFactory");
+    const fallbackConfigReady = Boolean(config?.apiKey && config?.modelId);
+    // 独立模型优先（供应商不存在/未配置 → null → 回落主模型）
+    let independent: Awaited<
+      ReturnType<typeof import("../memory/modelResolution").resolveIndependentMemoryModelDeps>
+    > | null = null;
+    try {
+      const { useHubSettings } = await import("../../store/hubSettingsStore");
+      const { loadProvidersConfigFromDisk } = await import(
+        "../../components/settings/model-provider/types"
+      );
+      const memory = useHubSettings.getState().settings.memory;
+      const providers = await loadProvidersConfigFromDisk();
+      independent = await import("../memory/modelResolution").then((m) =>
+        m.resolveIndependentMemoryModelDeps(memory, providers),
+      );
+    } catch (err) {
+      // 独立模型解析失败（如 API Key 为空）：如实上抛语义太重会打断聊天终态流，
+      // 记错误后回落主模型；App 层 organizer 路径同错误会直接抛（那里的失败必须可见）。
+      console.warn("[pool] independent memory model resolution failed, falling back:", err);
+    }
+    if (!independent && !fallbackConfigReady) return;
     const { getStreamFnForApi } = await import("../providers/runAgentTurn");
     const { requestMemoryExtraction } = await import("./memory/extractionController");
-    const model = buildModel(config);
-    const stream = await getStreamFnForApi(model.api);
+    const deps = independent
+      ? independent
+      : await (async () => {
+          const { buildModel } = await import("../providers/modelFactory");
+          const model = buildModel(config);
+          return {
+            model,
+            stream: await getStreamFnForApi(model.api),
+            api: model.api,
+            label: model.provider || "openai-completions",
+            getApiKey: () => config!.apiKey,
+            thinkingLevel: undefined,
+          };
+        })();
     requestMemoryExtraction({
       taskId,
       sessionId: taskId,
       workspaceRoot: options.workspaceRoot,
       messages: entry.state.messages,
-      model: {
-        model,
-        stream,
-        api: model.api,
-        label: model.provider || "openai-completions",
-        getApiKey: () => config.apiKey,
-        thinkingLevel: undefined,
-      },
+      model: deps,
     });
   } catch (err) {
     console.warn("[pool] memory extraction dispatch failed (non-blocking):", err);
