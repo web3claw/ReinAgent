@@ -118,6 +118,21 @@ export async function discoverWorkspaceHooks(workspaceRoot: string): Promise<Dis
   return { raw, entries, trusted };
 }
 
+/**
+ * 插件贡献 hooks 合并（P2-G2 插件系统）：启用插件的 hooks 追加到工作区配置之后。
+ * 插件安装是显式用户动作，视为已信任来源（不走工作区信任横幅）。
+ * 插件清单读取失败 → 空数组（注册表内部已 warn，不阻断工作区 hooks）。
+ */
+export async function discoverPluginHooks(): Promise<HookConfigEntry[]> {
+  try {
+    const { getEnabledPluginHooks } = await import("../plugins/pluginRegistry");
+    return await getEnabledPluginHooks();
+  } catch (err) {
+    console.warn("[hooks] plugin hooks discovery failed:", err);
+    return [];
+  }
+}
+
 /** 批准当前工作区 hooks 配置（横幅「批准」按钮）。 */
 export function trustWorkspaceHooks(workspaceRoot: string, raw: string): void {
   kvSet(trustKey(workspaceRoot), configFingerprint(raw));
@@ -165,13 +180,29 @@ export async function runWorkspaceHooks(
   const outcome: HookOutcome = { blocked: false, additionalContexts: [], runs: [] };
   const discovered = await discoverCached(workspaceRoot);
   if (!discovered || !discovered.trusted || discovered.entries.length === 0) {
-    return outcome;
+    // 工作区 hooks 缺失/未信任时，插件 hooks 仍要跑（独立信任来源）
+    const pluginEntries = await discoverPluginHooks();
+    return runHookEntries(pluginEntries.filter((h) => h.event === event), event, input, outcome, workspaceRoot);
   }
   const entries = discovered.entries.filter(
     (h) => h.event === event && (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
   );
+  const pluginEntries = (await discoverPluginHooks()).filter(
+    (h) => h.event === event && (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
+  );
+  return runHookEntries([...entries, ...pluginEntries], event, input, outcome, workspaceRoot);
+}
+
+/** 顺序执行 hook 条目（首条 block 短路）；决定写进 outcome。cwd 兜底工作区根（Stop 事件的 input 不带 root）。 */
+async function runHookEntries(
+  entries: HookConfigEntry[],
+  event: HooksEventName,
+  input: Omit<HookInput, "event">,
+  outcome: HookOutcome,
+  fallbackCwd: string,
+): Promise<HookOutcome> {
   for (const entry of entries) {
-    const hookInput: HookInput = { event, ...input, workspaceRoot };
+    const hookInput: HookInput = { event, ...input, workspaceRoot: input.workspaceRoot ?? fallbackCwd };
     try {
       const { invoke } = await import("@tauri-apps/api/core");
       const result = await invoke<{
@@ -182,7 +213,7 @@ export async function runWorkspaceHooks(
       }>("hook_execute", {
         args: {
           command: entry.command,
-          cwd: workspaceRoot,
+          cwd: input.workspaceRoot ?? fallbackCwd,
           stdinJson: JSON.stringify(hookInput),
           timeoutMs: entry.timeoutMs,
         },

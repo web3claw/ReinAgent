@@ -21,6 +21,7 @@ mod fs_base64;
 mod fs_tree;
 mod git_panel;
 mod hooks;
+mod plugins;
 mod app_tray;
 mod updater;
 #[cfg(test)]
@@ -31,6 +32,10 @@ mod usage_stats_tests;
 mod web_tools_tests;
 
 use terminal::TerminalState;
+
+/// 单实例聚焦用的主进程句柄（single-instance 回调在第二进程上下文触发，
+/// 无法直接拿窗口——setup 时保存本实例句柄，回调里取用）。
+static SINGLE_APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
 #[tauri::command]
 fn greet(name: &str) -> String {
@@ -54,6 +59,21 @@ fn with_window_state(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
 pub fn run() {
     with_window_state(
         tauri::Builder::default()
+            // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；
+            // 必须最先注册（官方要求）。保证任务栏只有一个应用图标。
+            .plugin(tauri_plugin_single_instance::init(|_argv, _cwd, _extra| {
+                // 回调运行在「新进程」上下文，此处无法直接拿窗口——通过已有实例的
+                // AppHandle 聚焦；插件会把第二实例的参数转给本回调，聚焦逻辑在
+                // setup 里保存的全局句柄上完成（见 SINGLE_APP_HANDLE OnceLock）。
+                use tauri::Manager;
+                if let Some(app) = SINGLE_APP_HANDLE.get() {
+                    if let Some(window) = app.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.unminimize();
+                        let _ = window.set_focus();
+                    }
+                }
+            }))
             .manage(TerminalState::default())
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_store::Builder::new().build())
@@ -62,6 +82,8 @@ pub fn run() {
             .plugin(tauri_plugin_updater::Builder::new().build()),
     )
     .setup(|app| {
+        // 单实例：保存本实例句柄（二次启动回调聚焦用）
+        let _ = SINGLE_APP_HANDLE.set(app.handle().clone());
         // 系统托盘（P2-G2）：菜单 + 左键切换主窗口显隐；失败如实打日志不阻断启动
         if let Err(error) = app_tray::setup_tray(app) {
             eprintln!("failed to setup system tray: {error}");
@@ -105,6 +127,9 @@ pub fn run() {
             web_tools::web_fetch,
             web_tools::web_search,
             hooks::hook_execute,
+            plugins::plugin_list,
+            plugins::plugin_install_from_dir,
+            plugins::plugin_uninstall,
             updater::update_check,
             updater::update_install,
             usage_stats::usage_snapshot,

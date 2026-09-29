@@ -926,3 +926,9 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **设置 UI**：`AppUpdaterCard`（关于 tab）——更新源输入 + 检查更新 + 可用时「下载并安装」；未配置/错误全部如实渲染。
   - **E2E**：空端点 → 「未配置更新源」✓；不可达端点 → 「检查更新失败：error sending request…」如实错误 ✓；**hasUpdate 真实路径需发布服务器+签名产物，本批无法端到端**（诚实边界，已记录）。托盘 CDP 不可见——应用无 panic 启动即托盘构建成功（代码级验证）。
   - **⚠️ 坑**：updater 插件 conf 缺 `plugins.updater.pubkey` 启动即 panic（PluginInitialization）；`update.check()` 是 async（不能进 spawn_blocking）；Update 字段是 `body`/`date`（非 notes/pub_date）。
+- **P2 尾巴批 9：#9-单实例锁 + 插件系统 v1 ✅（2026-09-29，E2E 闭环）**：
+  - **单实例锁**：`tauri-plugin-single-instance`（须最先注册；回调在第二进程上下文触发 → OnceLock 保存的 AppHandle 聚焦主窗口后第二进程退出）。用户实测双任务栏图标的根治（此前 tauri dev 重编译期旧实例未回收 + 无锁）。
+  - **插件 v1**（`plugins.rs` + `lib/plugins/pluginRegistry.ts` + 设置新「插件」tab）：插件 = `~/.ReinAgent/plugins/<name>/` + `plugin.json` 清单（name/description/version/**commands**（相对目录，*.md 同工作区命令格式）/**hooks**（event/matcher/command/timeoutMs））；安装=本地目录整拷（`fs_pick_folder` 选目录 → `plugin_install_from_dir`，名字白名单、缺清单拒收、覆盖可选）；卸载=删目录；启用态 kv `reinagent-plugins-enabled`（缺省启用）。
+  - **贡献挂接**：① commands → `commands_scan` 加 `extra_dirs` 参数（重构出 `scan_command_dir`），LexicalComposer 扫描时合并启用插件的 commands 目录（斜杠菜单直接出现插件命令，E2E：plugindemo ✓）；② hooks → `runWorkspaceHooks` 合并启用插件条目（**安装=显式用户动作视为已信任**，不走工作区信任横幅；工作区未配置/未信任时插件 hooks 独立照跑）。
+  - **⚠️ 坑**：Stop 事件的 input 不带 workspaceRoot → hook cwd 空 → spawn 失败被 fire-and-forget 吞掉（插件 Stop hook 标记文件不出现）——runHookEntries 加 fallbackCwd=工作区根 + App 侧传递。
+  - **E2E**：直接 invoke 安装（fs_pick_folder 原生对话框 CDP 不可驱）→ 列表/设置 UI 列出（名称/描述/含斜杠命令徽标）→ 斜杠菜单出现 plugindemo ✓ → 发消息等回合结束 → 插件 Stop hook 标记文件落盘 ✓。市场源（git/npm/github）、agent/skill 贡献后续批次。

@@ -430,9 +430,18 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     void (async () => {
       try {
         const { invoke } = await import("@tauri-apps/api/core");
+        // 插件贡献命令目录（P2-G2 插件系统）：启用插件的 commands 目录合并扫描
+        let extraDirs: string[] | null = null;
+        try {
+          const { getEnabledPluginCommandDirs } = await import("../../lib/plugins/pluginRegistry");
+          const dirs = await getEnabledPluginCommandDirs();
+          if (dirs.length > 0) extraDirs = dirs;
+        } catch (err) {
+          console.warn("[commands] plugin command dirs unavailable (workspace scan only):", err);
+        }
         const entries = await invoke<{ name?: unknown; description?: unknown; body?: unknown }[]>(
           "commands_scan",
-          { workspaceRoot: workspaceRoot ?? null },
+          { workspaceRoot: workspaceRoot ?? null, extraDirs },
         );
         if (!cancelled) setCustomCommands(toCustomCommands(entries));
       } catch (err) {

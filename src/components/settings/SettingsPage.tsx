@@ -6,6 +6,7 @@ import { isNotificationSoundEnabled, setNotificationSoundEnabled } from '../../l
 import { getWebProxy, setWebProxy } from '../../lib/web/webProxy';
 import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
 import { AppUpdaterCard } from './AppUpdaterCard';
+import { PluginsSection } from './PluginsSection';
 import { AppUsagePanel } from './usage-stats/AppUsagePanel';
 import { useAppStore } from '../../store/useAppStore';
 import {
@@ -15,6 +16,7 @@ import {
   Terminal,
   Brain,
   Info,
+  PackageOpen,
   ArrowLeft,
   Moon,
   Sun,
@@ -32,7 +34,7 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
   const { t } = useTranslation();
   const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
   const [proxyInput, setProxyInput] = useState(getWebProxy());
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'usage' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'usage' | 'plugins' | 'about'>('general');
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
   const navItems = [
@@ -42,6 +44,7 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
     { id: 'usage', label: t('settingsUsage'), icon: ChartColumn },
     { id: 'terminal', label: t('settingsTerminal'), icon: Terminal },
     { id: 'agent', label: t('settingsAgent'), icon: Brain },
+    { id: 'plugins', label: t('pluginsTitle'), icon: PackageOpen },
     { id: 'about', label: t('settingsAbout'), icon: Info },
   ] as const;
 
@@ -189,6 +192,13 @@ export function SettingsPage({ settings, status, onChange, onBack }: SettingsPag
             <div className="space-y-6">
               <h2 className="text-xl font-semibold mb-6">{t('settingsAgent')}</h2>
               <div className="text-[var(--text-dim)]">Agent capabilities coming soon</div>
+            </div>
+          )}
+
+          {activeTab === 'plugins' && (
+            <div className="space-y-6">
+              <h2 className="text-xl font-semibold mb-6">{t('pluginsTitle')}</h2>
+              <PluginsSection />
             </div>
           )}
 

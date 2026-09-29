@@ -46,65 +46,89 @@ fn parse_frontmatter(text: &str) -> (std::collections::BTreeMap<String, String>,
 }
 
 /// 扫描工作区的自定义命令目录。目录不存在 → 空数组（非错误）。
+/// `extra_dirs`（P2-G2 插件系统）：插件贡献的命令目录，同格式合并扫描。
 #[tauri::command]
-pub async fn commands_scan(workspace_root: Option<String>) -> Result<Vec<CommandEntry>, String> {
+pub async fn commands_scan(
+    workspace_root: Option<String>,
+    extra_dirs: Option<Vec<String>>,
+) -> Result<Vec<CommandEntry>, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let root = match workspace_root {
-            Some(r) if !r.trim().is_empty() => std::path::PathBuf::from(r.trim()),
-            _ => return Ok(Vec::new()), // 无工作区：无自定义命令
-        };
-        let dir = root.join(".ReinAgent").join("commands");
-        if !dir.is_dir() {
-            return Ok(Vec::new());
-        }
         let mut out: Vec<CommandEntry> = Vec::new();
-        let entries = std::fs::read_dir(&dir)
-            .map_err(|e| format!("读取命令目录失败 {}: {e}", dir.display()))?;
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if !path.is_file() {
-                continue;
+        let mut dirs: Vec<std::path::PathBuf> = Vec::new();
+        if let Some(r) = workspace_root {
+            if !r.trim().is_empty() {
+                dirs.push(Path::new(r.trim()).join(".ReinAgent").join("commands"));
             }
-            let is_md = path
-                .extension()
-                .map(|e| e.eq_ignore_ascii_case("md"))
-                .unwrap_or(false);
-            if !is_md {
-                continue;
-            }
-            let text = match std::fs::read_to_string(&path) {
-                Ok(t) => t,
-                Err(e) => {
-                    // 单文件读取失败不拖垮整体：如实记录到 description（No-Fallback）
-                    eprintln!("[commands] 读取失败 {}: {e}", path.display());
-                    continue;
+        }
+        if let Some(extra) = extra_dirs {
+            for dir in extra {
+                if !dir.trim().is_empty() {
+                    dirs.push(Path::new(dir.trim()).to_path_buf());
                 }
-            };
-            let (meta, body) = parse_frontmatter(&text);
-            let fallback_name = path
-                .file_stem()
-                .map(|s| s.to_string_lossy().to_string())
-                .unwrap_or_default();
-            let name = meta
-                .get("name")
-                .cloned()
-                .filter(|n| !n.trim().is_empty())
-                .unwrap_or(fallback_name);
-            if name.trim().is_empty() {
+            }
+        }
+        for dir in dirs {
+            if !dir.is_dir() {
                 continue;
             }
-            out.push(CommandEntry {
-                name: name.trim().to_string(),
-                description: meta.get("description").cloned().unwrap_or_default(),
-                body,
-                source: path.display().to_string(),
-            });
+            scan_command_dir(&dir, &mut out);
         }
         out.sort_by(|a, b| a.name.cmp(&b.name));
         Ok(out)
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// 扫描单个命令目录（*.md，frontmatter name/description），失败单文件跳过。
+fn scan_command_dir(dir: &Path, out: &mut Vec<CommandEntry>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!("[commands] 读取命令目录失败 {}: {e}", dir.display());
+            return;
+        }
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_file() {
+            continue;
+        }
+        let is_md = path
+            .extension()
+            .map(|e| e.eq_ignore_ascii_case("md"))
+            .unwrap_or(false);
+        if !is_md {
+            continue;
+        }
+        let text = match std::fs::read_to_string(&path) {
+            Ok(t) => t,
+            Err(e) => {
+                // 单文件读取失败不拖垮整体：日志记录（No-Fallback）
+                eprintln!("[commands] 读取失败 {}: {e}", path.display());
+                continue;
+            }
+        };
+        let (meta, body) = parse_frontmatter(&text);
+        let fallback_name = path
+            .file_stem()
+            .map(|s| s.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let name = meta
+            .get("name")
+            .cloned()
+            .filter(|n| !n.trim().is_empty())
+            .unwrap_or(fallback_name);
+        if name.trim().is_empty() {
+            continue;
+        }
+        out.push(CommandEntry {
+            name: name.trim().to_string(),
+            description: meta.get("description").cloned().unwrap_or_default(),
+            body,
+            source: path.display().to_string(),
+        });
+    }
 }
 
 #[cfg(test)]
