@@ -9,6 +9,14 @@ import {
   type SlashCommand,
 } from "../../lib/commands/slashCommands";
 import { parseMentionQuery } from "../../lib/chat/mentions";
+import {
+  appendPromptHistoryEntry,
+  navigatePromptHistory,
+} from "../../lib/chat/promptHistory";
+import {
+  readPromptHistoryEntries,
+  persistPromptHistoryEntries,
+} from "../../lib/chat/promptHistoryStorage";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import type { ContextUsageData } from "../../lib/chat/contextUsage";
 import { useAppStore } from "../../store/useAppStore";
@@ -63,7 +71,7 @@ export interface LexicalComposerProps {
     images?: ComposerImageInput[],
     userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
   ) => boolean;
-  /** 会话工作区根（粘贴图片落盘 / 附件对话框初始目录） */
+  /** 会话工作区根（粘贴图片落盘 / 附件对话框初始目录 / 输入历史 per-workspace 键） */
   workspaceRoot?: string;
   onStop: () => void;
   providerId?: string;
@@ -181,6 +189,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   // 草稿归属切换（任务 ↔ 任务 / ↔ 新任务页）→ 恢复对应草稿
   useEffect(() => {
     setText(kvGet(draftKey) ?? "");
+    historyIndexRef.current = null;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 只随草稿归属切换恢复
   }, [draftKey]);
   // 文本变化 → 防抖落 kv（空串清 key）
@@ -195,8 +204,32 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   }, [text, draftKey]);
   const [showMentionMenu, setShowMentionMenu] = useState(false);
   const [showSlashMenu, setShowSlashMenu] = useState(false);
-  /** `/` 菜单查询词（命令名过滤） */
   const [slashQuery, setSlashQuery] = useState("");
+  // ---- 输入历史（P2：↑ 召回已发送 prompt，per-workspace kv 持久化，对齐 ZCode promptHistory）----
+  const [promptHistoryEntries, setPromptHistoryEntries] = useState<string[]>([]);
+  /** 历史浏览态游标：null = 未浏览；浏览中手动编辑 → 退出浏览态 */
+  const historyIndexRef = useRef<number | null>(null);
+  useEffect(() => {
+    setPromptHistoryEntries(readPromptHistoryEntries(workspaceRoot ?? ""));
+    historyIndexRef.current = null;
+  }, [workspaceRoot]);
+
+  /**
+   * ↑/↓ 历史导航（textarea 版，逻辑对齐 ZCode PromptHistoryPlugin）：
+   * 仅在「输入框为空」或「已处于历史浏览态」时接管——多行输入中途的 ↑/↓ 仍是
+   * 光标移动。返回是否接管（供 preventDefault）。
+   */
+  const navigateHistory = (direction: "up" | "down"): boolean => {
+    if (promptHistoryEntries.length === 0) return false;
+    const currentIndex = historyIndexRef.current;
+    if (currentIndex === null && text.length > 0) return false;
+
+    const result = navigatePromptHistory(promptHistoryEntries, currentIndex, direction);
+    if (!result.shouldHandle) return false;
+    historyIndexRef.current = result.nextIndex;
+    setText(result.nextValue);
+    return true;
+  };
   // ---- 选区引用 chips（P2-C1）：订阅任务作用域引用，发送时拼 userselect 尾块 ----
   const [selectionRefs, setSelectionRefs] = useState<SelectionReference[]>([]);
   useEffect(() => {
@@ -303,6 +336,13 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       userAttachments.length > 0 ? userAttachments : undefined,
     );
     if (accepted) {
+      // 发送成功 → 记入输入历史（per-workspace 持久化；连续重复不追加，30 条限额）
+      if (workspaceRoot) {
+        const entries = appendPromptHistoryEntry(readPromptHistoryEntries(workspaceRoot), trimmed);
+        persistPromptHistoryEntries(workspaceRoot, entries);
+        setPromptHistoryEntries(entries);
+      }
+      historyIndexRef.current = null;
       setText("");
       if (draftKey) kvSet(draftKey, "");
       setAttachments([]);
@@ -356,6 +396,22 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       e.preventDefault();
       submit();
       return;
+    }
+
+    // ↑/↓ 历史召回（P2，对齐 ZCode PromptHistoryPlugin）：空输入或浏览态时接管；
+    // 修饰键组合（Shift+↑ 选中文本等）/IME 组合中不接管，留给光标移动。
+    if (
+      (e.key === "ArrowUp" || e.key === "ArrowDown") &&
+      !e.shiftKey &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      !e.nativeEvent.isComposing
+    ) {
+      if (navigateHistory(e.key === "ArrowUp" ? "up" : "down")) {
+        e.preventDefault();
+        return;
+      }
     }
 
     if (e.key === "Escape") {
@@ -449,6 +505,12 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const val = e.target.value;
     setText(val);
+
+    // 历史浏览态中手动编辑且与当前历史条目不一致 → 退出浏览态（对齐 ZCode update listener）
+    const browseIndex = historyIndexRef.current;
+    if (browseIndex !== null && val !== (promptHistoryEntries[browseIndex] ?? "")) {
+      historyIndexRef.current = null;
+    }
 
     // 真菜单：命令态 = 以 / 开头且未出现空格；提及态 = @ 前是行首/空白且其后无空白
     const slash = parseSlashQuery(val);

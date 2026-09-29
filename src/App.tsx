@@ -1405,6 +1405,7 @@ export default function App() {
                     )}
                     <LexicalComposer
                       isStreaming={isStreaming}
+                      taskId={activeTaskId ?? undefined}
                       onSend={handleSend}
                       onStop={stop}
                       providerId={activeProviderId}
