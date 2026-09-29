@@ -274,7 +274,7 @@ ReinAgent 架构全景
 
 - **`text-ui-*` 派生刻度**（语义刻度，新代码优先用）：`--text-ui-xl`(+4) / `--text-ui-lg`(+2) / `--text-ui-base`(=基准) / `--text-ui-caption`(−1) / `--text-ui-sm`(−2) / `--text-ui-xs`(−4)；
 - **Tailwind 标准字阶整体上移**（侧栏/设置页等 `text-xs~xl` 的界面跟随放大）：`xs 16px` / `sm 18px` / `base 20px` / `lg 22px` / `xl 24px`（含配套 `--text-*--line-height`）；
-- **聊天消息内容整体小一号（2026-09-27 用户定档）**：`.md`（消息正文容器，标题/代码均 em 基准自动跟随）、`.turn-intermediate-text`（中间叙述）、`.thinking-trigger`（思考块 header）均用 `--text-ui-sm`（= 基准 −2px = 18px）；用户气泡与输入框本就是 `text-sm`(18px)，与正文对齐；界面其余部分（侧栏/设置页/工具卡摘要行等）维持原刻度不动；
+- **聊天消息内容整体小一号（2026-09-27 用户定档 → 2026-09-29 推翻）**：~~`.md` 用 `--text-ui-sm`~~ **2026-09-29 用户调整：`.md` 升回 `--text-ui-base`（20px）+ line-height 1.7**，并全面加大段落/块级间距——p/blockquote/table/pre `margin 1em 0`、标题字号差压缩（h1 1.35em/h2 1.2em/h3 1.1em/h4 1.05em，字重 600 为主）+ 上 margin 加大、列表 0.8em/li 0.4em、行内代码改中性半透明底 `--code-inline-bg: rgba(127,127,127,0.12)`（dark/light 通用新语义 token）去边框、pre 圆角 6px、strong 降 600。消息区间距同步加大：`.message-list` padding 12px 0 + gap 20px、`.msg-assistant .msg-body` padding 14px 16px、**轮间距 `.turn-group` padding-top 22px→28px（虚拟化下 flex gap 只作用于虚拟块↔live tail，真实轮间距在组内 padding）**；`.turn-intermediate-text`/`.thinking-trigger` 仍用 `--text-ui-sm` 不变；用户气泡与输入框本就是 `text-sm`(18px)；界面其余部分维持原刻度不动；
 - 既有组件内零散 px 字号（14px/15px 等）暂保留，后续按需迁移到 `text-ui-*` 刻度；新增样式**禁止直接写死字号**，统一走上述变量。
 
 ## 四点七、编辑重发 / 手动重试 / 回退本轮代码改动（对齐 LiveAgent，2026-09-26）

@@ -7,6 +7,8 @@
   --bg: #12141a;
   --bg-elev: #191c24;
   --bg-elev-2: #20242e;
+  /* 行内代码底色：中性半透明灰（dark/light 通用），去边框降对比 */
+  --code-inline-bg: rgba(127, 127, 127, 0.12);
   --border: #2c313d;
   --text: #e6e8ee;
   --text-dim: #9aa2b4;
@@ -59,6 +61,7 @@
   --bg: #f8fafc;
   --bg-elev: #ffffff;
   --bg-elev-2: #f1f5f9;
+  --code-inline-bg: rgba(127, 127, 127, 0.12);
   --border: #e2e8f0;
   --text: #0f172a;
   --text-dim: #64748b;
@@ -193,10 +196,10 @@ select option {
 /* ---------- 消息区 ---------- */
 .message-list {
   flex: 1 1 auto;
-  padding: 8px 0;
+  padding: 12px 0;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
 
 .msg {
@@ -228,6 +231,8 @@ select option {
   background: var(--bg-elev);
   /* 助手消息渲染 Markdown，需恢复正常空白处理（用户消息仍 pre-wrap 保留换行）。 */
   white-space: normal;
+  /* 2026-09-29：助手气泡内边距加大（用户消息维持 10px 12px 紧凑样式） */
+  padding: 14px 16px;
 }
 
 /* 流式加载指示器（ChatLoading，移植 ZCode）使用 lucide animate-spin，
@@ -434,11 +439,10 @@ select option {
 /* ---------- Markdown（S5） ---------- */
 .md {
   margin: 0;
-  /* 消息正文对齐 ZCode MessageContent（relaxed 行高）：随界面字号设置整体缩放。
-     2026-09-27 用户定档：消息内容整体比界面基准（text-ui-base）小一号（text-ui-sm），
-     标题/代码均为 em 基准自动跟随。 */
-  font-size: var(--text-ui-sm);
-  line-height: 1.625;
+  /* 2026-09-29 用户调整：正文升到界面基准字号（text-ui-base），行高放宽到 1.7，
+     段落/块级间距全面加大（详见下方各段注释）。 */
+  font-size: var(--text-ui-base);
+  line-height: 1.7;
 }
 
 .md > :first-child {
@@ -450,60 +454,62 @@ select option {
 }
 
 .md p {
-  margin: 0.4em 0;
+  margin: 1em 0;
 }
 
 /* 标题层级：Tailwind preflight 把 h1-h4 重置为继承字号/字重，
-   必须显式恢复，否则 "## 标题" 渲染成和正文一样大的普通文本 */
+   必须显式恢复，否则 "## 标题" 渲染成和正文一样大的普通文本。
+   2026-09-29：压缩字号差（600 字重为主）、加大上下 margin。 */
 .md h1 {
-  font-size: 1.5em;
-  font-weight: 700;
-  margin: 0.8em 0 0.4em;
-  line-height: 1.3;
+  font-size: 1.35em;
+  font-weight: 600;
+  margin: 1.5em 0 0.8em;
+  line-height: 1.4;
 }
 
 .md h2 {
-  font-size: 1.3em;
-  font-weight: 700;
-  margin: 0.7em 0 0.35em;
-  line-height: 1.3;
+  font-size: 1.2em;
+  font-weight: 600;
+  margin: 1.3em 0 0.6em;
+  line-height: 1.4;
 }
 
 .md h3 {
-  font-size: 1.15em;
-  font-weight: 650;
-  margin: 0.6em 0 0.3em;
-  line-height: 1.3;
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 1.1em 0 0.5em;
+  line-height: 1.4;
 }
 
 .md h4 {
   font-size: 1.05em;
-  font-weight: 600;
-  margin: 0.5em 0 0.3em;
-  line-height: 1.3;
+  font-weight: 500;
+  margin: 0.9em 0 0.4em;
+  line-height: 1.4;
 }
 
 /* 列表符号：preflight 同样清掉了 list-style，必须显式恢复，
-   否则 markdown 列表渲染成无符号的普通缩进段落 */
+   否则 markdown 列表渲染成无符号的普通缩进段落。
+   2026-09-29：列表与条目间距加大（ul/ol 必须分开声明符号——合写 disc 会把有序列表变圆点）。 */
 .md ul {
-  margin: 0.4em 0;
-  padding-left: 1.4em;
+  margin: 0.8em 0;
+  padding-left: 1.6em;
   list-style-type: disc;
 }
 
 .md ol {
-  margin: 0.4em 0;
-  padding-left: 1.4em;
+  margin: 0.8em 0;
+  padding-left: 1.6em;
   list-style-type: decimal;
 }
 
 .md li {
-  margin: 0.25em 0;
+  margin: 0.4em 0;
 }
 
 .md li > ul,
 .md li > ol {
-  margin: 0.15em 0;
+  margin: 0.3em 0;
 }
 
 .md li::marker {
@@ -514,16 +520,23 @@ select option {
   color: var(--accent);
 }
 
+/* 正文粗体降一档字重（2026-09-29）：700 过重，600 与标题字重一致且不抢眼 */
+.md strong,
+.md b {
+  font-weight: 600;
+  color: var(--text);
+}
+
 .md blockquote {
-  margin: 0.5em 0;
-  padding: 0.2em 0 0.2em 10px;
+  margin: 1em 0;
+  padding: 0.4em 0 0.4em 14px;
   border-left: 3px solid var(--border);
   color: var(--text-dim);
 }
 
 .md table {
   border-collapse: collapse;
-  margin: 0.5em 0;
+  margin: 1em 0;
   display: block;
   overflow-x: auto;
 }
@@ -531,17 +544,17 @@ select option {
 .md th,
 .md td {
   border: 1px solid var(--border);
-  padding: 4px 8px;
+  padding: 6px 10px;
 }
 
-/* 行内代码 */
+/* 行内代码：中性半透明底色（--code-inline-bg）、去边框，降低与正文的对比突兀感 */
 .md code {
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
   font-size: 0.92em;
-  background: var(--bg-elev-2);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 0 4px;
+  background: var(--code-inline-bg);
+  border: none;
+  border-radius: 3px;
+  padding: 0.15em 0.4em;
 }
 
 /* 代码块：等宽字体 + 背景 + 横向滚动。
@@ -550,10 +563,10 @@ select option {
 .md pre {
   background: var(--bg-sunken);
   border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 10px 12px;
+  border-radius: 6px;
+  padding: 12px 14px;
   overflow-x: auto;
-  margin: 0.5em 0;
+  margin: 1em 0;
 }
 
 .md pre code {
@@ -561,7 +574,7 @@ select option {
   border: none;
   padding: 0;
   font-size: 0.9em;
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 /* S6：块级 Markdown 容器与「展开全文 / 收起」按钮 */
@@ -754,8 +767,10 @@ select option {
   display: flex;
   flex-direction: column;
   /* 轮间距用组内 padding：虚拟化按行高定位（不含 margin），margin 会造成行重叠。
-     同时给上一轮末尾的文件摘要卡与下一轮用户气泡留出呼吸空间。 */
-  padding-top: 22px;
+     同时给上一轮末尾的文件摘要卡与下一轮用户气泡留出呼吸空间。
+     2026-09-29：22px → 28px（消息区间距整体加大；.message-list 的 flex gap 在
+     虚拟化下只作用于「虚拟块 ↔ live tail」之间，真正的轮间距在这里）。 */
+  padding-top: 28px;
 }
 .reconnect-line {
   font-size: var(--text-ui-sm);
