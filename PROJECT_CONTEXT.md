@@ -866,3 +866,8 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **前端**：`lib/git/api.ts` 封装；`GitPanel.tsx`（分支切换 select+变更列表【?? 绿/D 红/其他 amber】+提交历史，手动刷新）；`FilesPanel.tsx`（懒加载目录树，目录点击逐层展开、文件点击回调开预览）；右侧面板 codeViewerSource 加 "git"/"files" 两类型 + CodeViewerPaneHost 分支渲染 + 面板头部互切按钮（Git↔文件树）；侧栏底栏 Git 入口按钮（onOpenGitPanel）。
   - **实测**：git_status/branch_list/log 裸调真实数据（dev/main 分支、11 条变更、真实提交历史）；Git 面板渲染 PI-Desktop 工作区（变更 2 条+提交历史）；文件树渲染完整层级（目录优先+根文件）。
   - **D 尾巴（未做）**：提交图谱可视化 / 代码审查 tab（code-review 预览模式）/ Git 面板刷新自动轮询。
+- **批次 E 完成（2026-09-29）**：
+  - **PDF/PPTX 引擎已存在确认**：PreviewPane 已含 pdf.js range 加载（小 PDF 全量 <2MB）与 PPTX 解析（≤64MB），file 类型按扩展名自动分发——非缺口。
+  - **Office 真引擎替换 stub ✅**：装 docx-preview + xlsx；`previewPaneOfficeContent.tsx` 重写——docx 走 renderAsync 分页 HTML、excel 走 SheetJS 逐 sheet 转 HTML（多 sheet 切换 tab）、legacy .doc 如实不支持提示；CSS 加 docx 分页阴影与 xlsx 表格样式。
+  - **⚠️ 实测抓出真正缺口**：`useFileService.readBinaryPreview` 是阶段 1 留下的 throw stub——Office/PPTX 预览拿到的一直是错误！补 Rust `fs_base64.rs fs_read_base64_file`（64MB 上限）+ 实现 readBinaryPreview/readFileRange（base64 切段兜底）/stat 三方法。
+  - **E2E**：文件树点 xlsx → 面包屑/表格数据完整渲染（名称/数量/价格）✓；测试文件已清理。

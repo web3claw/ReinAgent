@@ -17,6 +17,7 @@ mod history_search;
 mod hub_http;
 mod web_tools;
 mod usage_stats;
+mod fs_base64;
 mod fs_tree;
 mod git_panel;
 #[cfg(test)]
@@ -95,6 +96,7 @@ pub fn run() {
             web_tools::web_fetch,
             web_tools::web_search,
             usage_stats::usage_snapshot,
+            fs_base64::fs_read_base64_file,
             fs_tree::fs_tree_dir,
             git_panel::git_status,
             git_panel::git_branch_list,

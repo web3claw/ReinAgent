@@ -1,8 +1,10 @@
 /**
- * useFileService 适配层 —— 以 Tauri IPC（fs_read_text_file）实现 ZCode IFileService
- * 中 PreviewPane 实际消费的 readTextFile。
- * readBinaryPreview / readMediaPreview / readFileRange / stat 宿主未实现：
- * 如实抛错（No-Fallback，PDF/媒体模式显示真实错误），阶段 2 再评估实现。
+ * useFileService 适配层 —— 以 Tauri IPC 实现 ZCode IFileService 中 PreviewPane
+ * 消费的方法。
+ * - readTextFile → fs_read_text_file；
+ * - readBinaryPreview → fs_read_base64_file（P2-E 新增：Office/PPTX 预览数据源）；
+ * - readMediaPreview / readFileRange / stat → PDF 分段加载需要 readFileRange，
+ *   其余如实抛错（No-Fallback）。
  */
 import { useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -22,7 +24,10 @@ export function useFileService() {
 
   const readBinaryPreview = useCallback(
     async (input: { path: string }): Promise<FileBinaryPreview> => {
-      throw new Error(`二进制预览在当前宿主中不可用: ${input.path}`);
+      const result = await invoke<{ base64: string; totalBytes: number }>("fs_read_base64_file", {
+        path: input.path,
+      });
+      return { path: input.path, dataBase64: result.base64, totalBytes: result.totalBytes };
     },
     []
   );
@@ -40,14 +45,26 @@ export function useFileService() {
       offset: number;
       length: number;
     }): Promise<Uint8Array> => {
-      throw new Error(`分段读取在当前宿主中不可用: ${input.path}`);
+      // PDF range 加载：base64 全量读取后按区间切（小 PDF 已走全量路径，此处兜底）
+      const result = await invoke<{ base64: string; totalBytes: number }>("fs_read_base64_file", {
+        path: input.path,
+      });
+      const binary = atob(result.base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.subarray(input.offset, input.offset + input.length);
     },
     []
   );
 
   const stat = useCallback(
     async (input: { path: string }): Promise<{ size: number }> => {
-      throw new Error(`stat 在当前宿主中不可用: ${input.path}`);
+      const result = await invoke<{ base64: string; totalBytes: number }>("fs_read_base64_file", {
+        path: input.path,
+      });
+      return { size: result.totalBytes };
     },
     []
   );
