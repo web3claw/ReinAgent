@@ -30,6 +30,8 @@ export interface GitCommit {
   author: string;
   timestamp: number;
   subject: string;
+  /** 父提交 hash（图谱泳道分配依赖拓扑；根提交为空数组） */
+  parents: string[];
 }
 
 export interface GitLogResponse {

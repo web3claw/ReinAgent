@@ -24,6 +24,11 @@
   --warn-border: #7a6320;
   --warn-text: #ffd98a;
   --bg-sunken: #0e0f14;
+  /* 提交图谱泳道四色（对齐 ZCode git-descendant/renamed/added/modified 轮转） */
+  --git-lane-0: #e6e8ee;
+  --git-lane-1: #38bdf8;
+  --git-lane-2: #2dd4bf;
+  --git-lane-3: #fbbf24;
   --sidebar-bg: #0f1015;
   --sidebar-text: #a0a4b0;
   --sidebar-text-active: #e6e8ee;
@@ -77,6 +82,11 @@
   --warn-border: #fde047;
   --warn-text: #854d0e;
   --bg-sunken: #eaeff5;
+  /* 提交图谱泳道四色（light 主题：深色调保证浅底可见） */
+  --git-lane-0: #0f172a;
+  --git-lane-1: #0284c7;
+  --git-lane-2: #0d9488;
+  --git-lane-3: #d97706;
   --sidebar-bg: #f0f2f5;
   --sidebar-text: #64748b;
   --sidebar-text-active: #0f172a;

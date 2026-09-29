@@ -35,6 +35,9 @@ pub struct GitCommit {
     /// Unix 秒
     pub timestamp: i64,
     pub subject: String,
+    /// 父提交 hash（%P，空格分隔；根提交为空）——提交图谱泳道分配依赖拓扑
+    #[serde(default)]
+    pub parents: Vec<String>,
 }
 
 #[derive(Serialize)]
@@ -187,7 +190,7 @@ pub struct GitLogArgs {
 pub async fn git_log(args: GitLogArgs) -> Result<GitLogResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let limit = args.limit.unwrap_or(50).clamp(1, 200);
-        let format = "%H%x1f%an%x1f%ct%x1f%s";
+        let format = "%H%x1f%an%x1f%ct%x1f%s%x1f%P";
         let out = match run_git(
             &args.cwd,
             &["log", &format!("--pretty=format:{format}"), &format!("-{limit}")],
@@ -209,6 +212,10 @@ pub async fn git_log(args: GitLogArgs) -> Result<GitLogResponse, String> {
                 author: parts[1].to_string(),
                 timestamp: parts[2].parse::<i64>().unwrap_or(0),
                 subject: parts[3].to_string(),
+                parents: parts
+                    .get(4)
+                    .map(|p| p.split_whitespace().map(str::to_string).collect())
+                    .unwrap_or_default(),
             });
         }
         Ok(GitLogResponse { commits, is_git_repo: true })
