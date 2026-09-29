@@ -9,6 +9,8 @@ import { getFauxAgentSource } from "./fauxSource";
 import type { ProviderType } from "./catalog";
 import { createMcpTools } from "../mcp/mcpTools";
 import { createAskUserQuestionTool } from "../agent/askUserTool";
+import { EXIT_PLAN_MODE_TOOL_NAME, createExitPlanModeTool } from "../agent/exitPlanModeTool";
+export { EXIT_PLAN_MODE_TOOL_NAME };
 import { createSubagentOutputTool, createSubagentTool } from "./subagentRunner";
 
 export type AgentSource = ProviderType | "faux";
@@ -142,9 +144,9 @@ export function prependMetaUserBlock(messages: Message[], block?: string): Messa
   return out;
 }
 
-/** 计划模式的系统提示词约束：只读分析 + 输出计划，写入/执行一律被拦截。 */
+/** 计划模式的系统提示词约束：只读分析 + 调研完成后经 exit_plan_mode 提交计划等批准。 */
 export const PLAN_MODE_PROMPT =
-  "\n\n[Plan Mode] The current task is in PLAN mode: you may ONLY use read-only tools (read_file / list_dir) to inspect the code. Writing or editing files and executing commands are BLOCKED by the approval gate. Do NOT retry blocked calls. Instead, finish your investigation and present a complete implementation plan (files to change, exact edits per file, and execution steps), then wait for the user to review and switch out of plan mode.";
+  "\n\n[Plan Mode] The current task is in PLAN mode: you may ONLY use read-only tools (read_file / list_dir / glob / grep / webfetch / websearch) to inspect the code. Writing or editing files and executing commands are BLOCKED by the approval gate — do NOT retry blocked calls. When your investigation is complete, call the exit_plan_mode tool with the complete implementation plan as markdown (files to change, exact edits per file, execution steps, verification). The user will approve it (the task then switches to execution mode and you implement immediately) or reject it with feedback (adjust the plan and resubmit). Do not present the plan as plain text and stop — always submit it via exit_plan_mode.";
 
 export interface RunAgentTurnParams {
   source: AgentSource;
@@ -212,6 +214,19 @@ export function createApprovalGate(
   return async (ctx, signal) => {
     const toolName = ctx.toolCall.name;
     const kind = resolveToolPermissionKind(toolName);
+
+    // ExitPlanMode 模式门（对齐 ZCode mode.plan.exitOnly，优先于工具级策略）：
+    // 仅计划模式放行（放行后由工具自身挂起等批准）；其余模式一律拦截。
+    if (toolName === EXIT_PLAN_MODE_TOOL_NAME) {
+      if (approvalMode !== "plan") {
+        return {
+          block: true,
+          reason:
+            "[Plan Mode] exit_plan_mode 只能在计划模式下使用：当前任务不在计划模式，无需提交计划。请直接执行任务。",
+        };
+      }
+      return undefined;
+    }
 
     // 工具级策略优先于模式默认（对齐 ZCode tool-policy broker 语义）
     const policy = toolPolicies?.[toolName];
@@ -306,6 +321,11 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   // 仅在有审批协调器时挂（协调器由池注入——Web 无后端场景不挂，工具不存在即不误调）。
   if (approval) {
     allTools.push(createAskUserQuestionTool({
+      request: (req) => approval.request(req),
+    }) as (typeof tools)[number]);
+    // ExitPlanMode（P2 尾巴 #8）：计划模式提交实施计划挂起等批准；非计划模式由
+    // 审批门直接拦截（mode.plan.exitOnly）。模式门优先于工具级策略（见 gate 顶部）。
+    allTools.push(createExitPlanModeTool({
       request: (req) => approval.request(req),
     }) as (typeof tools)[number]);
   }

@@ -101,6 +101,12 @@ export const translations = {
     askSubmit: "提交回答",
     askSkip: "跳过",
     askQuestionIncomplete: "请为每个问题选择或输入回答",
+    planCardTitle: "实施计划",
+    planCardAllowedPrompts: "计划需要的提示式权限：",
+    planCardApprove: "批准并开始执行",
+    planCardReject: "拒绝",
+    planCardFeedbackPlaceholder: "拒绝反馈（可选）：说明需要调整的地方…",
+    planCardDecided: "已提交决定，等待模型继续…",
     toolPolicyAllow: "允许",
     toolPolicyAsk: "询问",
     toolPolicyDeny: "拒绝",
@@ -208,7 +214,7 @@ export const translations = {
     "settings.usage.appUsageLoadingDescription": "正在聚合本地会话历史，请稍候。",
     "settings.usage.emptyTitle": "还没有用量数据",
     "settings.usage.emptyDescription": "所选时间范围内还没有用量记录。",
-    "settings.usage.appUsageRangeScopeNote": "汇总与热力图为累计口径，时间范围作用于下方图表。",
+    "settings.usage.appUsageRangeScopeNote": "汇总与热力图为累计口径，时间范围作用于下方图表。",
     settingsTerminal: "终端配置",
     settingsAgent: "智能体能力",
     settingsAbout: "关于",
@@ -460,6 +466,12 @@ export const translations = {
     askSubmit: "Submit answer",
     askSkip: "Skip",
     askQuestionIncomplete: "Please select or type an answer for each question",
+    planCardTitle: "Implementation Plan",
+    planCardAllowedPrompts: "Prompt-based permissions requested by the plan:",
+    planCardApprove: "Approve & start implementing",
+    planCardReject: "Reject",
+    planCardFeedbackPlaceholder: "Rejection feedback (optional): what should be adjusted…",
+    planCardDecided: "Decision submitted, waiting for the model to continue…",
     toolPolicyAllow: "Allow",
     toolPolicyAsk: "Ask",
     toolPolicyDeny: "Deny",

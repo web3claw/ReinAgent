@@ -867,6 +867,11 @@ export function resolveToolPermissionKind(name) {
     case "task_output":
     case "task_stop":
       return "exec";
+    // ExitPlanMode（P2 尾巴 #8）：挂起等批准的交互工具，不适用写/执行拦截矩阵；
+    // 模式可用性由 createApprovalGate 的专用分支裁决（仅计划模式放行）。
+    case "exit_plan_mode":
+    case "ask_user_question":
+      return "read";
     default:
       return "write";
   }

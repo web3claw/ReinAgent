@@ -58,6 +58,7 @@ import { DEFAULT_SYSTEM_PROMPT, buildEnvironmentSection } from "./lib/providers/
 import type { ApprovalDecision } from "./lib/providers/runAgentTurn";
 import { ApprovalCard } from "./components/chat/ApprovalCard";
 import { AskQuestionCard } from "./components/chat/AskQuestionCard";
+import { PlanModeCard } from "./components/chat/PlanModeCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { kvGet } from "./lib/storage/db";
 import { useAppStore } from "./store/useAppStore";
@@ -1379,6 +1380,31 @@ export default function App() {
                       />
                     ) : null}
                     <TaskProgressBar messages={state.messages} />
+                    {/* 实施计划批准卡（exit_plan_mode 工具挂起）：批准 = 切出计划模式并继续执行 */}
+                    {state.pendingApproval &&
+                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind === "plan" ? (
+                      <PlanModeCard
+                        plan={
+                          ((state.pendingApproval as { args?: { plan?: string } }).args?.plan ?? "")
+                        }
+                        allowedPrompts={
+                          (state.pendingApproval as { args?: { allowedPrompts?: never[] } }).args
+                            ?.allowedPrompts
+                        }
+                        onApprove={() => {
+                          // 先切任务审批模式（plan → ask 变更前确认），再 resolve；顺序保证
+                          // 工具收敛后模型后续的写/执行调用走新模式的门。
+                          if (activeTaskId) {
+                            useAppStore.getState().updateTaskApprovalMode(activeTaskId, "ask");
+                            poolResolveApproval(activeTaskId, { approved: true });
+                          }
+                        }}
+                        onReject={(feedback) => {
+                          if (activeTaskId)
+                            poolResolveApproval(activeTaskId, { approved: false, feedback });
+                        }}
+                      />
+                    ) : null}
                     {/* 提问卡（ask_user_question 工具挂起）：模型等待用户作答 */}
                     {state.pendingApproval &&
                     (state.pendingApproval as { args?: { kind?: string } })?.args?.kind === "question" ? (
@@ -1395,7 +1421,8 @@ export default function App() {
                     ) : null}
                     {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
                     {state.pendingApproval &&
-                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind !== "question" && (
+                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind !== "question" &&
+                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind !== "plan" && (
                       <ApprovalCard
                         request={state.pendingApproval}
                         onDecide={(decision: ApprovalDecision) => {
