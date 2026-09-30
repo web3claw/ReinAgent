@@ -86,7 +86,7 @@ import { createMemoryOrganizerService, installMemoryOrganizerService } from "./l
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
-  Terminal, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine
+  Terminal, GitBranch, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine
 } from "lucide-react";
 
 export default function App() {
@@ -1283,9 +1283,6 @@ export default function App() {
           <WorkspaceSidebar
             onNewTask={handleNewTask}
             onOpenSearch={() => setSearchOpen(true)}
-            onOpenGitPanel={() =>
-              openCodeViewer({ type: "git", title: effectiveWorkspaceRoot || "Git" })
-            }
           />
         </div>
       )}
@@ -1321,6 +1318,14 @@ export default function App() {
             </button>
           </div>
           <div className="flex items-center gap-2">
+            {/* Git 面板入口（P2-G2 尾巴：从侧栏底栏迁到顶栏，终端按钮左侧） */}
+            <button
+              onClick={() => openCodeViewer({ type: "git", title: effectiveWorkspaceRoot || "Git" })}
+              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors"
+              title="Git"
+            >
+              <GitBranch className="w-4 h-4" />
+            </button>
             <button
               onClick={toggleTerminal}
               className={`p-1.5 rounded transition-colors flex items-center gap-1 text-sm ${isTerminalOpen ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
