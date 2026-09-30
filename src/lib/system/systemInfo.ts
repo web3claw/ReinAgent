@@ -29,6 +29,11 @@ export async function getOsInfo(): Promise<SystemOsInfo> {
   return cache;
 }
 
+/** 同步读缓存（未预热返回 null）——展示拼接用；预热靠任意一次 getOsInfo()。 */
+export function getCachedOsInfo(): SystemOsInfo | null {
+  return cache;
+}
+
 /** 展示徽章：["Win 11", "amd64"] → "Win 11 amd64"；空信息返回空串。 */
 export function formatOsBadge(info: SystemOsInfo): string {
   return [info.version, info.arch].filter(Boolean).join(" ");

@@ -85,14 +85,24 @@ export const DEFAULT_SYSTEM_PROMPT = [
  * 通道（随记忆/技能一起包 <system-reminder> 并入首条 user 消息，见下）。
  * gitStatus 快照需要异步 git 调用与缓存，暂未纳入（见 PROMPTS.md 待办）。
  */
-export function buildEnvironmentSection(
-  modelLabel?: string,
-  osBadge?: string,
-  terminalShell?: string,
-): string {
-  // Working directory 不在此段：系统提示词已有 "Current workspace root" 声明（语义更全：
-  // 相对路径解析基准），重复写两遍只会让模型困惑。
+export interface EnvironmentSectionInput {
+  modelLabel?: string;
+  /** OS 徽章（如 "Win 11 amd64"；Rust system_info） */
+  osBadge?: string;
+  /** 终端配置所选 shell 绝对路径（空 = 平台默认） */
+  terminalShell?: string;
+  /** 工作区根（Working directory 行；与系统提示词的 root 声明二选一时放这里） */
+  workspaceRoot?: string;
+}
+
+export function buildEnvironmentSection(input: EnvironmentSectionInput): string {
+  const { modelLabel, osBadge, terminalShell, workspaceRoot } = input;
   const lines = ["# Environment"];
+  if (workspaceRoot) {
+    lines.push(
+      `- Working directory: ${workspaceRoot} (relative paths in tool calls resolve against this root)`,
+    );
+  }
   if (osBadge) lines.push(`- System: ${osBadge}`);
   // 终端配置所选 shell（P2-G2）：语法提示跟随实际 shell，不再写死 cmd
   const shellPath = (terminalShell ?? "").trim();
@@ -440,9 +450,8 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     allTools.push(memoryManagerTool as (typeof tools)[number]);
   }
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
-  let effectiveSystemPrompt = workspaceRoot
-    ? `${prompt}\n\nCurrent workspace root: ${workspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
-    : prompt;  // Environment 段（对齐 ZCode env-info）：模型自述 cwd / OS / shell / 模型名 / 日期
+  // 工作区根声明移入 Environment 段（- Working directory 行；避免重复出现两次）
+  let effectiveSystemPrompt = prompt;
   const modelLabel =
     config && typeof config === "object" && config.provider && config.modelId
       ? `${config.provider}/${config.modelId}`
@@ -460,7 +469,12 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   } catch (err) {
     console.warn("[env] system info unavailable (omitting from Environment):", err);
   }
-  effectiveSystemPrompt += `\n\n${buildEnvironmentSection(modelLabel, osBadge, terminalShell)}`;
+  effectiveSystemPrompt += `\n\n${buildEnvironmentSection({
+    modelLabel,
+    osBadge,
+    terminalShell,
+    workspaceRoot,
+  })}`;
   if (approvalMode === "plan") {
     effectiveSystemPrompt += PLAN_MODE_PROMPT;
   } else if (approvalMode !== "full") {

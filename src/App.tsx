@@ -69,6 +69,8 @@ import {
   getShortcutBindings,
   matchesShortcut,
 } from "./lib/shortcuts/shortcuts";
+import { getCachedOsInfo } from "./lib/system/systemInfo";
+import { getTerminalSettings } from "./lib/terminal/terminalSettings";
 import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import { buildContextUsageData } from "./lib/chat/contextUsage";
@@ -467,16 +469,24 @@ export default function App() {
       }
       return parts.join("\n");
     };
-    const buildSystemPromptExport = (): string =>
-      DEFAULT_SYSTEM_PROMPT +
-      (effectiveWorkspaceRoot
-        ? `\n\nCurrent workspace root: ${effectiveWorkspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
-        : "") +
-      // ZCode 口径：Environment（env_info）属系统提示词类，计入「系统提示词」行
-      `\n\n${buildEnvironmentSection(
-        effectiveWorkspaceRoot,
-        `${activeProviderId}/${activeModelId}`,
-      )}`;
+    const buildSystemPromptExport = (): string => {
+      // 与真实发送链路（runAgentTurn）同构：root 长句已并入 Environment 的
+      // Working directory 行；System/Terminal shell 来自 system_info + 终端配置
+      const osInfo = getCachedOsInfo();
+      const osBadge = osInfo
+        ? [osInfo.version, osInfo.arch].filter(Boolean).join(" ")
+        : undefined;
+      const terminalShell = getTerminalSettings().shell || undefined;
+      return (
+        DEFAULT_SYSTEM_PROMPT +
+        `\n\n${buildEnvironmentSection({
+          workspaceRoot: effectiveWorkspaceRoot,
+          modelLabel: `${activeProviderId}/${activeModelId}`,
+          osBadge,
+          terminalShell,
+        })}`
+      );
+    };
     const buildToolsExport = (): string => {
       const tools = getTools({ workspaceRoot: effectiveWorkspaceRoot });
       return tools
@@ -1194,6 +1204,18 @@ export default function App() {
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
+
+  // 预热系统 OS 信息缓存（上下文面板的系统提示词导出同步读取；不变量）
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { getOsInfo } = await import("./lib/system/systemInfo");
+        await getOsInfo();
+      } catch {
+        // 拉取失败无害：导出缺 System 行而已
+      }
+    })();
+  }, []);
 
   // ---- 命令面板命令注册表（P2-G2）：闭包持有各 handler，随渲染刷新 ref ----
   // ⚠ 必须位于 currentView 早退之前（useMemo/useRef 是 hook，顺序不能条件化）
