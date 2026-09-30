@@ -1358,6 +1358,12 @@ export default function App() {
             >
               {isSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
             </button>
+            {/* 当前任务标题（顶栏左侧展示，半粗标题） */}
+            <div className="flex items-center min-w-0" title={activeTask?.title || t("newTask")}>
+              <span className="text-sm font-semibold text-[var(--text)] truncate max-w-[360px] select-none">
+                {activeTask?.title || t("newTask")}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-2">
             {/* Git 面板入口（P2-G2 尾巴：从侧栏底栏迁到顶栏，终端按钮左侧） */}
