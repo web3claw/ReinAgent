@@ -1529,6 +1529,7 @@ export default function App() {
                       onRetryFrom={handleRetryFrom}
                       onBranchFrom={handleBranchFrom}
                       followSignal={followSignal}
+                      activeTaskId={activeTaskId}
                       pendingApproval={state.pendingApproval}
                       workspaceRoot={effectiveWorkspaceRoot}
                       scrollTargetMessageId={scrollTargetMessageId}

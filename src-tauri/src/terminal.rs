@@ -53,6 +53,20 @@ pub fn terminal_create(
     if let Some(dir) = cwd {
         cmd.cwd(dir);
     }
+    // 代理环境注入（P2-G2 代理贯通）：PTY 终端子进程也走设置的代理，
+    // 与 exec_command 的 env 注入同源（kv reinagent-web-proxy / no-proxy）。
+    {
+        let (proxy, no_proxy) = crate::app_proxy::read_proxy_settings();
+        let proxy_trimmed = proxy.trim().to_string();
+        if !proxy_trimmed.is_empty() {
+            cmd.env("HTTP_PROXY", &proxy_trimmed);
+            cmd.env("HTTPS_PROXY", &proxy_trimmed);
+            cmd.env("ALL_PROXY", &proxy_trimmed);
+            if !no_proxy.trim().is_empty() {
+                cmd.env("NO_PROXY", no_proxy.trim());
+            }
+        }
+    }
 
     let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);

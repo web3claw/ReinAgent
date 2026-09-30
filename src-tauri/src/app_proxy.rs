@@ -27,7 +27,8 @@ fn kv_db_path() -> PathBuf {
 }
 
 /// 启动早期读 kv：返回 (proxy, noProxy)，任一未配置为空串。
-fn read_proxy_settings() -> (String, String) {
+/// 供 WebView2 代理注入与 PTY 终端子进程环境注入共用。
+pub fn read_proxy_settings() -> (String, String) {
     let conn = match rusqlite::Connection::open_with_flags(
         kv_db_path(),
         rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,

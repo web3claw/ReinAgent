@@ -77,6 +77,8 @@ export interface MessageListProps {
   onRetryFrom?: (messageId: string) => void;
   /** 从某条回复创建分支（复制前缀进新任务并切换）。 */
   onBranchFrom?: (messageId: string) => void;
+  /** 当前任务 id：切换任务时自动贴底 + 记忆上次阅读位置。 */
+  activeTaskId?: string | null;
   /** 变化时强制恢复贴底跟随并置底（编辑重发/重试后对齐 LiveAgent stickToBottom）。 */
   followSignal?: number;
   /** 会话级挂起审批（透传实时轮：attention 态强制展开状态条）。 */
@@ -106,6 +108,7 @@ export function MessageList({
   onEditResend,
   onRetryFrom,
   onBranchFrom,
+  activeTaskId,
   followSignal,
   pendingApproval,
   /** 外部定位请求（搜索跳转）：滚动到该消息 + 短暂高亮；滚动完成后置 null */
@@ -143,6 +146,44 @@ export function MessageList({
     followingRef.current = true;
     stickToBottom();
   }, [followSignal, stickToBottom]);
+
+  // ---- 任务切换滚动记忆（P2-G2 尾巴）：切进任务默认贴底；同一任务切回恢复上次阅读位置 ----
+  const lastTaskRef = useRef<string | null>(null);
+  const scrollMemoryRef = useRef<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (activeTaskId === lastTaskRef.current) return;
+    // 同任务刷新（如 messages 更新）：不干预滚动
+    const isNewTask = lastTaskRef.current !== null && activeTaskId !== lastTaskRef.current;
+    lastTaskRef.current = activeTaskId ?? null;
+    if (!isNewTask) return;
+    // 切换任务：恢复上次阅读位置；无记忆 → 贴底
+    const el = scrollRef.current;
+    if (!el) return;
+    followingRef.current = !activeTaskId; // 新任务（null）贴底；已有任务恢复位置后不强制跟随
+    const saved = activeTaskId ? scrollMemoryRef.current.get(activeTaskId) : undefined;
+    if (saved !== undefined) {
+      programmaticUntilRef.current = Date.now() + 120;
+      el.scrollTop = saved;
+    } else {
+      stickToBottom();
+    }
+  }, [activeTaskId, scrollRef, stickToBottom]);
+
+  // 记录滚动位置（任务切换前 + 用户滚动时防抖存储）
+  useEffect(() => {
+    if (!activeTaskId) return;
+    const el = scrollRef.current;
+    if (!el) return;
+    const save = () => {
+      scrollMemoryRef.current.set(activeTaskId, el.scrollTop);
+    };
+    el.addEventListener("scroll", save, { passive: true });
+    return () => {
+      el.removeEventListener("scroll", save);
+      // 卸载前保存最终位置（任务切换时 scrollMemory 已有最新值）
+      scrollMemoryRef.current.set(activeTaskId, el.scrollTop);
+    };
+  }, [activeTaskId, scrollRef]);
 
   // ---- 搜索跳转定位：滚动到目标消息 + 高亮。消息行是轮内 DOM（虚拟化屏外轮未挂载），
   //      所以先确保目标轮在虚拟列表里渲染（scrollToIndex），再对 data-msg-id 锚点定位。----
