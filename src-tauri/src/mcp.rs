@@ -800,6 +800,10 @@ fn build_http_client(total_timeout: Option<Duration>) -> Result<ureq::Agent, Str
     let mut config = ureq::Agent::config_builder()
         .http_status_as_error(false)
         .timeout_connect(Some(Duration::from_secs(10)));
+    // 代理（P2-G2）：kv reinagent-web-proxy 非空时 MCP HTTP 流量经此代理
+    if let Ok(Some(proxy)) = crate::web_tools::resolve_proxy() {
+        config = config.proxy(Some(proxy));
+    }
     if let Some(timeout) = total_timeout {
         config = config.timeout_global(Some(timeout));
     }

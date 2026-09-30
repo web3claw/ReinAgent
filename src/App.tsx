@@ -1647,7 +1647,7 @@ export default function App() {
 
         {/* Terminal Pane（仅聊天工作台显示；cwd = 当前任务工作区） */}
         {currentView === "workbench" && isTerminalOpen && (
-          <div className="h-64 border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-sunken)] overflow-hidden">
+          <div className="h-[420px] border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-sunken)]">
             <TerminalPane workspaceRoot={effectiveWorkspaceRoot || undefined} />
           </div>
         )}

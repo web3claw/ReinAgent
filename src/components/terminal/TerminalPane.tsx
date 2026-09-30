@@ -24,8 +24,10 @@ export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
   const toggleTerminal = useAppStore((s) => s.toggleTerminal);
   // 终端配置（P2-G2）：kv 读取（设置页保存后重开终端即生效）
   const [settings] = useState(getTerminalSettings);
+  /** shell 简名（终端 tab 标签用，去 .exe 后缀） */
+  const shellName = (settings.shell.split(/[\\/]/).pop() ?? "").replace(/\.exe$/i, "").toLowerCase() || "shell";
 
-  const [tabs, setTabs] = useState<TerminalTab[]>([{ id: "term-1", name: "bash 1" }]);
+  const [tabs, setTabs] = useState<TerminalTab[]>([{ id: "term-1", name: `${shellName} 1` }]);
   const [activeTab, setActiveTab] = useState<string>("term-1");
   const [status, setStatus] = useState<"connecting" | "connected" | "error">("connecting");
 
@@ -138,7 +140,7 @@ export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
   if (!isTerminalOpen) return null;
 
   return (
-    <div className="flex flex-col h-64 border-t border-[var(--border)] bg-[var(--bg-sunken)]">
+    <div className="flex flex-col h-full border-t border-[var(--border)] bg-[var(--bg-sunken)]">
       {/* 终端顶栏 */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-elev)] border-b border-[var(--border)] text-xs select-none">
         <div className="flex items-center gap-2">
@@ -166,7 +168,7 @@ export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
             <button
               onClick={() => {
                 const nextNum = tabs.length + 1;
-                const newTab = { id: `term-${nextNum}`, name: `bash ${nextNum}` };
+                const newTab = { id: `term-${nextNum}`, name: `${shellName} ${nextNum}` };
                 setTabs([...tabs, newTab]);
                 setActiveTab(newTab.id);
               }}

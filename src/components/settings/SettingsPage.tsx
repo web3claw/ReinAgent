@@ -3,7 +3,7 @@ import { Settings } from '../../lib/settings/store';
 import { SettingsStatus } from '../../lib/settings/useSettings';
 import { useTranslation } from '../../i18n';
 import { isNotificationSoundEnabled, setNotificationSoundEnabled } from '../../lib/chat/taskNotifications';
-import { getWebProxy, setWebProxy } from '../../lib/web/webProxy';
+import { getWebProxy, setWebProxy, getWebNoProxy, setWebNoProxy } from '../../lib/web/webProxy';
 import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
 import { AppUpdaterCard } from './AppUpdaterCard';
 import { PluginsSection } from './PluginsSection';
@@ -39,6 +39,9 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
   const { t } = useTranslation();
   const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
   const [proxyInput, setProxyInput] = useState(getWebProxy());
+  const [noProxyInput, setNoProxyInput] = useState(getWebNoProxy());
+  const [proxySavedNote, setProxySavedNote] = useState(false);
+  const [noProxySavedNote, setNoProxySavedNote] = useState(false);
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'usage' | 'hooks' | 'plugins' | 'about'>('general');
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
@@ -99,7 +102,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
                   onClick={toggleLocale}
                   className="px-4 py-2 bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-dim)] transition-colors text-sm"
                 >
-                  Toggle
+                  {locale === 'zh-CN' ? '切换' : 'Toggle'}
                 </button>
               </div>
               <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between">
@@ -122,25 +125,73 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
                   />
                 </button>
               </div>
-              <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between gap-4">
-                <div className="min-w-0">
+              <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] space-y-3">
+                <div>
                   <div className="font-medium">{t('webProxyLabel')}</div>
                   <div className="text-sm text-[var(--text-dim)]">{t('webProxyDesc')}</div>
                 </div>
-                <input
-                  type="text"
-                  value={proxyInput}
-                  placeholder="http://127.0.0.1:7890"
-                  onChange={(e) => setProxyInput(e.target.value)}
-                  onBlur={() => setWebProxy(proxyInput)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={proxyInput}
+                    placeholder="http://127.0.0.1:7890"
+                    onChange={(e) => setProxyInput(e.target.value)}
+                    onBlur={() => setWebProxy(proxyInput)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setWebProxy(proxyInput);
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    className="min-w-0 flex-1 px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--brand)]"
+                  />
+                  <button
+                    onClick={() => {
                       setWebProxy(proxyInput);
-                      (e.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  className="w-64 shrink-0 px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--brand)]"
-                />
+                      setProxySavedNote(true);
+                    }}
+                    className="shrink-0 px-4 py-2 bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-dim)] transition-colors text-sm"
+                  >
+                    {t('webProxySave')}
+                  </button>
+                </div>
+                {proxySavedNote ? (
+                  <p className="text-xs text-[var(--status-ok)]">{t('webProxySavedNote')}</p>
+                ) : null}
+              </div>
+              <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] space-y-3">
+                <div>
+                  <div className="font-medium">{t('webNoProxyLabel')}</div>
+                  <div className="text-sm text-[var(--text-dim)]">{t('webNoProxyDesc')}</div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={noProxyInput}
+                    placeholder="localhost,127.0.0.1,::1,.example.com"
+                    onChange={(e) => setNoProxyInput(e.target.value)}
+                    onBlur={() => setWebNoProxy(noProxyInput)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        setWebNoProxy(noProxyInput);
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    className="min-w-0 flex-1 px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--brand)]"
+                  />
+                  <button
+                    onClick={() => {
+                      setWebNoProxy(noProxyInput);
+                      setNoProxySavedNote(true);
+                    }}
+                    className="shrink-0 px-4 py-2 bg-[var(--accent)] text-white rounded-lg hover:bg-[var(--accent-dim)] transition-colors text-sm"
+                  >
+                    {t('webNoProxySave')}
+                  </button>
+                </div>
+                {noProxySavedNote ? (
+                  <p className="text-xs text-[var(--status-ok)]">{t('webNoProxySavedNote')}</p>
+                ) : null}
               </div>
               <TerminalShellSetting />
               <ShortcutsSection />

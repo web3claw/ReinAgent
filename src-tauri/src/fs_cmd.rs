@@ -223,14 +223,58 @@ pub async fn fs_delete_file(
     .map_err(|e| e.to_string())?
 }
 
+/// 读 kv 代理设置并组装子进程代理环境变量（对齐 ZCode buildAgentProxyEnv /
+/// buildAgentNoProxyEnv：显式设置覆盖 shell 继承，空 = 清除代理变量直连）。
+pub(crate) fn read_kv_proxy_settings() -> Vec<(String, String)> {
+    let (proxy, no_proxy) = if let Ok(conn) = crate::conversation_store::db_conn() {
+        let read = |key: &str| -> String {
+            conn.query_row("SELECT value FROM kv WHERE key = ?1", [key], |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap_or_default()
+        };
+        (read("reinagent-web-proxy"), read("reinagent-web-proxy-no-proxy"))
+    } else {
+        (String::new(), String::new())
+    };
+    let proxy_trimmed = proxy.trim().to_string();
+    if proxy_trimmed.is_empty() {
+        // 留空直连：显式清空，防止继承宿主 shell 的同名变量
+        return vec![
+            ("HTTP_PROXY".to_string(), String::new()),
+            ("HTTPS_PROXY".to_string(), String::new()),
+            ("ALL_PROXY".to_string(), String::new()),
+            ("NO_PROXY".to_string(), String::new()),
+        ];
+    }
+    let mut env = vec![
+        ("HTTP_PROXY".to_string(), proxy_trimmed.clone()),
+        ("HTTPS_PROXY".to_string(), proxy_trimmed.clone()),
+        ("ALL_PROXY".to_string(), proxy_trimmed),
+    ];
+    let no_proxy_trimmed = no_proxy.trim().to_string();
+    if !no_proxy_trimmed.is_empty() {
+        env.push(("NO_PROXY".to_string(), no_proxy_trimmed));
+    }
+    env
+}
+
 #[tauri::command]
 pub async fn fs_execute(
     command: String,
     cwd: Option<String>,
     shell: Option<String>,
 ) -> Result<String, String> {
+    // 代理环境注入（P2-G2 代理贯通）：设置非空时子进程显式继承 HTTP(S)_PROXY/
+    // NO_PROXY（覆盖系统继承值）；为空时**清除**继承的代理变量——设置页语义
+    // 「不读取系统环境变量，留空直连」。
+    let proxy_env = read_kv_proxy_settings();
     tauri::async_runtime::spawn_blocking(move || {
         const EXEC_TIMEOUT_SECS: u64 = 120;
+        // 代理环境注入（P2-G2 代理贯通）：设置非空时子进程显式继承 HTTP(S)_PROXY/
+        // NO_PROXY（覆盖系统继承值）；为空时**清除**继承的代理变量——设置页语义
+        // 「不读取系统环境变量，留空直连」。
+        let proxy_env: Vec<(String, String)> = read_kv_proxy_settings();
         // 输出上限（防巨型输出拖垮 IPC 与前端渲染）：256KB
         const OUTPUT_CAP_BYTES: usize = 256 * 1024;
         // 进程退出后等待管道收尾的上限：超时取部分输出（防孙进程持管道永久挂起）
@@ -250,9 +294,21 @@ pub async fn fs_execute(
         // ★ spawn_shell：按所选 shell 分派执行（P2-G2 终端配置贯通——环境段告诉模型
         //   「用 PowerShell 语法」，exec 就必须真的在 PowerShell 里跑）。
         //   pwsh/powershell → -Command；bash/zsh/fish/sh → -c；cmd/未配置 → cmd /C。
-        fn spawn_shell(command: &str, exec_dir: &Path, shell: Option<&str>) -> std::io::Result<std::process::Child> {
+        // ★ spawn_shell：按所选 shell 分派执行（P2-G2 终端配置贯通——环境段告诉模型
+        //   「用 PowerShell 语法」，exec 就必须真的在 PowerShell 里跑）+ 代理环境注入。
+        //   pwsh/powershell → -Command；bash/zsh/fish/sh → -c；cmd/未配置 → cmd /C。
+        fn spawn_shell(command: &str, exec_dir: &Path, shell: Option<&str>, proxy_env: &[(String, String)]) -> std::io::Result<std::process::Child> {
             let shell_name = shell.unwrap_or("").trim().to_lowercase();
             let exe_name = shell_name.rsplit(['\\', '/']).next().unwrap_or("");
+            let build = |mut cmd: Command| {
+                cmd.current_dir(exec_dir);
+                cmd.stdout(Stdio::piped());
+                cmd.stderr(Stdio::piped());
+                for (key, value) in proxy_env {
+                    cmd.env(key, value);
+                }
+                cmd
+            };
             #[cfg(target_os = "windows")]
             {
                 // ★ raw_arg：命令行原样透传给 cmd /C。普通 arg() 会按 MSVC 规则把内部引号
@@ -261,39 +317,27 @@ pub async fn fs_execute(
                 use std::os::windows::process::CommandExt;
                 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
                 if exe_name.starts_with("pwsh") || exe_name.starts_with("powershell") {
-                    let mut cmd = Command::new(shell.unwrap_or("powershell.exe"));
+                    let mut cmd = build(Command::new(shell.unwrap_or("powershell.exe")));
                     cmd.arg("-NoProfile").arg("-Command").arg(command);
                     cmd.creation_flags(CREATE_NO_WINDOW);
-                    cmd.current_dir(exec_dir);
-                    cmd.stdout(Stdio::piped());
-                    cmd.stderr(Stdio::piped());
                     return cmd.spawn();
                 }
                 if exe_name.contains("bash") || exe_name == "zsh" || exe_name == "fish" || exe_name == "sh" {
-                    let mut cmd = Command::new(shell.unwrap_or("bash.exe"));
+                    let mut cmd = build(Command::new(shell.unwrap_or("bash.exe")));
                     cmd.arg("-c").arg(command);
                     cmd.creation_flags(CREATE_NO_WINDOW);
-                    cmd.current_dir(exec_dir);
-                    cmd.stdout(Stdio::piped());
-                    cmd.stderr(Stdio::piped());
                     return cmd.spawn();
                 }
-                let mut cmd = Command::new("cmd");
+                let mut cmd = build(Command::new("cmd"));
                 cmd.raw_arg("/C").raw_arg(command);
                 cmd.creation_flags(CREATE_NO_WINDOW);
-                cmd.current_dir(exec_dir);
-                cmd.stdout(Stdio::piped());
-                cmd.stderr(Stdio::piped());
                 cmd.spawn()
             }
             #[cfg(not(target_os = "windows"))]
             {
                 let shell_exe = if shell_name.is_empty() { "sh".to_string() } else { shell_name };
-                let mut cmd = Command::new(&shell_exe);
+                let mut cmd = build(Command::new(&shell_exe));
                 cmd.arg("-c").arg(command);
-                cmd.current_dir(exec_dir);
-                cmd.stdout(Stdio::piped());
-                cmd.stderr(Stdio::piped());
                 cmd.spawn()
             }
         }
@@ -307,7 +351,7 @@ pub async fn fs_execute(
             buf
         }
 
-        let mut child = spawn_shell(&command, &exec_dir, shell.as_deref()).map_err(|e| e.to_string())?;
+        let mut child = spawn_shell(&command, &exec_dir, shell.as_deref(), &proxy_env).map_err(|e| e.to_string())?;
 
         // 输出读取放独立线程：进程未退出时也能持续收集，不会因管道缓冲写满而卡死子进程。
         let mut stdout_pipe = child.stdout.take().expect("stdout piped");

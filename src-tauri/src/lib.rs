@@ -24,6 +24,7 @@ mod hooks;
 mod plugins;
 mod system_info;
 mod app_tray;
+mod app_proxy;
 mod updater;
 #[cfg(test)]
 mod git_panel_tests;
@@ -58,6 +59,8 @@ fn with_window_state(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
 }
 
 pub fn run() {
+    // 代理注入必须最先执行（WebView2 环境在 builder 初始化时读取这些变量）
+    app_proxy::apply_webview_proxy_env();
     with_window_state(
         tauri::Builder::default()
             // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；
