@@ -162,7 +162,7 @@ export function WorkspaceSidebar({
   if (!isSidebarOpen) return null;
 
   return (
-    <div className="flex flex-col w-[260px] h-full bg-[var(--sidebar-bg)] border-r border-[var(--border)] transition-all duration-300">
+    <div className="flex flex-col w-full h-full bg-[var(--sidebar-bg)] border-r border-[var(--border)] transition-all duration-300">
       {/* Quick Actions（顶部品牌区已移除：与系统窗口标题栏重复；主题/语言开关移至底栏图标排）。
           新建任务行右侧 = 搜索按钮（对齐 LiveAgent：放大镜在侧栏顶部，Ctrl+N 字样已移除）；
           自动化下方为 Skills / MCP / 记忆（照抄 LiveAgent sidebarShortcuts，图标 lucide 同款）；

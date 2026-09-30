@@ -940,6 +940,43 @@ export default function App() {
 
   // 编辑重发后的强制贴底（对齐 LiveAgent stickToBottom on run start）+ 回退 toast。
   const [followSignal, setFollowSignal] = useState(0);
+  // ---- 可调宽度/高度（P2-G2 尾巴）：左侧栏 / 右侧预览面板 / 终端面板，kv 持久化 ----
+  const [sidebarW, setSidebarW] = useState(() => {
+    const v = Number(localStorage.getItem("reinagent-sidebar-w"));
+    return v >= 180 && v <= 480 ? v : 260;
+  });
+  const [terminalH, setTerminalH] = useState(() => {
+    const v = Number(localStorage.getItem("reinagent-terminal-h"));
+    return v >= 160 && v <= 640 ? v : 420;
+  });
+  /** 通用拖拽调宽/调高：按下 → mousemove 计算 → mouseup 落 localStorage（key 可选） */
+  const startResize = useCallback((
+    e: React.MouseEvent,
+    axis: "x" | "y",
+    dir: 1 | -1,
+    current: number,
+    set: (v: number) => void,
+    min: number,
+    max: number,
+    storageKey?: string,
+  ) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let latest = current;
+    const onMove = (ev: MouseEvent) => {
+      const delta = axis === "x" ? (ev.clientX - startX) * dir : (ev.clientY - startY) * dir;
+      latest = Math.min(max, Math.max(min, current + delta));
+      set(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (storageKey) localStorage.setItem(storageKey, String(latest));
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
   const [rewindToast, setRewindToast] = useState<{ level: "success" | "error"; message: string } | null>(null);
   const rewindToastTimerRef = useRef<number | null>(null);
   const showRewindToast = useCallback((info: Parameters<typeof formatCheckpointRewoundNotification>[0]) => {
@@ -1279,10 +1316,15 @@ export default function App() {
     <div className="flex h-screen w-full bg-[var(--bg)] text-[var(--text)] overflow-hidden">
       {/* Sidebar */}
       {isSidebarOpen && (
-        <div className="flex-shrink-0 w-[260px] h-full border-r border-[var(--border)]">
+        <div className="relative flex-shrink-0 h-full border-r border-[var(--border)]" style={{ width: sidebarW }}>
           <WorkspaceSidebar
             onNewTask={handleNewTask}
             onOpenSearch={() => setSearchOpen(true)}
+          />
+          {/* 右缘拖拽调宽 */}
+          <div
+            onMouseDown={(e) => startResize(e, "x", 1, sidebarW, setSidebarW, 180, 480, "reinagent-sidebar-w")}
+            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-[var(--brand)]/30 transition-colors z-10"
           />
         </div>
       )}
@@ -1648,7 +1690,12 @@ export default function App() {
 
         {/* Terminal Pane（仅聊天工作台显示；cwd = 当前任务工作区） */}
         {currentView === "workbench" && isTerminalOpen && (
-          <div className="h-[420px] border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-sunken)]">
+          <div className="relative h-full flex-shrink-0 bg-[var(--bg-sunken)]" style={{ height: terminalH }}>
+            {/* 顶缘拖拽调高 */}
+            <div
+              onMouseDown={(e) => startResize(e, "y", -1, terminalH, setTerminalH, 160, 640, "reinagent-terminal-h")}
+              className="absolute top-0 left-0 w-full h-1 cursor-row-resize hover:bg-[var(--brand)]/30 transition-colors z-10"
+            />
             <TerminalPane workspaceRoot={effectiveWorkspaceRoot || undefined} />
           </div>
         )}

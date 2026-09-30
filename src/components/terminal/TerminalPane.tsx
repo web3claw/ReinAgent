@@ -140,7 +140,7 @@ export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
   if (!isTerminalOpen) return null;
 
   return (
-    <div className="flex flex-col h-full border-t border-[var(--border)] bg-[var(--bg-sunken)]">
+    <div className="flex flex-col h-full min-h-[120px] border-t border-[var(--border)] bg-[var(--bg-sunken)]">
       {/* 终端顶栏 */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-elev)] border-b border-[var(--border)] text-xs select-none">
         <div className="flex items-center gap-2">

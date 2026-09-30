@@ -77,6 +77,26 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
   const codeViewerSource = useAppStore((state) => state.codeViewerSource);
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   const closeCodeViewer = useAppStore((state) => state.closeCodeViewer);
+  // 可调宽度（P2-G2 尾巴）：localStorage 持久化，拖拽左缘调宽
+  const [paneW, setPaneW] = useState(() => {
+    const v = Number(localStorage.getItem("reinagent-preview-w"));
+    return v >= 280 && v <= 800 ? v : 460;
+  });
+  /** 拖拽左缘调宽（mouse 计算在 move/up 里做，防止闭包过期） */
+  const startResize = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const onMove = (ev: MouseEvent) => {
+      setPaneW(Math.min(800, Math.max(280, paneW - (ev.clientX - startX))));
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      localStorage.setItem("reinagent-preview-w", String(paneW));
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  };
   // 子代理完整回放（P2 尾巴 #7）：面板内二级视图（focusId 运行 → 回放转录）
   const [replayRunId, setReplayRunId] = useState<string | null>(null);
   useEffect(() => {
@@ -91,7 +111,12 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
   // Git 面板（P2-D）：分支/变更/提交历史，不走 PreviewPane。
   if (codeViewerSource.type === "git") {
     return (
-      <div className="flex h-full w-[460px] flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+      <div className="relative flex h-full flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]" style={{ width: paneW }}>
+        {/* 左缘拖拽调宽把手 */}
+        <div
+          onMouseDown={startResize}
+          className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-[var(--brand)]/30 transition-colors z-10"
+        />
         <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[11px] bg-[var(--bg-sunken)] border border-[var(--border)] text-[var(--text-dim)]">
@@ -125,7 +150,12 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
   // 工作区文件树（P2-D1）：懒加载目录树，不走 PreviewPane。
   if (codeViewerSource.type === "files") {
     return (
-      <div className="flex h-full w-[460px] flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+      <div className="relative flex h-full flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]" style={{ width: paneW }}>
+        {/* 左缘拖拽调宽把手 */}
+        <div
+          onMouseDown={startResize}
+          className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-[var(--brand)]/30 transition-colors z-10"
+        />
         <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[11px] bg-[var(--bg-sunken)] border border-[var(--border)] text-[var(--text-dim)]">
@@ -165,7 +195,12 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
   // 子代理目录面板（P1-6 增量）：实时订阅 registry，不走 PreviewPane。
   if (codeViewerSource.type === "subagents") {
     return (
-      <div className="flex h-full w-[460px] flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+      <div className="relative flex h-full flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]" style={{ width: paneW }}>
+        {/* 左缘拖拽调宽把手 */}
+        <div
+          onMouseDown={startResize}
+          className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-[var(--brand)]/30 transition-colors z-10"
+        />
         <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
           <div className="flex min-w-0 items-center gap-2">
             <span className="flex-shrink-0 rounded px-1.5 py-0.5 text-[11px] bg-[var(--bg-sunken)] border border-[var(--border)] text-[var(--text-dim)]">
@@ -198,7 +233,7 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
   const isPatch = codeViewerSource.type === "patch";
 
   return (
-    <div className="flex h-full w-[460px] flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+    <div className="flex h-full flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
       <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
         <div className="flex min-w-0 items-center gap-2">
           <span
