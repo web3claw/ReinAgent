@@ -40,7 +40,7 @@ export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
 
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: 16,
       fontFamily: "Consolas, Menlo, Monaco, 'Courier New', monospace",
       theme:
         theme === "dark"

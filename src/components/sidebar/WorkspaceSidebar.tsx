@@ -174,7 +174,7 @@ export function WorkspaceSidebar({
         >
           <div className="flex items-center gap-2">
             <Plus className="w-4 h-4" />
-            <span className="text-sm">{t('newTask')}</span>
+            <span className="text-sm font-semibold">{t('newTask')}</span>
           </div>
           <span
             role="button"
@@ -195,7 +195,7 @@ export function WorkspaceSidebar({
         >
           <div className="flex items-center gap-2">
             <Timer className="w-4 h-4" />
-            <span className="text-sm">{t('automation')}</span>
+            <span className="text-sm font-semibold">{t('automation')}</span>
           </div>
         </button>
         <button
@@ -204,7 +204,7 @@ export function WorkspaceSidebar({
         >
           <div className="flex items-center gap-2">
             <Blend className="w-4 h-4" />
-            <span className="text-sm">{t('navSkills')}</span>
+            <span className="text-sm font-semibold">{t('navSkills')}</span>
           </div>
         </button>
         <button
@@ -213,7 +213,7 @@ export function WorkspaceSidebar({
         >
           <div className="flex items-center gap-2">
             <Cable className="w-4 h-4" />
-            <span className="text-sm">{t('navMcp')}</span>
+            <span className="text-sm font-semibold">{t('navMcp')}</span>
           </div>
         </button>
         <button
@@ -222,7 +222,7 @@ export function WorkspaceSidebar({
         >
           <div className="flex items-center gap-2">
             <Brain className="w-4 h-4" />
-            <span className="text-sm">{t('navMemory')}</span>
+            <span className="text-sm font-semibold">{t('navMemory')}</span>
           </div>
         </button>
       </div>
