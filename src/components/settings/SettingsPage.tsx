@@ -10,11 +10,11 @@ import { PluginsSection } from './PluginsSection';
 import { HooksSection } from './HooksSection';
 import { ShortcutsSection } from './ShortcutsSection';
 import { TerminalShellSetting } from './TerminalShellSetting';
+import { invoke } from '@tauri-apps/api/core';
 import { AppUsagePanel } from './usage-stats/AppUsagePanel';
 import { useAppStore } from '../../store/useAppStore';
 import {
   Settings as SettingsIcon,
-  Palette,
   Server,
   Brain,
   Info,
@@ -42,12 +42,12 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
   const [noProxyInput, setNoProxyInput] = useState(getWebNoProxy());
   const [proxySavedNote, setProxySavedNote] = useState(false);
   const [noProxySavedNote, setNoProxySavedNote] = useState(false);
+  const [hideToTray, setHideToTray] = useState(true);
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'usage' | 'hooks' | 'plugins' | 'about'>('general');
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
   const navItems = [
     { id: 'general', label: t('settingsGeneral'), icon: SettingsIcon },
-    { id: 'appearance', label: t('settingsAppearance'), icon: Palette },
     { id: 'provider', label: t('settingsProvider'), icon: Server },
     { id: 'usage', label: t('settingsUsage'), icon: ChartColumn },
     { id: 'agent', label: t('settingsAgent'), icon: Brain },
@@ -104,6 +104,28 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
                 >
                   {locale === 'zh-CN' ? '切换' : 'Toggle'}
                 </button>
+              </div>
+              <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{t('settingsAppearance')}</div>
+                  <div className="text-sm text-[var(--text-dim)]">{theme === 'dark' ? t('darkMode') : t('lightMode')}</div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => theme !== 'light' && toggleTheme()}
+                    aria-label={t('lightMode')}
+                    className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-colors ${theme === 'light' ? 'border-[var(--brand)] bg-[var(--brand-dim)] text-[var(--brand)]' : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--brand)]'}`}
+                  >
+                    <Sun className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => theme !== 'dark' && toggleTheme()}
+                    aria-label={t('darkMode')}
+                    className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-colors ${theme === 'dark' ? 'border-[var(--brand)] bg-[var(--brand-dim)] text-[var(--brand)]' : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--brand)]'}`}
+                  >
+                    <Moon className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
               <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between">
                 <div>
@@ -194,33 +216,27 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
                 ) : null}
               </div>
               <TerminalShellSetting />
-              <ShortcutsSection />
-            </div>
-          )}
-
-          {activeTab === 'appearance' && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-semibold mb-6">{t('settingsAppearance')}</h2>
-              <div className="grid grid-cols-2 gap-4 max-w-md">
+              <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between">
+                <div>
+                  <div className="font-medium">{t('hideToTrayLabel')}</div>
+                  <div className="text-sm text-[var(--text-dim)]">{t('hideToTrayDesc')}</div>
+                </div>
                 <button
-                  onClick={() => theme !== 'light' && toggleTheme()}
-                  className={`p-4 rounded-xl border flex flex-col items-center gap-3 transition-colors ${
-                    theme === 'light' ? 'border-[var(--brand)] bg-[var(--brand-dim)] text-[var(--brand)]' : 'border-[var(--border)] bg-[var(--bg-elev)] hover:border-[var(--brand)]'
-                  }`}
+                  onClick={() => {
+                    const next = !hideToTray;
+                    setHideToTray(next);
+                    void invoke('set_hide_to_tray', { enabled: next });
+                  }}
+                  role="switch"
+                  aria-checked={hideToTray}
+                  className={`relative w-11 h-6 rounded-full transition-colors ${hideToTray ? 'bg-[var(--brand)]' : 'bg-[var(--border)]'}`}
                 >
-                  <Sun className="w-8 h-8" />
-                  <span>{t('lightMode')}</span>
-                </button>
-                <button
-                  onClick={() => theme !== 'dark' && toggleTheme()}
-                  className={`p-4 rounded-xl border flex flex-col items-center gap-3 transition-colors ${
-                    theme === 'dark' ? 'border-[var(--brand)] bg-[var(--brand-dim)] text-[var(--brand)]' : 'border-[var(--border)] bg-[var(--bg-elev)] hover:border-[var(--brand)]'
-                  }`}
-                >
-                  <Moon className="w-8 h-8" />
-                  <span>{t('darkMode')}</span>
+                  <span
+                    className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white transition-transform ${hideToTray ? 'translate-x-5' : ''}`}
+                  />
                 </button>
               </div>
+              <ShortcutsSection />
             </div>
           )}
 

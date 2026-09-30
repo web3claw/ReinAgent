@@ -25,6 +25,7 @@ mod plugins;
 mod system_info;
 mod app_tray;
 mod app_proxy;
+mod hide_to_tray;
 mod updater;
 #[cfg(test)]
 mod git_panel_tests;
@@ -33,6 +34,7 @@ mod usage_stats_tests;
 #[cfg(test)]
 mod web_tools_tests;
 
+use tauri::Manager;
 use terminal::TerminalState;
 
 /// 单实例聚焦用的主进程句柄（single-instance 回调在第二进程上下文触发，
@@ -88,6 +90,23 @@ pub fn run() {
     .setup(|app| {
         // 单实例：保存本实例句柄（二次启动回调聚焦用）
         let _ = SINGLE_APP_HANDLE.set(app.handle().clone());
+        // 恢复「关闭时隐藏到托盘」设置（缺省开启）
+        hide_to_tray::restore_hide_to_tray();
+        // 关闭窗口 → 隐藏到托盘（设置开启时拦截 close，仅 Windows 生效；
+        // 托盘菜单「退出」仍完全退出，不受此拦截影响）
+        if cfg!(target_os = "windows") {
+            use tauri::Manager;
+            let main_window = app.get_webview_window("main").expect("main window");
+            let window_clone = main_window.clone();
+            main_window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if hide_to_tray::is_hide_to_tray_enabled() {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                    }
+                }
+            });
+        }
         // 系统托盘（P2-G2）：菜单 + 左键切换主窗口显隐；失败如实打日志不阻断启动
         if let Err(error) = app_tray::setup_tray(app) {
             eprintln!("failed to setup system tray: {error}");
@@ -109,6 +128,8 @@ pub fn run() {
             terminal::terminal_close,
             fs_cmd::fs_read_file,
             fs_cmd::fs_path_exists,
+            hide_to_tray::get_hide_to_tray,
+            hide_to_tray::set_hide_to_tray,
             fs_cmd::shell_detect,
             fs_cmd::fs_write_file,
             fs_cmd::fs_list_dir,
