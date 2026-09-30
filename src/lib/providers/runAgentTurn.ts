@@ -637,22 +637,24 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
 
   if (source === "faux") {
     const faux = await getFauxAgentSource();
-    // 子代理工具（P1-6）：在 faux 分支同样注入（复用 faux model，测试可全链路验证）
+    // 子代理工具（P1-6）：在 faux 分支同样注入（复用 faux model，测试可全链路验证）。
+    // 定义驱动改造后为异步工厂（需加载子智能体目录渲染工具描述）。
+    const subagentTool = await createSubagentTool({
+      model: faux.model,
+      stream: faux.stream,
+      api: faux.api,
+      label: faux.label,
+      getApiKey: () => undefined,
+      workspaceRoot,
+      signal,
+      thinkingLevel,
+      registryTools: tools as unknown[],
+      beforeToolCall: base.beforeToolCall,
+    });
     const toolsWithAgent = [
       ...base.tools,
       createSubagentOutputTool(),
-      createSubagentTool({
-        model: faux.model,
-        stream: faux.stream,
-        api: faux.api,
-        label: faux.label,
-        getApiKey: () => undefined,
-        workspaceRoot,
-        signal,
-        thinkingLevel,
-        registryTools: tools as unknown[],
-        beforeToolCall: base.beforeToolCall,
-      }),
+      subagentTool,
     ];
     return runTurn({
       model: faux.model,
@@ -666,23 +668,24 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
 
   const model = buildModel(config);
   const stream = await getStreamFnForApi(model.api);
-  // 子代理工具（P1-6）：复用父轮 model/stream/api-key/审批门/AbortSignal；
-  // 注册表工具集里没有 agent——子代理工具集经 filterToolsFor 过滤，结构性禁递归。
+  // 子代理工具（P1-6）：复用父轮 model/stream/api-key/审批门/AbortSignal；定义可钉选模型/工具覆盖。
+  // 注册表工具集里没有 agent——子代理工具集经 filterToolsForDefinition 过滤，结构性禁递归。
+  const subagentTool = await createSubagentTool({
+    model,
+    stream,
+    api: model.api,
+    label: model.provider || "openai-completions",
+    getApiKey: () => config.apiKey.trim(),
+    workspaceRoot,
+    signal,
+    thinkingLevel,
+    registryTools: tools as unknown[],
+    beforeToolCall: base.beforeToolCall,
+  });
   const toolsWithAgent = [
     ...base.tools,
     createSubagentOutputTool(),
-    createSubagentTool({
-      model,
-      stream,
-      api: model.api,
-      label: model.provider || "openai-completions",
-      getApiKey: () => config.apiKey.trim(),
-      workspaceRoot,
-      signal,
-      thinkingLevel,
-      registryTools: tools as unknown[],
-      beforeToolCall: base.beforeToolCall,
-    }),
+    subagentTool,
   ];
 
   return runTurn({

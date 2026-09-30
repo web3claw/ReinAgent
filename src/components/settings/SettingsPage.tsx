@@ -8,6 +8,7 @@ import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
 import { AppUpdaterCard } from './AppUpdaterCard';
 import { PluginsSection } from './PluginsSection';
 import { HooksSection } from './HooksSection';
+import { AgentSubagentsPage } from './AgentSubagentsPage';
 import { ShortcutsSection } from './ShortcutsSection';
 import { TerminalShellSetting } from './TerminalShellSetting';
 import { invoke } from '@tauri-apps/api/core';
@@ -258,7 +259,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           {activeTab === 'agent' && (
             <div className="space-y-6">
               <h2 className="text-xl font-semibold mb-6">{t('settingsAgent')}</h2>
-              <div className="text-[var(--text-dim)]">Agent capabilities coming soon</div>
+              <AgentSubagentsPage />
             </div>
           )}
 
