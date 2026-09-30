@@ -86,7 +86,7 @@ import { createMemoryOrganizerService, installMemoryOrganizerService } from "./l
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
-  Terminal, GitBranch, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine
+  Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine
 } from "lucide-react";
 
 export default function App() {
@@ -1325,6 +1325,24 @@ export default function App() {
               title="Git"
             >
               <GitBranch className="w-4 h-4" />
+            </button>
+            {/* 在系统文件管理器打开工作区（opener 插件 reveal：win 资源管理器 / linux 文件管理器 / mac Finder） */}
+            <button
+              onClick={() => {
+                void (async () => {
+                  try {
+                    // 目录场景 openPath 即打开系统文件管理器（win 资源管理器 / linux xdg / mac Finder）
+                    const { openPath } = await import("@tauri-apps/plugin-opener");
+                    await openPath(effectiveWorkspaceRoot);
+                  } catch (err) {
+                    console.error("[workspace] open in file manager failed:", err);
+                  }
+                })();
+              }}
+              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors"
+              title="在文件管理器中打开工作区"
+            >
+              <FolderOpen className="w-4 h-4" />
             </button>
             <button
               onClick={toggleTerminal}
