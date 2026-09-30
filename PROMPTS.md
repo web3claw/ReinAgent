@@ -187,13 +187,11 @@
 发送时动态拼接在工作区根声明之后（借鉴 ZCode §10 的可用子集）：
 
 > # Environment
-> - Working directory: ${workspaceRoot}
-> - OS: Windows NT ${version}（node 环境省略）
-> - Shell: cmd.exe (Windows command prompt) — use cmd syntax (dir, type, findstr, where), not Unix pipelines (grep, head, wc are unavailable)
-> - Model: ${provider}/${modelId}
-> - Current date: ${date}
+> - System: Win 11 amd64（Working directory 不重复写——系统提示词已有 Current workspace root 声明）（Rust system_info 命令；build ≥22000 = Win 11；Linux 读 os-release PRETTY_NAME）
+> - Terminal shell: ${所选 shell 绝对路径} — 语法提示跟随实际 shell（cmd / PowerShell / Unix bash 各异；2026-09-30 起从终端配置读取，不再写死 cmd）
+> - Model: ${modelLabel}
 
-**待办**：gitStatus 快照（是否 git 仓库/分支/最近提交）需要异步 git 调用与会话级缓存，暂未纳入。
+**待办**：gitStatus 快照（是否 git 仓库/分支/最近提交）需要异步 git 调用与会话级缓存，暂未纳入。Current date 已移 meta_user 通道。
 
 ### 2.1 meta_user 注入结构（2026-09-28，ZCode 同款）
 

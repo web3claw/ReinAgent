@@ -86,17 +86,31 @@ export const DEFAULT_SYSTEM_PROMPT = [
  * gitStatus 快照需要异步 git 调用与缓存，暂未纳入（见 PROMPTS.md 待办）。
  */
 export function buildEnvironmentSection(
-  workspaceRoot?: string,
   modelLabel?: string,
+  osBadge?: string,
+  terminalShell?: string,
 ): string {
+  // Working directory 不在此段：系统提示词已有 "Current workspace root" 声明（语义更全：
+  // 相对路径解析基准），重复写两遍只会让模型困惑。
   const lines = ["# Environment"];
-  if (workspaceRoot) lines.push(`- Working directory: ${workspaceRoot}`);
-  if (typeof navigator !== "undefined") {
-    const ua = typeof navigator.userAgent === "string" ? navigator.userAgent : "";
-    const win = /Windows NT ([\d.]+)/.exec(ua);
-    if (win) lines.push(`- OS: Windows NT ${win[1]}`);
+  if (osBadge) lines.push(`- System: ${osBadge}`);
+  // 终端配置所选 shell（P2-G2）：语法提示跟随实际 shell，不再写死 cmd
+  const shellPath = (terminalShell ?? "").trim();
+  const shellName = (shellPath.split(/[\\/]/).pop() ?? "").toLowerCase();
+  if (shellName) {
+    let syntaxNote: string;
+    if (shellName.startsWith("pwsh") || shellName.startsWith("powershell")) {
+      syntaxNote = "use PowerShell syntax (Get-ChildItem, Select-String), not Unix pipelines";
+    } else if (shellName.includes("bash")) {
+      syntaxNote = "use Unix syntax (grep, head, wc, pipes are available)";
+    } else {
+      syntaxNote = "use cmd syntax (dir, type, findstr, where), not Unix pipelines (grep, head, wc are unavailable)";
+    }
+    lines.push(`- Terminal shell: ${shellPath} — ${syntaxNote}`);
+  } else if (osBadge) {
+    // 未配置 shell：与 Rust 平台默认一致的诚实兜底（Windows 上即 powershell.exe）
+    lines.push("- Shell: powershell.exe (Windows PowerShell) — use PowerShell syntax, not cmd batch syntax");
   }
-  lines.push("- Shell: cmd.exe (Windows command prompt) — use cmd syntax (dir, type, findstr, where), not Unix pipelines (grep, head, wc are unavailable)");
   if (modelLabel) lines.push(`- Model: ${modelLabel}`);
   return lines.join("\n");
 }
@@ -433,7 +447,20 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     config && typeof config === "object" && config.provider && config.modelId
       ? `${config.provider}/${config.modelId}`
       : undefined;
-  effectiveSystemPrompt += `\n\n${buildEnvironmentSection(workspaceRoot, modelLabel)}`;
+  // 系统 OS 徽章 + 终端配置所选 shell 进 Environment 段（P2-G2 尾巴）
+  let osBadge: string | undefined;
+  let terminalShell: string | undefined;
+  try {
+    const [{ getOsInfo, formatOsBadge }, { getTerminalSettings }] = await Promise.all([
+      import("../system/systemInfo"),
+      import("../terminal/terminalSettings"),
+    ]);
+    osBadge = formatOsBadge(await getOsInfo()) || undefined;
+    terminalShell = getTerminalSettings().shell || undefined;
+  } catch (err) {
+    console.warn("[env] system info unavailable (omitting from Environment):", err);
+  }
+  effectiveSystemPrompt += `\n\n${buildEnvironmentSection(modelLabel, osBadge, terminalShell)}`;
   if (approvalMode === "plan") {
     effectiveSystemPrompt += PLAN_MODE_PROMPT;
   } else if (approvalMode !== "full") {

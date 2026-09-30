@@ -22,6 +22,7 @@ pub fn terminal_create(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    shell: Option<String>,
 ) -> Result<u32, String> {
     let mut next_id = state.next_id.lock().map_err(|e| e.to_string())?;
     *next_id += 1;
@@ -42,8 +43,13 @@ pub fn terminal_create(
     } else {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     };
+    // 用户配置的 shell（P2-G2 终端配置）优先；空串/空白回退平台默认
+    let shell_command = shell
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default_shell);
 
-    let mut cmd = CommandBuilder::new(&default_shell);
+    let mut cmd = CommandBuilder::new(&shell_command);
     if let Some(dir) = cwd {
         cmd.cwd(dir);
     }

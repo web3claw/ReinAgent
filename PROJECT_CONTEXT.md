@@ -947,3 +947,21 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **技能贡献**：`skills/index.ts loadSkillsDiscovery` 合并——启用插件的 skills 目录 glob `*/SKILL.md` → SKILL.md frontmatter name/description（宽松解析）→ SkillSummary 追加（readSkillText 按绝对路径可读，技能卡/内容展示全兼容）。**装完插件必须 invalidateSkillsDiscoveryCache**（发现缓存不清则 Skills 页看不到，E2E 抓出后已在安装成功路径失效）。
   - **userConfig**：值存 kv `reinagent-plugin-options:<name>`；设置「插件」tab 每插件配置编辑器（声明驱动）；**hook stdin payload.pluginOptions** 注入该插件已存值（runHookEntries 按 entry.pluginName 取）；getPluginOptions 合并 manifest 默认值。
   - **E2E**：git 仓库（commands+skills+userConfig+hook 全贡献）→ 本地路径克隆安装 ✓ → 设置列表徽标（含技能/含斜杠命令/userConfig 编辑器）✓ → 保存 apiToken → kv 实证 ✓ → Skills 页列出 git-plugin-greet ✓。**npm 源未做**（需 npm CLI + tgz 解压，诚实暂缓）；agent 贡献待 P1-6 自定义 profile 批。
+- **P2 尾巴批 13：终端配置 ✅（2026-09-30，E2E：shell 切换/字号生效）**：
+  - **Rust `terminal_create` 加 `shell: Option<String>`**（用户配置优先，空 = 平台默认 win powershell.exe / unix \$SHELL）。
+  - **`lib/terminal/terminalSettings.ts`**：kv `reinagent-terminal-settings`（shell/fontSize 8-28/fontFamily/scrollback 100-100000，clamp 消毒）。
+  - **设置「终端配置」tab 落地**（原 coming soon）：shell 预设下拉（PowerShell/CMD/Git Bash 路径/自定义）+ 字号/回滚缓冲数字 + 字体族 + 保存；`TerminalSettingsSection.tsx`。
+  - **TerminalPane 消费**：xterm options（fontSize/fontFamily/scrollback）+ createTerminalSession 传 shell；**effect 依赖加 settings 字段**（改配置重开面板即生效——重建实例+PTY）。
+  - **E2E**：设置 shell=CMD + 字号 18 → 保存 → 开终端面板 → cmd.exe 被拉起 + 字号非默认 ✓。测试配置已重置默认。
+- **P2 尾巴批 14：终端 Shell 自动检测 + 精简 ✅（2026-09-30，用户多轮反馈收敛）**：
+  - **用户要求**：终端配置只保留 Shell（字号/回滚/字体族 UI 与代码全删，xterm 恢复 13px 默认）；迁入「基础配置」tab；**去掉「平台默认」抽象选项**——必须有确定选中值，默认即选中平台默认的实际指向。
+  - **实现**：`TerminalShellSetting.tsx` 重写——预设候选（pwsh MSI/商店双路径、powershell 系统路径、cmd、gitbash 双路径）挂载时经 **fs_path_exists 逐路径探测**，不存在的预设不进下拉；未配置 → **自动选中首个可用**（本机=PowerShell 7）；列表尾加「自定义路径」兜底入口（选中显示路径输入）。新增 Rust `fs_path_exists`。TerminalSettings 精简为 {shell}。
+  - **E2E**：下拉自动列出 PowerShell 7/5.1/CMD/Git Bash（本机实测探出商店版 pwsh）+ 默认选中 PowerShell 7 ✓；选 CMD 保存 → kv 持久化 ✓。
+  - **⚠️ 坑**：`?? {}` 拓宽类型致索引报错（显式 as Record）；settings 目录下 storage/db 相对路径是 ../../lib/storage/db；bun -e 删行会砍断多行值（用逐行 filter 后要查孤儿续行）。
+- **P2 尾巴批 15：终端 Shell 标签 OS 检测 + Linux shell 候选 + cwd 工作区 ✅（2026-09-30）**：
+  - **OS 检测**：Rust `system_info.rs system_info`——os（windows/linux/macos）+ 展示版本（Windows 解析 `cmd /c ver` 第三段 build 号 ≥22000 = Win 11；Linux 读 /etc/os-release PRETTY_NAME；macOS sw_vers）+ arch（x86_64→amd64、aarch64→arm64）+ 登录默认 shell（\$SHELL，unix）。前端模块级缓存，Shell 行标签渲染「Shell(Win 11 amd64)」式徽章。⚠️ 坑：ver 输出的版本 4 段（10.0.26100.9444），build = 第三段而非最后一段（最后是 patch 9444，首版解析误判 Win 10）。
+  - **Linux shell 候选**：UNIX_SHELL_CANDIDATES（bash/zsh/fish/sh，含 ~/.local/bin 与 /usr/bin、/bin 双位置）；**登录默认 \$SHELL 对应候选排最前**；Windows/Unix 两套候选按 system_info.os 选择。
+  - **终端 cwd = 当前任务工作区**：TerminalPane 加 workspaceRoot prop（App 传 effectiveWorkspaceRoot）→ createTerminalSession cwd → Rust CommandBuilder::cwd（原实现从未传 cwd，终端固定开在应用启动目录）。
+- **P2 尾巴批 16：Environment 段带真实系统信息与所选 Shell ✅（2026-09-30）**：`buildEnvironmentSection` 扩参（osBadge/terminalShell）——runAgentTurn 发送时 await `getOsInfo()`（共享模块 lib/system/systemInfo.ts，TerminalShellSetting 同源）+ `getTerminalSettings()`；注入 `- System: Win 11 amd64` 与 `- Terminal shell: <路径> — <跟随 shell 的语法提示>`（pwsh/powershell → PowerShell 语法、bash → Unix、cmd → cmd 语法；**原硬编码「cmd 语法、无 grep/head/wc」在用户切 PowerShell 后就是错误指令**，已除）。OS 信息实现收编共享模块 lib/system/systemInfo.ts（TerminalShellSetting 删本地副本）。PROMPTS.md Environment 文档同步。
+- **P2 尾巴批 17：Shell 检测零写死 ✅（2026-09-30，用户反馈「不要写死」）**：撤掉 TerminalShellSetting 里的硬编码候选路径表（C:\ 假设 + 用户名错误路径），改为 **Rust `shell_detect` 命令经系统 `where`/`which` 从 PATH 实时解析**（win: pwsh/powershell/cmd/bash.exe；unix: bash/zsh/fish/sh），检出什么列什么（本机实测探出 bash=Git PATH 版/CMD/Windows PowerShell/pwsh 四个 + 自定义路径兜底）；unix 登录默认 $SHELL 候选排最前。标签按简名映射（pwsh=PowerShell 7、powershell=Windows PowerShell）。**教训：探测类功能一律 PATH/运行时解析，不写盘路径清单**。
+  - **去重**：用户实测指出工作区路径出现两次——「Current workspace root」声明（语义：相对路径解析基准）与 Environment 的 Working directory 行。**Environment 段删除 Working directory 行**（root 声明保留），buildEnvironmentSection 签名去 workspaceRoot。

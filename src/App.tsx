@@ -1600,10 +1600,10 @@ export default function App() {
         {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅聊天工作台显示 */}
         {currentView === "workbench" && hasMessages && <SessionStatsBar stats={sessionStats} />}
 
-        {/* Terminal Pane（仅聊天工作台显示） */}
+        {/* Terminal Pane（仅聊天工作台显示；cwd = 当前任务工作区） */}
         {currentView === "workbench" && isTerminalOpen && (
           <div className="h-64 border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-sunken)] overflow-hidden">
-            <TerminalPane />
+            <TerminalPane workspaceRoot={effectiveWorkspaceRoot || undefined} />
           </div>
         )}
       </div>

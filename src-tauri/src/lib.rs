@@ -22,6 +22,7 @@ mod fs_tree;
 mod git_panel;
 mod hooks;
 mod plugins;
+mod system_info;
 mod app_tray;
 mod updater;
 #[cfg(test)]
@@ -104,6 +105,8 @@ pub fn run() {
             terminal::terminal_resize,
             terminal::terminal_close,
             fs_cmd::fs_read_file,
+            fs_cmd::fs_path_exists,
+            fs_cmd::shell_detect,
             fs_cmd::fs_write_file,
             fs_cmd::fs_list_dir,
             fs_cmd::fs_execute,
@@ -130,6 +133,7 @@ pub fn run() {
             plugins::plugin_list,
             plugins::plugin_install_from_dir,
             plugins::plugin_install_from_git,
+            system_info::system_info,
             plugins::plugin_uninstall,
             updater::update_check,
             updater::update_install,

@@ -36,6 +36,45 @@ pub async fn fs_read_file(path: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// 路径存在性探测（终端配置的 shell 自动检测用）。
+#[tauri::command]
+pub fn fs_path_exists(path: String) -> bool {
+    Path::new(path.trim()).exists()
+}
+
+/// 从 PATH 解析可用的 shell（P2-G2 终端配置；零硬编码路径——交给系统 where/which）。
+/// Windows 用 where.exe 逐个解析；unix 用 which。返回 {名字: 解析路径}（仅含命中的）。
+#[tauri::command]
+pub fn shell_detect() -> std::collections::BTreeMap<String, String> {
+    use std::process::Command;
+    let candidates: &[&str] = if cfg!(target_os = "windows") {
+        &["pwsh.exe", "powershell.exe", "cmd.exe", "bash.exe"]
+    } else {
+        &["bash", "zsh", "fish", "sh"]
+    };
+    let mut out = std::collections::BTreeMap::new();
+    for name in candidates {
+        let probe = if cfg!(target_os = "windows") {
+            Command::new("where").arg(name).output()
+        } else {
+            Command::new("which").arg(name).output()
+        };
+        if let Ok(output) = probe {
+            if output.status.success() {
+                let first = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if !first.is_empty() {
+                    out.insert(name.trim_end_matches(".exe").to_string(), first);
+                }
+            }
+        }
+    }
+    out
+}
 #[tauri::command]
 pub async fn fs_write_file(
     path: String,
@@ -185,7 +224,11 @@ pub async fn fs_delete_file(
 }
 
 #[tauri::command]
-pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, String> {
+pub async fn fs_execute(
+    command: String,
+    cwd: Option<String>,
+    shell: Option<String>,
+) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
         const EXEC_TIMEOUT_SECS: u64 = 120;
         // 输出上限（防巨型输出拖垮 IPC 与前端渲染）：256KB
@@ -204,16 +247,37 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
             let _ = fs::create_dir_all(&exec_dir);
         }
 
-        // ★ 条件编译必须用 #[cfg] 属性而非 if cfg!()：后者是运行时布尔宏，
-        //   两个分支在所有平台都要类型检查——std::os::windows 在 Linux 上不存在，
-        //   用 if cfg!() 会导致 Linux 编译失败（E0433/E0599）。
-        fn spawn_shell(command: &str, exec_dir: &Path) -> std::io::Result<std::process::Child> {
+        // ★ spawn_shell：按所选 shell 分派执行（P2-G2 终端配置贯通——环境段告诉模型
+        //   「用 PowerShell 语法」，exec 就必须真的在 PowerShell 里跑）。
+        //   pwsh/powershell → -Command；bash/zsh/fish/sh → -c；cmd/未配置 → cmd /C。
+        fn spawn_shell(command: &str, exec_dir: &Path, shell: Option<&str>) -> std::io::Result<std::process::Child> {
+            let shell_name = shell.unwrap_or("").trim().to_lowercase();
+            let exe_name = shell_name.rsplit(['\\', '/']).next().unwrap_or("");
             #[cfg(target_os = "windows")]
             {
                 // ★ raw_arg：命令行原样透传给 cmd /C。普通 arg() 会按 MSVC 规则把内部引号
                 //   转义成 \"，而 cmd 不认这种转义——findstr /c:"..." 这类带引号的命令会被
                 //   拆坏（表现为 FINDSTR: Cannot open <词>）。
                 use std::os::windows::process::CommandExt;
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                if exe_name.starts_with("pwsh") || exe_name.starts_with("powershell") {
+                    let mut cmd = Command::new(shell.unwrap_or("powershell.exe"));
+                    cmd.arg("-NoProfile").arg("-Command").arg(command);
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    cmd.current_dir(exec_dir);
+                    cmd.stdout(Stdio::piped());
+                    cmd.stderr(Stdio::piped());
+                    return cmd.spawn();
+                }
+                if exe_name.contains("bash") || exe_name == "zsh" || exe_name == "fish" || exe_name == "sh" {
+                    let mut cmd = Command::new(shell.unwrap_or("bash.exe"));
+                    cmd.arg("-c").arg(command);
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    cmd.current_dir(exec_dir);
+                    cmd.stdout(Stdio::piped());
+                    cmd.stderr(Stdio::piped());
+                    return cmd.spawn();
+                }
                 let mut cmd = Command::new("cmd");
                 cmd.raw_arg("/C").raw_arg(command);
                 cmd.creation_flags(CREATE_NO_WINDOW);
@@ -224,7 +288,8 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
             }
             #[cfg(not(target_os = "windows"))]
             {
-                let mut cmd = Command::new("sh");
+                let shell_exe = if shell_name.is_empty() { "sh".to_string() } else { shell_name };
+                let mut cmd = Command::new(&shell_exe);
                 cmd.arg("-c").arg(command);
                 cmd.current_dir(exec_dir);
                 cmd.stdout(Stdio::piped());
@@ -242,7 +307,7 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
             buf
         }
 
-        let mut child = spawn_shell(&command, &exec_dir).map_err(|e| e.to_string())?;
+        let mut child = spawn_shell(&command, &exec_dir, shell.as_deref()).map_err(|e| e.to_string())?;
 
         // 输出读取放独立线程：进程未退出时也能持续收集，不会因管道缓冲写满而卡死子进程。
         let mut stdout_pipe = child.stdout.take().expect("stdout piped");

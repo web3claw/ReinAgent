@@ -438,7 +438,15 @@ export function createTools(options) {
       }
       const { invoke } = await import("@tauri-apps/api/core");
       const targetCwd = params.cwd ? resolveWorkspacePath(params.cwd, getWorkspace()) : getWorkspace();
-      const output = await invoke("fs_execute", { command, cwd: targetCwd });
+      // 终端配置所选 shell（P2-G2）：exec 与终端面板/环境段提示保持一致
+      let shell;
+      try {
+        const { getTerminalSettings } = await import("../terminal/terminalSettings");
+        shell = getTerminalSettings().shell || undefined;
+      } catch {
+        shell = undefined; // 设置模块不可用时回退平台默认
+      }
+      const output = await invoke("fs_execute", { command, cwd: targetCwd, shell: shell ?? null });
       return buildTextToolResult(output, { command, cwd: targetCwd }, TOOL_LIMITS.execBytes);
     },
   };

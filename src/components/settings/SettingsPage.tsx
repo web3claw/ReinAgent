@@ -9,13 +9,13 @@ import { AppUpdaterCard } from './AppUpdaterCard';
 import { PluginsSection } from './PluginsSection';
 import { HooksSection } from './HooksSection';
 import { ShortcutsSection } from './ShortcutsSection';
+import { TerminalShellSetting } from './TerminalShellSetting';
 import { AppUsagePanel } from './usage-stats/AppUsagePanel';
 import { useAppStore } from '../../store/useAppStore';
 import {
   Settings as SettingsIcon,
   Palette,
   Server,
-  Terminal,
   Brain,
   Info,
   PackageOpen,
@@ -47,7 +47,6 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
     { id: 'appearance', label: t('settingsAppearance'), icon: Palette },
     { id: 'provider', label: t('settingsProvider'), icon: Server },
     { id: 'usage', label: t('settingsUsage'), icon: ChartColumn },
-    { id: 'terminal', label: t('settingsTerminal'), icon: Terminal },
     { id: 'agent', label: t('settingsAgent'), icon: Brain },
     { id: 'hooks', label: t('hooksTitle'), icon: Webhook },
     { id: 'plugins', label: t('pluginsTitle'), icon: PackageOpen },
@@ -143,6 +142,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
                   className="w-64 shrink-0 px-3 py-2 rounded-lg bg-[var(--bg)] border border-[var(--border)] text-sm text-[var(--text)] focus:outline-none focus:border-[var(--brand)]"
                 />
               </div>
+              <TerminalShellSetting />
               <ShortcutsSection />
             </div>
           )}
@@ -185,13 +185,6 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           {activeTab === 'usage' && (
             <div className="space-y-6">
               <AppUsagePanel />
-            </div>
-          )}
-
-          {activeTab === 'terminal' && (
-            <div className="space-y-6">
-              <h2 className="text-xl font-semibold mb-6">{t('settingsTerminal')}</h2>
-              <div className="text-[var(--text-dim)]">Terminal settings coming soon</div>
             </div>
           )}
 
