@@ -534,13 +534,62 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     }
   }
 
+  // ---- 生命周期 hooks（对齐 LiveAgent Hooks：8 个生命周期事件）----
+  // pi-agent-core 原生事件名与 hook 事件同名（agent_start/turn_start/message_*/
+  // tool_execution_*/turn_end/agent_end），包装 onEvent 逐条 fire-and-forget：
+  // 不 await、不阻塞 agent 主流程；block 协议不生效（观察性）。
+  const lifecycleHookOnEvent = workspaceRoot
+    ? (event: import("@earendil-works/pi-agent-core").AgentEvent) => {
+        switch (event.type) {
+          case "agent_start":
+          case "agent_end":
+          case "turn_start":
+          case "turn_end":
+          case "message_start":
+          case "message_end":
+          case "tool_execution_start":
+          case "tool_execution_end": {
+            // 负载裁剪：message 全文太肥，只给 stopReason + 文本预览（工具事件给全量 args）
+            const payload =
+              event.type === "tool_execution_start" || event.type === "tool_execution_end"
+                ? {
+                    toolCallId: event.toolCallId,
+                    toolName: event.toolName,
+                    args: "args" in event ? event.args : undefined,
+                    isError: "isError" in event ? event.isError : undefined,
+                  }
+                : event.type === "message_start" || event.type === "message_end"
+                  ? {
+                      role: event.message.role,
+                      stopReason: (event.message as { stopReason?: string }).stopReason,
+                      textPreview: String(
+                        (event.message as { content?: unknown }).content ?? "",
+                      ).slice(0, 2000),
+                    }
+                  : "message" in event
+                    ? { role: event.message.role }
+                    : {};
+            import("../hooks/hooksRuntime")
+              .then(({ fireLifecycleHook }) => {
+                fireLifecycleHook(event.type, { payload }, workspaceRoot);
+              })
+              .catch((err) => {
+                console.warn("[hooks] lifecycle dispatch failed:", err);
+              });
+            break;
+          }
+        }
+        return onEvent?.(event);
+      }
+    : onEvent;
+
   const base = {
     systemPrompt: effectiveSystemPrompt,
     messages: requestMessages,
     tools: allTools,
     maxSteps: maxSteps ?? DEFAULT_MAX_STEPS,
     signal,
-    onEvent,
+    onEvent: lifecycleHookOnEvent,
     thinkingLevel,
     // provider 层自动重试（连接重置/5xx 等瞬时失败），对齐 ZCode 的重试策略
     maxRetries: 2,

@@ -877,7 +877,8 @@ export default function App() {
     return subscribeTaskTerminal(handle);
   }, [activeTaskId]);
 
-  // ---- Stop hooks（P2-G2）：任务终态 fire-and-forget（结果只进 hook 进程）----
+  // ---- Stop hooks（P2-G2）：任务终态 fire-and-forget（结果只进 hook 进程）。
+  // 生命周期口径的 agent_end 由 agent 循环的原生 agent_end 事件触发（runAgentTurn），此处不重发。----
   useEffect(() => {
     if (!effectiveWorkspaceRoot) return;
     return subscribeTaskTerminal((event) => {
@@ -899,7 +900,7 @@ export default function App() {
   // ---- 工作区 hooks 信任横幅（P2-G2，对齐 ZCode workspace hook trust）----
   const [hooksPendingTrust, setHooksPendingTrust] = useState<{
     raw: string;
-    entries: { event: string; command: string }[];
+    entries: { event: string; label: string }[];
   } | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -912,7 +913,10 @@ export default function App() {
         if (!cancelled && discovered && discovered.entries.length > 0 && !discovered.trusted) {
           setHooksPendingTrust({
             raw: discovered.raw,
-            entries: discovered.entries.map((e) => ({ event: e.event, command: e.command })),
+            entries: discovered.entries.map((e) => ({
+              event: e.event,
+              label: e.command ?? e.requests?.[0]?.url ?? "(空 hook)",
+            })),
           });
         }
       } catch (err) {
@@ -1420,7 +1424,7 @@ export default function App() {
             <ul className="list-disc pl-6 space-y-0.5 font-mono">
               {hooksPendingTrust.entries.map((e, i) => (
                 <li key={i} className="truncate">
-                  [{e.event}] {e.command}
+                  [{e.event}] {e.label}
                 </li>
               ))}
             </ul>

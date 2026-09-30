@@ -154,6 +154,7 @@ pub fn run() {
             web_tools::web_fetch,
             web_tools::web_search,
             hooks::hook_execute,
+            hooks::hook_http_execute,
             plugins::plugin_list,
             plugins::plugin_install_from_dir,
             plugins::plugin_install_from_git,

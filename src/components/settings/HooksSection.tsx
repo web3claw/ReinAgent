@@ -1,91 +1,98 @@
 /**
- * HooksSection —— 工作区 Hooks 管理（P2-G2 尾巴）。
- *
- * 编辑的是活动工作区 `.ReinAgent/config.json` 的 hooks 数组（saveWorkspaceHooks
- * 保留其它顶层键）；支持增删改、启停、单条试运行（runSingleHookForTest，
- * 显式用户动作不看信任态）、信任状态展示与重新批准。
- * 保存后发现缓存自然过期（5s TTL），横幅/运行器读到新配置。
+ * HooksSection —— 工作区 Hooks 管理页。
+ * LiveAgent 移植：crates/agent-ui/src/pages/settings/HooksSection.tsx（1:1 样式与功能）。
+ * 差异（用户定稿 2026-10-01）：
+ * - 左侧导航在「生命周期」8 事件外追加「兼容事件」分组（ZCode 契约事件，旧配置可见可编辑）；
+ * - 无信任横幅、无单条测试按钮（完全 1:1）；信任门禁仍在运行时与聊天区横幅生效。
+ * 数据：活动工作区 `.ReinAgent/config.json` 的 hooks 数组（saveWorkspaceHooks 保留其它顶层键）。
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Loader2, Play, Plus, RefreshCw, Trash2 } from "lucide-react";
+import { Loader2, Plus, SquarePen, Trash2 } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import {
+  CLASSIC_HOOK_EVENTS,
   discoverWorkspaceHooks,
-  runSingleHookForTest,
+  LIFECYCLE_HOOK_EVENTS,
   saveWorkspaceHooks,
-  trustWorkspaceHooks,
-  untrustWorkspaceHooks,
   type HookConfigEntry,
 } from "../../lib/hooks/hooksRuntime";
+import { cn } from "../lw/lib/utils";
+import { AgentActivationSwitch } from "../lw/settings/AgentActivationSwitch";
+import { SettingsNotice } from "../lw/settings/SettingsNotice";
+import { Button } from "../lw/ui/button";
+import { ConfirmActionPopover } from "../lw/ui/confirm-action-popover";
+import { HookModal } from "./HookModal";
 
-const EVENTS = ["PreToolUse", "UserPromptSubmit", "Stop"] as const;
+/** 生命周期事件顺序（LA 同序）。 */
+const EVENT_FLOW: string[] = [...LIFECYCLE_HOOK_EVENTS];
+/** 兼容事件分组（ZCode 契约，运行时全支持）。 */
+const LEGACY_FLOW: string[] = [...CLASSIC_HOOK_EVENTS];
 
-interface DraftEntry {
-  event: string;
-  matcher: string;
-  command: string;
-  timeoutMs: string;
-  enabled: boolean;
-}
+const EVENT_LABEL_KEYS: Record<string, string> = {
+  agent_start: "hooksEventAgentStart",
+  turn_start: "hooksEventTurnStart",
+  message_start: "hooksEventMessageStart",
+  message_end: "hooksEventMessageEnd",
+  tool_execution_start: "hooksEventToolExecutionStart",
+  tool_execution_end: "hooksEventToolExecutionEnd",
+  turn_end: "hooksEventTurnEnd",
+  agent_end: "hooksEventAgentEnd",
+  PreToolUse: "hooksEventPreToolUse",
+  UserPromptSubmit: "hooksEventUserPromptSubmit",
+  PostToolUse: "hooksEventPostToolUse",
+  PermissionRequest: "hooksEventPermissionRequest",
+  SessionStart: "hooksEventSessionStart",
+  Stop: "hooksEventStop",
+};
 
-const toDraft = (e: HookConfigEntry): DraftEntry => ({
-  event: e.event,
-  matcher: e.matcher ?? "",
-  command: e.command,
-  timeoutMs: e.timeoutMs != null ? String(e.timeoutMs) : "",
-  enabled: e.enabled !== false,
-});
+const EVENT_DESC_KEYS: Record<string, string> = Object.fromEntries(
+  Object.entries(EVENT_LABEL_KEYS).map(([event, key]) => [event, `${key}Desc`]),
+);
 
-const toEntry = (d: DraftEntry): HookConfigEntry => ({
-  event: d.event,
-  ...(d.matcher.trim() ? { matcher: d.matcher.trim() } : {}),
-  command: d.command.trim(),
-  ...(d.timeoutMs.trim() ? { timeoutMs: Number(d.timeoutMs) } : {}),
-  enabled: d.enabled,
-});
-
-interface TestResult {
-  blocked: boolean;
-  reason?: string;
-  exitCode: number | null;
-  timedOut: boolean;
-  error?: string;
+/** 旧条目无 name：用脚本首行 / 首个请求 URL 派生展示名（如实反映配置内容）。 */
+function hookDisplayName(hook: HookConfigEntry, untitledLabel: string): string {
+  if (hook.name) return hook.name;
+  if (hook.command) return hook.command.split(/\r?\n/)[0].trim().slice(0, 60);
+  const first = hook.requests?.[0];
+  if (first) return `${first.method} ${first.url}`.trim().slice(0, 60);
+  return untitledLabel;
 }
 
 export function HooksSection({ workspaceRoot }: { workspaceRoot?: string }) {
   const { t } = useTranslation();
-  const [drafts, setDrafts] = useState<DraftEntry[] | null>(null);
-  const [trusted, setTrusted] = useState<boolean | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [feedback, setFeedback] = useState<string | null>(null);
-  const [testResults, setTestResults] = useState<Record<number, TestResult | "running">>({});
+  // 动态事件 i18n 键（EVENT_LABEL_KEYS 查表）需要 string 签名
+  const tf = t as unknown as (key: string) => string;
+  const [activeEvent, setActiveEvent] = useState<string>(EVENT_FLOW[0]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingHook, setEditingHook] = useState<HookConfigEntry | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [hooks, setHooks] = useState<HookConfigEntry[] | null>(null);
 
   const discover = useCallback(async () => {
     if (!workspaceRoot) {
-      setDrafts([]);
-      setTrusted(null);
+      setHooks([]);
       return;
     }
     try {
       const discovered = await discoverWorkspaceHooks(workspaceRoot);
-      setDrafts((discovered?.entries ?? []).map(toDraft));
-      setTrusted(discovered ? discovered.trusted : null);
+      setHooks(discovered?.entries ?? []);
     } catch (err) {
-      setDrafts([]);
-      setFeedback(String(err).slice(0, 200));
+      setHooks([]);
+      setActionError(String(err).slice(0, 200));
     }
   }, [workspaceRoot]);
 
   useEffect(() => {
-    setDrafts(null);
+    setHooks(null);
+    setActiveEvent(EVENT_FLOW[0]);
     void discover();
   }, [discover]);
 
   if (!workspaceRoot) {
     return <p className="text-xs text-[var(--text-dim)]">{t("hooksNoWorkspace")}</p>;
   }
-  if (drafts === null) {
+  if (hooks === null) {
     return (
       <div className="flex items-center gap-2 text-xs text-[var(--text-dim)]">
         <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -94,212 +101,185 @@ export function HooksSection({ workspaceRoot }: { workspaceRoot?: string }) {
     );
   }
 
-  const update = (index: number, patch: Partial<DraftEntry>) => {
-    setDrafts((cur) => (cur ?? []).map((d, i) => (i === index ? { ...d, ...patch } : d)));
+  // 早退后 hooks 收窄为非空数组；以下闭包都在收窄之后声明
+  const list = hooks;
+
+  const persist = async (next: HookConfigEntry[]) => {
+    setActionError(null);
+    setHooks(next);
+    try {
+      await saveWorkspaceHooks(workspaceRoot, next);
+    } catch (err) {
+      setActionError(String(err).slice(0, 220));
+    }
+    await discover();
   };
 
-  const save = async () => {
-    setSaving(true);
-    setFeedback(null);
-    try {
-      const entries = (drafts ?? []).map(toEntry).filter((e) => e.command);
-      await saveWorkspaceHooks(workspaceRoot, entries);
-      setFeedback(t("hooksSaved"));
-      await discover();
-    } catch (err) {
-      setFeedback(String(err).slice(0, 220));
-    } finally {
-      setSaving(false);
+  const handleSave = async (data: HookConfigEntry) => {
+    if (editingHook) {
+      await persist(list.map((hook) => (hook === editingHook ? data : hook)));
+    } else {
+      await persist([...list, data]);
     }
   };
 
-  const test = async (index: number) => {
-    const entry = toEntry((drafts ?? [])[index]);
-    if (!entry.command) return;
-    setTestResults((cur) => ({ ...cur, [index]: "running" }));
-    try {
-      const outcome = await runSingleHookForTest(entry, workspaceRoot);
-      const run = outcome.runs[0];
-      setTestResults((cur) => ({
-        ...cur,
-        [index]: {
-          blocked: outcome.blocked,
-          reason: outcome.reason,
-          exitCode: run?.exitCode ?? null,
-          timedOut: run?.timedOut ?? false,
-          error: run?.error,
-        },
-      }));
-    } catch (err) {
-      setTestResults((cur) => ({ ...cur, [index]: { blocked: false, exitCode: null, timedOut: false, error: String(err) } }));
-    }
+  const toggleHook = (hook: HookConfigEntry) => {
+    void persist(list.map((item) => (item === hook ? { ...item, enabled: hook.enabled === false } : item)));
+  };
+
+  const deleteHook = (hook: HookConfigEntry) => {
+    void persist(list.filter((item) => item !== hook));
+  };
+
+  const closeModal = () => {
+    setModalOpen(false);
+    setEditingHook(null);
+  };
+
+  const openAdd = () => {
+    setEditingHook(null);
+    setModalOpen(true);
+  };
+
+  const openEdit = (hook: HookConfigEntry) => {
+    setEditingHook(hook);
+    setActiveEvent(hook.event);
+    setModalOpen(true);
+  };
+
+  const activeHooks = list.filter((hook) => hook.event === activeEvent);
+  const enabledCount = list.filter((hook) => hook.enabled !== false).length;
+
+  const renderEventButton = (event: string) => {
+    const count = list.filter((hook) => hook.event === event).length;
+    return (
+      <button
+        key={event}
+        type="button"
+        aria-pressed={activeEvent === event}
+        onClick={() => setActiveEvent(event)}
+        className={cn(
+          "flex w-full cursor-pointer items-center justify-between gap-2 rounded-lg px-3 py-2",
+          "text-left text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+          activeEvent === event
+            ? "bg-settings-active font-medium text-foreground"
+            : "text-muted-foreground hover:bg-settings-tile-hover hover:text-foreground",
+        )}
+      >
+        {tf(EVENT_LABEL_KEYS[event])}
+        {count > 0 ? <span className="text-xs tabular-nums">{count}</span> : null}
+      </button>
+    );
   };
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">{t("hooksTitle")}</h2>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void discover()}
-            aria-label={t("hooksReload")}
-            className="rounded p-1.5 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-          >
-            <RefreshCw className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            onClick={() => setDrafts((cur) => [...(cur ?? []), { event: "PreToolUse", matcher: "", command: "", timeoutMs: "", enabled: true }])}
-            className="flex items-center gap-1.5 rounded-lg border border-[var(--border)] px-3 py-1.5 text-xs text-[var(--text)] hover:border-[var(--brand)]"
-          >
-            <Plus className="h-3.5 w-3.5" />
-            {t("hooksAdd")}
-          </button>
-        </div>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">{t("hooksDesc")}</p>
+        <span className="text-xs text-muted-foreground">
+          {t("hooksActiveHooks")} {enabledCount} / {hooks.length}
+        </span>
       </div>
-      <p className="text-xs text-[var(--text-dim)]">
-        {t("hooksHint").replace("{path}", `${workspaceRoot}/.ReinAgent/config.json`)}
-      </p>
-
-      {trusted === false ? (
-        <div className="flex items-center justify-between rounded-lg border border-[var(--warn-border)] bg-[var(--warn-bg)] px-3 py-2 text-xs text-[var(--warn-text)]">
-          <span>{t("hooksUntrusted")}</span>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={() => {
-                void (async () => {
-                  const d = await discoverWorkspaceHooks(workspaceRoot);
-                  if (d) {
-                    trustWorkspaceHooks(workspaceRoot, d.raw);
-                    setTrusted(true);
-                  }
-                })();
-              }}
-              className="rounded border border-[var(--warn-border)] px-2 py-0.5 font-medium"
-            >
-              {t("hooksTrustNow")}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                untrustWorkspaceHooks(workspaceRoot);
-                setTrusted(false);
-              }}
-              className="text-[var(--warn-text)]/70 hover:text-[var(--warn-text)]"
-            >
-              {t("hooksDismiss")}
-            </button>
-          </div>
-        </div>
+      {actionError ? (
+        <SettingsNotice variant="action-error">{actionError}</SettingsNotice>
       ) : null}
-
-      {feedback ? <p className="text-xs text-[var(--text-dim)]">{feedback}</p> : null}
-
-      {drafts.length === 0 ? (
-        <p className="text-xs text-[var(--text-dim)]">{t("hooksEmpty")}</p>
-      ) : (
-        <div className="space-y-3">
-          {drafts.map((draft, index) => {
-            const result = testResults[index];
-            return (
-              <div key={index} className="rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] p-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={draft.event}
-                    onChange={(e) => update(index, { event: e.target.value })}
-                    className="rounded-lg border border-[var(--border)] bg-transparent px-2 py-1 text-xs text-[var(--text)] focus:outline-none"
+      <div className="grid items-start gap-6 md:grid-cols-[13rem_minmax(0,1fr)]">
+        <nav
+          aria-label={t("hooksLifecycle")}
+          className="space-y-1 rounded-xl bg-settings-tile p-2"
+        >
+          <p className="px-3 py-2 text-xs font-medium text-muted-foreground">
+            {t("hooksLifecycle")}
+          </p>
+          {EVENT_FLOW.map(renderEventButton)}
+          <p className="px-3 pt-3 pb-2 text-xs font-medium text-muted-foreground">
+            {t("hooksLegacy")}
+          </p>
+          {LEGACY_FLOW.map(renderEventButton)}
+        </nav>
+        <section className="min-w-0 space-y-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold">{tf(EVENT_LABEL_KEYS[activeEvent])}</h3>
+              <p className="mt-1 text-xs leading-5 text-muted-foreground">
+                {tf(EVENT_DESC_KEYS[activeEvent] ?? "")}
+              </p>
+            </div>
+            <Button size="sm" onClick={openAdd}>
+              <Plus className="size-3.5" />
+              {t("hooksAdd")}
+            </Button>
+          </div>
+          {activeHooks.length === 0 ? (
+            <div className="rounded-xl bg-settings-tile px-4 py-6">
+              <p className="text-sm font-medium">{t("hooksEmptyTitle")}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{t("hooksEmptyDesc")}</p>
+            </div>
+          ) : (
+            activeHooks.map((hook) => (
+              <div
+                key={hook.id ?? `${hook.event}:${hook.command ?? hook.requests?.[0]?.url ?? ""}`}
+                className="flex flex-wrap items-center gap-3 rounded-xl bg-settings-tile p-4"
+              >
+                <div className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => openEdit(hook)}
+                    className="max-w-full cursor-pointer truncate text-left text-sm font-medium hover:underline"
                   >
-                    {EVENTS.map((ev) => (
-                      <option key={ev} value={ev}>
-                        {ev}
-                      </option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={draft.matcher}
-                    onChange={(e) => update(index, { matcher: e.target.value })}
-                    placeholder={t("hooksMatcherPlaceholder")}
-                    className="w-40 rounded-lg border border-[var(--border)] bg-transparent px-2 py-1 text-xs text-[var(--text)] placeholder-[var(--text-dim)] focus:outline-none"
-                  />
-                  <input
-                    type="text"
-                    value={draft.timeoutMs}
-                    onChange={(e) => update(index, { timeoutMs: e.target.value.replace(/\D/g, "") })}
-                    placeholder="timeout ms"
-                    className="w-24 rounded-lg border border-[var(--border)] bg-transparent px-2 py-1 text-xs text-[var(--text)] placeholder-[var(--text-dim)] focus:outline-none"
-                  />
-                  <label className="flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
-                    <input
-                      type="checkbox"
-                      checked={draft.enabled}
-                      onChange={(e) => update(index, { enabled: e.target.checked })}
-                    />
-                    {t("hooksEnabledLabel")}
-                  </label>
-                  <div className="ml-auto flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      onClick={() => void test(index)}
-                      aria-label={t("hooksTest")}
-                      className="flex items-center gap-1 rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-                    >
-                      <Play className="h-3 w-3" />
-                      {t("hooksTest")}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setDrafts((cur) => (cur ?? []).filter((_, i) => i !== index))}
-                      aria-label={t("hooksDelete")}
-                      className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--danger)]"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
+                    {hookDisplayName(hook, t("hooksUntitled"))}
+                  </button>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {hook.type === "http" ? t("hooksTypeHttp") : t("hooksTypeCommand")}
+                    {hook.description ? ` · ${hook.description}` : ""}
+                  </p>
                 </div>
-                <textarea
-                  value={draft.command}
-                  onChange={(e) => update(index, { command: e.target.value })}
-                  rows={2}
-                  placeholder={t("hooksCommandPlaceholder")}
-                  className="mt-2 w-full resize-none rounded-lg border border-[var(--border)] bg-transparent px-2 py-1.5 font-mono text-xs text-[var(--text)] placeholder-[var(--text-dim)] focus:outline-none"
-                />
-                {result === "running" ? (
-                  <p className="mt-1.5 flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                    {t("hooksTestRunning")}
-                  </p>
-                ) : result ? (
-                  <p
-                    className={`mt-1.5 break-all text-xs ${
-                      result.error ? "text-[var(--danger)]" : result.blocked ? "text-[var(--warn-text)]" : "text-[var(--text-dim)]"
-                    }`}
+                <div className="flex items-center gap-1">
+                  <AgentActivationSwitch
+                    checked={hook.enabled !== false}
+                    title={(hook.enabled !== false ? t("hooksDisable") : t("hooksEnable"))}
+                    onToggle={() => toggleHook(hook)}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={t("edit")}
+                    onClick={() => openEdit(hook)}
                   >
-                    {result.error
-                      ? `${t("hooksTestError")}${result.error}`
-                      : result.timedOut
-                        ? t("hooksTestTimeout")
-                        : result.blocked
-                          ? `${t("hooksTestBlocked")}${result.reason ?? ""}`
-                          : `${t("hooksTestPassed")} (exit ${result.exitCode ?? "?"})`}
-                  </p>
-                ) : null}
+                    <SquarePen className="size-3.5" />
+                  </Button>
+                  <ConfirmActionPopover
+                    title={t("hooksDelete")}
+                    description={hookDisplayName(hook, t("hooksUntitled"))}
+                    confirmLabel={t("confirm")}
+                    cancelLabel={t("cancel")}
+                    onConfirm={() => deleteHook(hook)}
+                  >
+                    {(open) => (
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={t("hooksDelete")}
+                        onClick={open}
+                      >
+                        <Trash2 className="size-3.5" />
+                      </Button>
+                    )}
+                  </ConfirmActionPopover>
+                </div>
               </div>
-            );
-          })}
-        </div>
-      )}
-
-      <button
-        type="button"
-        onClick={() => void save()}
-        disabled={saving || drafts.length === 0}
-        className="rounded-lg bg-[var(--brand)] px-4 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
-      >
-        {saving ? t("hooksSaving") : t("hooksSave")}
-      </button>
+            ))
+          )}
+        </section>
+      </div>
+      {modalOpen ? (
+        <HookModal
+          event={editingHook?.event ?? activeEvent}
+          initialData={editingHook ?? undefined}
+          onSave={handleSave}
+          onClose={closeModal}
+        />
+      ) : null}
     </div>
   );
 }

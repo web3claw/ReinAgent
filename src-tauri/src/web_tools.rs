@@ -401,7 +401,7 @@ pub(crate) fn filter_domains(hits: Vec<WebSearchHit>, allowed: &[String], blocke
 /// 解析出网代理：显式设置（kv）优先 → 标准环境变量（HTTP(S)_PROXY/ALL_PROXY）→ 直连。
 /// 设置值非法时如实报错（绝不静默降级直连——配置错误必须暴露）。
 /// 目标 URL 命中 no-proxy 规则（kv `reinagent-web-proxy-no-proxy`）→ 直连。
-fn resolve_proxy_for_url(url: &str) -> Result<Option<ureq::Proxy>, String> {
+pub fn resolve_proxy_for_url(url: &str) -> Result<Option<ureq::Proxy>, String> {
     // 只处理 http/https；其它 scheme（file: 等）一律直连
     if !(url.starts_with("http://") || url.starts_with("https://")) {
         return resolve_proxy();
