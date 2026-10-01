@@ -1,11 +1,10 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
-import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
   Sun, Moon, Plus, Search,
-  Timer, Settings, Monitor, Plug, Clock,
+  Timer, Settings, Monitor, Plug,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
 
@@ -21,35 +20,31 @@ function FooterIconButton({
   children: ReactNode;
 }) {
   const interactive = Boolean(tooltip || onClick);
+  // 纯 CSS hover 提示（弃用 Radix Tooltip：WebView2 下 pointerleave 丢失会残留不消失）
   return (
-    <TooltipPrimitive.Root delayDuration={300}>
-      <TooltipPrimitive.Trigger asChild>
-        <button
-          type="button"
-          onClick={onClick}
-          aria-label={tooltip}
-          className={`inline-flex w-8 h-8 flex-none items-center justify-center rounded-md text-[var(--sidebar-text)] transition-colors ${
-            interactive
-              ? 'hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] cursor-pointer'
-              : 'cursor-default'
-          }`}
-        >
-          {children}
-        </button>
-      </TooltipPrimitive.Trigger>
+    <div className="group/tt relative inline-flex">
+      <button
+        type="button"
+        onClick={onClick}
+        aria-label={tooltip}
+        title={tooltip}
+        className={`inline-flex w-9 h-9 flex-none items-center justify-center rounded-md text-[var(--sidebar-text)] transition-colors ${
+          interactive
+            ? 'hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] cursor-pointer'
+            : 'cursor-default'
+        }`}
+      >
+        {children}
+      </button>
       {tooltip ? (
-        <TooltipPrimitive.Portal>
-          <TooltipPrimitive.Content
-            side="top"
-            sideOffset={6}
-            className="z-50 bg-[var(--bg-elev)] border border-[var(--border)] rounded-lg px-2.5 py-1.5 shadow-xl animate-in fade-in-0 zoom-in-95 select-none"
-          >
-            <span className="text-xs font-medium text-[var(--text)]">{tooltip}</span>
-            <TooltipPrimitive.Arrow className="fill-[var(--bg-elev)]" />
-          </TooltipPrimitive.Content>
-        </TooltipPrimitive.Portal>
+        <span
+          role="tooltip"
+          className="pointer-events-none absolute bottom-full left-1/2 z-50 mb-1.5 -translate-x-1/2 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-2.5 py-1.5 opacity-0 shadow-xl transition-opacity duration-100 group-hover/tt:opacity-100"
+        >
+          <span className="text-xs font-medium text-[var(--text)]">{tooltip}</span>
+        </span>
       ) : null}
-    </TooltipPrimitive.Root>
+    </div>
   );
 }
 
@@ -134,10 +129,13 @@ export const MOCK_PROJECTS: ProjectGroup[] = [];
 export function WorkspaceSidebar({
   onNewTask,
   onOpenSearch,
+  onOpenPlugins,
 }: {
   onNewTask?: (project?: string | null) => void;
   /** 打开全局搜索弹窗（放大镜按钮；对齐 LiveAgent ConversationSearchDialog 入口） */
   onOpenSearch?: () => void;
+  /** 底部插件图标：打开设置并直落插件 tab */
+  onOpenPlugins?: () => void;
 }) {
   const { t } = useTranslation();
   const isSidebarOpen = useAppStore(state => state.isSidebarOpen);
@@ -206,39 +204,30 @@ export function WorkspaceSidebar({
       </div>
 
       {/* 底部图标条（对齐 PI-Desktop sidebar-footer）：主题/语言开关 + 齿轮=设置 /
-          插头=扩展 / 时钟=定时任务 / 电脑占位；除设置与开关外均为纯展示占位。
-          版本号对齐 footer-build：12px tabular-nums leading-none。 */}
+          插头=插件页（直落设置插件 tab）/ 电脑占位；提示为纯 CSS hover（无残留）。 */}
       <div className="flex items-center justify-between p-3 mt-auto border-t border-[var(--border)]">
-        <TooltipPrimitive.Provider delayDuration={300}>
-          <div className="flex items-center">
-            <FooterIconButton tooltip={theme === 'dark' ? t('lightMode') : t('darkMode')} onClick={toggleTheme}>
-              {theme === 'dark' ? <Sun className="w-3.5 h-3.5" /> : <Moon className="w-3.5 h-3.5" />}
-            </FooterIconButton>
-            <FooterIconButton
-              tooltip={locale === 'zh-CN' ? 'Switch to English' : '切换为简体中文'}
-              onClick={toggleLocale}
-            >
-              <LanguageGlobeIcon locale={locale} className="w-3.5 h-3.5" />
-            </FooterIconButton>
-            <FooterIconButton tooltip={t('settings')} onClick={() => setCurrentView('settings')}>
-              <Settings className="w-3.5 h-3.5" />
-            </FooterIconButton>
-            <FooterIconButton tooltip={t('navPlugins')}>
-              <Plug className="w-3.5 h-3.5" />
-            </FooterIconButton>
-            <FooterIconButton
-              tooltip={t('navScheduled')}
-              onClick={() => setCurrentView('automations')}
-            >
-              <Clock className="w-3.5 h-3.5" />
-            </FooterIconButton>
-            <FooterIconButton>
-              <Monitor className="w-3.5 h-3.5" />
-            </FooterIconButton>
-          </div>
-        </TooltipPrimitive.Provider>
+        <div className="flex items-center">
+          <FooterIconButton tooltip={theme === 'dark' ? t('lightMode') : t('darkMode')} onClick={toggleTheme}>
+            {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+          </FooterIconButton>
+          <FooterIconButton
+            tooltip={locale === 'zh-CN' ? 'Switch to English' : '切换为简体中文'}
+            onClick={toggleLocale}
+          >
+            <LanguageGlobeIcon locale={locale} className="w-4 h-4" />
+          </FooterIconButton>
+          <FooterIconButton tooltip={t('settings')} onClick={() => setCurrentView('settings')}>
+            <Settings className="w-4 h-4" />
+          </FooterIconButton>
+          <FooterIconButton tooltip={t('navPlugins')} onClick={onOpenPlugins}>
+            <Plug className="w-4 h-4" />
+          </FooterIconButton>
+          <FooterIconButton>
+            <Monitor className="w-4 h-4" />
+          </FooterIconButton>
+        </div>
         {versionText && (
-          <span className="text-[12px] leading-none tabular-nums text-[var(--text)] font-medium">
+          <span className="text-[13px] leading-none tabular-nums text-[var(--text)] font-medium">
             v{versionText}
           </span>
         )}

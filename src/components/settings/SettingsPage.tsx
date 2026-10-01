@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Settings } from '../../lib/settings/store';
 import { SettingsStatus } from '../../lib/settings/useSettings';
 import { useTranslation } from '../../i18n';
@@ -42,9 +42,11 @@ interface SettingsPageProps {
   workspaceRoot?: string;
   /** 记忆面板的驱动模型选择器选项（App 的 hubModelOptions 接线） */
   memoryModelOptions?: Array<{ value: string; label: string; group?: string }>;
+  /** 外部定位初始 tab（侧栏插件图标 → 'plugins'；变化时跟随切换） */
+  initialTab?: string;
 }
 
-export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot, memoryModelOptions }: SettingsPageProps) {
+export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot, memoryModelOptions, initialTab }: SettingsPageProps) {
   const { t } = useTranslation();
   const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
   const [proxyInput, setProxyInput] = useState(getWebProxy());
@@ -53,6 +55,10 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
   const [noProxySavedNote, setNoProxySavedNote] = useState(false);
   const [hideToTray, setHideToTray] = useState(true);
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'skills' | 'mcp' | 'memory' | 'usage' | 'hooks' | 'plugins' | 'about'>('general');
+  // 外部定位（侧栏插件图标 → plugins）：initialTab 变化时跟随切换
+  useEffect(() => {
+    if (initialTab) setActiveTab(initialTab as typeof activeTab);
+  }, [initialTab]);
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
   const navItems = [

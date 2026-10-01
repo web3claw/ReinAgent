@@ -982,7 +982,8 @@ export default function App() {
     window.addEventListener("mouseup", onUp);
   }, []);
   const [rewindToast, setRewindToast] = useState<{ level: "success" | "error"; message: string } | null>(null);
-  const rewindToastTimerRef = useRef<number | null>(null);
+  // 设置页外部定位 tab（侧栏底部插件图标 → 设置·插件）
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);  const rewindToastTimerRef = useRef<number | null>(null);
   const showRewindToast = useCallback((info: Parameters<typeof formatCheckpointRewoundNotification>[0]) => {
     const notice = formatCheckpointRewoundNotification(info, locale === "zh-CN");
     setRewindToast(notice);
@@ -1295,6 +1296,7 @@ export default function App() {
         onBack={() => setCurrentView("workbench")}
         workspaceRoot={effectiveWorkspaceRoot || undefined}
         memoryModelOptions={hubModelOptions}
+        initialTab={settingsInitialTab}
       />
     );
   }
@@ -1325,6 +1327,10 @@ export default function App() {
           <WorkspaceSidebar
             onNewTask={handleNewTask}
             onOpenSearch={() => setSearchOpen(true)}
+            onOpenPlugins={() => {
+              setSettingsInitialTab('plugins');
+              setCurrentView('settings');
+            }}
           />
           {/* 右缘拖拽调宽 */}
           <div
