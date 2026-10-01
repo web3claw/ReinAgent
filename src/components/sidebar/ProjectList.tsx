@@ -152,6 +152,13 @@ export function ProjectList({
   const tasks = useAppStore((state) => state.tasks);
   const activeTaskId = useAppStore((state) => state.activeTaskId);
   const setActiveTaskId = useAppStore((state) => state.setActiveTaskId);
+  const closeCodeViewer = useAppStore((state) => state.closeCodeViewer);
+
+  /** 侧栏点击已有任务：收起右侧查看面板，让消息对话框回到视野（草稿发送不在此列，不影响浏览器面板） */
+  const activateTask = (taskId: string) => {
+    closeCodeViewer();
+    setActiveTaskId(taskId);
+  };
 
   // 会话池流式集合（后台任务照常跑，侧栏实时显示「进行中」标记）
   const streamingSignature = useSyncExternalStore(subscribeStreaming, () =>
@@ -581,7 +588,7 @@ export function ProjectList({
                               key={task.id}
                               onClick={() => {
                                 setSelectedProject(project.path);
-                                setActiveTaskId(task.id);
+                                activateTask(task.id);
                               }}
                               className={`group/proj-task relative flex items-center justify-between w-full py-1 px-2 rounded-md transition-colors text-left text-base cursor-pointer ${
                                 isTaskActive
@@ -806,7 +813,7 @@ export function ProjectList({
               return (
                 <div
                   key={task.id}
-                  onClick={() => setActiveTaskId(task.id)}
+                  onClick={() => activateTask(task.id)}
                   className={`relative flex items-center justify-between w-full px-2.5 py-1.5 rounded-md transition-colors text-base text-left group cursor-pointer ${
                     isActive
                       ? 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-active)] font-medium'

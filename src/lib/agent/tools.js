@@ -836,6 +836,20 @@ export function createTools(options) {
     const { invoke } = await import("@tauri-apps/api/core");
     return await invoke("browser_read_page", { js: expression });
   };
+  /** 面板未开时自动打开（模型自服务，无需用户手动点开）；返回错误文案或 null */
+  const ensureBrowserPane = async () => {
+    const { invoke: inv } = await import("@tauri-apps/api/core");
+    const isOpen = await inv("browser_is_open").catch(() => false);
+    if (isOpen === true) return null;
+    const { useAppStore } = await import("../../store/useAppStore");
+    useAppStore.getState().openCodeViewer({ type: "browser", title: "浏览器" });
+    for (let i = 0; i < 40; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      if ((await inv("browser_is_open").catch(() => false)) === true) return null;
+    }
+    return "浏览器面板打开超时（10s）";
+  };
+
   const cdp = evalInBrowser;
 
   const browserViewTool = {
@@ -845,23 +859,66 @@ export function createTools(options) {
       "Interact with the embedded browser panel (right dock). Actions:\n" +
       "- navigate: open a URL in the embedded browser, then return a page snapshot.\n" +
       "- snapshot: return the current page URL, title and visible text (first 6000 chars).\n" +
-      "Requires the browser panel to be open — ask the user to open it if this errors.",
+      "- screenshot: capture the page as an image and return it visually (use when layout/visuals matter; you receive the actual picture).\n" +
+      "- elements: list interactive elements (buttons/links/inputs) with generated CSS selectors — use the returned selectors with browser_act click/fill.\n" +
+      "The panel auto-opens on first use.",
     parameters: Type.Object(
       {
-        action: Type.Union([Type.Literal("navigate"), Type.Literal("snapshot")], {
-          description: "navigate = 打开 URL；snapshot = 读取当前页面内容",
-        }),
+        action: Type.Union(
+          [
+            Type.Literal("navigate"),
+            Type.Literal("snapshot"),
+            Type.Literal("screenshot"),
+            Type.Literal("elements"),
+          ],
+          {
+            description:
+              "navigate = 打开 URL；snapshot = 读取文本；screenshot = 截图（多模态查看页面）；elements = 列举可交互元素及其选择器",
+          },
+        ),
         url: Type.Optional(Type.String({ description: "navigate 的目标 URL（含协议）" })),
       },
       { required: ["action"] },
     ),
     execute: async (_toolCallId, params) => {
       try {
+        const paneErr = await ensureBrowserPane();
+        if (paneErr) return browserError(paneErr);
+        const { invoke } = await import("@tauri-apps/api/core");
+        if (params.action === "screenshot") {
+          const base64 = await invoke("browser_screenshot");
+          return {
+            content: [
+              { type: "text", text: "已截取当前页面图像（内嵌浏览器视口，JPEG）。" },
+              { type: "image", data: base64, mimeType: "image/jpeg" },
+            ],
+            details: { kind: "browser", action: "screenshot" },
+          };
+        }
+        if (params.action === "elements") {
+          const script =
+            "(function(){const els=[...document.querySelectorAll('a,button,input,select,textarea,[role=button],[role=link],[onclick]')]" +
+            ".filter(el=>{const r=el.getBoundingClientRect();return r.width>0&&r.height>0&&r.top>=0&&r.top<innerHeight;}).slice(0,40);" +
+            "function sel(el){if(el.id)return '#'+CSS.escape(el.id);const parts=[];let cur=el;for(let i=0;i<3&&cur&&cur!==document.body;i++){let p=cur.tagName.toLowerCase();" +
+            "if(cur.id){p+='#'+CSS.escape(cur.id);parts.unshift(p);break}let idx=1;let sib=cur;while((sib=sib.previousElementSibling))idx++;p+=(':nth-of-type('+idx+')');parts.unshift(p);cur=cur.parentElement}return parts.join('>')}" +
+            "const out=els.map((el)=>{const s=sel(el);const label=(el.innerText||el.placeholder||el.value||el.getAttribute('aria-label')||'').trim().replace(/\\s+/g,' ').slice(0,50);" +
+            "return {tag: el.tagName.toLowerCase(), type: el.type||null, selector: s, label}});return JSON.stringify({count: out.length, elements: out})})()";
+          const raw = await cdp(script);
+          const parsed = JSON.parse(raw);
+          const lines = parsed.elements.map(
+            (el) =>
+              "[" + el.tag + (el.type ? ":" + el.type : "") + "] " + (el.label || "(无文本)") + " → " + el.selector,
+          );
+          return buildTextToolResult(
+            "可交互元素（视口内，前 40 个）——selector 可直接用于 browser_act 的 click/fill：\n\n" + lines.join("\n"),
+            { count: parsed.count },
+            TOOL_LIMITS.webFetchBytes,
+          );
+        }
         if (params.action === "navigate") {
           if (!params.url?.trim()) {
             return browserError("ERROR: navigate 需要 url 参数。");
           }
-          const { invoke } = await import("@tauri-apps/api/core");
           await invoke("browser_navigate", { url: params.url.trim() });
           await new Promise((r) => setTimeout(r, 800)); // 等首帧渲染
         }
@@ -871,16 +928,13 @@ export function createTools(options) {
         const page = JSON.parse(raw);
         const head = params.action === "navigate" ? `已导航：${page.url}` : `当前页面：${page.url}`;
         return buildTextToolResult(
-          `${head}\n标题：${page.title || "(无标题)"}\n\n${page.text || "(页面无可见文本)"}`,
+          `${head}\n标题：${page.title || "(无标题)"}\n\n${page.text || "(页面无可见文本)"}\n\n提示：需要看视觉布局用 action="screenshot"；需要精确操作用 action="elements" 列举选择器。`,
           { url: page.url, title: page.title },
           TOOL_LIMITS.webFetchBytes,
         );
       } catch (err) {
-        return buildTextToolResult(
+        return browserError(
           `浏览器不可用：${String(err).slice(0, 200)}\n（请先在右侧面板打开「浏览器」，再重试本工具）`,
-          undefined,
-          undefined,
-          true,
         );
       }
     },
@@ -891,19 +945,21 @@ export function createTools(options) {
     label: "浏览器操作",
     description:
       "Act on the embedded browser panel page (right dock). Actions:\n" +
-      "- click: dispatch a real mouse click at viewport coordinates (x, y).\n" +
+      "- click: click an element by CSS selector (recommended, from browser_view elements), or at viewport coordinates (x, y).\n" +
       "- fill: set the value of a CSS-selector target and fire input/change events.\n" +
-      "- evaluate: run JavaScript in the page and return its JSON value.\n" +
-      "Requires the browser panel to be open. Write-level permission (approval may apply).",
+      "- evaluate: run JavaScript in the page and return its string result.\n" +
+      "The panel auto-opens on first use. Write-level permission (approval may apply).",
     parameters: Type.Object(
       {
         action: Type.Union(
           [Type.Literal("click"), Type.Literal("fill"), Type.Literal("evaluate")],
-          { description: "click = 坐标点击；fill = 选择器填值；evaluate = 执行 JS" },
+          { description: "click = 点击；fill = 选择器填值；evaluate = 执行 JS" },
         ),
-        x: Type.Optional(Type.Integer({ description: "click：视口 X 坐标（CSS 像素）" })),
-        y: Type.Optional(Type.Integer({ description: "click：视口 Y 坐标（CSS 像素）" })),
-        selector: Type.Optional(Type.String({ description: "fill：目标元素 CSS 选择器" })),
+        selector: Type.Optional(
+          Type.String({ description: "click/fill：目标元素 CSS 选择器（click 推荐用选择器而非坐标）" }),
+        ),
+        x: Type.Optional(Type.Integer({ description: "click（坐标模式）：视口 X 坐标" })),
+        y: Type.Optional(Type.Integer({ description: "click（坐标模式）：视口 Y 坐标" })),
         text: Type.Optional(Type.String({ description: "fill：要填入的文本" })),
         expression: Type.Optional(Type.String({ description: "evaluate：要执行的 JS 表达式" })),
       },
@@ -911,9 +967,31 @@ export function createTools(options) {
     ),
     execute: async (_toolCallId, params) => {
       try {
+        const paneErr = await ensureBrowserPane();
+        if (paneErr) return browserError(paneErr);
         if (params.action === "click") {
+          if (params.selector?.trim()) {
+            // 选择器模式：滚动到元素 → 取视口中心 → 派发完整鼠标事件序列
+            const script =
+              "(function(){const el=document.querySelector(" + JSON.stringify(params.selector.trim()) + ");" +
+              'if(!el) return "ERROR: element not found"; el.scrollIntoView({block:"center"});' +
+              "const r=el.getBoundingClientRect();const cx=r.left+r.width/2, cy=r.top+r.height/2;" +
+              'for(const t of ["pointerdown","mousedown","pointerup","mouseup","click"]){el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:cx,clientY:cy}))}' +
+              'return JSON.stringify({ok:true, tag: el.tagName.toLowerCase(), cx: Math.round(cx), cy: Math.round(cy)})})()';
+            const out = await cdp(script);
+            let parsed;
+            try {
+              parsed = JSON.parse(out);
+            } catch {
+              return browserError(`点击失败：${String(out).slice(0, 200)}`);
+            }
+            return buildTextToolResult(
+              `已点击 ${parsed.tag}（视口中心 ${parsed.cx}, ${parsed.cy}）。`,
+              { selector: params.selector, x: parsed.cx, y: parsed.cy },
+            );
+          }
           if (!Number.isFinite(params.x) || !Number.isFinite(params.y)) {
-            return browserError("ERROR: click 需要 x/y 视口坐标。");
+            return browserError("ERROR: click 需要 selector 或 x/y 视口坐标。");
           }
           await cdp(`(function(){const el=document.elementFromPoint(${params.x},${params.y});if(!el)return "ERROR: no element at point";for(const t of ["pointerdown","mousedown","pointerup","mouseup","click"]){el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:${params.x},clientY:${params.y}}))}return "OK"})()`);
           await new Promise((r) => setTimeout(r, 300));
@@ -927,31 +1005,24 @@ export function createTools(options) {
             `(function(){const el=document.querySelector(${JSON.stringify(params.selector)});` +
             `if(!el) return "ERROR: element not found"; el.focus(); el.value=${JSON.stringify(params.text)};` +
             `el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); return "OK";})()`;
-          const out = await cdp("Runtime.evaluate", { expression: expr, returnByValue: true });
-          const ok = out === "OK";
-          return ok
-            ? buildTextToolResult(`已向 ${params.selector} 填入文本。`, { selector: params.selector, ok })
+          const out = await cdp(expr);
+          return out === "OK"
+            ? buildTextToolResult(`已向 ${params.selector} 填入文本。`, { selector: params.selector })
             : browserError(`填入失败：${String(out).slice(0, 200)}`);
         }
         // evaluate
         if (!params.expression?.trim()) {
           return browserError("ERROR: evaluate 需要 expression 参数。");
         }
-        const value = await cdp("Runtime.evaluate", {
-          expression: params.expression,
-          returnByValue: true,
-        });
+        const value = await cdp(params.expression);
         return buildTextToolResult(
           `执行结果：${typeof value === "string" ? value : JSON.stringify(value, null, 1)?.slice(0, 3000)}`,
           undefined,
           TOOL_LIMITS.webFetchBytes,
         );
       } catch (err) {
-        return buildTextToolResult(
+        return browserError(
           `浏览器不可用：${String(err).slice(0, 200)}\n（请先在右侧面板打开「浏览器」，再重试本工具）`,
-          undefined,
-          undefined,
-          true,
         );
       }
     },

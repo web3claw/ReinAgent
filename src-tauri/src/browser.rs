@@ -6,12 +6,21 @@
 //! 组装脚本）；browser_navigate 走原生 Navigate；browser_current_url 供快照定位。
 
 use std::io::Write as _;
+use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::command;
 use tauri::AppHandle;
 use tauri::Manager;
 use tauri::Webview;
 use tauri::WebviewUrl;
+
+#[cfg(target_os = "windows")]
+use windows::core::HSTRING;
+#[cfg(target_os = "windows")]
+use windows::core::PWSTR;
+#[cfg(target_os = "windows")]
+use webview2_com::WebMessageReceivedEventHandler;
 
 const BROWSER_LABEL: &str = "browser-pane";
 
@@ -27,6 +36,77 @@ fn get_browser_webview(app: &AppHandle) -> Result<Webview, String> {
 fn parse_url(url: &str) -> Result<tauri::Url, String> {
     url.parse()
         .map_err(|e| format!("browser: 无效 URL {url}: {e}"))
+}
+
+/// 子 WebView postMessage 上报槽：(时间戳毫秒, 消息)。WebMessageReceived handler 写入。
+#[cfg(target_os = "windows")]
+static LAST_WEB_MESSAGE: OnceLock<Mutex<Option<(i64, String)>>> = OnceLock::new();
+#[cfg(target_os = "windows")]
+fn last_web_message_slot() -> &'static Mutex<Option<(i64, String)>> {
+    LAST_WEB_MESSAGE.get_or_init(|| Mutex::new(None))
+}
+#[cfg(target_os = "windows")]
+static WEBMSG_HANDLER_REGISTERED: OnceLock<()> = OnceLock::new();
+
+/// 在子 WebView 上注册 WebMessageReceived（一次）。页面经
+/// window.chrome.webview.postMessage 上报数据——WebView2 原生通道，不受页面 CSP 约束。
+#[cfg(target_os = "windows")]
+fn ensure_webmsg_handler(app: &AppHandle) -> Result<(), String> {
+    if WEBMSG_HANDLER_REGISTERED.get().is_some() {
+        return Ok(());
+    }
+    let webview = get_browser_webview(app)?;
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    webview.with_webview(move |platform| {
+        let result = (|| {
+            let controller = platform.controller();
+            let core = unsafe {
+                controller
+                    .CoreWebView2()
+                    .map_err(|e| format!("CoreWebView2: {e}"))?
+            };
+            let handler = WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
+                let Some(args) = args else { return Ok(()) };
+                let mut ptr = PWSTR::null();
+                if let Err(e) = unsafe { args.TryGetWebMessageAsString(&mut ptr) } {
+                    return Err(e);
+                }
+                let msg = unsafe { take_pwstr(ptr) };
+                if let Ok(mut slot) = last_web_message_slot().lock() {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_millis() as i64)
+                        .unwrap_or(0);
+                    *slot = Some((now, msg));
+                }
+                Ok(())
+            }));
+            unsafe {
+                let mut token = 0i64;
+                core.add_WebMessageReceived(&handler, &mut token)
+                    .map_err(|e| format!("add_WebMessageReceived: {e}"))?;
+            }
+            Ok(())
+        })();
+        let _ = tx.send(result);
+    });
+    rx.recv_timeout(Duration::from_secs(10))
+        .map_err(|_| "browser: 注册消息通道超时".to_string())??;
+    WEBMSG_HANDLER_REGISTERED.set(());
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+unsafe fn take_pwstr(ptr: PWSTR) -> String {
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt as _;
+    let mut len = 0usize;
+    while *(ptr.0.add(len)) != 0 {
+        len += 1;
+    }
+    let s = OsString::from_wide(std::slice::from_raw_parts(ptr.0, len)).to_string_lossy().to_string();
+    unsafe { windows::Win32::System::Com::CoTaskMemFree(Some(ptr.0 as _)) };
+    s
 }
 
 #[command]
@@ -132,76 +212,113 @@ pub fn browser_is_open(app: AppHandle) -> bool {
 }
 
 
-/// 读通道：一次性本地 HTTP 监听 + eval 注入「执行 js 并 fetch 上报结果」。
-/// 页面为 HTTPS 时 localhost 属可信源（非混合内容），no-cors POST 可达。
+/// 读通道：eval 注入「执行 js → window.chrome.webview.postMessage 上报」，
+/// WebMessageReceived handler 收进静态槽。postMessage 是 WebView2 原生通道，
+/// 不受页面 CSP/混合内容约束（HTTP fetch 回读会被 bing 等 CSP 拦截——已废弃）。
 #[command]
 pub async fn browser_read_page(app: AppHandle, js: String) -> Result<String, String> {
-    let webview = get_browser_webview(&app)?;
-    let listener = std::net::TcpListener::bind("127.0.0.1:0")
-        .map_err(|e| format!("browser read: bind 失败: {e}"))?;
-    let port = listener
-        .local_addr()
-        .map_err(|e| format!("browser read: addr: {e}"))?
-        .port();
-    let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
-        // 接受一个连接，读 header 定位 Content-Length，再读 body
-        let (mut stream, _) = match listener.accept() {
-            Ok(v) => v,
-            Err(_) => return,
-        };
-        use std::io::Read as _;
-        let mut buf = Vec::new();
-        let mut tmp = [0u8; 4096];
-        let mut header_end = buf.len();
+    #[cfg(target_os = "windows")]
+    {
+        let webview = get_browser_webview(&app)?;
+        ensure_webmsg_handler(&app)?;
+        let slot = last_web_message_slot();
+        let start = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        {
+            let mut guard = slot.lock().map_err(|e| format!("browser lock: {e}"))?;
+            *guard = None;
+        }
+        let full_js = format!(
+            "(async()=>{{let r;try{{r=await eval({js:?});}}catch(e){{r='ERR '+String(e);}}window.chrome.webview.postMessage(String(r));}})()",
+        );
+        webview
+            .eval(full_js)
+            .map_err(|e| format!("browser read eval: {e}"))?;
+        let deadline = std::time::Instant::now() + Duration::from_secs(15);
         loop {
-            match stream.read(&mut tmp) {
-                Ok(0) => break,
-                Ok(n) => {
-                    buf.extend_from_slice(&tmp[..n]);
-                    if let Some(pos) = find_subslice(&buf, b"
-
-") {
-                        header_end = pos + 4;
-                        break;
+            {
+                let guard = slot.lock().map_err(|e| format!("browser lock: {e}"))?;
+                if let Some((ts, msg)) = guard.as_ref() {
+                    if *ts >= start {
+                        return Ok(msg.clone());
                     }
                 }
-                Err(_) => return,
             }
-        }
-        let head = String::from_utf8_lossy(&buf[..header_end.min(buf.len())]).to_string();
-        let content_length = head
-            .to_ascii_lowercase()
-            .lines()
-            .find_map(|l| l.strip_prefix("content-length:"))
-            .and_then(|v| v.trim().parse::<usize>().ok())
-            .unwrap_or(0);
-        while buf.len() < header_end + content_length {
-            match stream.read(&mut tmp) {
-                Ok(0) => break,
-                Ok(n) => buf.extend_from_slice(&tmp[..n]),
-                Err(_) => break,
+            if std::time::Instant::now() >= deadline {
+                return Err("browser read: 超时（15s，页面可能未响应）".to_string());
             }
+            std::thread::sleep(Duration::from_millis(50));
         }
-        let body = String::from_utf8_lossy(&buf[header_end.min(buf.len())..]).to_string();
-        let _ = stream.write_all(b"HTTP/1.1 204 No Content
-Connection: close
-
-");
-        let _ = tx.send(body);
-    });
-    let full_js = format!(
-        "(async()=>{{let r;try{{r=await eval({js:?});}}catch(e){{r='ERR '+String(e);}}try{{await fetch('http://127.0.0.1:{port}/s',{{method:'POST',mode:'no-cors',body:String(r)}});}}catch(e){{}}}})()",
-    );
-    webview
-        .eval(full_js)
-        .map_err(|e| format!("browser read eval: {e}"))?;
-    rx.recv_timeout(Duration::from_secs(15))
-        .map_err(|_| "browser read: 超时（15s，页面可能未响应）".to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, js);
+        Err("内嵌浏览器仅支持 Windows（WebView2）".to_string())
+    }
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
         .position(|window| window == needle)
+}
+
+
+/// 截图：经 with_webview 拿到底层 Controller，走 CDP Page.captureScreenshot。
+/// 返回 base64 JPEG（quality 60）。需要 unstable 特性（PlatformWebview.controller）。
+#[command]
+pub async fn browser_screenshot(app: AppHandle) -> Result<String, String> {
+    #[cfg(target_os = "windows")]
+    {
+        let webview = get_browser_webview(&app)?;
+        let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
+        webview.with_webview(move |platform| {
+            let result = (|| {
+                // PlatformWebview.controller() 在 windows 下直接返回带类型的接口
+                let controller = platform.controller();
+                let core = unsafe {
+                    controller
+                        .CoreWebView2()
+                        .map_err(|e| format!("CoreWebView2: {e}"))?
+                };
+                let (ctx, crx) = std::sync::mpsc::channel();
+                let handler = webview2_com::CallDevToolsProtocolMethodCompletedHandler::create(Box::new(
+                    move |error_code, return_json: String| {
+                        let result: Result<String, String> = (|| {
+                            error_code.map_err(|e| format!("CDP 错误: {e}"))?;
+                            Ok(return_json)
+                        })();
+                        let _ = ctx.send(result);
+                        Ok(())
+                    },
+                ));
+                unsafe {
+                    core.CallDevToolsProtocolMethod(
+                        &HSTRING::from("Page.captureScreenshot"),
+                        &HSTRING::from(r#"{"format":"jpeg","quality":60}"#),
+                        &handler,
+                    )
+                    .map_err(|e| format!("CDP 调用失败: {e}"))?;
+                }
+                let json = webview2_com::wait_with_pump(crx)
+                    .map_err(|e| format!("等待截图失败: {e}"))??;
+                let v: serde_json::Value =
+                    serde_json::from_str(&json).map_err(|e| format!("截图 JSON 解析失败: {e}"))?;
+                v.get("data")
+                    .and_then(|d| d.as_str())
+                    .map(|s| s.to_string())
+                    .ok_or_else(|| "截图中无 data 字段".to_string())
+            })();
+            let _ = tx.send(result);
+        });
+        rx.recv_timeout(Duration::from_secs(20))
+            .map_err(|_| "browser screenshot: 超时（20s）".to_string())?
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = app;
+        Err("内嵌浏览器仅支持 Windows（WebView2）".to_string())
+    }
 }
