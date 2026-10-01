@@ -285,9 +285,12 @@ export const useAppStore = create<AppState>((set) => ({
       }
     }
     set((state) => {
+      // 切换任务时收起右侧查看面板（提示词/文件/Git/浏览器），
+      // 让消息对话框回到视野——面板挡住对话是用户明确的痛点（2026-10-01）。
       const targetTask = activeTaskId ? state.tasks.find((t) => t.id === activeTaskId) : null;
       return {
         activeTaskId,
+        codeViewerSource: null,
         // 从资源中心页（自动化/Skills/MCP/记忆）激活任务（点击侧栏任务/新建任务）时
         // 切回聊天工作台；自动化自身的派发走 createTask（不经此 action），不会打断页面停留。
         currentView:
