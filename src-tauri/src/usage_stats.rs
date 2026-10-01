@@ -151,22 +151,63 @@ pub(crate) fn usage_backfill_sync() -> Result<i64, String> {
     usage_backfill_conn(&mut conn)
 }
 
+/// 重置水位线 kv 键：清空账目后，回填只导入水位线之后的源行（防止旧 part 重新灌入）。
+const USAGE_RESET_WATERMARK_KEY: &str = "usage-reset-watermark-ms";
+
+/// 读取重置水位线（无记录/解析失败 = 0，即不设限）。 tolerant：测试库可无 kv 表。
+fn usage_reset_watermark(conn: &rusqlite::Connection) -> i64 {
+    conn.query_row(
+        "SELECT value FROM kv WHERE key = ?1",
+        [USAGE_RESET_WATERMARK_KEY],
+        |r| r.get::<_, String>(0),
+    )
+    .ok()
+    .and_then(|s| s.parse::<i64>().ok())
+    .unwrap_or(0)
+}
+
+/// 清空全部模型用量账目并写入水位线（此后回填只收水位线之后的新事实）。
+#[tauri::command]
+pub async fn usage_reset() -> Result<u64, String> {
+    let mut conn = crate::conversation_store::db_conn()?;
+    let tx = conn
+        .unchecked_transaction()
+        .map_err(|e| format!("txn failed: {e}"))?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or(0);
+    tx.execute("DELETE FROM model_usage", [])
+        .map_err(|e| format!("delete failed: {e}"))?;
+    tx.execute(
+        "INSERT INTO kv (key, value) VALUES (?1, ?2)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        rusqlite::params![USAGE_RESET_WATERMARK_KEY, now.to_string()],
+    )
+    .map_err(|e| format!("watermark write failed: {e}"))?;
+    tx.commit().map_err(|e| format!("commit failed: {e}"))?;
+    Ok(now as u64)
+}
+
 pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64, String> {
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("txn failed: {e}"))?;
     let mut inserted: i64 = 0;
+    // 重置水位线：水位线之后的源行才可入账（清零后历史 part 不重灌）
+    let watermark = usage_reset_watermark(&tx);
 
     // 1) assistant api_message：provider/modelId/usage + message.started_at
     let mut stmt = tx
         .prepare(
             "SELECT p.task_id, p.msg_id, m.started_at, p.payload
              FROM part p JOIN message m ON m.task_id = p.task_id AND m.msg_id = p.msg_id
-             WHERE p.kind = 'api_message' AND m.role = 'assistant'",
+             WHERE p.kind = 'api_message' AND m.role = 'assistant'
+               AND COALESCE(m.started_at, 0) > ?1",
         )
         .map_err(|e| e.to_string())?;
     let rows: Vec<(String, String, Option<i64>, String)> = stmt
-        .query_map([], |r| {
+        .query_map([watermark], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -236,16 +277,17 @@ pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64
         }
     }
 
-    // 2) agent 工具结果：details.usage（query_source=subagent，model=子代理类型）
+    // 2) agent 工具结果：details.usage（query_source=subagent，按 details.provider/model 记账）
     let mut stmt = tx
         .prepare(
             "SELECT p.task_id, p.msg_id, m.started_at, p.payload
              FROM part p JOIN message m ON m.task_id = p.task_id AND m.msg_id = p.msg_id
-             WHERE p.kind = 'tool_result' AND m.tool_name = 'agent'",
+             WHERE p.kind = 'tool_result' AND m.tool_name = 'agent'
+               AND COALESCE(m.started_at, 0) > ?1",
         )
         .map_err(|e| e.to_string())?;
     let agent_rows: Vec<(String, String, Option<i64>, String)> = stmt
-        .query_map([], |r| {
+        .query_map([watermark], |r| {
             Ok((
                 r.get::<_, String>(0)?,
                 r.get::<_, String>(1)?,
@@ -278,9 +320,19 @@ pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64
         let output = parse_usage_field(usage, "output");
         let cache_read = parse_usage_field(usage, "cacheRead");
         let cache_write = parse_usage_field(usage, "cacheWrite");
-        let model = details
-            .get("subagentType")
+        // 用量按真实模型记账（2026-10-01）：details.provider/model 由子代理运行时
+        // 从 assistant 原件提取（钉选模型与会话模型都如实反映）；旧版按类型名记账
+        // 的字段 subagentType 不再使用。缺省兜底 unknown/subagent（真事实不丢）。
+        let provider = details
+            .get("provider")
             .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
+            .unwrap_or("subagent")
+            .to_string();
+        let model = details
+            .get("model")
+            .and_then(|x| x.as_str())
+            .filter(|s| !s.is_empty())
             .unwrap_or("unknown")
             .to_string();
         let id = format!("{task_id}:{msg_id}:sub");
@@ -290,11 +342,12 @@ pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64
                 "INSERT OR IGNORE INTO model_usage
                  (id, task_id, msg_id, query_source, provider, model, status, started_at,
                   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens)
-                 VALUES (?1, ?2, ?3, 'subagent', 'subagent', ?4, 'completed', ?5, ?6, ?7, ?8, ?9, ?10)",
+                 VALUES (?1, ?2, ?3, 'subagent', ?4, ?5, 'completed', ?6, ?7, ?8, ?9, ?10, ?11)",
                 rusqlite::params![
                     id,
                     task_id,
                     msg_id,
+                    provider,
                     model,
                     started,
                     input,
@@ -386,6 +439,8 @@ pub(crate) fn usage_query_conn(
         "30d" => now_ms - 30 * 24 * 3600 * 1000,
         _ => 0,
     };
+    // 重置水位线：清零后，message 表直算指标（工具调用/错误/最长聊天时长）同样只统计水位线之后
+    let watermark = usage_reset_watermark(conn);
 
     // ---- summary（对齐 ZCode appUsageSummarySchema；turn≈模型请求行、tool 从 message 表）----
     let (total_tokens, input_tokens, output_tokens, cache_read, cache_write, total_turns, total_sessions): (
@@ -419,15 +474,15 @@ pub(crate) fn usage_query_conn(
         .map_err(|e| e.to_string())?;
     let tool_call_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM message WHERE role = 'tool'",
-            [],
+            "SELECT COUNT(*) FROM message WHERE role = 'tool' AND COALESCE(started_at, 0) > ?1",
+            [watermark],
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
     let tool_error_count: i64 = conn
         .query_row(
-            "SELECT COUNT(*) FROM message WHERE role = 'tool' AND is_error = 1",
-            [],
+            "SELECT COUNT(*) FROM message WHERE role = 'tool' AND is_error = 1 AND COALESCE(started_at, 0) > ?1",
+            [watermark],
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;
@@ -436,9 +491,10 @@ pub(crate) fn usage_query_conn(
             "SELECT COALESCE(MAX(span), 0) FROM (
                 SELECT MAX(ended_at) - MIN(started_at) AS span FROM message
                 WHERE started_at IS NOT NULL AND ended_at IS NOT NULL
+                  AND started_at > ?1
                 GROUP BY task_id
              )",
-            [],
+            [watermark],
             |r| r.get(0),
         )
         .map_err(|e| e.to_string())?;

@@ -163,6 +163,7 @@ pub fn run() {
             updater::update_check,
             updater::update_install,
             usage_stats::usage_snapshot,
+            usage_stats::usage_reset,
             fs_base64::fs_read_base64_file,
             fs_tree::fs_tree_dir,
             git_panel::git_status,

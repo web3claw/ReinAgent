@@ -74,6 +74,9 @@ export interface SubagentRunResult {
   maxStepsReached: boolean;
   aborted: boolean;
   errorMessage?: string;
+  /** 实际执行模型的 provider/model 戳（取自 assistant 原件；用量按真实模型记账）。 */
+  provider?: string;
+  model?: string;
 }
 
 /**
@@ -123,10 +126,15 @@ export function summarizeSubagentRun(
   errorMessage: string | undefined,
 ): SubagentRunResult {  let content = "";
   let toolUseCount = 0;
+  let provider: string | undefined;
+  let model: string | undefined;
   const usage: SubagentUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   for (const m of messages) {
     if (!m || typeof m !== "object") continue;
     if (m.role === "assistant") {
+      // 真实模型戳（pi-ai assistant 原件自带；钉选模型与会话模型都由此如实反映）
+      if (!provider && typeof m.provider === "string" && m.provider) provider = m.provider;
+      if (!model && typeof m.model === "string" && m.model) model = m.model;
       if (Array.isArray(m.content)) {
         for (const block of m.content) {
           if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
@@ -155,6 +163,8 @@ export function summarizeSubagentRun(
     maxStepsReached,
     aborted,
     errorMessage,
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
   };
 }
 
@@ -459,6 +469,9 @@ export async function createSubagentTool(deps: SubagentToolDeps) {
           toolUseCount: summary.toolUseCount,
           durationMs: summary.durationMs,
           usage: summary.usage,
+          // 用量按真实模型记账（Rust 回填读这两个字段；缺省由 Rust 侧兜底 unknown）
+          ...(summary.provider ? { provider: summary.provider } : {}),
+          ...(summary.model ? { model: summary.model } : {}),
           maxStepsReached: summary.maxStepsReached,
           aborted: summary.aborted,
           error: summary.errorMessage ?? null,

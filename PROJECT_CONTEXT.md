@@ -979,3 +979,10 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **UI**：`AgentCapabilityLayout.tsx`（PI 同名原语子集，PI settings.css 类→本仓 token Tailwind：行=bg-settings-tile 圆角卡[图标/名称+徽标/Task(handle) mono/说明两行钳制/工具 chips/操作区]，两击删除 3.2s 自动解除）+ `SubagentEditorSheet.tsx`（lw Sheet 右滑 inset：模板 chips/名称[首命名种子模板+slug 提示]/说明/工具九宫格勾选[mutating 琥珀标记]/指令正文[字节计数 0.8/1.0 变色]/高级[ModelPicker 复用 value=provider/model、thinking 下拉、启用]；**v1 如实取舍：无 fallbackModels/maxTokens/inheritTools**——运行时未实现不做假开关）+ `AgentSubagentsPage.tsx`（搜索/新建/内置组+全局级组[~/.agents/subagents 路径 chip]/开关即时落 kv/编辑/复制为我的定义/reveal[opener]/两击删除）。i18n subagent* 全套 46 键（中英）。
   - **顺手修**：`storage/db.ts` kvSet/syncTasks 的 `window.setTimeout` 裸用 → scheduleDebounce 环境无关（Node 测试可调 kv）。
   - **测试**：subagentRunner.test.mjs 重写（7 条：过滤/聚合/端到端旧值兼容/未知句柄/审批门挂载/目录渲染/后台+通知）+ subagentDefinitions.test.mjs 新增（5 条：解析/round-trip/内置映射/slug/目录合成）。⚠️ 坑：faux 工具调用参数必须过 schema（glob 要 pattern）——**参数校验在审批门之前**，校验失败门不触发（探针二分才定位）。
+- **批 19 补：模型用量按真实模型记账 + 一键清零 ✅（2026-10-01，用户发现「Explore 0.4% 1746 tokens」追溯）**：
+  - **根因**：用量回填第二源（agent 工具 tool_result）按 `details.subagentType` 记账——旧硬编码时代类型名即模型标签；子智能体定义驱动后不再成立。
+  - **改法**：`summarizeSubagentRun` 从嵌套轮 assistant 原件提取真实 provider/model 戳（钉选模型与会话模型都如实反映）→ agent 工具 details 带 provider/model → Rust 回填子代理行按 `details.provider/model` 记账（缺省兜底 subagent/unknown，subagentType 字段废弃）。
+  - **一键清零**：新 Rust 命令 `usage_reset`——DELETE model_usage + kv 写水位线 `usage-reset-watermark-ms`；回填两源查询加 `COALESCE(started_at,0) > 水位线`（**清零后历史 part 不重灌**——INSERT OR IGNORE 只防重复行不防重导，水位线才是防重灌闸门）。用量面板右下加「清零」按钮（两击确认）。
+  - **顺手修**：commands.rs 三个测试还在调旧签名 `commands_scan(1 参)`（插件 v1 加 extra_dirs 时漏更）——补 None 第二参。
+  - **E2E**：重置按钮两击 → 面板全零（累计 0/峰值 0/热力图灰/两图空态）→ 重开面板触发回填仍为零 ✓。usage_stats Rust 测试 4/4（新增水位线防重灌用例）。
+  - **清零补全（用户反馈：最长聊天时长没清掉）**：`longest_session_ms`/`tool_call_count`/`tool_error_count` 是从 **message 表实时算的**（不走 model_usage），清零删表管不到——水位线统一应用到这三个查询（`started_at > 水位线`），清零后旧会话时长/旧工具调用一律不计。usage_stats 测试扩断言（清零后 longest=0/tool=0，新事实入账）。工具调用参数坑备忘：faux 工具调用参数必须过 schema（glob 要 pattern），参数校验在审批门**之前**。
