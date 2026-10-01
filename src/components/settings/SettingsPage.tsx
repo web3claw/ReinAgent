@@ -105,7 +105,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           （px-5 sm:6 lg:8 xl:10、顶 pt-4 底 pb-6）+ 内容 max-w-1320px 居中。
           ⚠ 底部间距放在滚动内容上（inner pb-6）+ items-start，原因见 git 历史：
           flex 滚动容器 padding-bottom 不计入可滚动区域、stretch 会把 inner 拉成固定高。 */}
-      <div className="hub-scope flex min-h-0 flex-1 bg-background">
+      <div className="flex min-h-0 flex-1 bg-background">
       {activeTab === 'skills' || activeTab === 'mcp' || activeTab === 'memory' ? (
         <div className="flex min-h-0 w-full flex-col overflow-hidden">
           {activeTab === 'skills' && <SkillsHubPage />}

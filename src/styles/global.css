@@ -1155,56 +1155,10 @@ select option {
   --text-ui-xs: calc(var(--ui-font-size) - 4px);
 }
 
-/* ---------- LiveAgent Hub 移植色板（Skills / MCP / 记忆 三页专用） ----------
-   值逐项对齐 LiveAgent tokens.css 的 :root（亮色）与 .dark（暗色）块。 */
-.hub-scope {
-  --lw-background: hsl(0 0% 100%);
-  --lw-foreground: hsl(222.2 84% 4.9%);
-  --lw-card: hsl(0 0% 100%);
-  --lw-popover: hsl(0 0% 100%);
-  --lw-popover-foreground: hsl(222.2 84% 4.9%);
-  --lw-primary: hsl(222.2 47.4% 11.2%);
-  --lw-primary-foreground: hsl(210 40% 98%);
-  --lw-muted: hsl(210 40% 96.1%);
-  --lw-muted-foreground: hsl(215.4 16.3% 46.9%);
-  --lw-accent: hsl(210 40% 96.1%);
-  --lw-destructive: #b91c1c;
-  --lw-destructive-foreground: #ffffff;
-  --lw-success: #065f46;
-  --lw-success-foreground: #ffffff;
-  --lw-border: hsl(214.3 31.8% 91.4%);
-  --lw-ring: hsl(222.2 84% 4.9%);
-  --lw-settings-tile: hsl(0 0% 96.5%);
-  --lw-settings-tile-hover: hsl(0 0% 94%);
-  --lw-settings-active: hsl(0 0% 88.5%);
-  --lw-control-surface: hsl(0 0% 100%);
-  --lw-segmented-track: hsl(0 0% 88.5%);
-  --lw-segmented-selected: hsl(0 0% 100%);
-}
-[data-theme="dark"] .hub-scope {
-  --lw-background: hsl(0 0% 9.4%);
-  --lw-foreground: hsl(0 0% 98%);
-  --lw-card: hsl(0 0% 12.9%);
-  --lw-popover: hsl(0 0% 12.9%);
-  --lw-popover-foreground: hsl(0 0% 98%);
-  --lw-primary: hsl(210 30% 96%);
-  --lw-primary-foreground: hsl(222.2 47.4% 11.2%);
-  --lw-muted: hsl(0 0% 15.7%);
-  --lw-muted-foreground: hsl(0 0% 72%);
-  --lw-accent: hsl(0 0% 18.8%);
-  --lw-destructive: #fca5a5;
-  --lw-destructive-foreground: #450a0a;
-  --lw-success: #6ee7b7;
-  --lw-success-foreground: #022c22;
-  --lw-border: hsl(0 0% 26%);
-  --lw-ring: hsl(212.7 26.8% 83.9%);
-  --lw-settings-tile: hsl(0 0% 12.9%);
-  --lw-settings-tile-hover: hsl(0 0% 18.8%);
-  --lw-settings-active: hsl(0 0% 25.5%);
-  --lw-control-surface: hsl(0 0% 18.8%);
-  --lw-segmented-track: hsl(0 0% 9.4%);
-  --lw-segmented-selected: hsl(0 0% 25.5%);
-}
+/* ---------- LiveAgent Hub 移植色板 ----------
+   hub-scope 覆盖块已按用户要求移除（2026-10-01）：Skills/MCP/记忆/子智能体/Hooks
+   五页配色统一回应用蓝黑色板（--lw-* 走 @theme inline 的应用 token 兜底）。
+   hub-scope 类名保留在组件上作为标记（无色彩定义，no-op），非色彩工具类见下方阴影段。 */
 
 /* LiveAgent Hub 移植：阴影 / 进度动画 / 字面量工具类（tokens.css 同名值） */
 @theme {
