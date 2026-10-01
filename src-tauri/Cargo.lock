@@ -3367,12 +3367,16 @@ dependencies = [
  "tauri-plugin-store",
  "tauri-plugin-updater",
  "tauri-plugin-window-state",
+ "tauri-runtime",
  "tempfile",
  "tokio",
  "toml 0.9.12+spec-1.1.0",
  "ureq",
  "uuid",
  "walkdir",
+ "webview2-com",
+ "windows 0.62.2",
+ "windows-core 0.62.2",
  "zip 2.4.2",
 ]
 

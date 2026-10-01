@@ -86,7 +86,7 @@ import { createMemoryOrganizerService, installMemoryOrganizerService } from "./l
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
-  Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine
+  Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe
 } from "lucide-react";
 
 export default function App() {
@@ -333,6 +333,7 @@ export default function App() {
   // 搜索跳转定位：目标消息 id（MessageList 滚动定位 + 高亮后置 null）
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState<string | null>(null);
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
+  const codeViewerSource = useAppStore((state) => state.codeViewerSource);
   // 会话内查找条（P2-A1，Ctrl+F 呼出）
   const [findOpen, setFindOpen] = useState(false);
   // 命令面板（P2-G2，Ctrl/Cmd+K 呼出）
@@ -1402,6 +1403,14 @@ export default function App() {
               title="在文件管理器中打开工作区"
             >
               <FolderOpen className="w-4 h-4" />
+            </button>
+            {/* 内嵌浏览器面板（WebView2 子控件，CDP 工具面） */}
+            <button
+              onClick={() => openCodeViewer({ type: "browser", title: "浏览器" })}
+              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "browser" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+              title="浏览器"
+            >
+              <Globe className="w-4 h-4" />
             </button>
             <button
               onClick={toggleTerminal}

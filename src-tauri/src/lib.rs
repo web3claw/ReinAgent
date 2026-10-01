@@ -22,6 +22,7 @@ mod fs_tree;
 mod git_panel;
 mod hooks;
 mod plugins;
+mod browser;
 mod system_info;
 mod app_tray;
 mod app_proxy;
@@ -143,6 +144,9 @@ pub fn run() {
             fs_cmd::fs_read_text_file,
             fs_cmd::fs_clean_reinagent_tmp,
             fs_cmd::fs_delete_file,
+            fs_cmd::fs_remove_entry,
+            fs_cmd::fs_create_dir,
+            fs_cmd::fs_rename,
             fs_search::fs_glob,
             fs_search::fs_grep,
             commands::commands_scan,
@@ -155,6 +159,13 @@ pub fn run() {
             web_tools::web_search,
             hooks::hook_execute,
             hooks::hook_http_execute,
+            browser::browser_open,
+            browser::browser_set_bounds,
+            browser::browser_navigate,
+            browser::browser_eval,
+            browser::browser_current_url,
+            browser::browser_close,
+            browser::browser_is_open,
             plugins::plugin_list,
             plugins::plugin_install_from_dir,
             plugins::plugin_install_from_git,

@@ -16,14 +16,15 @@ import { SubagentsPanel } from "../components/chat/SubagentsPanel";
 import { SubagentReplay } from "../components/chat/SubagentReplay";
 import { GitPanel } from "../components/git/GitPanel";
 import { FilesPanel } from "../components/git/FilesPanel";
+import { BrowserPane } from "../components/browser/BrowserPane";
 
 type CodeViewerSourceInput = Extract<
   NonNullable<ReturnType<typeof useAppStore.getState>["codeViewerSource"]>,
-  { type: "file" | "text" | "patch" | "multi-file-diff" | "subagents" | "git" | "files" | "code-review" }
+  { type: "file" | "text" | "patch" | "multi-file-diff" | "subagents" | "git" | "files" | "browser" | "code-review" }
 >;
 
 function buildSource(
-  input: Exclude<NonNullable<CodeViewerSourceInput>, { type: "subagents" | "git" | "files" }>,
+  input: Exclude<NonNullable<CodeViewerSourceInput>, { type: "subagents" | "git" | "files" | "browser" }>,
   workspacePath?: string
 ): CodeViewerSource {
   // 子代理形态没有 path；其余形态按工作区根解析相对路径
@@ -106,6 +107,24 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
 
   if (!codeViewerSource) {
     return null;
+  }
+
+  // 浏览器面板（路线 B：WebView2 子控件；关闭面板时销毁子控件）
+  if (codeViewerSource.type === "browser") {
+    return (
+      <div className="relative flex h-full flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]" style={{ width: paneW }}>
+        <div
+          onMouseDown={startResize}
+          className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-[var(--brand)]/30 transition-colors z-20"
+        />
+        <BrowserPane
+          url={codeViewerSource.url}
+          onClose={() => {
+            closeCodeViewer();
+          }}
+        />
+      </div>
+    );
   }
 
   // Git 面板（P2-D）：分支/变更/提交历史，不走 PreviewPane。

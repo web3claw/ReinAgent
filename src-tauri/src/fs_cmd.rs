@@ -223,6 +223,103 @@ pub async fn fs_delete_file(
     .map_err(|e| e.to_string())?
 }
 
+/// 创建目录（文件管理器面板「新建文件夹」；父目录已存在，不递归建链）。
+#[tauri::command]
+pub async fn fs_create_dir(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        if resolved.exists() {
+            return Err(format!("目标已存在: {}", resolved.display()));
+        }
+        let parent = resolved
+            .parent()
+            .ok_or_else(|| format!("路径无效: {}", resolved.display()))?;
+        if !parent.is_dir() {
+            return Err(format!("父目录不存在: {}", parent.display()));
+        }
+        fs::create_dir(&resolved).map_err(|e| format!("Failed to create {}: {}", resolved.display(), e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 删除任意条目（文件或目录，目录递归）。安防：拒绝符号链接（逃逸路径）；
+/// 拒绝删除工作区根自身。文件管理器面板用（fs_delete_file 只收普通文件）。
+#[tauri::command]
+pub async fn fs_remove_entry(
+    path: String,
+    workspace_root: String,
+    checkpoint: Option<crate::checkpoint::CheckpointCtx>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        let root = resolve_path(&workspace_root);
+        if resolved == root {
+            return Err(format!("拒绝删除工作区根目录: {}", resolved.display()));
+        }
+        let md = fs::symlink_metadata(&resolved)
+            .map_err(|e| format!("Failed to stat {}: {}", resolved.display(), e))?;
+        if md.file_type().is_symlink() {
+            return Err(format!("拒绝删除符号链接（可能是逃逸路径）: {}", resolved.display()));
+        }
+        if let Some(ctx) = checkpoint.as_ref() {
+            capture_write_pre_image(&ctx, &resolved);
+        }
+        if md.is_dir() {
+            fs::remove_dir_all(&resolved)
+                .map_err(|e| format!("Failed to delete {}: {}", resolved.display(), e))
+        } else {
+            fs::remove_file(&resolved)
+                .map_err(|e| format!("Failed to delete {}: {}", resolved.display(), e))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 重命名/移动（文件或目录；目标已存在拒绝覆盖）。
+/// 安防与 fs_delete_file 同源：源与目标都拒绝符号链接；目标路径不得逃逸（resolve 后
+/// 必须仍以源父目录为根——直接用绝对路径解析，用户面板只会传工作区内路径）。
+#[tauri::command]
+pub async fn fs_rename(
+    path: String,
+    new_path: String,
+    checkpoint: Option<crate::checkpoint::CheckpointCtx>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let from = resolve_path(&path);
+        let to = resolve_path(&new_path);
+        let from_md = fs::symlink_metadata(&from)
+            .map_err(|e| format!("Failed to stat {}: {}", from.display(), e))?;
+        if from_md.file_type().is_symlink() {
+            return Err(format!("拒绝重命名符号链接（可能是逃逸路径）: {}", from.display()));
+        }
+        if let Ok(to_md) = fs::symlink_metadata(&to) {
+            if to_md.file_type().is_symlink() {
+                return Err(format!("目标位置是符号链接（可能是逃逸路径）: {}", to.display()));
+            }
+            return Err(format!("目标已存在: {}", to.display()));
+        }
+        if from == to {
+            return Ok(());
+        }
+        // 目标父目录必须存在（不隐式建目录，防止拼错路径到处落盘）
+        let to_parent = to
+            .parent()
+            .ok_or_else(|| format!("目标路径无效: {}", to.display()))?;
+        if !to_parent.is_dir() {
+            return Err(format!("目标父目录不存在: {}", to_parent.display()));
+        }
+        if let Some(ctx) = checkpoint.as_ref() {
+            capture_write_pre_image(&ctx, &from);
+        }
+        fs::rename(&from, &to)
+            .map_err(|e| format!("Failed to rename {} -> {}: {}", from.display(), to.display(), e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 读 kv 代理设置并组装子进程代理环境变量（对齐 ZCode buildAgentProxyEnv /
 /// buildAgentNoProxyEnv：显式设置覆盖 shell 继承，空 = 清除代理变量直连）。
 pub(crate) fn read_kv_proxy_settings() -> Vec<(String, String)> {

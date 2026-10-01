@@ -85,6 +85,7 @@ interface AppState {
     | { type: "subagents"; title: string; focusId?: string }
     | { type: "git"; title: string }
     | { type: "files"; title: string }
+    | { type: "browser"; title: string; url?: string }
     | {
         type: "code-review";
         title: string;
@@ -108,6 +109,7 @@ interface AppState {
       | { type: "subagents"; title: string; focusId?: string }
       | { type: "git"; title: string }
       | { type: "files"; title: string }
+      | { type: "browser"; title: string; url?: string }
       | {
           type: "code-review";
           title: string;
