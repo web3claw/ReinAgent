@@ -145,13 +145,6 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
           </div>
           <button
             type="button"
-            onClick={() => openCodeViewer({ type: "files", title: "文件树" })}
-            className="flex-shrink-0 rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-          >
-            文件树
-          </button>
-          <button
-            type="button"
             onClick={closeCodeViewer}
             className="flex-shrink-0 rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
             aria-label="关闭 Git 面板"
@@ -182,13 +175,6 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
             </span>
             <span className="truncate text-xs text-[var(--text)]">{codeViewerSource.title}</span>
           </div>
-          <button
-            type="button"
-            onClick={() => openCodeViewer({ type: "git", title: "Git" })}
-            className="flex-shrink-0 rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-          >
-            Git
-          </button>
           <button
             type="button"
             onClick={closeCodeViewer}

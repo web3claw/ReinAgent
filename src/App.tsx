@@ -1378,29 +1378,19 @@ export default function App() {
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Git 面板入口（P2-G2 尾巴：从侧栏底栏迁到顶栏，终端按钮左侧） */}
+            {/* Git 面板入口：点击直开 Git 管理（分支/变更/历史） */}
             <button
               onClick={() => openCodeViewer({ type: "git", title: effectiveWorkspaceRoot || "Git" })}
-              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors"
-              title="Git"
+              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "git" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+              title="Git 管理"
             >
               <GitBranch className="w-4 h-4" />
             </button>
-            {/* 在系统文件管理器打开工作区（opener 插件 reveal：win 资源管理器 / linux 文件管理器 / mac Finder） */}
+            {/* 文件管理器入口：点击直开右侧文件面板（浏览 + 新建/重命名/删除） */}
             <button
-              onClick={() => {
-                void (async () => {
-                  try {
-                    // 目录场景 openPath 即打开系统文件管理器（win 资源管理器 / linux xdg / mac Finder）
-                    const { openPath } = await import("@tauri-apps/plugin-opener");
-                    await openPath(effectiveWorkspaceRoot);
-                  } catch (err) {
-                    console.error("[workspace] open in file manager failed:", err);
-                  }
-                })();
-              }}
-              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors"
-              title="在文件管理器中打开工作区"
+              onClick={() => openCodeViewer({ type: "files", title: "文件管理器" })}
+              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "files" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+              title="文件管理器"
             >
               <FolderOpen className="w-4 h-4" />
             </button>

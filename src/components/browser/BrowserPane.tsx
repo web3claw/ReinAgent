@@ -10,12 +10,10 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { ArrowLeft, ArrowRight, Globe, RotateCw, X } from "lucide-react";
-import { useAppStore } from "../../store/useAppStore";
 
 const START_URL = "https://www.bing.com";
 
 export function BrowserPane({ url, onClose }: { url?: string; onClose: () => void }) {
-  const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   const [address, setAddress] = useState(url ?? START_URL);
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -138,7 +136,8 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
             value={address}
             onChange={(e) => setAddress(e.currentTarget.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") {
+              // 中文 IME 合成中的 Enter（上屏用）不触发导航；上屏后再按 Enter 才跳转
+              if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 navigate(e.currentTarget.value);
               }
@@ -147,13 +146,6 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
             placeholder="输入网址或搜索词"
           />
         </div>
-        <button
-          type="button"
-          onClick={() => openCodeViewer({ type: "files", title: "文件树" })}
-          className="flex-shrink-0 rounded px-2 py-1 text-xs text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-        >
-          文件
-        </button>
         <button
           type="button"
           onClick={onClose}
