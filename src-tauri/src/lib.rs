@@ -22,7 +22,11 @@ mod fs_tree;
 mod git_panel;
 mod hooks;
 mod plugins;
+mod browser;
+mod system_info;
 mod app_tray;
+mod app_proxy;
+mod hide_to_tray;
 mod updater;
 #[cfg(test)]
 mod git_panel_tests;
@@ -31,6 +35,7 @@ mod usage_stats_tests;
 #[cfg(test)]
 mod web_tools_tests;
 
+use tauri::Manager;
 use terminal::TerminalState;
 
 /// 单实例聚焦用的主进程句柄（single-instance 回调在第二进程上下文触发，
@@ -57,6 +62,8 @@ fn with_window_state(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
 }
 
 pub fn run() {
+    // 代理注入必须最先执行（WebView2 环境在 builder 初始化时读取这些变量）
+    app_proxy::apply_webview_proxy_env();
     with_window_state(
         tauri::Builder::default()
             // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；
@@ -84,6 +91,23 @@ pub fn run() {
     .setup(|app| {
         // 单实例：保存本实例句柄（二次启动回调聚焦用）
         let _ = SINGLE_APP_HANDLE.set(app.handle().clone());
+        // 恢复「关闭时隐藏到托盘」设置（缺省开启）
+        hide_to_tray::restore_hide_to_tray();
+        // 关闭窗口 → 隐藏到托盘（设置开启时拦截 close，仅 Windows 生效；
+        // 托盘菜单「退出」仍完全退出，不受此拦截影响）
+        if cfg!(target_os = "windows") {
+            use tauri::Manager;
+            let main_window = app.get_webview_window("main").expect("main window");
+            let window_clone = main_window.clone();
+            main_window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if hide_to_tray::is_hide_to_tray_enabled() {
+                        api.prevent_close();
+                        let _ = window_clone.hide();
+                    }
+                }
+            });
+        }
         // 系统托盘（P2-G2）：菜单 + 左键切换主窗口显隐；失败如实打日志不阻断启动
         if let Err(error) = app_tray::setup_tray(app) {
             eprintln!("failed to setup system tray: {error}");
@@ -104,6 +128,10 @@ pub fn run() {
             terminal::terminal_resize,
             terminal::terminal_close,
             fs_cmd::fs_read_file,
+            fs_cmd::fs_path_exists,
+            hide_to_tray::get_hide_to_tray,
+            hide_to_tray::set_hide_to_tray,
+            fs_cmd::shell_detect,
             fs_cmd::fs_write_file,
             fs_cmd::fs_list_dir,
             fs_cmd::fs_execute,
@@ -116,6 +144,9 @@ pub fn run() {
             fs_cmd::fs_read_text_file,
             fs_cmd::fs_clean_reinagent_tmp,
             fs_cmd::fs_delete_file,
+            fs_cmd::fs_remove_entry,
+            fs_cmd::fs_create_dir,
+            fs_cmd::fs_rename,
             fs_search::fs_glob,
             fs_search::fs_grep,
             commands::commands_scan,
@@ -127,12 +158,23 @@ pub fn run() {
             web_tools::web_fetch,
             web_tools::web_search,
             hooks::hook_execute,
+            hooks::hook_http_execute,
+            browser::browser_open,
+            browser::browser_set_bounds,
+            browser::browser_navigate,
+            browser::browser_eval,
+            browser::browser_current_url,
+            browser::browser_close,
+            browser::browser_is_open,
             plugins::plugin_list,
             plugins::plugin_install_from_dir,
+            plugins::plugin_install_from_git,
+            system_info::system_info,
             plugins::plugin_uninstall,
             updater::update_check,
             updater::update_install,
             usage_stats::usage_snapshot,
+            usage_stats::usage_reset,
             fs_base64::fs_read_base64_file,
             fs_tree::fs_tree_dir,
             git_panel::git_status,

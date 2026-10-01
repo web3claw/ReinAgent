@@ -3,6 +3,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import { createTerminalSession, type TerminalSessionHandle } from "../../lib/terminal/tauriTerminalClient";
+import { getTerminalSettings } from "../../lib/terminal/terminalSettings";
 import { useAppStore } from "../../store/useAppStore";
 import { Terminal as TerminalIcon, X, Plus, RotateCw } from "lucide-react";
 
@@ -11,13 +12,22 @@ interface TerminalTab {
   name: string;
 }
 
-export function TerminalPane() {
+export interface TerminalPaneProps {
+  /** 当前任务工作区（新终端的初始 cwd） */
+  workspaceRoot?: string;
+}
+
+export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const theme = useAppStore((s) => s.theme);
   const isTerminalOpen = useAppStore((s) => s.isTerminalOpen);
   const toggleTerminal = useAppStore((s) => s.toggleTerminal);
+  // 终端配置（P2-G2）：kv 读取（设置页保存后重开终端即生效）
+  const [settings] = useState(getTerminalSettings);
+  /** shell 简名（终端 tab 标签用，去 .exe 后缀） */
+  const shellName = (settings.shell.split(/[\\/]/).pop() ?? "").replace(/\.exe$/i, "").toLowerCase() || "shell";
 
-  const [tabs, setTabs] = useState<TerminalTab[]>([{ id: "term-1", name: "bash 1" }]);
+  const [tabs, setTabs] = useState<TerminalTab[]>([{ id: "term-1", name: `${shellName} 1` }]);
   const [activeTab, setActiveTab] = useState<string>("term-1");
   const [status, setStatus] = useState<"connecting" | "connected" | "error">("connecting");
 
@@ -30,7 +40,7 @@ export function TerminalPane() {
 
     const term = new Terminal({
       cursorBlink: true,
-      fontSize: 13,
+      fontSize: 16,
       fontFamily: "Consolas, Menlo, Monaco, 'Courier New', monospace",
       theme:
         theme === "dark"
@@ -61,6 +71,8 @@ export function TerminalPane() {
     createTerminalSession({
       cols: term.cols || 80,
       rows: term.rows || 24,
+      cwd: workspaceRoot || undefined,
+      shell: settings.shell || undefined,
       onData: (data) => {
         if (!isDisposed) term.write(data);
       },
@@ -104,7 +116,7 @@ export function TerminalPane() {
       term.dispose();
       termRef.current = null;
     };
-  }, [isTerminalOpen, activeTab]);
+  }, [isTerminalOpen, activeTab, settings.shell, workspaceRoot]);
 
   // Update theme dynamically
   useEffect(() => {
@@ -128,7 +140,7 @@ export function TerminalPane() {
   if (!isTerminalOpen) return null;
 
   return (
-    <div className="flex flex-col h-64 border-t border-[var(--border)] bg-[var(--bg-sunken)]">
+    <div className="flex flex-col h-full min-h-[120px] border-t border-[var(--border)] bg-[var(--bg-sunken)]">
       {/* 终端顶栏 */}
       <div className="flex items-center justify-between px-3 py-1.5 bg-[var(--bg-elev)] border-b border-[var(--border)] text-xs select-none">
         <div className="flex items-center gap-2">
@@ -156,7 +168,7 @@ export function TerminalPane() {
             <button
               onClick={() => {
                 const nextNum = tabs.length + 1;
-                const newTab = { id: `term-${nextNum}`, name: `bash ${nextNum}` };
+                const newTab = { id: `term-${nextNum}`, name: `${shellName} ${nextNum}` };
                 setTabs([...tabs, newTab]);
                 setActiveTab(newTab.id);
               }}

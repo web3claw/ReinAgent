@@ -23,37 +23,35 @@ import {
   getRunSignal,
   registerRun,
 } from "../subagents/subagentRegistry.js";
-
-/** 子代理类型（对齐 ZCode 内置两型；用户自定义 agents/*.md 留待后续批次）。 */
-export type SubagentType = "Explore" | "general-purpose";
-
-/** Explore 工具白名单（只读 + 联网检索；与 tools.js 注册表名严格一致）。 */
-const EXPLORE_TOOLS = new Set([
-  "read_file",
-  "list_dir",
-  "glob",
-  "grep",
-  "webfetch",
-  "websearch",
-]);
+import {
+  DEFAULT_SUBAGENT_TOOLS,
+  SUBAGENT_MUTATING_TOOLS,
+  loadSubagentCatalog,
+  normalizeSubagentHandle,
+  resolveSubagentModelPin,
+  type SubagentCatalog,
+  type SubagentDefinition,
+} from "../subagents/subagentDefinitions.js";
 
 /** 子代理默认步数上限。ZCode maxTurns 默认 4；实测 Deepseek 碎步形态（工具轮+正文轮各占一步）
  *  4 步连「列目录+报告」都触顶，放宽到 6（主模型会收到触顶 ⚠ 警告并如实转告）。 */
 export const SUBAGENT_MAX_STEPS = 6;
 
-const EXPLORE_SYSTEM_PROMPT =
-  "You are a research subagent (Explore). Investigate the given task using read-only tools " +
-  "(read_file / list_dir / glob / grep / webfetch / websearch) and report findings as your final message. " +
-  "Be thorough but efficient. Never attempt to modify files — you have no write tools. " +
-  "Your final message is the ONLY thing returned to the caller: include all key findings, " +
-  "cite concrete file paths / URLs, and state clearly what could not be determined.";
+/** 定义是否可改动文件/执行命令（决定是否继承父审批门）。 */
+export function subagentCanMutate(definition: SubagentDefinition): boolean {
+  return definition.tools.some((tool) => SUBAGENT_MUTATING_TOOLS.includes(tool));
+}
 
-export function buildSubagentSystemPrompt(type: SubagentType, workspaceRoot?: string): string {
+/** 组合子代理系统提示词（对齐 PI composeSubagentSystemPrompt 的框架行语义）。 */
+export function composeSubagentSystemPrompt(definition: SubagentDefinition, workspaceRoot?: string): string {
+  const mutationLine = subagentCanMutate(definition)
+    ? "You may modify files inside the workspace; write operations go through the caller's approval flow."
+    : "You have no file-modification tools; report findings instead of changing anything.";
   const base =
-    type === "Explore"
-      ? EXPLORE_SYSTEM_PROMPT
-      : "You are a general-purpose subagent. Complete the given task end-to-end using the available tools. " +
-        "Your final message is the ONLY thing returned to the caller — make it a complete, self-contained report.";
+    `You are the "${definition.name}" subagent. ${definition.description}\n` +
+    `${mutationLine}\n` +
+    "Your final message is the ONLY thing returned to the caller: make it the complete report.\n\n" +
+    definition.prompt;
   return workspaceRoot
     ? `${base}\n\nCurrent workspace root: ${workspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
     : base;
@@ -76,6 +74,9 @@ export interface SubagentRunResult {
   maxStepsReached: boolean;
   aborted: boolean;
   errorMessage?: string;
+  /** 实际执行模型的 provider/model 戳（取自 assistant 原件；用量按真实模型记账）。 */
+  provider?: string;
+  model?: string;
 }
 
 /**
@@ -125,10 +126,15 @@ export function summarizeSubagentRun(
   errorMessage: string | undefined,
 ): SubagentRunResult {  let content = "";
   let toolUseCount = 0;
+  let provider: string | undefined;
+  let model: string | undefined;
   const usage: SubagentUsage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
   for (const m of messages) {
     if (!m || typeof m !== "object") continue;
     if (m.role === "assistant") {
+      // 真实模型戳（pi-ai assistant 原件自带；钉选模型与会话模型都由此如实反映）
+      if (!provider && typeof m.provider === "string" && m.provider) provider = m.provider;
+      if (!model && typeof m.model === "string" && m.model) model = m.model;
       if (Array.isArray(m.content)) {
         for (const block of m.content) {
           if (block?.type === "text" && typeof block.text === "string" && block.text.trim()) {
@@ -157,12 +163,14 @@ export function summarizeSubagentRun(
     maxStepsReached,
     aborted,
     errorMessage,
+    ...(provider ? { provider } : {}),
+    ...(model ? { model } : {}),
   };
 }
 
 /** 子代理工具注入面（runAgentTurn 解析出模型后闭包传入）。桥接层签名放宽为 any。 */
 export interface SubagentToolDeps {
-  /** pi-ai Model 对象（复用父轮）。 */
+  /** pi-ai Model 对象（父轮默认；定义钉选模型可覆盖）。 */
   model: any;
   /** provider 级 stream 函数。 */
   stream: (model: any, context: any, options?: any) => any;
@@ -173,10 +181,12 @@ export interface SubagentToolDeps {
   workspaceRoot?: string;
   /** 父轮 AbortSignal：父停子停。 */
   signal?: AbortSignal;
-  /** 父审批门（general-purpose 继承；Explore 不挂）。 */
+  /** 父审批门（可改动定义继承；只读定义不挂）。 */
   beforeToolCall?: (ctx: any, signal?: AbortSignal) => Promise<{ block?: boolean; reason?: string } | undefined>;
   /** 父轮工具注册表（getTools() 结果——不含 agent，天然禁递归）。 */
   registryTools: unknown[];
+  /** 目录注入（测试用）；缺省运行时加载 loadSubagentCatalog()。 */
+  catalog?: SubagentCatalog;
   /** 后台子代理完成回调（系统通知；缺省浏览器环境默认实现）。 */
   notify?: (info: { id: string; type: string; description: string; status: string; summary: string; error?: string }) => void;
   now?: () => number;
@@ -210,34 +220,61 @@ export interface SubagentToolResult {
   isError?: boolean;
 }
 
+/** 渲染目录到工具描述（对齐 PI：- name (tools: …): 描述）。 */
+export function renderSubagentCatalogDescription(catalog: SubagentCatalog): string {
+  const items = catalog.definitions.length
+    ? catalog.definitions
+        .map((def) => {
+          const tools = def.tools.length ? def.tools.join(", ") : "default set";
+          return `- ${def.name} (tools: ${tools}): ${def.description}`;
+        })
+        .join("\n")
+    : "(no subagent definitions configured)";
+  return (
+    "Launch a subagent to handle a complex, multi-step task autonomously.\n" +
+    "Available subagents:\n" +
+    items +
+    "\nThe subagent runs with its own context and its final message is returned as the tool result — " +
+    "so the prompt must be self-contained (goal, constraints, expected output). " +
+    "Set run_in_background=true to return immediately and let the subagent keep running " +
+    "(read its report later with subagent_output). " +
+    "Use this for broad codebase searches, multi-file investigations, or independent subtasks; " +
+    "for simple lookups use the direct tools instead."
+  );
+}
+
+/** 按定义工具白名单过滤注册表（未知名字自然落空；注册表无 agent，天然禁递归）。 */
+export function filterToolsForDefinition(definition: SubagentDefinition, registryTools: unknown[]): unknown[] {
+  const wanted = new Set(definition.tools.length > 0 ? definition.tools : DEFAULT_SUBAGENT_TOOLS);
+  return registryTools.filter(
+    (t) =>
+      t !== null &&
+      typeof t === "object" &&
+      typeof (t as { name?: unknown }).name === "string" &&
+      wanted.has((t as { name: string }).name),
+  );
+}
+
 /**
- * 构造 `agent` 工具（对齐 ZCode Agent 工具的单代理形态；不暴露 model 参数——
- * ZCode agents.md 教训：历史 tool call 里的旧 override 会长期污染后续轮）。
+ * 构造 `agent` 工具（定义驱动，2026-10-01 对齐 PI-Desktop 子智能体目录）。
+ * 不暴露 model 参数——历史 tool call 里的旧 override 会长期污染后续轮。
  * run_in_background=true 时立即返回运行 id，报告经 `subagent_output` 查询；
- * 后台完成触发 notify 回调（系统通知）。
+ * 后台完成触发 notify 回调（系统通知）。**异步工厂**：需先加载定义目录渲染描述。
  */
-export function createSubagentTool(deps: SubagentToolDeps) {
+export async function createSubagentTool(deps: SubagentToolDeps) {
   const now = deps.now ?? (() => Date.now());
   const notify = deps.notify ?? defaultNotify;
+  const catalog = deps.catalog ?? (await loadSubagentCatalog());
   return {
     name: "agent",
     label: "子代理",
-    description:
-      "Launch a subagent to handle a complex, multi-step task autonomously. " +
-      "Available types: \"Explore\" (read-only research: file search, reading, web search/fetch) and " +
-      "\"general-purpose\" (full tool access for multi-step execution). " +
-      "The subagent runs with its own context and its final message is returned as the tool result — " +
-      "so the prompt must be self-contained (goal, constraints, expected output). " +
-      "Set run_in_background=true to return immediately and let the subagent keep running " +
-      "(read its report later with subagent_output). " +
-      "Use this for broad codebase searches, multi-file investigations, or independent subtasks; " +
-      "for simple lookups use the direct tools instead.",
+    description: renderSubagentCatalogDescription(catalog),
     parameters: Type.Object(
       {
         description: Type.String({ description: "任务的简短描述（3-5 个词）" }),
         prompt: Type.String({ description: "交给子代理的完整任务说明（必须自包含：目标、约束、期望产出）" }),
         subagent_type: Type.Optional(
-          Type.String({ description: "子代理类型：Explore（只读调研，缺省）或 general-purpose（完整工具）" }),
+          Type.String({ description: "子代理句柄（见工具描述目录）；缺省 explorer（只读调研）" }),
         ),
         run_in_background: Type.Optional(
           Type.Boolean({ description: "true = 立即返回、子代理后台运行（经 subagent_output 查询结果）" }),
@@ -249,20 +286,56 @@ export function createSubagentTool(deps: SubagentToolDeps) {
       _toolCallId: string,
       params: { description: string; prompt: string; subagent_type?: string; run_in_background?: boolean },
     ): Promise<SubagentToolResult> => {
-      const rawType = (params.subagent_type ?? "Explore").trim();
-      const type: SubagentType =
-        rawType.toLowerCase() === "general-purpose" || rawType.toLowerCase() === "generalpurpose"
-          ? "general-purpose"
-          : rawType === "Explore" || rawType.toLowerCase() === "explore"
-            ? "Explore"
-            : (rawType as SubagentType);
-      // 未知类型如实报错（不静默降级为 Explore——模型应当修正类型名）
-      if (type !== "Explore" && type !== "general-purpose") {
+      const handle = normalizeSubagentHandle((params.subagent_type ?? "explorer").trim());
+      const definition = catalog.definitions.find((def) => def.name === handle);
+      // 未知句柄如实报错并列出可用目录（不静默降级——模型应当修正句柄名）
+      if (!definition) {
+        const available = catalog.definitions.map((def) => def.name).join(", ");
         return {
           content: [
             {
               type: "text",
-              text: `Unknown subagent_type "${rawType}". Available types: Explore, general-purpose.`,
+              text: `Unknown subagent_type "${params.subagent_type ?? handle}". Available: ${available}.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const type = definition.name;
+
+      // 模型钉选：定义优先；供应商缺失 → 如实报错；API Key 空 → 抛错也如实报错（不静默回落）
+      let pinned: { model: any; stream: any; api: string; label: string; getApiKey: () => any } | null = null;
+      if (definition.model) {
+        let resolved: Awaited<ReturnType<typeof resolveSubagentModelPin>> = null;
+        try {
+          resolved = await resolveSubagentModelPin(definition.model);
+        } catch (err) {
+          return {
+            content: [{ type: "text", text: `Subagent "${type}" model pin failed: ${String(err)}` }],
+            isError: true,
+          };
+        }
+        if (!resolved) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `Subagent "${type}" pins model "${definition.model}" which is not configured. Configure it in model settings or edit the definition.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        pinned = resolved;
+      }
+
+      const scopedTools = filterToolsForDefinition(definition, deps.registryTools);
+      if (scopedTools.length === 0) {
+        return {
+          content: [
+            {
+              type: "text",
+              text: `Subagent "${type}" has no usable tools (granted: ${definition.tools.join(", ") || "default"}; none match the registry).`,
             },
           ],
           isError: true,
@@ -282,21 +355,23 @@ export function createSubagentTool(deps: SubagentToolDeps) {
       /** 共享推进逻辑：跑嵌套循环 → 汇总 → registry 收束（+ 后台通知）。 */
       const driveRun = async (signal: AbortSignal | undefined): Promise<SubagentRunResult> => {
         const result = await runTurn({
-          model: deps.model,
-          stream: deps.stream,
-          api: deps.api,
-          label: deps.label,
-          getApiKey: deps.getApiKey,
-          systemPrompt: buildSubagentSystemPrompt(type, deps.workspaceRoot),
+          model: pinned?.model ?? deps.model,
+          stream: pinned?.stream ?? deps.stream,
+          api: pinned?.api ?? deps.api,
+          label: pinned?.label ?? deps.label,
+          getApiKey: pinned?.getApiKey ?? deps.getApiKey,
+          systemPrompt: composeSubagentSystemPrompt(definition, deps.workspaceRoot),
           // 转录末条为 user：子代理任务作为单条 user 消息进入
           messages: [{ role: "user", content: params.prompt, timestamp: Date.now() }],
-          tools: filterToolsFor(type, deps.registryTools) as any[],
+          tools: scopedTools as any[],
           signal,
           maxSteps: SUBAGENT_MAX_STEPS,
-          thinkingLevel: (deps.thinkingLevel ?? "off") as any,
-          // Explore：只读工具集结构性安全，不挂审批门；
-          // general-purpose：继承父审批门（写操作弹主会话审批，对齐 ZCode 路由回父）。
-          beforeToolCall: type === "general-purpose" ? deps.beforeToolCall : undefined,
+          // 定义钉选 thinking 优先（off 映射关闭），否则跟随会话
+          thinkingLevel: (definition.thinkingLevel === "off"
+            ? "off"
+            : definition.thinkingLevel ?? deps.thinkingLevel ?? "off") as any,
+          // 可改动定义：继承父审批门（写操作弹主会话审批）；只读定义结构性安全不挂。
+          beforeToolCall: subagentCanMutate(definition) ? deps.beforeToolCall : undefined,
           onEvent: () => {},
         });
         // 转录落库（P2 尾巴 #7）：完成后即可在右侧面板完整回放
@@ -394,6 +469,9 @@ export function createSubagentTool(deps: SubagentToolDeps) {
           toolUseCount: summary.toolUseCount,
           durationMs: summary.durationMs,
           usage: summary.usage,
+          // 用量按真实模型记账（Rust 回填读这两个字段；缺省由 Rust 侧兜底 unknown）
+          ...(summary.provider ? { provider: summary.provider } : {}),
+          ...(summary.model ? { model: summary.model } : {}),
           maxStepsReached: summary.maxStepsReached,
           aborted: summary.aborted,
           error: summary.errorMessage ?? null,
@@ -459,16 +537,5 @@ export function createSubagentOutputTool() {
   };
 }
 
-/** 按类型过滤注册表工具（Explore 白名单；general-purpose 全量——注册表无 agent，天然禁递归）。 */
-export function filterToolsFor(type: SubagentType, registryTools: unknown[]): unknown[] {
-  if (type === "Explore") {
-    return registryTools.filter(
-      (t) =>
-        t !== null &&
-        typeof t === "object" &&
-        typeof (t as { name?: unknown }).name === "string" &&
-        EXPLORE_TOOLS.has((t as { name: string }).name),
-    );
-  }
-  return registryTools.slice();
-}
+/** 按定义工具白名单过滤注册表（供外部复用；见上方同名实现）。 */
+export { filterToolsForDefinition as filterToolsFor };

@@ -123,6 +123,7 @@ export async function runTurn(deps) {
     shouldStopAfterTurn,
     thinkingLevel,
     beforeToolCall,
+    afterToolCall,
   } = deps;
 
   // ---- 入参前置校验（不满足即抛，绝不让它退化成库的静默降级）----
@@ -169,6 +170,10 @@ export async function runTurn(deps) {
   if (beforeToolCall !== undefined && typeof beforeToolCall !== "function") {
     throw new TypeError("agentRuntime.runTurn: deps.beforeToolCall 必须是函数或 undefined。");
   }
+  // afterToolCall：可选透传（P2-G2 hooks 的 PostToolUse 挂点）。形状校验同上。
+  if (afterToolCall !== undefined && typeof afterToolCall !== "function") {
+    throw new TypeError("agentRuntime.runTurn: deps.afterToolCall 必须是函数或 undefined。");
+  }
 
   // ---- 步数硬闸（可选）：把 maxSteps / shouldStopAfterTurn 组装成一个判据 ----
   let turnCount = 0;
@@ -190,6 +195,7 @@ export async function runTurn(deps) {
     // 审批钩子直通库（AgentOptions.beforeToolCall）：工具执行前调用，返回 {block:true}
     // 产生错误工具结果；钩子可 await（循环挂起等待，不中止）。
     beforeToolCall,
+    ...(afterToolCall !== undefined ? { afterToolCall } : {}),
     initialState: {
       model,
       thinkingLevel: thinkingLevel ?? "off",

@@ -525,8 +525,10 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
       "task_stop",
       "webfetch",
       "websearch",
+      "browser_view",
+      "browser_act",
     ],
-    "工具名与顺序（批次 B 扩军 + P1-4 后台 Bash + P1-5 联网工具）",
+    "工具名与顺序（批次 B 扩军 + P1-4 后台 Bash + P1-5 联网工具 + 内嵌浏览器）",
   );
 
   const a = getTools();

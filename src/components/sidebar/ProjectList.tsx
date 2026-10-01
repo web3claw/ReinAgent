@@ -583,7 +583,7 @@ export function ProjectList({
                                 setSelectedProject(project.path);
                                 setActiveTaskId(task.id);
                               }}
-                              className={`group/proj-task flex items-center justify-between w-full py-1 px-2 rounded-md transition-colors text-left text-base cursor-pointer ${
+                              className={`group/proj-task relative flex items-center justify-between w-full py-1 px-2 rounded-md transition-colors text-left text-base cursor-pointer ${
                                 isTaskActive
                                   ? "bg-[var(--surface-hover)] text-[var(--sidebar-text-active)] font-medium"
                                   : "text-[var(--sidebar-text-active)] hover:bg-[var(--sidebar-hover)]"
@@ -615,7 +615,7 @@ export function ProjectList({
                                   </button>
                                 </Tooltip>
                               </div>
-                              <span className="truncate mr-2 border-l-2 border-[var(--border)] pl-1.5 -ml-1 text-[15px]">
+                              <span className="truncate flex-1 mr-2 border-l-2 border-[var(--border)] pl-1.5 -ml-1 text-[15px]">
                                 {task.title}
                               </span>
                               <div className="flex items-center gap-1 shrink-0">

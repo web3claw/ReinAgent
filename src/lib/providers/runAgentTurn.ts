@@ -85,18 +85,42 @@ export const DEFAULT_SYSTEM_PROMPT = [
  * 通道（随记忆/技能一起包 <system-reminder> 并入首条 user 消息，见下）。
  * gitStatus 快照需要异步 git 调用与缓存，暂未纳入（见 PROMPTS.md 待办）。
  */
-export function buildEnvironmentSection(
-  workspaceRoot?: string,
-  modelLabel?: string,
-): string {
+export interface EnvironmentSectionInput {
+  modelLabel?: string;
+  /** OS 徽章（如 "Win 11 amd64"；Rust system_info） */
+  osBadge?: string;
+  /** 终端配置所选 shell 绝对路径（空 = 平台默认） */
+  terminalShell?: string;
+  /** 工作区根（Working directory 行；与系统提示词的 root 声明二选一时放这里） */
+  workspaceRoot?: string;
+}
+
+export function buildEnvironmentSection(input: EnvironmentSectionInput): string {
+  const { modelLabel, osBadge, terminalShell, workspaceRoot } = input;
   const lines = ["# Environment"];
-  if (workspaceRoot) lines.push(`- Working directory: ${workspaceRoot}`);
-  if (typeof navigator !== "undefined") {
-    const ua = typeof navigator.userAgent === "string" ? navigator.userAgent : "";
-    const win = /Windows NT ([\d.]+)/.exec(ua);
-    if (win) lines.push(`- OS: Windows NT ${win[1]}`);
+  if (workspaceRoot) {
+    lines.push(
+      `- Working directory: ${workspaceRoot} (relative paths in tool calls resolve against this root)`,
+    );
   }
-  lines.push("- Shell: cmd.exe (Windows command prompt) — use cmd syntax (dir, type, findstr, where), not Unix pipelines (grep, head, wc are unavailable)");
+  if (osBadge) lines.push(`- System: ${osBadge}`);
+  // 终端配置所选 shell（P2-G2）：语法提示跟随实际 shell，不再写死 cmd
+  const shellPath = (terminalShell ?? "").trim();
+  const shellName = (shellPath.split(/[\\/]/).pop() ?? "").toLowerCase();
+  if (shellName) {
+    let syntaxNote: string;
+    if (shellName.startsWith("pwsh") || shellName.startsWith("powershell")) {
+      syntaxNote = "use PowerShell syntax (Get-ChildItem, Select-String), not Unix pipelines";
+    } else if (shellName.includes("bash")) {
+      syntaxNote = "use Unix syntax (grep, head, wc, pipes are available)";
+    } else {
+      syntaxNote = "use cmd syntax (dir, type, findstr, where), not Unix pipelines (grep, head, wc are unavailable)";
+    }
+    lines.push(`- Terminal shell: ${shellPath} — ${syntaxNote}`);
+  } else if (osBadge) {
+    // 未配置 shell：与 Rust 平台默认一致的诚实兜底（Windows 上即 powershell.exe）
+    lines.push("- Shell: powershell.exe (Windows PowerShell) — use PowerShell syntax, not cmd batch syntax");
+  }
   if (modelLabel) lines.push(`- Model: ${modelLabel}`);
   return lines.join("\n");
 }
@@ -284,6 +308,25 @@ export function createApprovalGate(
     if (effectiveMode === "edit" && kind === "write") return undefined;
     if (approval.isAlwaysAllowed(toolName)) return undefined;
 
+    // PermissionRequest hooks（P2-G2）：本将挂起审批前给 hook 一次裁决机会
+    // （approve = 免审放行；block = 拒绝；无裁决走正常挂起）。
+    if (hooksWorkspaceRoot) {
+      try {
+        const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
+        const outcome = await runWorkspaceHooks(
+          "PermissionRequest",
+          { toolName, payload: { args: ctx.args } },
+          hooksWorkspaceRoot,
+        );
+        if (outcome.blocked) {
+          return { block: true, reason: `[Hook:PermissionRequest] ${outcome.reason ?? "denied by hook"}` };
+        }
+        if (outcome.approve) return undefined;
+      } catch (err) {
+        console.warn("[hooks] PermissionRequest runner failed (continuing):", err);
+      }
+    }
+
     // 挂起等待用户决策；abort 时以 reject 收场（钩子负责尊重 abort signal）。
     const decision = await new Promise<ApprovalDecision | Record<string, unknown>>((resolve) => {
       let settled = false;
@@ -407,14 +450,31 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     allTools.push(memoryManagerTool as (typeof tools)[number]);
   }
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
-  let effectiveSystemPrompt = workspaceRoot
-    ? `${prompt}\n\nCurrent workspace root: ${workspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
-    : prompt;  // Environment 段（对齐 ZCode env-info）：模型自述 cwd / OS / shell / 模型名 / 日期
+  // 工作区根声明移入 Environment 段（- Working directory 行；避免重复出现两次）
+  let effectiveSystemPrompt = prompt;
   const modelLabel =
     config && typeof config === "object" && config.provider && config.modelId
       ? `${config.provider}/${config.modelId}`
       : undefined;
-  effectiveSystemPrompt += `\n\n${buildEnvironmentSection(workspaceRoot, modelLabel)}`;
+  // 系统 OS 徽章 + 终端配置所选 shell 进 Environment 段（P2-G2 尾巴）
+  let osBadge: string | undefined;
+  let terminalShell: string | undefined;
+  try {
+    const [{ getOsInfo, formatOsBadge }, { getTerminalSettings }] = await Promise.all([
+      import("../system/systemInfo"),
+      import("../terminal/terminalSettings"),
+    ]);
+    osBadge = formatOsBadge(await getOsInfo()) || undefined;
+    terminalShell = getTerminalSettings().shell || undefined;
+  } catch (err) {
+    console.warn("[env] system info unavailable (omitting from Environment):", err);
+  }
+  effectiveSystemPrompt += `\n\n${buildEnvironmentSection({
+    modelLabel,
+    osBadge,
+    terminalShell,
+    workspaceRoot,
+  })}`;
   if (approvalMode === "plan") {
     effectiveSystemPrompt += PLAN_MODE_PROMPT;
   } else if (approvalMode !== "full") {
@@ -452,13 +512,84 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   });
   const requestMessages = prependMetaUserBlock(messages, metaUserBlock);
 
+  // SessionStart hooks（P2-G2）：回合启动时触发；additionalContext 追加进系统
+  // 提示词尾部；blocked = 本轮拒绝启动（真实错误上抛，绝不静默放行）。
+  if (workspaceRoot) {
+    try {
+      const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
+      const outcome = await runWorkspaceHooks(
+        "SessionStart",
+        { payload: { workspaceRoot } },
+        workspaceRoot,
+      );
+      if (outcome.blocked) {
+        throw new Error(`[Hook:SessionStart] ${outcome.reason ?? "blocked by hook"}`);
+      }
+      if (outcome.additionalContexts.length > 0) {
+        effectiveSystemPrompt += `\n\n[Hook:SessionStart]\n${outcome.additionalContexts.join("\n")}`;
+      }
+    } catch (err) {
+      if (err instanceof Error && err.message.includes("[Hook:SessionStart]")) throw err;
+      console.warn("[hooks] SessionStart runner failed (continuing):", err);
+    }
+  }
+
+  // ---- 生命周期 hooks（对齐 LiveAgent Hooks：8 个生命周期事件）----
+  // pi-agent-core 原生事件名与 hook 事件同名（agent_start/turn_start/message_*/
+  // tool_execution_*/turn_end/agent_end），包装 onEvent 逐条 fire-and-forget：
+  // 不 await、不阻塞 agent 主流程；block 协议不生效（观察性）。
+  const lifecycleHookOnEvent = workspaceRoot
+    ? (event: import("@earendil-works/pi-agent-core").AgentEvent) => {
+        switch (event.type) {
+          case "agent_start":
+          case "agent_end":
+          case "turn_start":
+          case "turn_end":
+          case "message_start":
+          case "message_end":
+          case "tool_execution_start":
+          case "tool_execution_end": {
+            // 负载裁剪：message 全文太肥，只给 stopReason + 文本预览（工具事件给全量 args）
+            const payload =
+              event.type === "tool_execution_start" || event.type === "tool_execution_end"
+                ? {
+                    toolCallId: event.toolCallId,
+                    toolName: event.toolName,
+                    args: "args" in event ? event.args : undefined,
+                    isError: "isError" in event ? event.isError : undefined,
+                  }
+                : event.type === "message_start" || event.type === "message_end"
+                  ? {
+                      role: event.message.role,
+                      stopReason: (event.message as { stopReason?: string }).stopReason,
+                      textPreview: String(
+                        (event.message as { content?: unknown }).content ?? "",
+                      ).slice(0, 2000),
+                    }
+                  : "message" in event
+                    ? { role: event.message.role }
+                    : {};
+            import("../hooks/hooksRuntime")
+              .then(({ fireLifecycleHook }) => {
+                fireLifecycleHook(event.type, { payload }, workspaceRoot);
+              })
+              .catch((err) => {
+                console.warn("[hooks] lifecycle dispatch failed:", err);
+              });
+            break;
+          }
+        }
+        return onEvent?.(event);
+      }
+    : onEvent;
+
   const base = {
     systemPrompt: effectiveSystemPrompt,
     messages: requestMessages,
     tools: allTools,
     maxSteps: maxSteps ?? DEFAULT_MAX_STEPS,
     signal,
-    onEvent,
+    onEvent: lifecycleHookOnEvent,
     thinkingLevel,
     // provider 层自动重试（连接重置/5xx 等瞬时失败），对齐 ZCode 的重试策略
     maxRetries: 2,
@@ -471,26 +602,59 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
       approval
         ? createApprovalGate(approvalMode, approval, toolPolicies, workspaceRoot)
         : undefined,
+    // PostToolUse hooks（P2-G2）：工具执行后合并插件的 additionalContext 反馈
+    // （append 到结果 content 末尾，模型下一轮能看到；不替换原结果）。
+    afterToolCall:
+      workspaceRoot
+        ? async (ctx: import("@earendil-works/pi-agent-core").AfterToolCallContext) => {
+            try {
+              const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
+              const resultText =
+                ctx.result?.content
+                  ?.filter((block: { type: string }): block is { type: "text"; text: string } => block.type === "text")
+                  .map((block) => block.text)
+                  .join("\n") ?? "";
+              const outcome = await runWorkspaceHooks(
+                "PostToolUse",
+                { toolName: ctx.toolCall.name, payload: { args: ctx.args, resultText, isError: ctx.isError } },
+                workspaceRoot,
+              );
+              if (outcome.additionalContexts.length === 0) return undefined;
+              const feedback = outcome.additionalContexts.join("\n");
+              const original = ctx.result?.content ?? [];
+              return {
+                content: [...original, { type: "text" as const, text: `\n[Hook:PostToolUse] ${feedback}` }],
+                isError: ctx.isError,
+                details: ctx.result?.details,
+              };
+            } catch (err) {
+              console.warn("[hooks] PostToolUse runner failed (continuing):", err);
+              return undefined;
+            }
+          }
+        : undefined,
   };
 
   if (source === "faux") {
     const faux = await getFauxAgentSource();
-    // 子代理工具（P1-6）：在 faux 分支同样注入（复用 faux model，测试可全链路验证）
+    // 子代理工具（P1-6）：在 faux 分支同样注入（复用 faux model，测试可全链路验证）。
+    // 定义驱动改造后为异步工厂（需加载子智能体目录渲染工具描述）。
+    const subagentTool = await createSubagentTool({
+      model: faux.model,
+      stream: faux.stream,
+      api: faux.api,
+      label: faux.label,
+      getApiKey: () => undefined,
+      workspaceRoot,
+      signal,
+      thinkingLevel,
+      registryTools: tools as unknown[],
+      beforeToolCall: base.beforeToolCall,
+    });
     const toolsWithAgent = [
       ...base.tools,
       createSubagentOutputTool(),
-      createSubagentTool({
-        model: faux.model,
-        stream: faux.stream,
-        api: faux.api,
-        label: faux.label,
-        getApiKey: () => undefined,
-        workspaceRoot,
-        signal,
-        thinkingLevel,
-        registryTools: tools as unknown[],
-        beforeToolCall: base.beforeToolCall,
-      }),
+      subagentTool,
     ];
     return runTurn({
       model: faux.model,
@@ -504,23 +668,24 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
 
   const model = buildModel(config);
   const stream = await getStreamFnForApi(model.api);
-  // 子代理工具（P1-6）：复用父轮 model/stream/api-key/审批门/AbortSignal；
-  // 注册表工具集里没有 agent——子代理工具集经 filterToolsFor 过滤，结构性禁递归。
+  // 子代理工具（P1-6）：复用父轮 model/stream/api-key/审批门/AbortSignal；定义可钉选模型/工具覆盖。
+  // 注册表工具集里没有 agent——子代理工具集经 filterToolsForDefinition 过滤，结构性禁递归。
+  const subagentTool = await createSubagentTool({
+    model,
+    stream,
+    api: model.api,
+    label: model.provider || "openai-completions",
+    getApiKey: () => config.apiKey.trim(),
+    workspaceRoot,
+    signal,
+    thinkingLevel,
+    registryTools: tools as unknown[],
+    beforeToolCall: base.beforeToolCall,
+  });
   const toolsWithAgent = [
     ...base.tools,
     createSubagentOutputTool(),
-    createSubagentTool({
-      model,
-      stream,
-      api: model.api,
-      label: model.provider || "openai-completions",
-      getApiKey: () => config.apiKey.trim(),
-      workspaceRoot,
-      signal,
-      thinkingLevel,
-      registryTools: tools as unknown[],
-      beforeToolCall: base.beforeToolCall,
-    }),
+    subagentTool,
   ];
 
   return runTurn({

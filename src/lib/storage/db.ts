@@ -81,14 +81,32 @@ export function kvGetJSON<T>(key: string): T | null {
   }
 }
 
+/** 环境无关定时器（Node 测试环境无 window； flushKv/flushTasks 自带 invoke 失败兜底）。 */
+function scheduleDebounce(timerKey: "kv" | "tasks"): void {
+  const run = () => {
+    if (timerKey === "kv") {
+      kvFlushTimer = null;
+      flushKv();
+    } else {
+      taskSyncTimer = null;
+      flushTasks();
+    }
+  };
+  const done = () => run();
+  if (typeof window !== "undefined") {
+    if (timerKey === "kv") kvFlushTimer = window.setTimeout(done, 200);
+    else taskSyncTimer = window.setTimeout(done, 200);
+  } else if (typeof setTimeout === "function") {
+    if (timerKey === "kv") kvFlushTimer = setTimeout(done, 200) as unknown as number;
+    else taskSyncTimer = setTimeout(done, 200) as unknown as number;
+  }
+}
+
 export function kvSet(key: string, value: string): void {
   kvCache.set(key, value);
   kvPending.set(key, value);
   if (kvFlushTimer !== null) return;
-  kvFlushTimer = window.setTimeout(() => {
-    kvFlushTimer = null;
-    flushKv();
-  }, 200);
+  scheduleDebounce("kv");
 }
 
 export function kvSetJSON(key: string, value: unknown): void {
@@ -108,10 +126,7 @@ export function syncTasks(
   taskCache = tasks.map((t, index) => ({ ...t, seq: index }));
   taskSyncPending = taskCache;
   if (taskSyncTimer !== null) return;
-  taskSyncTimer = window.setTimeout(() => {
-    taskSyncTimer = null;
-    flushTasks();
-  }, 200);
+  scheduleDebounce("tasks");
 }
 
 // ---- 用户主目录 ----

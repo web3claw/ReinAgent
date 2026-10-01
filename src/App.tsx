@@ -64,6 +64,13 @@ import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { kvGet } from "./lib/storage/db";
 import { useAppStore } from "./store/useAppStore";
 import { useTranslation } from "./i18n";
+import {
+  SHORTCUT_ACTIONS,
+  getShortcutBindings,
+  matchesShortcut,
+} from "./lib/shortcuts/shortcuts";
+import { getCachedOsInfo } from "./lib/system/systemInfo";
+import { getTerminalSettings } from "./lib/terminal/terminalSettings";
 import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import { buildContextUsageData } from "./lib/chat/contextUsage";
@@ -79,7 +86,7 @@ import { createMemoryOrganizerService, installMemoryOrganizerService } from "./l
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
-  Terminal, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine
+  Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe
 } from "lucide-react";
 
 export default function App() {
@@ -122,8 +129,8 @@ export default function App() {
   const [skillsSectionText, setSkillsSectionText] = useState("");
   // handleNewTask 稳定转发（effect 依赖 [] 而 handleNewTask 在后声明）
   const handleNewTaskRef = useRef<() => void>(() => {});
-  // 全局快捷键（P2-G1，集中管理；输入框聚焦时仅放行 Escape）：
-  // Ctrl/Cmd+F 查找 · Ctrl/Cmd+T 新任务 · Ctrl/Cmd+Shift+A 聚焦 composer
+  // 全局快捷键（P2-G1 集中管理 + P2-G2 可自定义绑定）：
+  // 每次按键查当前绑定表（kv 缓存读，廉价）；编辑框聚焦按动作语义放行。
   useEffect(() => {
     const inEditable = (target: EventTarget | null): boolean => {
       const el = target as HTMLElement | null;
@@ -135,31 +142,22 @@ export default function App() {
       );
     };
     const onKeyDown = (e: KeyboardEvent) => {
-      const mod = e.ctrlKey || e.metaKey;
-      if (!mod) return;
-      const key = e.key.toLowerCase();
-      // 查找：编辑框聚焦也不放行（浏览器原生查找被替换为会话内查找）
-      if (key === "f") {
+      if (!e.ctrlKey && !e.metaKey) return;
+      const bindings = getShortcutBindings();
+      const run = (actionId: string): boolean => {
+        const def = SHORTCUT_ACTIONS.find((a) => a.id === actionId);
+        if (!def) return false;
+        if (inEditable(e.target) && !def.allowInEditable) return false;
+        if (!matchesShortcut(e, bindings[actionId] ?? "")) return false;
         e.preventDefault();
-        setFindOpen(true);
-        return;
-      }
-      // 命令面板（P2-G2）：编辑框聚焦也放行（全局命令入口）
-      if (key === "k") {
-        e.preventDefault();
-        setPaletteOpen(true);
-        return;
-      }
-      // 新任务：编辑框聚焦时放行（用户可能在输入——不打断）
-      if (key === "t" && !inEditable(e.target)) {
-        e.preventDefault();
-        handleNewTaskRef.current();
-        return;
-      }
-      // 聚焦 composer：仅非编辑框焦点时
-      if (key === "a" && e.shiftKey && !inEditable(e.target)) {
-        e.preventDefault();
-        setFocusTrigger((c) => c + 1);
+        if (actionId === "find") setFindOpen(true);
+        else if (actionId === "newTask") handleNewTaskRef.current();
+        else if (actionId === "palette") setPaletteOpen(true);
+        else if (actionId === "focusComposer") setFocusTrigger((c) => c + 1);
+        return true;
+      };
+      for (const action of SHORTCUT_ACTIONS) {
+        if (run(action.id)) return;
       }
     };
     window.addEventListener("keydown", onKeyDown);
@@ -335,6 +333,7 @@ export default function App() {
   // 搜索跳转定位：目标消息 id（MessageList 滚动定位 + 高亮后置 null）
   const [scrollTargetMessageId, setScrollTargetMessageId] = useState<string | null>(null);
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
+  const codeViewerSource = useAppStore((state) => state.codeViewerSource);
   // 会话内查找条（P2-A1，Ctrl+F 呼出）
   const [findOpen, setFindOpen] = useState(false);
   // 命令面板（P2-G2，Ctrl/Cmd+K 呼出）
@@ -471,16 +470,24 @@ export default function App() {
       }
       return parts.join("\n");
     };
-    const buildSystemPromptExport = (): string =>
-      DEFAULT_SYSTEM_PROMPT +
-      (effectiveWorkspaceRoot
-        ? `\n\nCurrent workspace root: ${effectiveWorkspaceRoot}. Relative paths in tool calls will automatically resolve against this root directory.`
-        : "") +
-      // ZCode 口径：Environment（env_info）属系统提示词类，计入「系统提示词」行
-      `\n\n${buildEnvironmentSection(
-        effectiveWorkspaceRoot,
-        `${activeProviderId}/${activeModelId}`,
-      )}`;
+    const buildSystemPromptExport = (): string => {
+      // 与真实发送链路（runAgentTurn）同构：root 长句已并入 Environment 的
+      // Working directory 行；System/Terminal shell 来自 system_info + 终端配置
+      const osInfo = getCachedOsInfo();
+      const osBadge = osInfo
+        ? [osInfo.version, osInfo.arch].filter(Boolean).join(" ")
+        : undefined;
+      const terminalShell = getTerminalSettings().shell || undefined;
+      return (
+        DEFAULT_SYSTEM_PROMPT +
+        `\n\n${buildEnvironmentSection({
+          workspaceRoot: effectiveWorkspaceRoot,
+          modelLabel: `${activeProviderId}/${activeModelId}`,
+          osBadge,
+          terminalShell,
+        })}`
+      );
+    };
     const buildToolsExport = (): string => {
       const tools = getTools({ workspaceRoot: effectiveWorkspaceRoot });
       return tools
@@ -871,7 +878,8 @@ export default function App() {
     return subscribeTaskTerminal(handle);
   }, [activeTaskId]);
 
-  // ---- Stop hooks（P2-G2）：任务终态 fire-and-forget（结果只进 hook 进程）----
+  // ---- Stop hooks（P2-G2）：任务终态 fire-and-forget（结果只进 hook 进程）。
+  // 生命周期口径的 agent_end 由 agent 循环的原生 agent_end 事件触发（runAgentTurn），此处不重发。----
   useEffect(() => {
     if (!effectiveWorkspaceRoot) return;
     return subscribeTaskTerminal((event) => {
@@ -893,7 +901,7 @@ export default function App() {
   // ---- 工作区 hooks 信任横幅（P2-G2，对齐 ZCode workspace hook trust）----
   const [hooksPendingTrust, setHooksPendingTrust] = useState<{
     raw: string;
-    entries: { event: string; command: string }[];
+    entries: { event: string; label: string }[];
   } | null>(null);
   useEffect(() => {
     let cancelled = false;
@@ -906,7 +914,10 @@ export default function App() {
         if (!cancelled && discovered && discovered.entries.length > 0 && !discovered.trusted) {
           setHooksPendingTrust({
             raw: discovered.raw,
-            entries: discovered.entries.map((e) => ({ event: e.event, command: e.command })),
+            entries: discovered.entries.map((e) => ({
+              event: e.event,
+              label: e.command ?? e.requests?.[0]?.url ?? "(空 hook)",
+            })),
           });
         }
       } catch (err) {
@@ -934,8 +945,46 @@ export default function App() {
 
   // 编辑重发后的强制贴底（对齐 LiveAgent stickToBottom on run start）+ 回退 toast。
   const [followSignal, setFollowSignal] = useState(0);
+  // ---- 可调宽度/高度（P2-G2 尾巴）：左侧栏 / 右侧预览面板 / 终端面板，kv 持久化 ----
+  const [sidebarW, setSidebarW] = useState(() => {
+    const v = Number(localStorage.getItem("reinagent-sidebar-w"));
+    return v >= 180 && v <= 480 ? v : 260;
+  });
+  const [terminalH, setTerminalH] = useState(() => {
+    const v = Number(localStorage.getItem("reinagent-terminal-h"));
+    return v >= 160 && v <= 640 ? v : 420;
+  });
+  /** 通用拖拽调宽/调高：按下 → mousemove 计算 → mouseup 落 localStorage（key 可选） */
+  const startResize = useCallback((
+    e: React.MouseEvent,
+    axis: "x" | "y",
+    dir: 1 | -1,
+    current: number,
+    set: (v: number) => void,
+    min: number,
+    max: number,
+    storageKey?: string,
+  ) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startY = e.clientY;
+    let latest = current;
+    const onMove = (ev: MouseEvent) => {
+      const delta = axis === "x" ? (ev.clientX - startX) * dir : (ev.clientY - startY) * dir;
+      latest = Math.min(max, Math.max(min, current + delta));
+      set(latest);
+    };
+    const onUp = () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      if (storageKey) localStorage.setItem(storageKey, String(latest));
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+  }, []);
   const [rewindToast, setRewindToast] = useState<{ level: "success" | "error"; message: string } | null>(null);
-  const rewindToastTimerRef = useRef<number | null>(null);
+  // 设置页外部定位 tab（侧栏底部插件图标 → 设置·插件）
+  const [settingsInitialTab, setSettingsInitialTab] = useState<string | undefined>(undefined);  const rewindToastTimerRef = useRef<number | null>(null);
   const showRewindToast = useCallback((info: Parameters<typeof formatCheckpointRewoundNotification>[0]) => {
     const notice = formatCheckpointRewoundNotification(info, locale === "zh-CN");
     setRewindToast(notice);
@@ -1199,6 +1248,18 @@ export default function App() {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
 
+  // 预热系统 OS 信息缓存（上下文面板的系统提示词导出同步读取；不变量）
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { getOsInfo } = await import("./lib/system/systemInfo");
+        await getOsInfo();
+      } catch {
+        // 拉取失败无害：导出缺 System 行而已
+      }
+    })();
+  }, []);
+
   // ---- 命令面板命令注册表（P2-G2）：闭包持有各 handler，随渲染刷新 ref ----
   // ⚠ 必须位于 currentView 早退之前（useMemo/useRef 是 hook，顺序不能条件化）
   const paletteCommandsRef = useRef<PaletteCommand[]>([]);
@@ -1234,6 +1295,9 @@ export default function App() {
         status={status}
         onChange={update}
         onBack={() => setCurrentView("workbench")}
+        workspaceRoot={effectiveWorkspaceRoot || undefined}
+        memoryModelOptions={hubModelOptions}
+        initialTab={settingsInitialTab}
       />
     );
   }
@@ -1260,13 +1324,19 @@ export default function App() {
     <div className="flex h-screen w-full bg-[var(--bg)] text-[var(--text)] overflow-hidden">
       {/* Sidebar */}
       {isSidebarOpen && (
-        <div className="flex-shrink-0 w-[260px] h-full border-r border-[var(--border)]">
+        <div className="relative flex-shrink-0 h-full border-r border-[var(--border)]" style={{ width: sidebarW }}>
           <WorkspaceSidebar
             onNewTask={handleNewTask}
             onOpenSearch={() => setSearchOpen(true)}
-            onOpenGitPanel={() =>
-              openCodeViewer({ type: "git", title: effectiveWorkspaceRoot || "Git" })
-            }
+            onOpenPlugins={() => {
+              setSettingsInitialTab('plugins');
+              setCurrentView('settings');
+            }}
+          />
+          {/* 右缘拖拽调宽 */}
+          <div
+            onMouseDown={(e) => startResize(e, "x", 1, sidebarW, setSidebarW, 180, 480, "reinagent-sidebar-w")}
+            className="absolute top-0 right-0 w-1 h-full cursor-col-resize hover:bg-[var(--brand)]/30 transition-colors z-10"
           />
         </div>
       )}
@@ -1300,8 +1370,38 @@ export default function App() {
             >
               {isSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
             </button>
+            {/* 当前任务标题（顶栏左侧展示，半粗标题） */}
+            <div className="flex items-center min-w-0" title={activeTask?.title || t("newTask")}>
+              <span className="text-sm font-semibold text-[var(--text)] truncate max-w-[360px] select-none">
+                {activeTask?.title || t("newTask")}
+              </span>
+            </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Git 面板入口：点击直开 Git 管理（分支/变更/历史） */}
+            <button
+              onClick={() => openCodeViewer({ type: "git", title: effectiveWorkspaceRoot || "Git" })}
+              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "git" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+              title="Git 管理"
+            >
+              <GitBranch className="w-4 h-4" />
+            </button>
+            {/* 文件管理器入口：点击直开右侧文件面板（浏览 + 新建/重命名/删除） */}
+            <button
+              onClick={() => openCodeViewer({ type: "files", title: "文件管理器" })}
+              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "files" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+              title="文件管理器"
+            >
+              <FolderOpen className="w-4 h-4" />
+            </button>
+            {/* 内嵌浏览器面板（WebView2 子控件，CDP 工具面） */}
+            <button
+              onClick={() => openCodeViewer({ type: "browser", title: "浏览器" })}
+              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "browser" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+              title="浏览器"
+            >
+              <Globe className="w-4 h-4" />
+            </button>
             <button
               onClick={toggleTerminal}
               className={`p-1.5 rounded transition-colors flex items-center gap-1 text-sm ${isTerminalOpen ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
@@ -1330,7 +1430,7 @@ export default function App() {
             <ul className="list-disc pl-6 space-y-0.5 font-mono">
               {hooksPendingTrust.entries.map((e, i) => (
                 <li key={i} className="truncate">
-                  [{e.event}] {e.command}
+                  [{e.event}] {e.label}
                 </li>
               ))}
             </ul>
@@ -1375,6 +1475,9 @@ export default function App() {
               defaultModelId={settings.modelId || ""}
               workspacePath={selectedProject ?? undefined}
               onDispatch={dispatchAutomationRun}
+              onOpenTask={(taskId) => {
+                setActiveTaskId(taskId);
+              }}
             />
           ) : currentView === "mcp" ? (
             <McpHubPage />
@@ -1484,6 +1587,7 @@ export default function App() {
                       onRetryFrom={handleRetryFrom}
                       onBranchFrom={handleBranchFrom}
                       followSignal={followSignal}
+                      activeTaskId={activeTaskId}
                       pendingApproval={state.pendingApproval}
                       workspaceRoot={effectiveWorkspaceRoot}
                       scrollTargetMessageId={scrollTargetMessageId}
@@ -1600,10 +1704,15 @@ export default function App() {
         {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅聊天工作台显示 */}
         {currentView === "workbench" && hasMessages && <SessionStatsBar stats={sessionStats} />}
 
-        {/* Terminal Pane（仅聊天工作台显示） */}
+        {/* Terminal Pane（仅聊天工作台显示；cwd = 当前任务工作区） */}
         {currentView === "workbench" && isTerminalOpen && (
-          <div className="h-64 border-t border-[var(--border)] flex-shrink-0 bg-[var(--bg-sunken)] overflow-hidden">
-            <TerminalPane />
+          <div className="relative h-full flex-shrink-0 bg-[var(--bg-sunken)]" style={{ height: terminalH }}>
+            {/* 顶缘拖拽调高 */}
+            <div
+              onMouseDown={(e) => startResize(e, "y", -1, terminalH, setTerminalH, 160, 640, "reinagent-terminal-h")}
+              className="absolute top-0 left-0 w-full h-1 cursor-row-resize hover:bg-[var(--brand)]/30 transition-colors z-10"
+            />
+            <TerminalPane workspaceRoot={effectiveWorkspaceRoot || undefined} />
           </div>
         )}
       </div>

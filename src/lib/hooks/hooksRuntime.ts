@@ -17,14 +17,73 @@
 
 import { kvGet, kvSet } from "../storage/db";
 
-export const HOOKS_EVENTS = ["PreToolUse", "UserPromptSubmit", "Stop"] as const;
-export type HooksEventName = (typeof HOOKS_EVENTS)[number];
+// ---- 事件体系（2026-10-01 对齐 LiveAgent Hooks 页面）----
+// 生命周期事件：页面主分组，8 个按对话生命周期顺序排列；观察性（不阻塞主流程）。
+export const LIFECYCLE_HOOK_EVENTS = [
+  "agent_start",
+  "turn_start",
+  "message_start",
+  "message_end",
+  "tool_execution_start",
+  "tool_execution_end",
+  "turn_end",
+  "agent_end",
+] as const;
+export type LifecycleHookEvent = (typeof LIFECYCLE_HOOK_EVENTS)[number];
+
+// 经典事件：ZCode 契约兼容（旧配置继续生效），UI「兼容事件」分组可见，支持 block 协议。
+export const CLASSIC_HOOK_EVENTS = [
+  "PreToolUse",
+  "UserPromptSubmit",
+  "PostToolUse",
+  "PermissionRequest",
+  "SessionStart",
+  "Stop",
+] as const;
+
+export type HooksEventName = (typeof CLASSIC_HOOK_EVENTS)[number];
+export type RuntimeHookEventName = LifecycleHookEvent | HooksEventName;
+
+export function isLifecycleHookEvent(event: string): event is LifecycleHookEvent {
+  return (LIFECYCLE_HOOK_EVENTS as readonly string[]).includes(event);
+}
+
+// ---- Hook 类型（LiveAgent HookDef 对齐：command | http）----
+export type HookType = "command" | "http";
+
+export const HTTP_METHODS = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"] as const;
+export type HttpMethod = (typeof HTTP_METHODS)[number];
+
+export function canHttpMethodHaveBody(method: HttpMethod): boolean {
+  return method === "POST" || method === "PUT" || method === "PATCH";
+}
+
+export interface HookHttpRequestSpec {
+  id: string;
+  url: string;
+  method: HttpMethod;
+  headers?: Record<string, string>;
+  body?: unknown;
+}
+
+/** hook 执行超时缺省值（UI 占位与运行时一致，对齐 LiveAgent 60s） */
+export const DEFAULT_HOOK_TIMEOUT_MS = 60_000;
 
 export interface HookConfigEntry {
+  id?: string;
   event: string;
+  name?: string;
+  description?: string;
   matcher?: string;
-  command: string;
+  /** command 类型脚本（沿用旧字段名，旧配置零迁移） */
+  command?: string;
+  /** http 类型请求列表（按序串行发送） */
+  requests?: HookHttpRequestSpec[];
+  /** 缺省 command（旧条目无此字段） */
+  type?: HookType;
   timeoutMs?: number;
+  /** false = 停用（配置可保留，运行时跳过）；缺省启用 */
+  enabled?: boolean;
 }
 
 export interface HooksConfigFile {
@@ -32,7 +91,7 @@ export interface HooksConfigFile {
 }
 
 export interface HookInput {
-  event: HooksEventName;
+  event: RuntimeHookEventName;
   /** PreToolUse：工具名（matcher 匹配目标） */
   toolName?: string;
   /** 事件负载（工具参数 / 用户提示词 / 终态信息） */
@@ -75,19 +134,31 @@ export function extractJsonLoose(text: string): Record<string, unknown> | null {
   }
 }
 
-/** 解析 hooks 配置原文（坏 JSON → null；非法条目如实丢弃、合法项保留）。 */
+/** 解析 hooks 配置原文（坏 JSON → null；非法条目如实丢弃、合法项保留）。
+ *  兼容三代形态：旧 {event,command} / 现行 {event,enabled} / 新 {id,name,type,requests}。 */
 export function parseHooksConfig(raw: string): HookConfigEntry[] | null {
   let entries: HookConfigEntry[] = [];
   try {
     const parsed = JSON.parse(raw) as HooksConfigFile;
     if (!Array.isArray(parsed.hooks)) return [];
     entries = parsed.hooks
-      .filter((h) => h && typeof h.command === "string" && h.command.trim() && typeof h.event === "string")
+      .filter((h) => {
+        if (!h || typeof h.event !== "string") return false;
+        const isCommand = typeof h.command === "string" && !!h.command.trim();
+        const isHttp = Array.isArray(h.requests) && h.requests.length > 0;
+        return isCommand || isHttp;
+      })
       .map((h) => ({
+        ...(typeof h.id === "string" ? { id: h.id } : {}),
         event: h.event,
-        matcher: typeof h.matcher === "string" ? h.matcher : undefined,
-        command: h.command.trim(),
-        timeoutMs: typeof h.timeoutMs === "number" ? h.timeoutMs : undefined,
+        ...(typeof h.name === "string" ? { name: h.name } : {}),
+        ...(typeof h.description === "string" ? { description: h.description } : {}),
+        ...(typeof h.matcher === "string" ? { matcher: h.matcher } : {}),
+        ...(typeof h.command === "string" ? { command: h.command.trim() } : {}),
+        ...(Array.isArray(h.requests) ? { requests: h.requests } : {}),
+        ...(h.type === "http" || h.type === "command" ? { type: h.type } : {}),
+        ...(typeof h.timeoutMs === "number" ? { timeoutMs: h.timeoutMs } : {}),
+        ...(typeof h.enabled === "boolean" ? { enabled: h.enabled } : {}),
       }));
     return entries;
   } catch {
@@ -143,12 +214,118 @@ export function untrustWorkspaceHooks(workspaceRoot: string): void {
   kvSet(trustKey(workspaceRoot), "");
 }
 
+/** 把条目数组写回工作区 hooks 配置（保留 config.json 里其它顶层键；信任态不因保存改变）。 */
+export async function saveWorkspaceHooks(
+  workspaceRoot: string,
+  entries: HookConfigEntry[],
+): Promise<void> {
+  const path = hooksConfigPath(workspaceRoot);
+  let config: Record<string, unknown> = {};
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    config = JSON.parse(await invoke<string>("fs_read_file", { path })) as Record<string, unknown>;
+  } catch {
+    // 无既有配置（或读取失败）：以全新 config 写入
+  }
+  config.hooks = entries;
+  const { invoke: invokeWrite } = await import("@tauri-apps/api/core");
+  await invokeWrite("fs_write_file", { path, content: JSON.stringify(config, null, 2) });
+}
+
 function matcherMatches(matcher: string | undefined, toolName: string): boolean {
   if (!matcher) return true;
   try {
     return new RegExp(matcher).test(toolName);
   } catch {
     return matcher === toolName;
+  }
+}
+
+/** 单条 hook 的执行结果（blocked 仅经典事件协议生效）。 */
+interface SingleHookResult {
+  blocked: boolean;
+  reason?: string;
+  approve?: boolean;
+  context?: string;
+  error?: string;
+  summary: HookOutcome["runs"][number];
+}
+
+/** 执行单条 hook：按 type 分发 command（spawn shell）/ http（Rust ureq，走全局代理）。 */
+async function executeSingleHook(
+  entry: HookConfigEntry,
+  hookInput: HookInput,
+  cwd: string,
+): Promise<SingleHookResult> {
+  const timeoutMs = entry.timeoutMs ?? DEFAULT_HOOK_TIMEOUT_MS;
+  const isHttp = entry.type === "http" || (!entry.command && !!entry.requests?.length);
+  try {
+    const { invoke } = await import("@tauri-apps/api/core");
+    if (isHttp) {
+      const requests = entry.requests ?? [];
+      for (const req of requests) {
+        const result = await invoke<{
+          status: number | null;
+          ok: boolean;
+          bodySnippet: string;
+          timedOut: boolean;
+          error?: string;
+        }>("hook_http_execute", {
+          args: {
+            request: { url: req.url, method: req.method, headers: req.headers, body: req.body },
+            timeoutMs,
+          },
+        });
+        const label = `http ${req.method} ${req.url}`;
+        if (result.error) {
+          return { blocked: false, error: result.error, summary: { command: label, exitCode: null, timedOut: result.timedOut, error: result.error } };
+        }
+        if (!result.ok) {
+          const reason = `HTTP ${result.status ?? "?"}: ${result.bodySnippet.slice(0, 200)}`;
+          return { blocked: false, error: reason, summary: { command: label, exitCode: result.status ?? null, timedOut: result.timedOut } };
+        }
+      }
+      return { blocked: false, summary: { command: `http ×${requests.length}`, exitCode: 0, timedOut: false } };
+    }
+
+    const result = await invoke<{
+      exitCode: number | null;
+      stdout: string;
+      stderr: string;
+      timedOut: boolean;
+    }>("hook_execute", {
+      args: {
+        command: entry.command ?? "",
+        cwd,
+        stdinJson: JSON.stringify(hookInput),
+        timeoutMs,
+      },
+    });
+    const summary = { command: entry.command ?? "", exitCode: result.exitCode, timedOut: result.timedOut };
+    // 退出码 2 = block（Claude Code 约定，reason 取 stderr/stdout）
+    if (result.exitCode === 2) {
+      return { blocked: true, reason: (result.stderr || result.stdout || "hook blocked").trim().slice(0, 500), summary };
+    }
+    const json = extractJsonLoose(result.stdout);
+    if (json) {
+      const decision = typeof json.decision === "string" ? json.decision : undefined;
+      const reason = typeof json.reason === "string" ? json.reason : undefined;
+      const context = typeof json.additionalContext === "string" ? json.additionalContext : undefined;
+      if (decision === "block") {
+        return { blocked: true, reason: reason ?? "hook blocked", summary };
+      }
+      if (decision === "approve") {
+        return { blocked: false, approve: true, context, summary };
+      }
+      return { blocked: false, context, summary };
+    }
+    return { blocked: false, summary };
+  } catch (err) {
+    return {
+      blocked: false,
+      error: String(err),
+      summary: { command: entry.command ?? entry.requests?.[0]?.url ?? "(hook)", exitCode: null, timedOut: false, error: String(err) },
+    };
   }
 }
 
@@ -173,7 +350,7 @@ function discoverCached(workspaceRoot: string): Promise<DiscoveredHooks | null> 
 
 /** 执行某事件的全部已信任 hooks（顺序、单条超时各自生效；首条 block 即短路）。 */
 export async function runWorkspaceHooks(
-  event: HooksEventName,
+  event: RuntimeHookEventName,
   input: Omit<HookInput, "event">,
   workspaceRoot: string,
 ): Promise<HookOutcome> {
@@ -185,65 +362,73 @@ export async function runWorkspaceHooks(
     return runHookEntries(pluginEntries.filter((h) => h.event === event), event, input, outcome, workspaceRoot);
   }
   const entries = discovered.entries.filter(
-    (h) => h.event === event && (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
+    (h) =>
+      h.event === event &&
+      h.enabled !== false &&
+      (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
   );
   const pluginEntries = (await discoverPluginHooks()).filter(
-    (h) => h.event === event && (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
+    (h) =>
+      h.event === event &&
+      h.enabled !== false &&
+      (event !== "PreToolUse" || matcherMatches(h.matcher, String(input.toolName ?? ""))),
   );
   return runHookEntries([...entries, ...pluginEntries], event, input, outcome, workspaceRoot);
 }
 
-/** 顺序执行 hook 条目（首条 block 短路）；决定写进 outcome。cwd 兜底工作区根（Stop 事件的 input 不带 root）。 */
+/** 顺序执行 hook 条目；经典事件首条 block 即短路（ZCode 契约），
+ *  生命周期事件观察性执行（block 决策忽略，不阻断主流程）。cwd 兜底工作区根。 */
 async function runHookEntries(
   entries: HookConfigEntry[],
-  event: HooksEventName,
+  event: RuntimeHookEventName,
   input: Omit<HookInput, "event">,
   outcome: HookOutcome,
   fallbackCwd: string,
 ): Promise<HookOutcome> {
+  const observational = isLifecycleHookEvent(event);
   for (const entry of entries) {
     const hookInput: HookInput = { event, ...input, workspaceRoot: input.workspaceRoot ?? fallbackCwd };
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const result = await invoke<{
-        exitCode: number | null;
-        stdout: string;
-        stderr: string;
-        timedOut: boolean;
-      }>("hook_execute", {
-        args: {
-          command: entry.command,
-          cwd: input.workspaceRoot ?? fallbackCwd,
-          stdinJson: JSON.stringify(hookInput),
-          timeoutMs: entry.timeoutMs,
-        },
-      });
-      outcome.runs.push({ command: entry.command, exitCode: result.exitCode, timedOut: result.timedOut });
-
-      // 退出码 2 = block（Claude Code 约定，reason 取 stderr/stdout）
-      if (result.exitCode === 2) {
+    // 插件来源的 hook：注入该插件 userConfig 已存值（stdin payload.pluginOptions）
+    let pluginOptions: Record<string, unknown> | undefined;
+    const pluginName = (entry as { pluginName?: unknown }).pluginName;
+    if (typeof pluginName === "string") {
+      try {
+        const { getPluginOptions } = await import("../plugins/pluginRegistry");
+        pluginOptions = getPluginOptions(pluginName, null);
+      } catch {
+        pluginOptions = undefined;
+      }
+    }
+    const payloadInput = pluginOptions ? { ...hookInput, pluginOptions } : hookInput;
+    const result = await executeSingleHook(entry, payloadInput, input.workspaceRoot ?? fallbackCwd);
+    outcome.runs.push(result.summary);
+    if (result.context) outcome.additionalContexts.push(result.context);
+    if (!observational) {
+      if (result.blocked) {
         outcome.blocked = true;
-        outcome.reason = (result.stderr || result.stdout || "hook blocked").trim().slice(0, 500);
+        outcome.reason = result.reason ?? "hook blocked";
         break;
       }
-      const json = extractJsonLoose(result.stdout);
-      if (json) {
-        const decision = typeof json.decision === "string" ? json.decision : undefined;
-        const reason = typeof json.reason === "string" ? json.reason : undefined;
-        const context = typeof json.additionalContext === "string" ? json.additionalContext : undefined;
-        if (context) outcome.additionalContexts.push(context);
-        if (decision === "block") {
-          outcome.blocked = true;
-          outcome.reason = reason ?? "hook blocked";
-          break;
-        }
-        if (decision === "approve") {
-          outcome.approve = true;
-        }
-      }
-    } catch (err) {
-      outcome.runs.push({ command: entry.command, exitCode: null, timedOut: false, error: String(err) });
+      if (result.approve) outcome.approve = true;
+    }
+    if (result.error && observational) {
+      // 生命周期 hook 失败不阻断，但留下诊断痕迹（不静默吞）
+      console.warn(`[hooks] lifecycle ${event} hook failed:`, result.error);
     }
   }
   return outcome;
+}
+
+/**
+ * 生命周期事件入口：fire-and-forget（不 await，不阻塞 agent 主流程）。
+ * 工作区未信任时与经典事件同规则（不执行工作区条目，插件条目照常）。
+ */
+export function fireLifecycleHook(
+  event: LifecycleHookEvent,
+  input: Omit<HookInput, "event">,
+  workspaceRoot: string,
+): void {
+  void runWorkspaceHooks(event, input, workspaceRoot).catch((err) => {
+    console.warn(`[hooks] lifecycle ${event} dispatch failed:`, err);
+  });
 }

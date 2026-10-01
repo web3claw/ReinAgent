@@ -164,9 +164,10 @@ mod tests {
     fn scan_missing_dir_returns_empty_not_error() {
         let ws = tmp_ws("missing");
         fs::create_dir_all(&ws).unwrap();
-        let result = tauri::async_runtime::block_on(commands_scan(Some(
-            ws.display().to_string(),
-        )))
+        let result = tauri::async_runtime::block_on(commands_scan(
+            Some(ws.display().to_string()),
+            None,
+        ))
         .unwrap();
         assert!(result.is_empty(), "目录不存在应为空数组而非报错");
     }
@@ -184,9 +185,10 @@ mod tests {
         fs::write(dir.join("no-name.md"), "只有正文\n").unwrap();
         fs::write(dir.join("ignored.txt"), "not markdown\n").unwrap();
 
-        let result = tauri::async_runtime::block_on(commands_scan(Some(
-            ws.display().to_string(),
-        )))
+        let result = tauri::async_runtime::block_on(commands_scan(
+            Some(ws.display().to_string()),
+            None,
+        ))
         .unwrap();
         assert_eq!(result.len(), 2, "只收 md 文件: {:?}", result.iter().map(|c| &c.name).collect::<Vec<_>>());
         let review = result.iter().find(|c| c.name == "review").unwrap();
@@ -198,7 +200,7 @@ mod tests {
 
     #[test]
     fn scan_without_workspace_returns_empty() {
-        let result = tauri::async_runtime::block_on(commands_scan(None)).unwrap();
+        let result = tauri::async_runtime::block_on(commands_scan(None, None)).unwrap();
         assert!(result.is_empty());
     }
 }

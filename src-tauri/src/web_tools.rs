@@ -24,6 +24,10 @@ const SEARCH_DEFAULT_RESULTS: usize = 10;
 const SEARCH_MAX_RESULTS: usize = 25;
 /// 出网代理设置键（kv 表）：如 http://127.0.0.1:7890。空值 = 不用代理。
 const KV_WEB_PROXY: &str = "reinagent-web-proxy";
+/// 不使用代理的地址（逗号分隔规则；命中直连）
+const KV_WEB_PROXY_NO_PROXY: &str = "reinagent-web-proxy-no-proxy";
+/// kv 未配置时的默认 no-proxy（本地 + 常见局域网网段）
+const KV_WEB_PROXY_NO_PROXY_DEFAULT: &str = "localhost,127.0.0.1,::1,192.168.*,10.*,172.16.*,.lan,.local";
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -396,7 +400,91 @@ pub(crate) fn filter_domains(hits: Vec<WebSearchHit>, allowed: &[String], blocke
 
 /// 解析出网代理：显式设置（kv）优先 → 标准环境变量（HTTP(S)_PROXY/ALL_PROXY）→ 直连。
 /// 设置值非法时如实报错（绝不静默降级直连——配置错误必须暴露）。
-fn resolve_proxy() -> Result<Option<ureq::Proxy>, String> {
+/// 目标 URL 命中 no-proxy 规则（kv `reinagent-web-proxy-no-proxy`）→ 直连。
+pub fn resolve_proxy_for_url(url: &str) -> Result<Option<ureq::Proxy>, String> {
+    // 只处理 http/https；其它 scheme（file: 等）一律直连
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return resolve_proxy();
+    }
+    let (host, port) = match (url.split("://").nth(1), url.starts_with("https")) {
+        (Some(rest), is_https) => {
+            let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+            let host = authority.rsplit('@').next().unwrap_or(authority);
+            let host = host.split(':').next().unwrap_or(host).to_lowercase();
+            let default_port: u16 = if is_https { 443 } else { 80 };
+            let port = authority
+                .rsplit(':')
+                .next()
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(default_port);
+            (host.to_string(), port)
+        }
+        _ => return resolve_proxy(),
+    };
+    if let Some(no_proxy) = read_no_proxy_rules() {
+        if matches_no_proxy(&host, port, &no_proxy) {
+            return Ok(None);
+        }
+    }
+    resolve_proxy()
+}
+
+/// 读取 no-proxy 规则串（逗号分隔）；kv 未配置 → 默认（本地 + 局域网）。
+fn read_no_proxy_rules() -> Option<String> {
+    if let Ok(conn) = crate::conversation_store::db_conn() {
+        let stored: Option<String> = conn
+            .query_row(
+                "SELECT value FROM kv WHERE key = ?1",
+                rusqlite::params![KV_WEB_PROXY_NO_PROXY],
+                |row| row.get(0),
+            )
+            .ok();
+        let trimmed = stored.filter(|s| !s.trim().is_empty()).map(|s| s.trim().to_string());
+        return Some(trimmed.unwrap_or_else(|| KV_WEB_PROXY_NO_PROXY_DEFAULT.to_string()));
+    }
+    Some(KV_WEB_PROXY_NO_PROXY_DEFAULT.to_string())
+}
+
+/// no-proxy 规则匹配（对齐 ZCode matchesNoProxy + 前缀通配扩展）：`*` 全拦；
+/// `*.example.com` / `.example.com` / `example.com` 匹配本域与子域；`192.168.*`
+/// 尾部通配匹配前缀（局域网网段）；`host:port` 带端口精确匹配；剥离 scheme；
+/// 大小写不敏感。
+fn matches_no_proxy(host: &str, port: u16, value: &str) -> bool {
+    let host = host.to_lowercase();
+    value
+        .split([',', ' ', '\t', '\r', '\n'])
+        .map(str::trim)
+        .filter(|rule| !rule.is_empty())
+        .any(|raw_rule| {
+            let rule = raw_rule.to_lowercase();
+            if rule == "*" {
+                return true;
+            }
+            let rule_without_scheme = rule.split("://").last().unwrap_or("");
+            let mut parts = rule_without_scheme.split(':');
+            let rule_host = parts.next().unwrap_or("");
+            let rule_port = parts.next().and_then(|p| p.parse::<u16>().ok());
+            let normalized_host = rule_host
+                .strip_prefix("*.")
+                .or_else(|| rule_host.strip_prefix('.'))
+                .unwrap_or(rule_host);
+            if normalized_host.is_empty() {
+                return false;
+            }
+            // 尾部 `*` 前缀通配（如 192.168.* 匹配 192.168.x.x）
+            let prefix_match = normalized_host
+                .strip_suffix('*')
+                .map(|prefix| host.starts_with(prefix))
+                .unwrap_or(false);
+            let host_matches =
+                prefix_match || host == normalized_host || host.ends_with(&format!(".{normalized_host}"));
+            host_matches && (rule_port.is_none() || rule_port == Some(port))
+        })
+}
+
+/// 解析出网代理（无 URL 上下文的旧调用方）。
+/// 解析出网代理（无 URL 上下文的旧调用方；对 MCP/fs_execute 等跨模块调用方 pub）。
+pub fn resolve_proxy() -> Result<Option<ureq::Proxy>, String> {
     if let Ok(conn) = crate::conversation_store::db_conn() {
         let stored: Option<String> = conn
             .query_row(
@@ -420,7 +508,7 @@ fn http_get(
     max_bytes: usize,
     user_agent: &str,
 ) -> Result<(u16, String, String, String, usize), String> {
-    let proxy = resolve_proxy()?;
+    let proxy = resolve_proxy_for_url(url)?;
     let mut config = ureq::Agent::config_builder()
         .timeout_global(Some(HTTP_TIMEOUT))
         .http_status_as_error(false);

@@ -12,9 +12,11 @@ export async function createTerminalSession(options: {
   cols: number;
   rows: number;
   cwd?: string;
+  /** PTY shell 路径（终端配置；空 = 平台默认） */
+  shell?: string;
   onData: (data: string) => void;
 }): Promise<TerminalSessionHandle> {
-  const { cols, rows, cwd, onData } = options;
+  const { cols, rows, cwd, shell, onData } = options;
 
   let id: number;
   try {
@@ -22,6 +24,7 @@ export async function createTerminalSession(options: {
       cols,
       rows,
       cwd: cwd || null,
+      shell: shell || null,
     });
   } catch (err) {
     console.error("Failed to create terminal session via Tauri:", err);

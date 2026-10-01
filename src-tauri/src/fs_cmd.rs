@@ -36,6 +36,45 @@ pub async fn fs_read_file(path: String) -> Result<String, String> {
     .map_err(|e| e.to_string())?
 }
 
+/// 路径存在性探测（终端配置的 shell 自动检测用）。
+#[tauri::command]
+pub fn fs_path_exists(path: String) -> bool {
+    Path::new(path.trim()).exists()
+}
+
+/// 从 PATH 解析可用的 shell（P2-G2 终端配置；零硬编码路径——交给系统 where/which）。
+/// Windows 用 where.exe 逐个解析；unix 用 which。返回 {名字: 解析路径}（仅含命中的）。
+#[tauri::command]
+pub fn shell_detect() -> std::collections::BTreeMap<String, String> {
+    use std::process::Command;
+    let candidates: &[&str] = if cfg!(target_os = "windows") {
+        &["pwsh.exe", "powershell.exe", "cmd.exe", "bash.exe"]
+    } else {
+        &["bash", "zsh", "fish", "sh"]
+    };
+    let mut out = std::collections::BTreeMap::new();
+    for name in candidates {
+        let probe = if cfg!(target_os = "windows") {
+            Command::new("where").arg(name).output()
+        } else {
+            Command::new("which").arg(name).output()
+        };
+        if let Ok(output) = probe {
+            if output.status.success() {
+                let first = String::from_utf8_lossy(&output.stdout)
+                    .lines()
+                    .next()
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                if !first.is_empty() {
+                    out.insert(name.trim_end_matches(".exe").to_string(), first);
+                }
+            }
+        }
+    }
+    out
+}
 #[tauri::command]
 pub async fn fs_write_file(
     path: String,
@@ -184,10 +223,155 @@ pub async fn fs_delete_file(
     .map_err(|e| e.to_string())?
 }
 
+/// 创建目录（文件管理器面板「新建文件夹」；父目录已存在，不递归建链）。
 #[tauri::command]
-pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, String> {
+pub async fn fs_create_dir(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        if resolved.exists() {
+            return Err(format!("目标已存在: {}", resolved.display()));
+        }
+        let parent = resolved
+            .parent()
+            .ok_or_else(|| format!("路径无效: {}", resolved.display()))?;
+        if !parent.is_dir() {
+            return Err(format!("父目录不存在: {}", parent.display()));
+        }
+        fs::create_dir(&resolved).map_err(|e| format!("Failed to create {}: {}", resolved.display(), e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 删除任意条目（文件或目录，目录递归）。安防：拒绝符号链接（逃逸路径）；
+/// 拒绝删除工作区根自身。文件管理器面板用（fs_delete_file 只收普通文件）。
+#[tauri::command]
+pub async fn fs_remove_entry(
+    path: String,
+    workspace_root: String,
+    checkpoint: Option<crate::checkpoint::CheckpointCtx>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        let root = resolve_path(&workspace_root);
+        if resolved == root {
+            return Err(format!("拒绝删除工作区根目录: {}", resolved.display()));
+        }
+        let md = fs::symlink_metadata(&resolved)
+            .map_err(|e| format!("Failed to stat {}: {}", resolved.display(), e))?;
+        if md.file_type().is_symlink() {
+            return Err(format!("拒绝删除符号链接（可能是逃逸路径）: {}", resolved.display()));
+        }
+        if let Some(ctx) = checkpoint.as_ref() {
+            capture_write_pre_image(&ctx, &resolved);
+        }
+        if md.is_dir() {
+            fs::remove_dir_all(&resolved)
+                .map_err(|e| format!("Failed to delete {}: {}", resolved.display(), e))
+        } else {
+            fs::remove_file(&resolved)
+                .map_err(|e| format!("Failed to delete {}: {}", resolved.display(), e))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 重命名/移动（文件或目录；目标已存在拒绝覆盖）。
+/// 安防与 fs_delete_file 同源：源与目标都拒绝符号链接；目标路径不得逃逸（resolve 后
+/// 必须仍以源父目录为根——直接用绝对路径解析，用户面板只会传工作区内路径）。
+#[tauri::command]
+pub async fn fs_rename(
+    path: String,
+    new_path: String,
+    checkpoint: Option<crate::checkpoint::CheckpointCtx>,
+) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let from = resolve_path(&path);
+        let to = resolve_path(&new_path);
+        let from_md = fs::symlink_metadata(&from)
+            .map_err(|e| format!("Failed to stat {}: {}", from.display(), e))?;
+        if from_md.file_type().is_symlink() {
+            return Err(format!("拒绝重命名符号链接（可能是逃逸路径）: {}", from.display()));
+        }
+        if let Ok(to_md) = fs::symlink_metadata(&to) {
+            if to_md.file_type().is_symlink() {
+                return Err(format!("目标位置是符号链接（可能是逃逸路径）: {}", to.display()));
+            }
+            return Err(format!("目标已存在: {}", to.display()));
+        }
+        if from == to {
+            return Ok(());
+        }
+        // 目标父目录必须存在（不隐式建目录，防止拼错路径到处落盘）
+        let to_parent = to
+            .parent()
+            .ok_or_else(|| format!("目标路径无效: {}", to.display()))?;
+        if !to_parent.is_dir() {
+            return Err(format!("目标父目录不存在: {}", to_parent.display()));
+        }
+        if let Some(ctx) = checkpoint.as_ref() {
+            capture_write_pre_image(&ctx, &from);
+        }
+        fs::rename(&from, &to)
+            .map_err(|e| format!("Failed to rename {} -> {}: {}", from.display(), to.display(), e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 读 kv 代理设置并组装子进程代理环境变量（对齐 ZCode buildAgentProxyEnv /
+/// buildAgentNoProxyEnv：显式设置覆盖 shell 继承，空 = 清除代理变量直连）。
+pub(crate) fn read_kv_proxy_settings() -> Vec<(String, String)> {
+    let (proxy, no_proxy) = if let Ok(conn) = crate::conversation_store::db_conn() {
+        let read = |key: &str| -> String {
+            conn.query_row("SELECT value FROM kv WHERE key = ?1", [key], |row| {
+                row.get::<_, String>(0)
+            })
+            .unwrap_or_default()
+        };
+        (read("reinagent-web-proxy"), read("reinagent-web-proxy-no-proxy"))
+    } else {
+        (String::new(), String::new())
+    };
+    let proxy_trimmed = proxy.trim().to_string();
+    if proxy_trimmed.is_empty() {
+        // 留空直连：显式清空，防止继承宿主 shell 的同名变量
+        return vec![
+            ("HTTP_PROXY".to_string(), String::new()),
+            ("HTTPS_PROXY".to_string(), String::new()),
+            ("ALL_PROXY".to_string(), String::new()),
+            ("NO_PROXY".to_string(), String::new()),
+        ];
+    }
+    let mut env = vec![
+        ("HTTP_PROXY".to_string(), proxy_trimmed.clone()),
+        ("HTTPS_PROXY".to_string(), proxy_trimmed.clone()),
+        ("ALL_PROXY".to_string(), proxy_trimmed),
+    ];
+    let no_proxy_trimmed = no_proxy.trim().to_string();
+    if !no_proxy_trimmed.is_empty() {
+        env.push(("NO_PROXY".to_string(), no_proxy_trimmed));
+    }
+    env
+}
+
+#[tauri::command]
+pub async fn fs_execute(
+    command: String,
+    cwd: Option<String>,
+    shell: Option<String>,
+) -> Result<String, String> {
+    // 代理环境注入（P2-G2 代理贯通）：设置非空时子进程显式继承 HTTP(S)_PROXY/
+    // NO_PROXY（覆盖系统继承值）；为空时**清除**继承的代理变量——设置页语义
+    // 「不读取系统环境变量，留空直连」。
+    let proxy_env = read_kv_proxy_settings();
     tauri::async_runtime::spawn_blocking(move || {
         const EXEC_TIMEOUT_SECS: u64 = 120;
+        // 代理环境注入（P2-G2 代理贯通）：设置非空时子进程显式继承 HTTP(S)_PROXY/
+        // NO_PROXY（覆盖系统继承值）；为空时**清除**继承的代理变量——设置页语义
+        // 「不读取系统环境变量，留空直连」。
+        let proxy_env: Vec<(String, String)> = read_kv_proxy_settings();
         // 输出上限（防巨型输出拖垮 IPC 与前端渲染）：256KB
         const OUTPUT_CAP_BYTES: usize = 256 * 1024;
         // 进程退出后等待管道收尾的上限：超时取部分输出（防孙进程持管道永久挂起）
@@ -204,31 +388,53 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
             let _ = fs::create_dir_all(&exec_dir);
         }
 
-        // ★ 条件编译必须用 #[cfg] 属性而非 if cfg!()：后者是运行时布尔宏，
-        //   两个分支在所有平台都要类型检查——std::os::windows 在 Linux 上不存在，
-        //   用 if cfg!() 会导致 Linux 编译失败（E0433/E0599）。
-        fn spawn_shell(command: &str, exec_dir: &Path) -> std::io::Result<std::process::Child> {
+        // ★ spawn_shell：按所选 shell 分派执行（P2-G2 终端配置贯通——环境段告诉模型
+        //   「用 PowerShell 语法」，exec 就必须真的在 PowerShell 里跑）。
+        //   pwsh/powershell → -Command；bash/zsh/fish/sh → -c；cmd/未配置 → cmd /C。
+        // ★ spawn_shell：按所选 shell 分派执行（P2-G2 终端配置贯通——环境段告诉模型
+        //   「用 PowerShell 语法」，exec 就必须真的在 PowerShell 里跑）+ 代理环境注入。
+        //   pwsh/powershell → -Command；bash/zsh/fish/sh → -c；cmd/未配置 → cmd /C。
+        fn spawn_shell(command: &str, exec_dir: &Path, shell: Option<&str>, proxy_env: &[(String, String)]) -> std::io::Result<std::process::Child> {
+            let shell_name = shell.unwrap_or("").trim().to_lowercase();
+            let exe_name = shell_name.rsplit(['\\', '/']).next().unwrap_or("");
+            let build = |mut cmd: Command| {
+                cmd.current_dir(exec_dir);
+                cmd.stdout(Stdio::piped());
+                cmd.stderr(Stdio::piped());
+                for (key, value) in proxy_env {
+                    cmd.env(key, value);
+                }
+                cmd
+            };
             #[cfg(target_os = "windows")]
             {
                 // ★ raw_arg：命令行原样透传给 cmd /C。普通 arg() 会按 MSVC 规则把内部引号
                 //   转义成 \"，而 cmd 不认这种转义——findstr /c:"..." 这类带引号的命令会被
                 //   拆坏（表现为 FINDSTR: Cannot open <词>）。
                 use std::os::windows::process::CommandExt;
-                let mut cmd = Command::new("cmd");
+                const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+                if exe_name.starts_with("pwsh") || exe_name.starts_with("powershell") {
+                    let mut cmd = build(Command::new(shell.unwrap_or("powershell.exe")));
+                    cmd.arg("-NoProfile").arg("-Command").arg(command);
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    return cmd.spawn();
+                }
+                if exe_name.contains("bash") || exe_name == "zsh" || exe_name == "fish" || exe_name == "sh" {
+                    let mut cmd = build(Command::new(shell.unwrap_or("bash.exe")));
+                    cmd.arg("-c").arg(command);
+                    cmd.creation_flags(CREATE_NO_WINDOW);
+                    return cmd.spawn();
+                }
+                let mut cmd = build(Command::new("cmd"));
                 cmd.raw_arg("/C").raw_arg(command);
                 cmd.creation_flags(CREATE_NO_WINDOW);
-                cmd.current_dir(exec_dir);
-                cmd.stdout(Stdio::piped());
-                cmd.stderr(Stdio::piped());
                 cmd.spawn()
             }
             #[cfg(not(target_os = "windows"))]
             {
-                let mut cmd = Command::new("sh");
+                let shell_exe = if shell_name.is_empty() { "sh".to_string() } else { shell_name };
+                let mut cmd = build(Command::new(&shell_exe));
                 cmd.arg("-c").arg(command);
-                cmd.current_dir(exec_dir);
-                cmd.stdout(Stdio::piped());
-                cmd.stderr(Stdio::piped());
                 cmd.spawn()
             }
         }
@@ -242,7 +448,7 @@ pub async fn fs_execute(command: String, cwd: Option<String>) -> Result<String, 
             buf
         }
 
-        let mut child = spawn_shell(&command, &exec_dir).map_err(|e| e.to_string())?;
+        let mut child = spawn_shell(&command, &exec_dir, shell.as_deref(), &proxy_env).map_err(|e| e.to_string())?;
 
         // 输出读取放独立线程：进程未退出时也能持续收集，不会因管道缓冲写满而卡死子进程。
         let mut stdout_pipe = child.stdout.take().expect("stdout piped");

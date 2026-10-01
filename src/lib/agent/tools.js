@@ -438,7 +438,15 @@ export function createTools(options) {
       }
       const { invoke } = await import("@tauri-apps/api/core");
       const targetCwd = params.cwd ? resolveWorkspacePath(params.cwd, getWorkspace()) : getWorkspace();
-      const output = await invoke("fs_execute", { command, cwd: targetCwd });
+      // 终端配置所选 shell（P2-G2）：exec 与终端面板/环境段提示保持一致
+      let shell;
+      try {
+        const { getTerminalSettings } = await import("../terminal/terminalSettings");
+        shell = getTerminalSettings().shell || undefined;
+      } catch {
+        shell = undefined; // 设置模块不可用时回退平台默认
+      }
+      const output = await invoke("fs_execute", { command, cwd: targetCwd, shell: shell ?? null });
       return buildTextToolResult(output, { command, cwd: targetCwd }, TOOL_LIMITS.execBytes);
     },
   };
@@ -815,7 +823,141 @@ export function createTools(options) {
     },
   };
 
-  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite, backgroundBash, taskOutput, taskStop, webFetchTool, webSearchTool];
+  // ---- Browser（内嵌浏览器面板的工具面；Rust browser.rs WebView2 子控件 + CDP）----
+  // 拆两个工具以对齐审批矩阵：browser_view=read（navigate/snapshot）、
+  // browser_act=write（click/fill/evaluate）。前置条件：右侧浏览器面板已打开。
+  const browserError = (message) => ({
+    content: [{ type: "text", text: message }],
+    isError: true,
+  });
+
+  // 在内嵌浏览器里执行 JS 并取回字符串结果（Rust 一次性 HTTP 回读通道）
+  const evalInBrowser = async (expression) => {
+    const { invoke } = await import("@tauri-apps/api/core");
+    return await invoke("browser_read_page", { js: expression });
+  };
+  const cdp = evalInBrowser;
+
+  const browserViewTool = {
+    name: "browser_view",
+    label: "浏览器查看",
+    description:
+      "Interact with the embedded browser panel (right dock). Actions:\n" +
+      "- navigate: open a URL in the embedded browser, then return a page snapshot.\n" +
+      "- snapshot: return the current page URL, title and visible text (first 6000 chars).\n" +
+      "Requires the browser panel to be open — ask the user to open it if this errors.",
+    parameters: Type.Object(
+      {
+        action: Type.Union([Type.Literal("navigate"), Type.Literal("snapshot")], {
+          description: "navigate = 打开 URL；snapshot = 读取当前页面内容",
+        }),
+        url: Type.Optional(Type.String({ description: "navigate 的目标 URL（含协议）" })),
+      },
+      { required: ["action"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      try {
+        if (params.action === "navigate") {
+          if (!params.url?.trim()) {
+            return browserError("ERROR: navigate 需要 url 参数。");
+          }
+          const { invoke } = await import("@tauri-apps/api/core");
+          await invoke("browser_navigate", { url: params.url.trim() });
+          await new Promise((r) => setTimeout(r, 800)); // 等首帧渲染
+        }
+        const raw = await cdp(
+          "(function(){return JSON.stringify({url: location.href, title: document.title, text: (document.body?.innerText || '').slice(0, 6000)})})()",
+        );
+        const page = JSON.parse(raw);
+        const head = params.action === "navigate" ? `已导航：${page.url}` : `当前页面：${page.url}`;
+        return buildTextToolResult(
+          `${head}\n标题：${page.title || "(无标题)"}\n\n${page.text || "(页面无可见文本)"}`,
+          { url: page.url, title: page.title },
+          TOOL_LIMITS.webFetchBytes,
+        );
+      } catch (err) {
+        return buildTextToolResult(
+          `浏览器不可用：${String(err).slice(0, 200)}\n（请先在右侧面板打开「浏览器」，再重试本工具）`,
+          undefined,
+          undefined,
+          true,
+        );
+      }
+    },
+  };
+
+  const browserActTool = {
+    name: "browser_act",
+    label: "浏览器操作",
+    description:
+      "Act on the embedded browser panel page (right dock). Actions:\n" +
+      "- click: dispatch a real mouse click at viewport coordinates (x, y).\n" +
+      "- fill: set the value of a CSS-selector target and fire input/change events.\n" +
+      "- evaluate: run JavaScript in the page and return its JSON value.\n" +
+      "Requires the browser panel to be open. Write-level permission (approval may apply).",
+    parameters: Type.Object(
+      {
+        action: Type.Union(
+          [Type.Literal("click"), Type.Literal("fill"), Type.Literal("evaluate")],
+          { description: "click = 坐标点击；fill = 选择器填值；evaluate = 执行 JS" },
+        ),
+        x: Type.Optional(Type.Integer({ description: "click：视口 X 坐标（CSS 像素）" })),
+        y: Type.Optional(Type.Integer({ description: "click：视口 Y 坐标（CSS 像素）" })),
+        selector: Type.Optional(Type.String({ description: "fill：目标元素 CSS 选择器" })),
+        text: Type.Optional(Type.String({ description: "fill：要填入的文本" })),
+        expression: Type.Optional(Type.String({ description: "evaluate：要执行的 JS 表达式" })),
+      },
+      { required: ["action"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      try {
+        if (params.action === "click") {
+          if (!Number.isFinite(params.x) || !Number.isFinite(params.y)) {
+            return browserError("ERROR: click 需要 x/y 视口坐标。");
+          }
+          await cdp(`(function(){const el=document.elementFromPoint(${params.x},${params.y});if(!el)return "ERROR: no element at point";for(const t of ["pointerdown","mousedown","pointerup","mouseup","click"]){el.dispatchEvent(new MouseEvent(t,{bubbles:true,cancelable:true,clientX:${params.x},clientY:${params.y}}))}return "OK"})()`);
+          await new Promise((r) => setTimeout(r, 300));
+          return buildTextToolResult(`已在 (${params.x}, ${params.y}) 派发点击事件。`, { x: params.x, y: params.y });
+        }
+        if (params.action === "fill") {
+          if (!params.selector || params.text === undefined) {
+            return browserError("ERROR: fill 需要 selector 与 text 参数。");
+          }
+          const expr =
+            `(function(){const el=document.querySelector(${JSON.stringify(params.selector)});` +
+            `if(!el) return "ERROR: element not found"; el.focus(); el.value=${JSON.stringify(params.text)};` +
+            `el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); return "OK";})()`;
+          const out = await cdp("Runtime.evaluate", { expression: expr, returnByValue: true });
+          const ok = out === "OK";
+          return ok
+            ? buildTextToolResult(`已向 ${params.selector} 填入文本。`, { selector: params.selector, ok })
+            : browserError(`填入失败：${String(out).slice(0, 200)}`);
+        }
+        // evaluate
+        if (!params.expression?.trim()) {
+          return browserError("ERROR: evaluate 需要 expression 参数。");
+        }
+        const value = await cdp("Runtime.evaluate", {
+          expression: params.expression,
+          returnByValue: true,
+        });
+        return buildTextToolResult(
+          `执行结果：${typeof value === "string" ? value : JSON.stringify(value, null, 1)?.slice(0, 3000)}`,
+          undefined,
+          TOOL_LIMITS.webFetchBytes,
+        );
+      } catch (err) {
+        return buildTextToolResult(
+          `浏览器不可用：${String(err).slice(0, 200)}\n（请先在右侧面板打开「浏览器」，再重试本工具）`,
+          undefined,
+          undefined,
+          true,
+        );
+      }
+    },
+  };
+
+  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite, backgroundBash, taskOutput, taskStop, webFetchTool, webSearchTool, browserViewTool, browserActTool];
 }
 
 /**
@@ -855,6 +997,7 @@ export function resolveToolPermissionKind(name) {
     case "todo_write":
     case "webfetch":
     case "websearch":
+    case "browser_view":
       return "read";
     // agent（子代理派发）免审批（对齐 ZCode needsApproval:false）：拦截下沉到子代理
     // 内部工具——general-purpose 继承父审批门，plan 模式下子代理写工具同样被拦。
@@ -863,6 +1006,7 @@ export function resolveToolPermissionKind(name) {
     case "subagent_output":
       return "read";
     case "exec_command":
+    case "browser_act":
     case "background_bash":
     case "task_output":
     case "task_stop":

@@ -22,6 +22,7 @@ pub fn terminal_create(
     cols: u16,
     rows: u16,
     cwd: Option<String>,
+    shell: Option<String>,
 ) -> Result<u32, String> {
     let mut next_id = state.next_id.lock().map_err(|e| e.to_string())?;
     *next_id += 1;
@@ -42,10 +43,29 @@ pub fn terminal_create(
     } else {
         std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
     };
+    // 用户配置的 shell（P2-G2 终端配置）优先；空串/空白回退平台默认
+    let shell_command = shell
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or(default_shell);
 
-    let mut cmd = CommandBuilder::new(&default_shell);
+    let mut cmd = CommandBuilder::new(&shell_command);
     if let Some(dir) = cwd {
         cmd.cwd(dir);
+    }
+    // 代理环境注入（P2-G2 代理贯通）：PTY 终端子进程也走设置的代理，
+    // 与 exec_command 的 env 注入同源（kv reinagent-web-proxy / no-proxy）。
+    {
+        let (proxy, no_proxy) = crate::app_proxy::read_proxy_settings();
+        let proxy_trimmed = proxy.trim().to_string();
+        if !proxy_trimmed.is_empty() {
+            cmd.env("HTTP_PROXY", &proxy_trimmed);
+            cmd.env("HTTPS_PROXY", &proxy_trimmed);
+            cmd.env("ALL_PROXY", &proxy_trimmed);
+            if !no_proxy.trim().is_empty() {
+                cmd.env("NO_PROXY", no_proxy.trim());
+            }
+        }
     }
 
     let _child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;

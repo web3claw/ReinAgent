@@ -7,8 +7,9 @@
   --bg: #12141a;
   --bg-elev: #191c24;
   --bg-elev-2: #20242e;
-  /* 行内代码底色：中性半透明灰（dark/light 通用），去边框降对比 */
-  --code-inline-bg: rgba(127, 127, 127, 0.12);
+  /* 行内代码（2026-09-30 对齐 ZCode 截图）：金色文字（取色 #D7BA7D）+ 极淡暖色底 */
+  --code-inline-bg: rgba(215, 186, 125, 0.09);
+  --code-inline-fg: #d7ba7d;
   --border: #2c313d;
   --text: #e6e8ee;
   --text-dim: #9aa2b4;
@@ -66,7 +67,8 @@
   --bg: #f8fafc;
   --bg-elev: #ffffff;
   --bg-elev-2: #f1f5f9;
-  --code-inline-bg: rgba(127, 127, 127, 0.12);
+  --code-inline-bg: rgba(146, 100, 26, 0.10);
+  --code-inline-fg: #8a641a;
   --border: #e2e8f0;
   --text: #0f172a;
   --text-dim: #64748b;
@@ -469,52 +471,55 @@ select option {
 
 /* 标题层级：Tailwind preflight 把 h1-h4 重置为继承字号/字重，
    必须显式恢复，否则 "## 标题" 渲染成和正文一样大的普通文本。
-   2026-09-29：压缩字号差（600 字重为主）、加大上下 margin。 */
+   2026-09-30 用户定稿：所有层级标题一律常规字重（400）不加粗，
+   只靠字号区分层级（h1 1.25em → h4 1em 顺次收紧）。 */
 .md h1 {
-  font-size: 1.35em;
-  font-weight: 600;
-  margin: 1.5em 0 0.8em;
+  font-size: 1.25em;
+  font-weight: 400;
+  margin: 1.6em 0 0.8em;
   line-height: 1.4;
 }
 
 .md h2 {
-  font-size: 1.2em;
-  font-weight: 600;
-  margin: 1.3em 0 0.6em;
+  font-size: 1.15em;
+  font-weight: 400;
+  margin: 1.4em 0 0.6em;
   line-height: 1.4;
 }
 
 .md h3 {
-  font-size: 1.1em;
-  font-weight: 600;
-  margin: 1.1em 0 0.5em;
+  font-size: 1.08em;
+  font-weight: 400;
+  margin: 1.2em 0 0.5em;
   line-height: 1.4;
 }
 
 .md h4 {
-  font-size: 1.05em;
-  font-weight: 500;
-  margin: 0.9em 0 0.4em;
+  font-size: 1em;
+  font-weight: 400;
+  margin: 1em 0 0.4em;
   line-height: 1.4;
 }
 
 /* 列表符号：preflight 同样清掉了 list-style，必须显式恢复，
    否则 markdown 列表渲染成无符号的普通缩进段落。
-   2026-09-29：列表与条目间距加大（ul/ol 必须分开声明符号——合写 disc 会把有序列表变圆点）。 */
+   2026-09-30 对齐 ZCode 截图（用户要求「列表有缩进，列表里的列表再缩进」）：
+   缩进加深到 3.2em/层——嵌套列表自身也吃这条 padding，层级逐级递进
+   （ul/ol 必须分开声明符号——合写 disc 会把有序列表变圆点）。 */
 .md ul {
   margin: 0.8em 0;
-  padding-left: 1.6em;
+  padding-left: 3.2em;
   list-style-type: disc;
 }
 
 .md ol {
   margin: 0.8em 0;
-  padding-left: 1.6em;
+  padding-left: 3.2em;
   list-style-type: decimal;
 }
 
 .md li {
-  margin: 0.4em 0;
+  margin: 0.45em 0;
 }
 
 .md li > ul,
@@ -530,10 +535,11 @@ select option {
   color: var(--accent);
 }
 
-/* 正文粗体降一档字重（2026-09-29）：700 过重，600 与标题字重一致且不抢眼 */
+/* 正文粗体（2026-09-30 用户定稿）：恢复真加粗 700 + 纯正文白，
+   与标题字重体系（h1 400 / h2 700）呼应——「不要都是白色，加粗白色」 */
 .md strong,
 .md b {
-  font-weight: 600;
+  font-weight: 700;
   color: var(--text);
 }
 
@@ -557,10 +563,12 @@ select option {
   padding: 6px 10px;
 }
 
-/* 行内代码：中性半透明底色（--code-inline-bg）、去边框，降低与正文的对比突兀感 */
+/* 行内代码（2026-09-30 对齐 ZCode）：金色文字（--code-inline-fg）+ 极淡暖色底，
+   不再是白字灰底。 */
 .md code {
   font-family: "Cascadia Code", "Consolas", "SFMono-Regular", "Menlo", monospace;
   font-size: 0.92em;
+  color: var(--code-inline-fg);
   background: var(--code-inline-bg);
   border: none;
   border-radius: 3px;
@@ -585,6 +593,8 @@ select option {
   padding: 0;
   font-size: 0.9em;
   line-height: 1.55;
+  /* 代码块不走行内代码的金色（.md code 是后代选择器会命中这里），回落到宿主颜色 */
+  color: inherit;
 }
 
 /* S6：块级 Markdown 容器与「展开全文 / 收起」按钮 */
@@ -1145,56 +1155,10 @@ select option {
   --text-ui-xs: calc(var(--ui-font-size) - 4px);
 }
 
-/* ---------- LiveAgent Hub 移植色板（Skills / MCP / 记忆 三页专用） ----------
-   值逐项对齐 LiveAgent tokens.css 的 :root（亮色）与 .dark（暗色）块。 */
-.hub-scope {
-  --lw-background: hsl(0 0% 100%);
-  --lw-foreground: hsl(222.2 84% 4.9%);
-  --lw-card: hsl(0 0% 100%);
-  --lw-popover: hsl(0 0% 100%);
-  --lw-popover-foreground: hsl(222.2 84% 4.9%);
-  --lw-primary: hsl(222.2 47.4% 11.2%);
-  --lw-primary-foreground: hsl(210 40% 98%);
-  --lw-muted: hsl(210 40% 96.1%);
-  --lw-muted-foreground: hsl(215.4 16.3% 46.9%);
-  --lw-accent: hsl(210 40% 96.1%);
-  --lw-destructive: #b91c1c;
-  --lw-destructive-foreground: #ffffff;
-  --lw-success: #065f46;
-  --lw-success-foreground: #ffffff;
-  --lw-border: hsl(214.3 31.8% 91.4%);
-  --lw-ring: hsl(222.2 84% 4.9%);
-  --lw-settings-tile: hsl(0 0% 96.5%);
-  --lw-settings-tile-hover: hsl(0 0% 94%);
-  --lw-settings-active: hsl(0 0% 88.5%);
-  --lw-control-surface: hsl(0 0% 100%);
-  --lw-segmented-track: hsl(0 0% 88.5%);
-  --lw-segmented-selected: hsl(0 0% 100%);
-}
-[data-theme="dark"] .hub-scope {
-  --lw-background: hsl(0 0% 9.4%);
-  --lw-foreground: hsl(0 0% 98%);
-  --lw-card: hsl(0 0% 12.9%);
-  --lw-popover: hsl(0 0% 12.9%);
-  --lw-popover-foreground: hsl(0 0% 98%);
-  --lw-primary: hsl(210 30% 96%);
-  --lw-primary-foreground: hsl(222.2 47.4% 11.2%);
-  --lw-muted: hsl(0 0% 15.7%);
-  --lw-muted-foreground: hsl(0 0% 72%);
-  --lw-accent: hsl(0 0% 18.8%);
-  --lw-destructive: #fca5a5;
-  --lw-destructive-foreground: #450a0a;
-  --lw-success: #6ee7b7;
-  --lw-success-foreground: #022c22;
-  --lw-border: hsl(0 0% 26%);
-  --lw-ring: hsl(212.7 26.8% 83.9%);
-  --lw-settings-tile: hsl(0 0% 12.9%);
-  --lw-settings-tile-hover: hsl(0 0% 18.8%);
-  --lw-settings-active: hsl(0 0% 25.5%);
-  --lw-control-surface: hsl(0 0% 18.8%);
-  --lw-segmented-track: hsl(0 0% 9.4%);
-  --lw-segmented-selected: hsl(0 0% 25.5%);
-}
+/* ---------- LiveAgent Hub 移植色板 ----------
+   hub-scope 覆盖块已按用户要求移除（2026-10-01）：Skills/MCP/记忆/子智能体/Hooks
+   五页配色统一回应用蓝黑色板（--lw-* 走 @theme inline 的应用 token 兜底）。
+   hub-scope 类名保留在组件上作为标记（无色彩定义，no-op），非色彩工具类见下方阴影段。 */
 
 /* LiveAgent Hub 移植：阴影 / 进度动画 / 字面量工具类（tokens.css 同名值） */
 @theme {

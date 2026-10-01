@@ -1,4 +1,4 @@
-import { RefreshCcw } from "lucide-react";
+import { RefreshCcw, Trash2 } from "lucide-react";
 import { Fragment, lazy, useState } from "react";
 import { APP_USAGE_RANGES } from "./types";
 import type { AppUsageRange, AppUsageSnapshot } from "./types";
@@ -34,6 +34,7 @@ const AppUsageModelUsagePieChart = lazy(() =>
 export function AppUsagePanel() {
   const { intl, locale } = useZCodeIntl();
   const [range, setRange] = useState<AppUsageRange>("7d");
+  const [resetArmed, setResetArmed] = useState(false);
   const { snapshot: lifetimeSnapshot, refresh: refreshLifetime } = useAppUsageStats("all");
   const { snapshot, loading, error, refresh } = useAppUsageStats(range);
 
@@ -112,7 +113,54 @@ export function AppUsagePanel() {
         <AppUsageModelUsagePieChart snapshot={snapshot} />
       </UsageChartLoadBoundary>
 
-      <div className="flex justify-end">
+      <div className="flex justify-end gap-2">
+        {/* 清零账目（两击确认）：DELETE model_usage + 回填水位线，历史源数据不再重灌 */}
+        {resetArmed ? (
+          <div className="flex items-center gap-1" data-usage-reset="true">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="h-8 border-red-500/40 text-red-500 hover:bg-red-500/10"
+              onClick={() => {
+                void (async () => {
+                  try {
+                    const { invoke } = await import("@tauri-apps/api/core");
+                    await invoke("usage_reset");
+                    await Promise.all([refresh(), refreshLifetime()]);
+                  } catch (err) {
+                    console.error("[usage] reset failed:", err);
+                  } finally {
+                    setResetArmed(false);
+                  }
+                })();
+              }}
+            >
+              确认清零
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-8"
+              onClick={() => setResetArmed(false)}
+            >
+              取消
+            </Button>
+          </div>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="h-8 rounded-md bg-background"
+            title="清空全部模型用量账目，从零开始记账"
+            onClick={() => setResetArmed(true)}
+          >
+            <Trash2 className="size-3.5" />
+            清零
+          </Button>
+        )}
         <Button
           type="button"
           variant="outline"

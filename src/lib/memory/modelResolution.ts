@@ -15,7 +15,8 @@ import type { MemorySettings } from "../../store/hubSettingsStore";
 import type { ProviderItem } from "../../components/settings/model-provider/types";
 import type { ExtractionModelDeps } from "./extraction/extractionEngine";
 
-const API_FORMAT_TO_TYPE: Record<string, string> = {
+/** provider apiFormat → pi-ai model type（子代理模型钉选解析共用）。 */
+export const API_FORMAT_TO_TYPE: Record<string, string> = {
   "openai-chat-completions": "openai",
   "openai-completions": "openai",
   "openai-responses": "openai",
