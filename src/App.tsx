@@ -1294,6 +1294,7 @@ export default function App() {
         onChange={update}
         onBack={() => setCurrentView("workbench")}
         workspaceRoot={effectiveWorkspaceRoot || undefined}
+        memoryModelOptions={hubModelOptions}
       />
     );
   }

@@ -4,7 +4,7 @@ import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
-  Sun, Moon, Plus, Search, Blend, Cable, Brain,
+  Sun, Moon, Plus, Search,
   Timer, Settings, Monitor, Plug, Clock,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
@@ -196,33 +196,6 @@ export function WorkspaceSidebar({
           <div className="flex items-center gap-2">
             <Timer className="w-4 h-4" />
             <span className="text-sm font-semibold">{t('automation')}</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setCurrentView('skills')}
-          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <Blend className="w-4 h-4" />
-            <span className="text-sm font-semibold">{t('navSkills')}</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setCurrentView('mcp')}
-          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <Cable className="w-4 h-4" />
-            <span className="text-sm font-semibold">{t('navMcp')}</span>
-          </div>
-        </button>
-        <button
-          onClick={() => setCurrentView('memory')}
-          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <Brain className="w-4 h-4" />
-            <span className="text-sm font-semibold">{t('navMemory')}</span>
           </div>
         </button>
       </div>

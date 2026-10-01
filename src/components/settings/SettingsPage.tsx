@@ -17,7 +17,10 @@ import { useAppStore } from '../../store/useAppStore';
 import {
   Settings as SettingsIcon,
   Server,
+  Bot,
   Brain,
+  Blend,
+  Cable,
   Info,
   PackageOpen,
   Webhook,
@@ -26,6 +29,9 @@ import {
   Sun,
   ChartColumn
 } from 'lucide-react';
+import { McpHubPage } from '../mcp/McpHubPage';
+import { SkillsHubPage } from '../skills/SkillsHubPage';
+import { MemoryPanel } from '../memory/MemoryPanel';
 
 interface SettingsPageProps {
   settings: Settings;
@@ -34,9 +40,11 @@ interface SettingsPageProps {
   onBack: () => void;
   /** 活动工作区根（hooks 管理读写其 .ReinAgent/config.json） */
   workspaceRoot?: string;
+  /** 记忆面板的驱动模型选择器选项（App 的 hubModelOptions 接线） */
+  memoryModelOptions?: Array<{ value: string; label: string; group?: string }>;
 }
 
-export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot }: SettingsPageProps) {
+export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot, memoryModelOptions }: SettingsPageProps) {
   const { t } = useTranslation();
   const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
   const [proxyInput, setProxyInput] = useState(getWebProxy());
@@ -44,14 +52,17 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
   const [proxySavedNote, setProxySavedNote] = useState(false);
   const [noProxySavedNote, setNoProxySavedNote] = useState(false);
   const [hideToTray, setHideToTray] = useState(true);
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'usage' | 'hooks' | 'plugins' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'skills' | 'mcp' | 'memory' | 'usage' | 'hooks' | 'plugins' | 'about'>('general');
   const { theme, toggleTheme, locale, toggleLocale } = useAppStore();
 
   const navItems = [
     { id: 'general', label: t('settingsGeneral'), icon: SettingsIcon },
     { id: 'provider', label: t('settingsProvider'), icon: Server },
     { id: 'usage', label: t('settingsUsage'), icon: ChartColumn },
-    { id: 'agent', label: t('settingsAgent'), icon: Brain },
+    { id: 'agent', label: t('settingsAgent'), icon: Bot },
+    { id: 'skills', label: t('navSkills'), icon: Blend },
+    { id: 'mcp', label: t('navMcp'), icon: Cable },
+    { id: 'memory', label: t('navMemory'), icon: Brain },
     { id: 'hooks', label: t('hooksTitle'), icon: Webhook },
     { id: 'plugins', label: t('pluginsTitle'), icon: PackageOpen },
     { id: 'about', label: t('settingsAbout'), icon: Info },
@@ -88,9 +99,35 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
         </nav>
       </div>
 
-      {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-8 flex justify-center">
-        <div className={`w-full transition-all duration-200 ${activeTab === 'provider' ? 'max-w-5xl' : 'max-w-3xl'}`}>
+      {/* Content Area —— 背景色与间距对齐 Skills/MCP/记忆三个 hub 页：
+          hub-scope 提供 LA 色板（bg-background = hub 同款底色），hub 页自带
+          bg-background+内边距原样嵌入；其它 tab 用 hub 同款 padding 节奏
+          （px-5 sm:6 lg:8 xl:10、顶 pt-4 底 pb-6）+ 内容 max-w-1320px 居中。
+          ⚠ 底部间距放在滚动内容上（inner pb-6）+ items-start，原因见 git 历史：
+          flex 滚动容器 padding-bottom 不计入可滚动区域、stretch 会把 inner 拉成固定高。 */}
+      <div className="hub-scope flex min-h-0 flex-1 bg-background">
+      {activeTab === 'skills' || activeTab === 'mcp' || activeTab === 'memory' ? (
+        <div className="flex min-h-0 w-full flex-col overflow-hidden">
+          {activeTab === 'skills' && <SkillsHubPage />}
+          {activeTab === 'mcp' && <McpHubPage />}
+          {activeTab === 'memory' && (
+            <MemoryPanel
+              workdir={workspaceRoot || undefined}
+              modelOptions={memoryModelOptions ?? []}
+            />
+          )}
+        </div>
+      ) : activeTab === 'provider' ? (
+        /* 模型服务商：固定高分栏（框 h-full 跟随页面高度，内部自带滚动），底部留同款 pb-6 */
+        <div className="flex min-h-0 w-full flex-col px-5 pt-4 pb-6 sm:px-6 lg:px-8 xl:px-10">
+          <h2 className="text-xl font-semibold mb-4">{t('settingsProvider')}</h2>
+          <div className="min-h-0 flex-1">
+            <ModelProviderSettings settings={settings} status={status} onChange={onChange} />
+          </div>
+        </div>
+      ) : (
+      <div className="flex-1 overflow-y-auto px-5 pt-4 sm:px-6 lg:px-8 xl:px-10 flex justify-center items-start">
+        <div className="w-full max-w-1320px pb-6 transition-all duration-200">
           {activeTab === 'general' && (
             <div className="space-y-6">
               <h2 className="text-xl font-semibold mb-6">{t('settingsGeneral')}</h2>
@@ -241,15 +278,6 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
             </div>
           )}
 
-          {activeTab === 'provider' && (
-            <div className="space-y-6">
-              <div className="flex items-center justify-between mb-2">
-                <h2 className="text-xl font-semibold">{t('settingsProvider')}</h2>
-              </div>
-              <ModelProviderSettings settings={settings} status={status} onChange={onChange} />
-            </div>
-          )}
-
           {activeTab === 'usage' && (
             <div className="space-y-6">
               <AppUsagePanel />
@@ -300,6 +328,8 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
             </div>
           )}
         </div>
+      </div>
+      )}
       </div>
     </div>
   );
