@@ -1057,3 +1057,10 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **⚠ WebView2 麦克风权限（spike 结论）**：wry 只自动放行剪贴板权限，MICROPHONE 权限未处理 → getUserMedia 挂起。解法=WebView2 参数 --use-fake-ui-for-media-stream（自动放行媒体权限弹窗，真实麦克风照用）。E2E 自动化另加 --use-fake-device-for-media-stream（假音源）。生产接线：tauri.conf.json windows.additionalBrowserArgs 需设为 wry 默认+该 flag（**尚未写入 conf**——当前 dev 靠环境变量）。
   - **E2E（真实桌面）**：假密钥种子配置 → 点麦克风 → stt:event error（火山真实端点 HTTP 400 拒假密钥，protocol_failed 分类）+closed → 0.7s 内 toast 报真实供应商错误 → 状态复位；设置页连接测试同样拿到分类结果；任务/设置清理复位。真听感（按住说话出字）待用户戴真实麦克风+真实密钥验收。
   - **测试**：Rust 16 用例（四家协议/帧编解码/签名 URL/错误分类/URL 脱敏/rustls 安装）；tsc 0 + 前端 217 绿。
+
+- **提示词增强（2026-10-02，照抄 PI-Desktop ADR-0121 全量；用户确认）**：
+  - **交互**：composer 工具条 ✨（Sparkles，麦克风左边）：草稿空/以 / 开头/语音识别中/增强中 → 禁用；点击一次性非流式补全（thinkingLevel 默认 off，从不继承会话等级）→ **替换输入框文本**（光标移末尾）+ 原文进撤销态（Undo2 按钮一键还原）；提交/切任务使撤销与迟到结果失效（requestToken 计数守卫）；失败 toast 报真实错误。60s 硬超时（AbortController + race；abort 尽力而为、race 释放调用方；超时不换模型重试对齐 PI）。
+  - **模板（templates.ts，照抄 shared/prompt-enhancement.ts 原文）**：内置系统提示词固定不可覆盖；用户模板必须含 {{draft}}、≤8000 字符，含中英 few-shot（「帮我搞一下那个东西」例子教导模型追问缺失信息）；resolvePromptEnhancementUserTemplate 第二道防线（customTemplate 开且合法才生效否则回退默认）；stripEnhancementDecorations 剥一层匹配包裹引号 + 增强:/Enhanced: 等前缀标签。
+  - **执行（enhance.ts）**：渲染层 one-shot——buildModel + getStreamFnForApi.streamSimple（与 runAgentTurn 同传输层），normalizeContext({systemPrompt, messages:[user]}), 聚合 text_delta、error 事件按 reason=aborted/errorMessage 分流、result() stopReason 复核 + 文本块兜底聚合；空结果抛 PROMPT_ENHANCEMENT_EMPTY。**与 PI 的差异**：PI 在 Electron main 跑 agent-runtime 并带限流/瞬态重试梯子；本方渲染层直连，失败如实报错（偏差已记录）。**模型**：默认跟随 composer；设置可钉住（providerId/modelId），钉住不可用回退 composer。
+  - **设置**：settings.json "promptEnhancement" 键（customTemplate/userTemplate/providerId/modelId/thinkingLevel）；设置页新「提示词增强」tab（模板编辑器含 {{draft}} 校验/插入占位符/恢复默认 + 保存时模板与默认完全一致自动清空覆盖对齐 PI + 钉住模型下拉（全部已启用服务商模型，孤儿钉住提示回退）+ 推理等级行）。
+  - **E2E（真实模型链路）**：草稿「帮我搞一下那个东西」→ 点 ✨ → 增强中转圈 → 真实模型返回具体化提示词（对象/期望结果/验收标准——few-shot 教导行为）→ 撤销按钮出现 → 撤回还原原文 → 斜杠命令禁用 ✓。tsc 0 + 222 前端测试全绿（新增 5 用例：模板渲染/校验/回退/清洗）。

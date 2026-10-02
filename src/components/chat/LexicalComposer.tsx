@@ -21,6 +21,9 @@ import { ContextUsageIndicator } from "./ContextUsageIndicator";
 import { useComposerStt, type SttComposerHandle } from "../../lib/stt/useComposerStt";
 import { desktopSttTransport } from "../../lib/stt/desktopSttTransport";
 import { isProviderConfigured, loadSttSettings, type SttSettings } from "../../lib/stt/settings";
+import { enhancePromptDraft } from "../../lib/promptEnhancement/enhance";
+import { loadPromptEnhancementSettings, type PromptEnhancementSettings } from "../../lib/promptEnhancement/settings";
+import type { ProviderConfig } from "../../lib/providers/modelFactory";
 import { toast } from "../lw/ui/toast";
 import type { ContextUsageData } from "../../lib/chat/contextUsage";
 import { useAppStore } from "../../store/useAppStore";
@@ -47,6 +50,8 @@ import {
   ShieldAlert,
   Mic,
   Loader2,
+  Sparkles,
+  Undo2,
 } from "lucide-react";
 import { MOCK_PROJECTS } from "../sidebar/WorkspaceSidebar";
 import {
@@ -352,6 +357,99 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     },
   });
 
+  // ---- 提示词增强（移植 PI-Desktop useComposerSubmit.enhancePrompt，一次性非流式）----
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhancementUndo, setEnhancementUndo] = useState<string | null>(null);
+  const peSettingsRef = useRef<PromptEnhancementSettings | null>(null);
+  const enhanceTokenRef = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void loadPromptEnhancementSettings().then((loaded) => {
+        if (cancelled) return;
+        peSettingsRef.current = loaded;
+      });
+    };
+    refresh();
+    window.addEventListener("reinagent-prompt-enhancement-settings-changed", refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("reinagent-prompt-enhancement-settings-changed", refresh);
+    };
+  }, []);
+
+  const buildEnhancementConfig = (pid: string, mid: string): ProviderConfig | null => {
+    const item = providers.find((pp) => pp.id === pid);
+    if (!item || !item.enabled) return null;
+    const model = item.models.find((mm) => mm.id === mid);
+    if (!model) return null;
+    return {
+      provider: item.id as ProviderConfig["provider"],
+      apiKey: item.apiKey,
+      modelId: mid,
+      baseUrl: item.baseUrl,
+      contextWindow: model.contextWindow ?? null,
+      maxOutputTokens: model.maxOutputTokens ?? null,
+      supportsImage: model.supportsImage ?? null,
+    };
+  };
+
+  const enhancePrompt = async () => {
+    const draft = text.trim();
+    if (!draft || draft.startsWith("/") || enhancing || stt.active) return;
+    const cfg = peSettingsRef.current;
+    // 钉住的增强模型是偏好而非硬性要求：不可用时回退 composer 当前模型（对齐 PI）
+    let config: ProviderConfig | null = null;
+    if (cfg?.providerId && cfg?.modelId) config = buildEnhancementConfig(cfg.providerId, cfg.modelId);
+    if (!config) config = buildEnhancementConfig(providerId, modelId);
+    if (!config) {
+      toast.error("没有可用的模型进行提示词增强");
+      return;
+    }
+    const sourceText = text;
+    const requestToken = ++enhanceTokenRef.current;
+    setEnhancing(true);
+    setEnhancementUndo(null);
+    try {
+      const enhanced = await enhancePromptDraft({
+        draft,
+        config,
+        thinkingLevel: cfg?.thinkingLevel ?? "off",
+        customTemplate: cfg?.customTemplate,
+        userTemplate: cfg?.userTemplate,
+      });
+      if (enhanceTokenRef.current !== requestToken) return; // 提交/切任务后丢弃迟到结果
+      setText(enhanced);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(enhanced.length, enhanced.length);
+      });
+      setEnhancementUndo(sourceText);
+    } catch (err) {
+      if (enhanceTokenRef.current === requestToken) {
+        toast.error("提示词增强失败：" + String(err instanceof Error ? err.message : err).slice(0, 160));
+      }
+    } finally {
+      if (enhanceTokenRef.current === requestToken) setEnhancing(false);
+    }
+  };
+
+  // 切任务使增强撤销/迟到结果失效（对齐 PI：切换会话丢弃未决增强）
+  useEffect(() => {
+    enhanceTokenRef.current += 1;
+    setEnhancementUndo(null);
+  }, [taskId]);
+
+  const undoPromptEnhancement = () => {
+    if (enhancementUndo === null) return;
+    setText(enhancementUndo);
+    setEnhancementUndo(null);
+    textareaRef.current?.focus();
+  };
+
+
   const containerRef = useRef<HTMLDivElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -405,6 +503,8 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     const trimmed = text.trim();
     if ((trimmed.length === 0 && attachments.length === 0) || isStreaming) return;
     if (stt.active) return; // 语音识别中禁止发送（对齐 LiveAgent controlsDisabled）
+    enhanceTokenRef.current += 1; // 提交使增强撤销/迟到结果失效（对齐 PI invalidatePromptEnhancement）
+    setEnhancementUndo(null);
 
     const supportsImage = currentModel?.supportsImage === true;
     const { payload, imageInputs } = await buildOutgoingPayload(trimmed, attachments, supportsImage);
@@ -1296,6 +1396,30 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             })()}
           </div>
 
+          {/* ✨ 提示词增强：一次性改写草稿（空/斜杠命令/语音中/增强中禁用）；原文可一键撤回 */}
+          <button
+            type="button"
+            onClick={() => void enhancePrompt()}
+            disabled={!text.trim() || text.trim().startsWith("/") || enhancing || stt.active}
+            title={t("enhancePromptTitle")}
+            className={`p-1.5 rounded-lg transition-colors flex items-center justify-center cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+              enhancing
+                ? "text-[var(--status-warn)]"
+                : "hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            {enhancing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          </button>
+          {enhancementUndo !== null ? (
+            <button
+              type="button"
+              onClick={undoPromptEnhancement}
+              title={t("enhanceUndoTitle")}
+              className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
+            >
+              <Undo2 className="w-4 h-4" />
+            </button>
+          ) : null}
           {/* 麦克风：点击开始/停止语音识别（未配置引导去设置） */}
           <button
             type="button"
