@@ -997,3 +997,40 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
     - **browser_view 新增 screenshot 动作（多模态）**：Rust `browser_screenshot` 经 `Webview::with_webview` 拿 PlatformWebview.controller()（windows 直接返回带类型接口，无需 from_abi）→ CDP `Page.captureScreenshot`（jpeg q60）→ base64 → 工具返回 **image content block**（pi-ai ToolResultMessage 原生支持 Text|Image content）。⚠️ 需要**视觉模型**才有效（非视觉模型 + 图片块网关断连，见 error-raw-display 条目）。
     - **⚠️ 关键坑**：tauri unstable 多 webview 下 `get_webview_window("main")` 返回 None（add_child 的子 webview 不注册为 WebviewWindow 实体）——所有 browser 命令统一 `get_window("main")` + `get_webview(label)`；webview2-com completed handler 闭包必须返回 `Result<(), windows_core::Error>`（末尾 Ok(())）。
     - **验证**：子 WebView 自带 CDP target（同调试端口）——Page.captureScreenshot 72KB jpeg ✓、elements 脚本实抓 bing 40 元素带唯一选择器 ✓；355 测试 + tsc 0 + cargo 绿。
+  - **助手页（主对话人设预设）✅（2026-10-01 用户定稿：与子智能体互补——子智能体=委派工，助手=主对话人设）**：
+    - **数据层 `lib/assistants/assistantDefs.ts`**：`~/.ReinAgent/assistants/<id>.md`（frontmatter name/description/model?/thinkingLevel? + 正文=人设指令，32KB/32 个上限）；内置 4 预设（general=无人设缺省、coder 代码专家、writer 文档写手、translator 翻译官）不可删；用户自定义同名遮蔽内置；任务绑定存 kv `reinagent-task-assistant`。
+    - **运行时**：runAgentTurn 收 `assistantId` → loadAssistantCatalog 查 def → 人设段（`# Assistant Persona: name` + 描述 + 正文）**插入默认 system prompt 前部**（工具/安全段保留，非替换）；general/查无跳过。⚠️ buildTurnOptions 的 deps 必须加 `activeTask?.assistantId`——toolPolicies 等引用在纯 assistantId 更新时不变，闭包 stale 导致人设不注入（首测踩中）。
+    - **切换链路**：助手页「应用」与工作台顶栏 AssistantChip（任务标题旁）都走 updateTaskAssistant（记录 assistantId + 采用模型钉选）；任务持久化 JSON.stringify(t) 自动带 assistantId。
+    - **E2E**：真模型验证——切「代码专家」后让模型复述系统提示词，回复精确引用了助手人设描述 ✓；355+4 测试全绿。
+  - **⚠️ 下拉框不自动关闭真因：lw Select 半受控缺陷 ✅（2026-10-01）**：
+    - **症状**：助手编辑器内所有下拉框（思考等级 Select / ModelPicker DropdownMenu）点选后弹层不关、ESC 无效、点外部也不关。用户多次反馈。
+    - **真因**：lw select.tsx Root 把 `open` prop（调用方未传 = undefined）直接透传 PopoverPrimitive.Root → **非受控模式，开/关由 Radix 内部状态管理**；选项点击的 `root.setOpen(false)` 只更新包装层 `internalOpen`，永远碰不到 Radix 内部状态 → 弹层关不上。外点关闭走 Radix 原生 dismiss 路径不受影响（混合表现：外点能关、选中不关）。
+    - **修复（一行）**：Root 改半受控 `open={open ?? internalOpen}`——未受控时用包装层状态驱动 Radix。全局 lw Select 全部修复（记忆抽屉/MCP/自动化/子智能体/助手编辑器）。
+    - **验证**：OS 级真实鼠标（mouse_event）——Select 打开 7 options ✓、点外部关闭 ✓、点选 high 后 triggerText=high + 弹层关 ✓。**⚠️ E2E 坑**：CDP 合成 `.click()` 驱不动 Radix 触发器（需真实 OS mouse_event）；GDI 截屏会被前景的 ZCode 窗口遮挡（SetForegroundWindow 置前再截）。
+  - **⚠️ 启动闪屏变点击盾真因（引发「应用按钮点不动/下拉框关不上」报告）**：startup-ready 类在 **rAF** 里添加——窗口被遮挡时 Chromium 节流 rAF（无绘制帧），类永不添加 → `#loading`（z 999999 全屏 PE:auto）变成透明点击盾吃掉一切点击。**修复**：rAF 保留 + setTimeout 300ms 兜底（定时器不受绘制节流）。当前实例已即时解卡（CDP 加类）。⚠️ 教训：CDP Page.reload 在窗口被遮挡时重启页面会稳定复现此状态——自动化验证前先检查 startup-ready。
+  - **⚠️ 弹层关不掉·终局真因：@utility 内嵌 @keyframes 不提升 → Radix Presence 挂死 ✅（2026-10-02，推翻上条「外点能关」结论）**：
+    - **症状（全量）**：所有 Radix 弹层（lw Select popover、ModelPicker DropdownMenu、Dialog）**选中不关、ESC 不关、点外部也不关**——三条关闭路径全灭。上一条「外点能关、选中不关」的归因不完整：semi-controlled 修复是必要非充分。
+    - **真因（证据链）**：`global.css` 里 `@keyframes tw-enter/tw-exit` 嵌套在 `@utility animate-in/out` **内部**——Tailwind v4 不会把 @utility 内嵌的 @keyframes 提升进产物 → 产物里 `animation: tw-exit 150ms` 引用了不存在的 keyframes → **动画永不运行 → animationend 永不触发 → Radix Presence 等 animationend 卸载节点 = 永远挂着**。运行时证据：选中后 `aria-expanded=false`、`data-state="closed"`（Radix 状态已正确翻转！），但节点 `getAnimations()` 为空、computed animationName=tw-exit、keyframesProbe 全 stylesheet 搜不到 → 节点 opacity 1 + pointer-events auto 视觉常驻。且挂死的弹层作为顶层 DismissableLayer 还会**吞掉 Dialog 的 ESC**（第二层永远关不掉第一层收不到）。
+    - **修复**：`@keyframes tw-enter/tw-exit` 提升到 global.css 顶层（`@utility animate-in/out` 只留 animation 简写）。一处修复全局愈合（Select/DropdownMenu/Dialog/Toast 全部）。
+    - **验证（CDP 真实鼠标）**：选中 low → 弹层关 + trigger=low ✓；ESC → 只关弹层 Dialog 保留 ✓；外点 → 只关弹层 ✓；ModelPicker 搜索过滤选中 → 关 + trigger 更新 ✓。
+    - **⚠️ 教训**：① Radix「关不掉」类问题先查 `data-state` 是否翻转：翻转了=渲染/动画层挂死（查 getAnimations + keyframes 是否真进产物），没翻转=状态接线断；② **Vite dev server 文件监听会死**——磁盘改完 Page.reload 拿到的仍是旧 transform（模块图缓存不失效），今天为此绕了远路（先误判 bundle 陈旧重启了整个 tauri dev 栈），诊断 bundle 新旧必须看**内容特征**（grep transform 产物）而非 mtime。
+  - **助手作用域语义定稿 ✅（2026-10-02 用户拍板）：全局默认 vs 任务绑定**：
+    - **语义**：无活动任务时「应用」/chip 选择 = **设为全局默认助手**（对后续未单独设置的新任务生效）；任务内选择 = **任务作用域**（持久化在任务记录，该任务以后默认用它）。解析顺序：`task.assistantId ?? globalDefault`。
+    - **响应式收口**：kv `reinagent-assistant-default` 读写统一收进 useAppStore——新字段 `globalDefaultAssistantId`（初值 hydrate 自 kv）+ `setGlobalDefaultAssistant` action（kv 写 + set 同步）；assistantDefs.ts 只导出 `KV_ASSISTANT_DEFAULT` 键名（get/setGlobalDefaultAssistantId 已删）。此前 kv 直写不触发渲染导致 chip 徽标滞后的缺口由此闭合。旧键 `reinagent-draft-assistant`（草稿补绑方案）废弃。
+    - **顶栏 chip 常显**：原先 `{activeTask ? <AssistantChip/> : null}` ——草稿态整个不渲染（「chip 不显示翻译官」首因）；改常显，草稿态显示全局默认。
+    - **AssistantChip 目录加载时机**：catalog 原先仅在弹层 open 时加载 → 未打开过时 `defs.find(assistantId)` 恒空、label 永远回退「通用助手」；改挂载即加载（loadAssistantCatalog 自带 5s 缓存）。
+    - **E2E（重启后的干净栈）**：草稿态应用代码专家 → store= coder + chip 即时「代码专家」✓；恢复 general → chip「通用助手」✓；kv 重启水合 ✓。tsc 0；测试 199 绿（providers 3 败为**存量**问题：node 24 不解析 subagentRunner.ts 的 `.js` 尾缀 specifier → subagentRegistry，stash 验证干净 HEAD 同样 3 败，与本次无关）。
+  - **⚠️ 作用域显示脱节修复（2026-10-02 用户报告「任务内切助手，全局也跟着切」）**：
+    - **取证**：store/kv/UI 全旅程 CDP 实测（任务内 chip 切换 → task.assistantId 变、globalDefaultAssistantId 与 kv 纹丝不动）——**状态层从不泄漏**。真缺陷是**显示回退错误**：chip 与助手页对「未绑定助手的任务」硬编码回退 `GENERAL_ASSISTANT_ID`，而运行时 buildTurnOptions 对未绑定任务注入的是**全局默认助手**的人设 → 设过全局默认后，新任务 chip 显示「通用助手」实际却跑全局默认人设，显示与行为脱节。
+    - **修复**：chip 与助手页「当前生效助手」统一为 `activeTask?.assistantId ?? globalDefaultAssistantId`（与运行时解析严格一致，App.tsx 的 GENERAL_ASSISTANT_ID import 随之删除）。
+    - **作用域标识（助手页）**：任务模式徽标改「任务使用中」（brand 高亮）；全局默认行恒显灰底「全局默认」徽标（Globe 图标）；草稿态按钮语义化——非默认行「设为全局默认」、默认行禁用显示「全局默认」、任务模式照旧「应用」。i18n：assistantApplyGlobal / assistantActiveTaskBadge / assistantGlobalBadge（assistantActiveBadge 废除）。
+    - **E2E 五点全过**：未绑定任务 chip=全局默认 ✓；任务内切翻译官 → chip=翻译官 + global=coder 不动 ✓；任务页「任务使用中」徽标 ✓；回草稿 chip=代码专家（全局未被影响）✓；草稿页「全局默认/设为全局默认」按钮语义 ✓。tsc 0 + 199 测试绿。
+  - **作用域入口收敛定稿（2026-10-02 用户拍板）：助手页只管全局默认**：
+    - **规则**：助手页（含任务激活时）只能设置全局默认（applyGlobal → setGlobalDefaultAssistant，不再采用模型钉选）；任务作用域唯一入口 = 聊天页任务名旁 AssistantChip 下拉（updateTaskAssistant，任务记录持久化=记忆）。
+    - **UI**：助手页删除「应用/任务使用中」按钮与徽标——所有行统一「设为全局默认」，当前默认行禁用显示「全局默认」+ Globe 徽标；工具条下加常驻提示行（assistantPageHint：全局默认作用域说明 + 指引去聊天页切任务助手）。i18n 删 assistantApply / assistantActiveTaskBadge。
+    - **草稿态 chip 语义不变**：无任务时下拉选择 = 设全局默认（用户原始规格「下一个任务默认的助手」）。
+    - **E2E**：任务内（绑定翻译官）页面点代码专家「设为全局默认」→ global=coder、task.assistantId=translator 不动 ✓；chip 仍翻译官 ✓；草稿 chip=代码专家 ✓；页面行语义（全局默认禁用/设为全局默认）✓；提示行可见 ✓。tsc 0 + 199 测试绿。
+  - **⚠️ 任务内选不了「通用助手」修复（2026-10-02 用户报告：选完自动变回代码专家）**：
+    - **根因**：`updateTaskAssistant` 把 `assistantId === "general"` 转成 `undefined`（当作清除绑定）→ chip 显示走 `activeTask?.assistantId ?? globalDefaultAssistantId` 回退到全局默认（恰为代码专家）→ 显式选择「通用助手」被吞、界面弹回全局默认。**「通用助手（无人设）」与「未绑定（跟随全局默认）」是两个语义，被混为一谈**。
+    - **修复**：显式选择一律按任务记忆——`assistantId` 原样存储（含 "general"）；仅「从未选择过」（undefined，旧任务/新任务）回退全局默认。运行时无需改（runAgentTurn:460 `assistantId !== "general"` 本就跳过人设注入）。
+    - **E2E**：全局=代码专家时未绑定任务 chip=代码专家 → chip 选通用助手 → chip 保持「通用助手」+ task.assistantId="general" 持久化 + 全局不动 + 切走切回仍通用 ✓。199 测试绿。

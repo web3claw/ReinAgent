@@ -1,12 +1,13 @@
 import { create } from "zustand";
-import { kvGet, kvSet, kvSetJSON, getTaskListCached, syncTasks } from "../lib/storage/db";
+import { kvGet, kvSet, kvGetJSON, kvSetJSON, getTaskListCached, syncTasks } from "../lib/storage/db";
 import { destroyTask } from "../lib/chat/conversationPool";
+import { KV_ASSISTANT_DEFAULT } from "../lib/assistants/assistantDefs";
 
 export type ThemeMode = "dark" | "light";
 export type LocaleMode = "zh-CN" | "en-US";
 /** workbench=聊天工作台 / settings=设置 / automations=自动化定时任务 /
  *  skills / mcp / memory=资源中心页（照抄 LiveAgent resource-hub 导航） */
-export type ViewMode = "workbench" | "settings" | "automations" | "skills" | "mcp" | "memory";
+export type ViewMode = "workbench" | "settings" | "automations" | "assistants" | "skills" | "mcp" | "memory";
 export type ThinkingLevel = "off" | "default" | "low" | "medium" | "high" | "xhigh" | "max";
 /** 审批模式（对齐 ZCode 用户可切面）：plan=计划模式 ask=变更前确认 edit=自动编辑 full=完全访问。 */
 export type ApprovalMode = "plan" | "ask" | "edit" | "full";
@@ -26,11 +27,14 @@ export interface AppTask {
   approvalMode?: ApprovalMode;
   /** 工具级审批策略（工具名 → allow/ask/deny）；未配置的工具回退审批模式默认。 */
   toolPolicies?: Record<string, "allow" | "ask" | "deny">;
+  /** 当前助手（人设预设）；缺省/缺省值 general = 无定制。切助手时已采用其模型/思考/审批预设。 */
+  assistantId?: string;
 }
 
 interface AppState {
   theme: ThemeMode;
   locale: LocaleMode;
+  globalDefaultAssistantId: string;
   isTerminalOpen: boolean;
   isSettingsOpen: boolean;
   isSidebarOpen: boolean;
@@ -66,8 +70,10 @@ interface AppState {
     approvalMode?: ApprovalMode
   ) => string;
   setActiveTaskId: (id: string | null) => void;
+  setGlobalDefaultAssistant: (id: string) => void;
   updateTaskTitle: (id: string, title: string) => void;
   updateTaskModel: (id: string, providerId: string, modelId: string) => void;
+  updateTaskAssistant: (id: string, assistantId: string, providerId?: string, modelId?: string) => void;
   updateTaskThinkingLevel: (id: string, level: ThinkingLevel) => void;
   updateTaskApprovalMode: (id: string, mode: ApprovalMode) => void;
   updateTaskToolPolicy: (id: string, toolName: string, policy: "allow" | "ask" | "deny" | null) => void;
@@ -188,6 +194,14 @@ const getInitialThinkingLevel = (): ThinkingLevel => {
   return "default";
 };
 
+const getInitialGlobalAssistant = (): string => {
+  if (typeof window !== "undefined") {
+    const saved = kvGetJSON<string | null>(KV_ASSISTANT_DEFAULT);
+    if (typeof saved === "string" && saved) return saved;
+  }
+  return "general";
+};
+
 const getInitialApprovalMode = (): ApprovalMode => {
   if (typeof window !== "undefined") {
     const saved = kvGet("reinagent-approval-mode");
@@ -236,6 +250,7 @@ export const useAppStore = create<AppState>((set) => ({
   codeViewerSource: null,
   isSidebarOpen: getInitialSidebarOpen(),
   currentView: "workbench",
+  globalDefaultAssistantId: getInitialGlobalAssistant(),
   thinkingLevel: getInitialThinkingLevel(),
   approvalMode: getInitialApprovalMode(),
   selectedProject: initialActiveTask ? initialActiveTask.project : null,
@@ -301,6 +316,12 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
 
+  /** 全局默认助手（无任务草稿态点「应用」= 设为全局默认；响应式，驱动顶栏 chip 即时刷新）。 */
+  setGlobalDefaultAssistant: (id) => {
+    kvSetJSON(KV_ASSISTANT_DEFAULT, id === "general" ? null : id);
+    set({ globalDefaultAssistantId: id });
+  },
+
   createTask: (title, project = null, providerId, modelId, thinkingLevel, approvalMode) => {
     const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newTask: AppTask = {
@@ -360,6 +381,30 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const nextTasks = state.tasks.map((t) =>
         t.id === id ? { ...t, providerId, modelId, updatedAt: Date.now() } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  /** 切换任务助手：显式选择（含 general=通用助手）一律按任务记忆；仅「从未选择过」的任务回退全局默认。 */
+  updateTaskAssistant: (id, assistantId, providerId, modelId) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              assistantId,
+              ...(providerId && modelId ? { providerId, modelId } : {}),
+              updatedAt: Date.now(),
+            }
+          : t
       );
       if (typeof window !== "undefined") {
         try {
@@ -531,6 +576,7 @@ export const useAppStore = create<AppState>((set) => ({
         projects: getInitialProjects(),
         thinkingLevel: getInitialThinkingLevel(),
         approvalMode: getInitialApprovalMode(),
+        globalDefaultAssistantId: getInitialGlobalAssistant(),
       };
     }),
   setTerminalOpen: (open) => set({ isTerminalOpen: open }),

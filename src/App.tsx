@@ -15,6 +15,8 @@ import { useAutomationStore } from "./lib/automations/store";
 import { ConversationSearchDialog } from "./components/search/ConversationSearchDialog";
 import { CommandPalette, type PaletteCommand } from "./components/chat/CommandPalette";
 import { McpHubPage } from "./components/mcp/McpHubPage";
+import { AssistantsPage } from "./components/assistants/AssistantsPage";
+import { AssistantChip } from "./components/assistants/AssistantChip";
 import { MemoryPanel } from "./components/memory/MemoryPanel";
 import { SkillsHubPage } from "./components/skills/SkillsHubPage";
 import { Toaster } from "./components/lw/ui/toaster";
@@ -99,6 +101,8 @@ export default function App() {
     activeTaskId, setActiveTaskId,
     tasks,
     createTask, updateTaskTitle, updateTaskModel, updateTaskThinkingLevel,
+    updateTaskAssistant,
+    globalDefaultAssistantId, setGlobalDefaultAssistant,
     selectedProject, setSelectedProject,
     thinkingLevel,
   } = useAppStore();
@@ -733,6 +737,7 @@ export default function App() {
       systemPrompt: DEFAULT_SYSTEM_PROMPT,
       maxSteps,
       workspaceRoot: effectiveWorkspaceRoot,
+      assistantId: activeTask?.assistantId ?? globalDefaultAssistantId,
       thinkingLevel: effectiveThinkingLevel,
       approvalMode: activeApprovalMode,
       toolPolicies: activeTask?.toolPolicies,
@@ -751,6 +756,8 @@ export default function App() {
       effectiveThinkingLevel,
       activeApprovalMode,
       activeTask?.toolPolicies,
+      activeTask?.assistantId,
+      globalDefaultAssistantId,
       currentModel?.contextWindow,
       currentModel?.maxOutputTokens,
       currentModel?.supportsImage,
@@ -1376,6 +1383,18 @@ export default function App() {
                 {activeTask?.title || t("newTask")}
               </span>
             </div>
+            {/* 当前助手 chip：显示「实际生效」的助手——任务绑定优先，未绑定任务/草稿态都回退全局默认
+                （与 buildTurnOptions 的运行时解析严格一致，禁止硬编码 GENERAL 造成显示与行为脱节） */}
+            <AssistantChip
+              assistantId={activeTask?.assistantId ?? globalDefaultAssistantId}
+              onPick={(id, providerId, modelId) => {
+                if (activeTaskId) {
+                  updateTaskAssistant(activeTaskId, id, providerId, modelId);
+                } else {
+                  setGlobalDefaultAssistant(id);
+                }
+              }}
+            />
           </div>
           <div className="flex items-center gap-2">
             {/* Git 面板入口：点击直开 Git 管理（分支/变更/历史） */}
@@ -1479,6 +1498,13 @@ export default function App() {
                 setActiveTaskId(taskId);
               }}
             />
+          ) : currentView === "assistants" ? (
+            <div className="flex-1 overflow-y-auto px-5 pt-4 sm:px-6 lg:px-8 xl:px-10 flex justify-center items-start">
+              <div className="w-full max-w-1320px pb-6">
+                <h2 className="text-xl font-semibold mb-4">{t("assistantNav")}</h2>
+                <AssistantsPage />
+              </div>
+            </div>
           ) : currentView === "mcp" ? (
             <McpHubPage />
           ) : currentView === "memory" ? (

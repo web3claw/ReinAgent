@@ -264,6 +264,7 @@ export function createConversationController(deps) {
               systemPrompt: options.systemPrompt,
               maxSteps: options.maxSteps,
               workspaceRoot: options.workspaceRoot,
+              assistantId: options.assistantId,
               signal: controller.signal,
               thinkingLevel: options.thinkingLevel,
               approvalMode: options.approvalMode,
