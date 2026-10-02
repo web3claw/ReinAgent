@@ -9,11 +9,11 @@
  * - 无清单 / 清单为空 → 不渲染（No-Fallback：不显示假进度）。
  */
 
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 // ⚠️ 必须用 lw 的 Tooltip（内置 TooltipProvider）——直接用 radix primitive 会因缺
 // Provider 崩掉整棵 React 树（本项目 2026-09-27 有过同类事故；Tauri 端实测复现）
 import { Tooltip, TooltipContent, TooltipTrigger } from "../lw/ui/tooltip";
-import { Check, Circle, ChevronRight } from "lucide-react";
+import { Check, Circle, ChevronRight, X } from "lucide-react";
 import type { TimelineEntry } from "../../lib/chat/conversationModel";
 import { extractLatestTodos, todoProgress as summarizeTodos } from "../../lib/chat/todoProgress";
 import { useTranslation } from "../../i18n";
@@ -24,11 +24,18 @@ const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 export function TaskProgressBar({ messages }: { messages: TimelineEntry[] }) {
   const { t } = useTranslation();
   const todos = useMemo(() => extractLatestTodos(messages), [messages]);
-  if (!todos) return null;
+  const todosKey = useMemo(() => JSON.stringify(todos), [todos]);
+  // 手动关闭：仅隐藏当前胶囊；清单数据一变（新一轮 todo 更新）即恢复显示
+  const [dismissed, setDismissed] = useState(false);
+  useEffect(() => {
+    setDismissed(false);
+  }, [todosKey]);
+  if (!todos || dismissed) return null;
   const { total, done, current, percent } = summarizeTodos(todos);
   const allDone = done === total;
 
   return (
+    <div className="mb-1.5 inline-flex max-w-full items-center gap-1">
     <Tooltip delayDuration={200}>
       <TooltipTrigger asChild>
         <button
@@ -104,5 +111,14 @@ export function TaskProgressBar({ messages }: { messages: TimelineEntry[] }) {
           </div>
       </TooltipContent>
     </Tooltip>
+    <button
+      type="button"
+      title={t("todoDismiss")}
+      onClick={() => setDismissed(true)}
+      className="rounded p-0.5 text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
+    >
+      <X className="size-3" />
+    </button>
+    </div>
   );
 }
