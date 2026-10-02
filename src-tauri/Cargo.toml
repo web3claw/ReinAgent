@@ -52,6 +52,7 @@ tempfile = "3"
 dirs = "6"
 toml = "0.9"
 tokio = { version = "1", features = ["rt", "time"] }
+axum = { version = "0.8.9", features = ["ws"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 webview2-com = "0.39"

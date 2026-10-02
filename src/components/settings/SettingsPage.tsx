@@ -30,12 +30,14 @@ import {
   ChartColumn,
   Download,
   Mic,
-  Sparkles
+  Sparkles,
+  Smartphone
 } from 'lucide-react';
 import { McpHubPage } from '../mcp/McpHubPage';
 import { ImportSection } from './ImportSection';
 import { SttSection } from './SttSection';
 import { PromptEnhancementCard } from './PromptEnhancementCard';
+import { RemoteAccessSection } from './RemoteAccessSection';
 import { SkillsHubPage } from '../skills/SkillsHubPage';
 import { MemoryPanel } from '../memory/MemoryPanel';
 
@@ -60,7 +62,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
   const [proxySavedNote, setProxySavedNote] = useState(false);
   const [noProxySavedNote, setNoProxySavedNote] = useState(false);
   const [hideToTray, setHideToTray] = useState(true);
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'skills' | 'mcp' | 'memory' | 'usage' | 'hooks' | 'plugins' | 'import' | 'stt' | 'enhance' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'skills' | 'mcp' | 'memory' | 'usage' | 'hooks' | 'plugins' | 'import' | 'stt' | 'enhance' | 'remote' | 'about'>('general');
   // 外部定位（侧栏插件图标 → plugins）：initialTab 变化时跟随切换
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab as typeof activeTab);
@@ -80,6 +82,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
     { id: 'import', label: t('navImport'), icon: Download },
     { id: 'stt', label: t('sttTitle'), icon: Mic },
     { id: 'enhance', label: t('enhanceNav'), icon: Sparkles },
+    { id: 'remote', label: t('remoteTitle'), icon: Smartphone },
     { id: 'about', label: t('settingsAbout'), icon: Info },
   ] as const;
 
@@ -131,6 +134,12 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
               modelOptions={memoryModelOptions ?? []}
             />
           )}
+        </div>
+      ) : activeTab === 'remote' ? (
+        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 sm:px-6 lg:px-8 xl:px-10">
+          <div className="mx-auto w-full max-w-1320px">
+            <RemoteAccessSection />
+          </div>
         </div>
       ) : activeTab === 'enhance' ? (
         <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 sm:px-6 lg:px-8 xl:px-10">

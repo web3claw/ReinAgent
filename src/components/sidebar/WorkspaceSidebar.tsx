@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { getVersion } from '@tauri-apps/api/app';
+import { invoke } from '@tauri-apps/api/core';
+import { listen } from '@tauri-apps/api/event';
 import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
@@ -130,12 +132,15 @@ export function WorkspaceSidebar({
   onNewTask,
   onOpenSearch,
   onOpenPlugins,
+  onOpenRemoteAccess,
 }: {
   onNewTask?: (project?: string | null) => void;
   /** 打开全局搜索弹窗（放大镜按钮；对齐 LiveAgent ConversationSearchDialog 入口） */
   onOpenSearch?: () => void;
   /** 底部插件图标：打开设置并直落插件 tab */
   onOpenPlugins?: () => void;
+  /** 底部显示器图标：打开设置并直落远程访问 tab */
+  onOpenRemoteAccess?: () => void;
 }) {
   const { t } = useTranslation();
   const isSidebarOpen = useAppStore(state => state.isSidebarOpen);
@@ -143,6 +148,34 @@ export function WorkspaceSidebar({
   const theme = useAppStore(state => state.theme);
   const toggleTheme = useAppStore(state => state.toggleTheme);
   const locale = useAppStore(state => state.locale);
+  // 远程访问状态（对齐 ZCode runtimeDot 语义）：enabled=服务开启、clients=已连接设备数
+  const [remoteEnabled, setRemoteEnabled] = useState(false);
+  const [remoteClients, setRemoteClients] = useState(0);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void invoke<{ connectedClients: number; enabled: boolean }>('remote_server_status').then((st) => {
+        if (!cancelled) {
+          setRemoteEnabled(!!st.enabled);
+          setRemoteClients(st.connectedClients ?? 0);
+        }
+      }).catch(() => undefined);
+    };
+    refresh();
+    const un = listen<{ connectedClients?: number }>('remote-server:status', () => refresh());
+    return () => {
+      cancelled = true;
+      void un.then((fn) => fn());
+    };
+  }, []);
+  // 对齐 ZCode runtimeDot：状态→颜色。未开启=不显示、开启无设备=橙、有设备=绿
+  // （颜色直接上图标；tooltip 文案随状态变化）
+  const remoteTooltip =
+    remoteClients > 0
+      ? `远程访问（${remoteClients} 台设备已连接）`
+      : remoteEnabled
+        ? '远程访问（服务已开启）'
+        : '远程访问（未开启）';
   const toggleLocale = useAppStore(state => state.toggleLocale);
   const startNewTaskDraft = useAppStore(state => state.startNewTaskDraft);
   const selectedProject = useAppStore(state => state.selectedProject);
@@ -231,8 +264,25 @@ export function WorkspaceSidebar({
           <FooterIconButton tooltip={t('navPlugins')} onClick={onOpenPlugins}>
             <Plug className="w-4 h-4" />
           </FooterIconButton>
-          <FooterIconButton>
-            <Monitor className="w-4 h-4" />
+          <FooterIconButton tooltip={remoteTooltip} onClick={onOpenRemoteAccess}>
+            <span className="relative inline-flex">
+              {/* 图标颜色跟随状态：未开启=默认灰、开启=橙、有设备连接=绿（对齐 ZCode runtimeDot） */}
+              <Monitor
+                className={`w-4 h-4 ${
+                  remoteClients > 0
+                    ? 'text-[var(--status-ok)]'
+                    : remoteEnabled
+                      ? 'text-[var(--status-warn)]'
+                      : ''
+                }`}
+              />
+              {/* 连接数字角标（仅有设备时显示） */}
+              {remoteClients > 0 ? (
+                <span className="absolute -top-1.5 -right-1.5 min-w-3.5 rounded-full bg-[var(--status-ok)] px-0.5 text-center text-[9px] font-bold leading-3.5 text-black">
+                  {remoteClients}
+                </span>
+              ) : null}
+            </span>
           </FooterIconButton>
         </div>
         {versionText && (

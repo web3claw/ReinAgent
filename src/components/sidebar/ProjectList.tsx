@@ -359,19 +359,6 @@ export function ProjectList({
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  // Filter tasks that do not belong to a specific sub-project and sort pinned tasks on top
-  const globalTasks = tasks
-    .filter((task) => !task.project)
-    .sort((a, b) => {
-      // Pinned tasks go first
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      // Secondary: sort by updatedAt or createdAt desc
-      const timeA = a.updatedAt || a.createdAt;
-      const timeB = b.updatedAt || b.createdAt;
-      return timeB - timeA;
-    });
-
   // Consolidate userProjects and propProjects
   const allProjectItems = [
     ...userProjects.map((p) => {
@@ -394,6 +381,23 @@ export function ProjectList({
         children: pg.children,
       })),
   ];
+
+  // 「任务」区 = 无项目任务 + 项目组未收录的任务（project 指向不在 projects 列表里的
+  // 路径，如导入会话的原始项目路径）——否则数据存在但侧栏永不渲染（隐形任务）。
+  const groupedProjectTasks = new Set(
+    allProjectItems.flatMap((pg) => pg.tasks.map((t) => t.id)),
+  );
+  const globalTasks = tasks
+    .filter((task) => !task.project || !groupedProjectTasks.has(task.id))
+    .sort((a, b) => {
+      // Pinned tasks go first
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      // Secondary: sort by updatedAt or createdAt desc
+      const timeA = a.updatedAt || a.createdAt;
+      const timeB = b.updatedAt || b.createdAt;
+      return timeB - timeA;
+    });
 
   // Render Projects Section JSX
   const renderProjectsSection = () => (

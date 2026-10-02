@@ -18,6 +18,7 @@ mod hub_http;
 mod web_tools;
 mod usage_stats;
 mod stt;
+mod remote_server;
 mod fs_base64;
 mod fs_tree;
 mod git_panel;
@@ -91,6 +92,8 @@ pub fn run() {
             .plugin(tauri_plugin_updater::Builder::new().build()),
     )
     .setup(|app| {
+        // 远程访问服务：恢复持久化配置（开启则启动监听）
+        remote_server::restore_on_startup(app.handle());
         // 单实例：保存本实例句柄（二次启动回调聚焦用）
         let _ = SINGLE_APP_HANDLE.set(app.handle().clone());
         // 恢复「关闭时隐藏到托盘」设置（缺省开启）
@@ -143,6 +146,15 @@ pub fn run() {
             fs_cmd::fs_import_pasted_file,
             fs_cmd::fs_read_attachment_base64,
             fs_cmd::path_home_dir,
+            remote_server::remote_server_status,
+            remote_server::remote_server_config,
+            remote_server::remote_bridge_state,
+            remote_server::remote_bridge_approval,
+            remote_server::remote_bridge_snapshot,
+            remote_server::remote_bridge_notify_tasks,
+            remote_server::remote_bridge_answer_snapshot,
+            remote_server::remote_bridge_answer_state,
+            remote_server::remote_bridge_send_rejected,
             stt::stt_start,
             stt::stt_send_audio,
             stt::stt_stop,

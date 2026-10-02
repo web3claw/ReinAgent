@@ -1064,3 +1064,29 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **执行（enhance.ts）**：渲染层 one-shot——buildModel + getStreamFnForApi.streamSimple（与 runAgentTurn 同传输层），normalizeContext({systemPrompt, messages:[user]}), 聚合 text_delta、error 事件按 reason=aborted/errorMessage 分流、result() stopReason 复核 + 文本块兜底聚合；空结果抛 PROMPT_ENHANCEMENT_EMPTY。**与 PI 的差异**：PI 在 Electron main 跑 agent-runtime 并带限流/瞬态重试梯子；本方渲染层直连，失败如实报错（偏差已记录）。**模型**：默认跟随 composer；设置可钉住（providerId/modelId），钉住不可用回退 composer。
   - **设置**：settings.json "promptEnhancement" 键（customTemplate/userTemplate/providerId/modelId/thinkingLevel）；设置页新「提示词增强」tab（模板编辑器含 {{draft}} 校验/插入占位符/恢复默认 + 保存时模板与默认完全一致自动清空覆盖对齐 PI + 钉住模型下拉（全部已启用服务商模型，孤儿钉住提示回退）+ 推理等级行）。
   - **E2E（真实模型链路）**：草稿「帮我搞一下那个东西」→ 点 ✨ → 增强中转圈 → 真实模型返回具体化提示词（对象/期望结果/验收标准——few-shot 教导行为）→ 撤销按钮出现 → 撤回还原原文 → 斜杠命令禁用 ✓。tsc 0 + 222 前端测试全绿（新增 5 用例：模板渲染/校验/回退/清洗）。
+
+- **运行中后台工作徽标 + 管理浮层（2026-10-02，对齐 ZCode ConversationBackgroundWorkTrigger + ConversationStatusPanel 最小移植；用户确认「徽标+浮层」范围）**：
+  - **UI**：composer 工具条审批模式下拉右侧新 BackgroundWorkTrigger——running 的终端/子代理按类型显示「图标+计数」（SquareTerminal/Bot），全零整个隐藏；点击展开浮层（w-80，absolute bottom-full）：分区列运行项（图标+描述+尾部输出摘要+秒针时长+停止按钮），终端行点击跳终端面板，子代理行点击跳右侧面板 subagents 视图；点外部关闭。
+  - **数据层（lib/chat/backgroundWork.ts）**：两个视图共用同一真值——子代理 = subagentRegistry running 记录（前台+后台都算，stoppable=background；模块级订阅一次 subscribeSubagentRuns 归并进联合 state，**不放 hook 体**（渲染期副作用违纪））；终端 = bg_list() running 任务（无推送事件 → 有订阅者才启的 1s 轮询、连续失败 3 次自停、内容比对去重才 notify）。useBackgroundWork 单一 useSyncExternalStore。
+  - **范围裁剪（相对 ZCode）**：不做 workflow 类目（无对应物）、不做常驻 mini 胶囊（v1 只点击展开）、终端行点击直接跳已有终端面板（不做输出侧栏）、不做侧栏任务行摘要。
+  - **子代理停止语义（实测确认）**：stopRun → AbortController.abort() → driveRun 的 runTurn D1 桥接收束 → finishRun；**前台运行无独立 controller 如实不可停**（返回 false → toast 报错）。E2E 种子直接 registerRun 的记录没有驱动者，abort 后永不收束——这是种子假象不是 bug；真实模型 agent 工具链路才有 driveRun 收束。
+  - **E2E（真实桌面）**：bg_spawn ping → 徽标「🖥1」→ 浮层终端区+taskId+停止 → 点停止 → 徽标隐藏 ✓；种 running 子代理 → 徽标「🖥1🤖1」双图标计数 ✓、浮层两分区+描述+时长 ✓（秒针/双计数/停止链路全过）。
+  - **⚠️ 复发坑**：Vite 模块图缓存又吞了一次 HMR（磁盘有 trigger JSX、served transform 没有，Page.reload 无效）——重启 tauri dev 栈解决。与弹层 keyframes 那次同款：bundle 新旧必须 curl served 内容确认。
+  - i18n bgWork* 6 键 zh/en。tsc 0 + 222 前端测试全绿（无新增测试——纯 UI/IO 胶水层）。
+
+- **远程访问（局域网 Web 型手机远控）批 1-4 ✅（2026-10-02，用户确认中档方案）**：
+  - **架构（对齐 ZCode web-remote-replayable + LiveAgent 审批回环）**：桌面内置 axum 服务（tokio，0.0.0.0:7777 默认关）→ 手机浏览器 token 鉴权 → WS RPC 五白名单 op（list_tasks/subscribe/send/approve/stop）→ 桌面为唯一权威，会话运行时在 webview，Rust↔webview 用 Tauri 事件 + 专用命令桥（remote-bridge:need-snapshot/need-state/send/resolve/stop + remote_bridge_answer_* 命令）。
+  - **鉴权（PI 纪律）**：token 随机 UUID、Rust 只存 SHA-256（明文 kv 供设置页展示）；?token=/Bearer/Cookie 三通道；连续失败 5 次拉黑 IP 5 分钟；所有路由含静态页一律过鉴权；重置 token 踢光客户端。
+  - **UI**：设置页「远程访问」tab（开关/端口/完整 URL+二维码 qrcode npm/复制/重置 token/已连接设备数/安全文案，remote-server:status 事件实时刷新）；手机单页 remote_page.html（include_str! 内联零构建）：任务列表→会话视图（user/assistant/tool 消息卡）→底部输入条（流式中变停止键）→审批卡置顶（允许/拒绝）。
+  - **webview 桥（lib/remote/remoteBridge.ts，main.tsx 挂载即启动）**：手机发送经 App 暴露的 window.__reinagentRemoteSend（sendNow 同一 buildTurnOptions 闭包——选项与本地完全一致）；审批走 resolveApproval（与本地审批卡同源）；状态推送订阅池 subscribeTask → remote_bridge_state（200ms 节流+revision 单调，乱序丢弃）。
+  - **协议坑（E2E 抓出）**：serde enum 的 rename_all=camelCase 只作用于 tag 不作用于 variant 字段——reqId 反序列化报 missing field req_id，需 rename_all_fields=camelCase（serde 1.0.186+）；修复后 tag 又变大写（Hello）坏客户端解析 → 最终三件套：tag=op + rename_all=camelCase + rename_all_fields=camelCase。加单测 subscribe_parses_camel_case_req_id 守护。
+  - **复发坑**：Vite 模块图缓存吞 HMR 第二次发作（served transform 缺新 JSX）；Rust 级改动必须重启 dev 栈，bundle 新旧以 curl served 内容为准。
+  - **E2E（真实桌面全链路）**：手机模拟 WS 客户端 → hello（server_time）→ snapshot 含种子任务 ✓ → subscribe 收 state（revision=1）✓ → send「来自手机的问候」→ 桌面时间线收到 user 消息 ✓ → approve/stop 事件桥 ✓；HTTP 鉴权：无 token/错 token 401、对 token 200 ✓。
+  - 待办（后续批次）：增量镜像日志（LiveAgent 型断线续传）、云端中继、终端/文件远程、多设备管理页。
+  - tsc 0 + 前端 222 测试 + Rust 173 测试全绿。
+
+- **远程页面 Markdown 渲染 ✅（2026-10-02，参考 ZCode Streamdown 策略的零构建适配）**：
+  - ZCode 手机端与桌面共用 Streamdown（React 体系，shiki 高亮 + rehype-harden + remend 流式补全）；本方手机页是零构建单 HTML，采用「内联 marked.umd.js + purify.min.js」（约 75KB，src-tauri/remote_assets/，include_str! + 占位符注入 build_remote_page() 一次性组装缓存）。
+  - **照抄 ZCode 的三个策略**：① 转义优先——DOMPurify.sanitize 白名单 + ALLOWED_URI_REGEXP 只放行 https?:/mailto:/#（拦 javascript:/data:）；② 流式补全——parse 前数 ``` 围栏奇偶，未闭合补临时闭合（remend 思路），半截代码块不吞后半条消息；③ 链接加固——渲染后 querySelectorAll(a) 补 target=_blank + noopener noreferrer。用户消息保持纯文本不渲染。
+  - **样式**：assistant 消息内 h1-h4/列表/行内代码/pre 代码块（横向滚动+深底）/表格（块级横向滚动）/引用/hr 全套语义变量样式。
+  - **E2E**：served 页 92KB 含两库与渲染函数 ✓；桌面 webview iframe 实际执行页面——window.marked.parse 与 DOMPurify.sanitize 均为函数 ✓、任务列表视图正常 ✓。
