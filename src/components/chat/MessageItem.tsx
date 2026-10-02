@@ -120,14 +120,24 @@ function MessageItemImpl({
   }, [userImages, previewMap]);
 
   const handleCopy = useCallback(async () => {
+    // 错误轮次助手无正文（text 为空）——回退复制错误原文（与红色展示一致，含 hint）
+    const text =
+      message.text ||
+      [
+        message.error,
+        message.errorHint && message.errorHint !== message.error ? ` · ${message.errorHint}` : "",
+      ]
+        .filter(Boolean)
+        .join("");
+    if (!text) return;
     try {
-      await navigator.clipboard.writeText(message.text);
+      await navigator.clipboard.writeText(text);
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch {
       // 忽略复制异常
     }
-  }, [message.text]);
+  }, [message.text, message.error, message.errorHint]);
 
   if (isToolEntry(message)) {
     return <ToolCallCard entry={message} />;

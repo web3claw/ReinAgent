@@ -1090,3 +1090,9 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **照抄 ZCode 的三个策略**：① 转义优先——DOMPurify.sanitize 白名单 + ALLOWED_URI_REGEXP 只放行 https?:/mailto:/#（拦 javascript:/data:）；② 流式补全——parse 前数 ``` 围栏奇偶，未闭合补临时闭合（remend 思路），半截代码块不吞后半条消息；③ 链接加固——渲染后 querySelectorAll(a) 补 target=_blank + noopener noreferrer。用户消息保持纯文本不渲染。
   - **样式**：assistant 消息内 h1-h4/列表/行内代码/pre 代码块（横向滚动+深底）/表格（块级横向滚动）/引用/hr 全套语义变量样式。
   - **E2E**：served 页 92KB 含两库与渲染函数 ✓；桌面 webview iframe 实际执行页面——window.marked.parse 与 DOMPurify.sanitize 均为函数 ✓、任务列表视图正常 ✓。
+
+- **11148 孤儿 toolResult 修复（2026-10-02，用户报「tool calls and tool results do not match」400）**：
+  - **根因实锤**：某任务持久化历史头部（seq 0/1/2）残留 3 条孤儿 toolResult——其 toolCall 块被更早的压缩/截断删除而结果未随之删除；此后每次请求重放这 3 条 → 上游 11148「tool calls and tool results do not match」整请求 400 并建议开新会话。远程页 3 任务/桌面 2 任务是同任务侧栏「项目组外任务不渲染」缺陷（已修：任务区收录项目组未覆盖的任务）。
+  - **治本（toApiMessages 发送兜底）**：walk 时维护 declaredCalls 集合（assistant apiMessage 的 toolCall 块 id）；tool 条目的 toolCallId 配不上任何前序声明 → 该 toolResult 不上送（console.warn 计数）。正常配对完整保留（单测守护：孤儿剪除 + 正常配对保留两用例）。B-2 尾部合成结果逻辑不变。
+  - **治标（本任务数据修复）**：一次性脚本剪除头部 3 条孤儿行（conversation_sync 重写，485→482 行），复验孤儿数 0。注意：任务若在桌面打开着，池内存态可能在后续编辑时重写回孤儿——但发送已被治本兜底，无害。
+  - 测试：chat 套件 132→134（新增孤儿剪除/正常配对保留两用例）。

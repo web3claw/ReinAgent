@@ -624,6 +624,11 @@ export function toApiMessages(state) {
   // 对齐 LiveAgent stripAbortedMessagesForModelContext：中止的 assistant 连同
   // 紧随其后的 toolResult 一并剔除（否则下一次请求会因孤儿 toolCall/toolResult 400）。
   let skippingAbortedChain = false;
+  // 已声明（assistant toolCall 块）的调用 id：toolResult 必须能配到其中一个，
+  // 配不上的（压缩/截断把 toolCall 侧删了、结果残留）一律不上送——上游会以
+  // 11148「tool calls and tool results do not match」整请求 400。
+  const declaredCalls = new Set();
+  let orphanToolResultsPruned = 0;
 
   for (const message of state.messages) {
     if (message.role === "assistant" && message.status === "stopped") {
@@ -647,15 +652,34 @@ export function toApiMessages(state) {
       }
     } else if (message.role === "tool") {
       if (message.apiMessage) {
+        const callId = message.apiMessage.toolCallId;
+        if (
+          typeof callId === "string" &&
+          callId.length > 0 &&
+          !declaredCalls.has(callId)
+        ) {
+          // 孤儿 toolResult：对应 toolCall 已被压缩/截断移除。上送必被上游
+          // 以「tool calls and tool results do not match」整请求 400，跳过。
+          orphanToolResultsPruned += 1;
+          continue;
+        }
         out.push(message.apiMessage);
         sourceStatus.push(undefined);
         timestamp += 1;
       }
     } else if (message.apiMessage) {
+      for (const block of toolCallBlocks(message.apiMessage)) {
+        if (typeof block.id === "string") declaredCalls.add(block.id);
+      }
       out.push(message.apiMessage);
       sourceStatus.push(message.status);
       timestamp += 1;
     }
+  }
+  if (orphanToolResultsPruned > 0) {
+    console.warn(
+      `[conversation] toApiMessages 剪除 ${orphanToolResultsPruned} 条孤儿 toolResult（对应 toolCall 已不在历史中）`,
+    );
   }
 
   // ---- B-2：补齐未被覆盖的工具结果 ----------------------------------------
