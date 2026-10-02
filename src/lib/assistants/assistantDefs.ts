@@ -2,16 +2,17 @@
  * assistantDefs —— 助手（主对话人设预设）数据层。
  *
  * 定位与子智能体互补：子智能体是主模型的「委派工」（独立上下文跑子任务）；
- * 助手是「主对话人设」（切换后改变当前对话的系统提示词人设段 + 模型/思考/审批预设）。
+ * 助手是「主对话人设」（切换后改变当前对话的系统提示词人设段）。
+ * 助手不携带模型/推理预设——模型与推理强度一律跟随设置里的默认。
  *
- * 存储：`~/.ReinAgent/assistants/<id>.md`（frontmatter：name/description/model?/
- * thinkingLevel?/approvalMode? + 正文 = 人设指令）。与子智能体同风格，用户可手改。
+ * 存储：`~/.ReinAgent/assistants/<id>.md`（frontmatter：name/description +
+ * 正文 = 人设指令）。与子智能体同风格，用户可手改；旧文件里的 model/thinkingLevel
+ * frontmatter 读取时忽略。
  * 内置预设（general/coder/writer/translator）为编译期常量，v1 不可编辑删除；
  * 用户自定义同名遮蔽内置。
  */
 
-import { kvGetJSON, kvSetJSON } from "../storage/db";
-import { resolveWorkspacePath } from "../agent/workspace";
+import { resolveWorkspacePath } from "../agent/workspace.ts";
 
 export const ASSISTANTS_DIR_DISPLAY = "~/.ReinAgent/assistants";
 export const MAX_ASSISTANTS = 32;
@@ -19,18 +20,10 @@ export const MAX_ASSISTANT_BYTES = 32 * 1024;
 /** 默认助手 id：无人设注入，行为与未引入助手功能前完全一致。 */
 export const GENERAL_ASSISTANT_ID = "general";
 
-export type AssistantApprovalMode = "plan" | "ask" | "edit" | "full";
-
 export interface AssistantDef {
   id: string;
   name: string;
   description: string;
-  /** 模型钉选 "provider/model"；缺省跟随会话。 */
-  model?: string;
-  /** off | low | medium | high | xhigh | max；缺省跟随会话。 */
-  thinkingLevel?: string;
-  /** 缺省跟随会话/全局。 */
-  approvalMode?: AssistantApprovalMode;
   /** 人设指令（正文）。general 为空 = 无注入。 */
   prompt: string;
   builtin?: boolean;
@@ -40,8 +33,6 @@ export interface UserAssistantInput {
   id: string;
   name: string;
   description: string;
-  model?: string;
-  thinkingLevel?: string;
   prompt: string;
 }
 
@@ -95,8 +86,6 @@ export function parseAssistantDocument(raw: string): {
       id: name,
       name,
       description,
-      ...(meta.model ? { model: meta.model } : {}),
-      ...(meta.thinkingLevel ? { thinkingLevel: meta.thinkingLevel } : {}),
       prompt: body,
     },
   };
@@ -106,14 +95,9 @@ export function renderAssistantDocument(def: {
   id: string;
   name: string;
   description: string;
-  model?: string;
-  thinkingLevel?: string;
   prompt: string;
 }): string {
-  const lines = ["---", `name: ${def.id}`, `description: ${def.description}`];
-  if (def.model) lines.push(`model: ${def.model}`);
-  if (def.thinkingLevel) lines.push(`thinkingLevel: ${def.thinkingLevel}`);
-  lines.push("---", "", def.prompt.trim(), "");
+  const lines = ["---", `name: ${def.id}`, `description: ${def.description}`, "---", "", def.prompt.trim(), ""];
   return lines.join("\n");
 }
 
@@ -283,25 +267,7 @@ export async function deleteAssistantById(id: string): Promise<void> {
   invalidateAssistantCatalog();
 }
 
-// ---------- 任务绑定（kv：各任务当前助手） ----------
-
-const KV_TASK_ASSISTANT = "reinagent-task-assistant";
-
-/** taskId → assistantId（缺省 general）。 */
-export function getTaskAssistantId(taskId: string): string {
-  const map = kvGetJSON<Record<string, string>>(KV_TASK_ASSISTANT);
-  return (map && typeof map === "object" ? map[taskId] : undefined) ?? GENERAL_ASSISTANT_ID;
-}
-
-export function setTaskAssistantId(taskId: string, assistantId: string): void {
-  const map = kvGetJSON<Record<string, string>>(KV_TASK_ASSISTANT) ?? {};
-  if (assistantId === GENERAL_ASSISTANT_ID) delete map[taskId];
-  else map[taskId] = assistantId;
-  kvSetJSON(KV_TASK_ASSISTANT, map);
-}
-
-
-// ---------- 全局默认助手（无任务草稿态点「应用」= 设为全局默认；后续未单独设置的任务都用它） ----------
+// ---------- 全局默认助手（助手页「设为全局默认」= 写全局 kv；任务作用域在任务记录上） ----------
 // kv 读写统一收口在 useAppStore（响应式字段 globalDefaultAssistantId），此处只暴露键名。
 
 export const KV_ASSISTANT_DEFAULT = "reinagent-assistant-default";

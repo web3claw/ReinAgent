@@ -1,10 +1,11 @@
 /**
  * AssistantsPage —— 助手管理页（侧栏「助手」入口的全页视图）。
  *
- * 卡片列表（内置 + 自定义两组）：名称/描述/模型徽标 + 设为全局默认 +
- * 新建/编辑/删除。本页只管全局默认助手（kv，对未单独设置的任务生效）；
- * 任务作用域唯一入口是聊天页任务名旁的 AssistantChip 下拉（按任务记忆）。
- * 编辑器为居中弹窗表单（名称 slug / 描述 / 人设指令 / 模型 / 思考等级）。
+ * 卡片列表（内置 + 自定义两组）：名称/描述 + 设为全局默认 + 新建/编辑/删除。
+ * 本页只管全局默认助手（kv，对未单独设置的任务生效）；任务作用域唯一入口是
+ * 聊天页任务名旁的 AssistantChip 下拉（按任务记忆）。
+ * 助手 = 纯人设（名称 slug / 描述 / 人设指令），不携带模型/推理预设——
+ * 模型与推理强度一律跟随设置里的默认。
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -22,21 +23,15 @@ import {
 } from "../../lib/assistants/assistantDefs";
 import { Button } from "../lw/ui/button";
 import { Input } from "../lw/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../lw/ui/select";
 import { Textarea } from "../lw/ui/textarea";
 import { ConfirmActionPopover } from "../lw/ui/confirm-action-popover";
 import { Dialog, DialogBody, DialogContent, DialogFooter, DialogHeader } from "../lw/ui/dialog";
-import { ModelPicker, type ModelPickerOption } from "../lw/settings/ModelPicker";
-import { CapabilityBadge, CapabilityGroupHeader, CapabilityRow, CapabilityToolChip, matchesCapabilitySearch } from "../settings/AgentCapabilityLayout";
-
-const THINKING_LEVELS = ["off", "low", "medium", "high", "xhigh", "max"] as const;
+import { CapabilityBadge, CapabilityGroupHeader, CapabilityRow, matchesCapabilitySearch } from "../settings/AgentCapabilityLayout";
 
 interface Draft {
   editingId: string | null;
   name: string;
   description: string;
-  model: string;
-  thinkingLevel: string;
   prompt: string;
 }
 
@@ -44,8 +39,6 @@ const emptyDraft = (): Draft => ({
   editingId: null,
   name: "",
   description: "",
-  model: "",
-  thinkingLevel: "",
   prompt: "",
 });
 
@@ -60,7 +53,6 @@ export function AssistantsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
-  const [modelOptions, setModelOptions] = useState<ModelPickerOption[]>([]);
 
   const reload = useCallback(async () => {
     const cat = await loadAssistantCatalog();
@@ -69,27 +61,6 @@ export function AssistantsPage() {
 
   useEffect(() => {
     void reload().finally(() => setLoading(false));
-    void (async () => {
-      try {
-        const { loadProvidersConfigFromDisk } = await import(
-          "../../components/settings/model-provider/types"
-        );
-        const providers = await loadProvidersConfigFromDisk();
-        setModelOptions(
-          providers.flatMap((p) =>
-            (p.models ?? []).map((m) => ({
-              value: `${p.id}/${m.id}`,
-              label: m.id,
-              ...(m.name ? { description: m.name } : {}),
-              providerName: p.name || p.id,
-              providerId: p.id,
-            })),
-          ),
-        );
-      } catch (err) {
-        console.warn("[assistants] model options load failed:", err);
-      }
-    })();
   }, [reload]);
 
   const visible = useMemo(
@@ -111,8 +82,6 @@ export function AssistantsPage() {
         id: draft.editingId ?? slug,
         name: slug,
         description: draft.description.trim(),
-        ...(draft.model.trim() ? { model: draft.model.trim() } : {}),
-        ...(draft.thinkingLevel ? { thinkingLevel: draft.thinkingLevel } : {}),
         prompt: draft.prompt,
       });
       await reload();
@@ -157,7 +126,6 @@ export function AssistantsPage() {
           </>
         }
         description={def.description || t("subagentNoDescription")}
-        meta={def.model ? <CapabilityToolChip tool={def.model} /> : undefined}
         actions={
           <>
             {!def.builtin ? (
@@ -171,8 +139,6 @@ export function AssistantsPage() {
                     editingId: def.id,
                     name: def.id,
                     description: def.description,
-                    model: def.model ?? "",
-                    thinkingLevel: def.thinkingLevel ?? "",
                     prompt: def.prompt,
                   })
                 }
@@ -264,7 +230,6 @@ export function AssistantsPage() {
         <AssistantEditor
           draft={draft}
           setDraft={setDraft}
-          modelOptions={modelOptions}
           onClose={() => setDraft(null)}
           onSave={() => void save()}
         />
@@ -276,18 +241,15 @@ export function AssistantsPage() {
 function AssistantEditor({
   draft,
   setDraft,
-  modelOptions,
   onClose,
   onSave,
 }: {
   draft: Draft;
   setDraft: (d: Draft) => void;
-  modelOptions: ModelPickerOption[];
   onClose: () => void;
   onSave: () => void;
 }) {
   const { t } = useTranslation();
-  const tf = t as unknown as (key: string) => string;
   const [error, setError] = useState<string | null>(null);
   const isCreate = draft.editingId === null;
   const saveDisabled =
@@ -346,48 +308,7 @@ function AssistantEditor({
             <p className="text-[11px] text-[var(--text-dim)]">{t("assistantPromptHint")}</p>
           </div>
 
-          <div className="space-y-3 rounded-xl bg-settings-tile p-4">
-            <p className="text-xs font-semibold">{t("subagentAdvanced")}</p>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--text-dim)]">
-                {t("subagentModel")}
-              </label>
-              <ModelPicker
-                options={modelOptions}
-                value={draft.model}
-                onChange={(v) => setDraft({ ...draft, model: v })}
-                placeholder={t("subagentModelInherit")}
-                noneLabel={t("subagentModelInherit")}
-                variant="plain"
-                searchPlaceholder={tf("chat.searchModel")}
-                emptyLabel={tf("chat.noModelFound")}
-                collapseProviderLabel={tf("chat.collapseProvider")}
-                expandProviderLabel={tf("chat.expandProvider")}
-              />
-              <p className="text-[11px] text-[var(--text-dim)]">{t("subagentModelHint")}</p>
-            </div>
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium text-[var(--text-dim)]">
-                {t("subagentThinking")}
-              </label>
-              <Select
-                value={draft.thinkingLevel}
-                onValueChange={(v) => setDraft({ ...draft, thinkingLevel: v })}
-              >
-                <SelectTrigger className="h-9 w-full justify-between rounded-lg bg-settings-tile-hover px-3 shadow-none">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">{t("subagentThinkingInherit")}</SelectItem>
-                  {THINKING_LEVELS.map((lv) => (
-                    <SelectItem key={lv} value={lv}>
-                      {lv}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
+          <p className="text-[11px] text-[var(--text-dim)]">{t("assistantFollowsDefaultsHint")}</p>
 
           {error ? <p className="text-xs text-red-500">{error}</p> : null}
         </DialogBody>

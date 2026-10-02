@@ -15,6 +15,8 @@
     "test:chat": "node --test src/lib/chat/conversationModel.test.mjs src/lib/chat/conversationModel.s4.test.mjs src/lib/chat/conversationModel.s7.test.mjs src/lib/chat/conversationController.test.mjs src/lib/chat/conversationController.race.test.mjs src/lib/chat/conversationController.approval.test.mjs src/lib/chat/conversationController.editresend.test.mjs src/lib/chat/stateBridge.test.mjs src/lib/chat/toolDisplay.test.mjs src/lib/chat/titleGenerator.test.mjs src/lib/chat/conversationNavigatorHelpers.test.mjs src/lib/chat/turnActivity.test.mjs src/lib/chat/todoProgress.test.mjs src/lib/chat/mentions.test.mjs src/lib/commands/slashCommands.test.mjs",
     "test:settings": "node --test src/lib/settings/settingsStore.test.mjs",
     "test:markdown": "node --test src/lib/markdown/markdownBlocks.test.mjs",
+    "test:assistants": "node --test src/lib/assistants/assistantDefs.test.mjs",
+    "test:import": "node --test src/lib/import/import.test.mjs",
     "test:agent": "node --test src/lib/agent/streamFnAdapter.test.mjs src/lib/agent/agentRuntime.test.mjs src/lib/agent/askUserTool.test.mjs src/lib/agent/tools.test.mjs src/lib/agent/workspace.test.mjs",
     "test:providers": "node --test src/lib/providers/runAgentTurn.test.mjs src/lib/providers/approvalGate.test.mjs src/lib/providers/modelFactory.test.mjs src/lib/providers/toolPolicy.test.mjs",
     "test:hub": "bun test src/lib/skills/clawHubCategories.test.mjs src/lib/skills/clawHub.test.mjs src/lib/skills/installedSort.test.mjs src/lib/mcpRegistry/index.test.mjs src/lib/memory/schema.test.mjs src/lib/memory/organizer/quota.test.mjs src/lib/memory/organizer/runRecord.test.mjs"

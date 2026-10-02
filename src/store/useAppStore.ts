@@ -71,9 +71,10 @@ interface AppState {
   ) => string;
   setActiveTaskId: (id: string | null) => void;
   setGlobalDefaultAssistant: (id: string) => void;
+  registerExternalTasks: (tasks: AppTask[]) => void;
   updateTaskTitle: (id: string, title: string) => void;
   updateTaskModel: (id: string, providerId: string, modelId: string) => void;
-  updateTaskAssistant: (id: string, assistantId: string, providerId?: string, modelId?: string) => void;
+  updateTaskAssistant: (id: string, assistantId: string) => void;
   updateTaskThinkingLevel: (id: string, level: ThinkingLevel) => void;
   updateTaskApprovalMode: (id: string, mode: ApprovalMode) => void;
   updateTaskToolPolicy: (id: string, toolName: string, policy: "allow" | "ask" | "deny" | null) => void;
@@ -322,6 +323,21 @@ export const useAppStore = create<AppState>((set) => ({
     set({ globalDefaultAssistantId: id });
   },
 
+  /** 批量登记外部导入的任务（会话导入）：追加到列表尾部并落库（唯一写入口，勿在调用方重复 syncTasks）。 */
+  registerExternalTasks: (tasks) => {
+    set((state) => {
+      const nextTasks = [...state.tasks, ...tasks];
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
   createTask: (title, project = null, providerId, modelId, thinkingLevel, approvalMode) => {
     const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newTask: AppTask = {
@@ -393,15 +409,15 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
 
-  /** 切换任务助手：显式选择（含 general=通用助手）一律按任务记忆；仅「从未选择过」的任务回退全局默认。 */
-  updateTaskAssistant: (id, assistantId, providerId, modelId) => {
+  /** 切换任务助手：显式选择（含 general=通用助手）一律按任务记忆；仅「从未选择过」的任务回退全局默认。
+   *  助手是纯人设——不携带模型/推理预设，模型与推理强度跟随设置里的默认。 */
+  updateTaskAssistant: (id, assistantId) => {
     set((state) => {
       const nextTasks = state.tasks.map((t) =>
         t.id === id
           ? {
               ...t,
               assistantId,
-              ...(providerId && modelId ? { providerId, modelId } : {}),
               updatedAt: Date.now(),
             }
           : t

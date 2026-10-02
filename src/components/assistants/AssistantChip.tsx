@@ -17,7 +17,7 @@ export function AssistantChip({
   onPick,
 }: {
   assistantId: string;
-  onPick: (id: string, providerId?: string, modelId?: string) => void;
+  onPick: (id: string) => void;
 }) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
@@ -53,11 +53,7 @@ export function AssistantChip({
                   key={def.id}
                   type="button"
                   onClick={() => {
-                    onPick(
-                      def.id,
-                      def.model?.includes("/") ? def.model.split("/")[0] : undefined,
-                      def.model?.includes("/") ? def.model.split("/").slice(1).join("/") : undefined,
-                    );
+                    onPick(def.id);
                     setOpen(false);
                   }}
                   className={`flex w-full items-start gap-2 px-3 py-2 text-left transition-colors hover:bg-[var(--surface-hover)] ${

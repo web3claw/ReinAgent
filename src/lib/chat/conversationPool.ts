@@ -60,8 +60,9 @@ const entries = new Map<string, PoolEntry>();
 const EMPTY_STATE: ChatState = initialState();
 
 // ---- 序列化：TimelineEntry ↔ message/part 两表行（对齐 LiveAgent message/part 拆分）----
+// 导出：会话导入（lib/import/runSessions.ts）复用同一落库格式。
 
-function serializeEntry(entry: TimelineEntry, seq: number) {
+export function serializeEntry(entry: TimelineEntry, seq: number) {
   const parts: { part_index: number; kind: string; payload: string }[] = [];
   let partIndex = 0;
   if (entry.text) {

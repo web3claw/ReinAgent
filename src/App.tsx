@@ -1387,9 +1387,9 @@ export default function App() {
                 （与 buildTurnOptions 的运行时解析严格一致，禁止硬编码 GENERAL 造成显示与行为脱节） */}
             <AssistantChip
               assistantId={activeTask?.assistantId ?? globalDefaultAssistantId}
-              onPick={(id, providerId, modelId) => {
+              onPick={(id) => {
                 if (activeTaskId) {
-                  updateTaskAssistant(activeTaskId, id, providerId, modelId);
+                  updateTaskAssistant(activeTaskId, id);
                 } else {
                   setGlobalDefaultAssistant(id);
                 }
@@ -1534,6 +1534,7 @@ export default function App() {
                     onSelectModel={handleSelectModel}
                     focusRequestTrigger={focusTrigger}
                     prefillRequest={composerPrefill}
+                    onOpenSttSettings={() => { setSettingsInitialTab('stt'); setCurrentView('settings'); }}
                     onClearConversation={() => void handleClearConversation()}
                     onCompactRequest={handleCompactRequest}
                     contextUsage={contextUsage}
@@ -1707,6 +1708,7 @@ export default function App() {
                       currentModel={currentModel}
                       providers={providers}
                       onSelectModel={handleSelectModel}
+                      onOpenSttSettings={() => { setSettingsInitialTab('stt'); setCurrentView('settings'); }}
                       hasMessages={true}
                       contextUsage={contextUsage}
                       // 工作区根：@提及候选、附件默认目录都依赖它（此前漏传 ⇒ 提示「root 不能为空」）
