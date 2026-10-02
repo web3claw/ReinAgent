@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="color-scheme" content="dark">
+<title>ReinAgent 远程</title>
+<style>
+  :root {
+    --bg: #141517; --surface: #1d1e21; --surface-hover: #26272b; --border: #2e2f34;
+    --text: #e8e8ea; --text-dim: #9a9ba1; --brand: #4f7cff; --brand-dim: rgba(79,124,255,.15);
+    --ok: #34c77b; --err: #ff5d5d; --warn: #f5a623;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 14px/1.6 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  header {
+    display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+    border-bottom: 1px solid var(--border); flex-shrink: 0;
+  }
+  header .back { display: none; background: none; border: none; color: var(--brand); font-size: 20px; padding: 2px 8px; cursor: pointer; }
+  header h1 { font-size: 15px; font-weight: 600; flex: 1; }
+  header .status { font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 5px; }
+  header .status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--err); }
+  header .status.on .dot { background: var(--ok); }
+  main { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; }
+  /* ---- 任务列表 ---- */
+  .task-row {
+    display: flex; flex-direction: column; gap: 3px; padding: 12px 16px;
+    border-bottom: 1px solid var(--border); cursor: pointer;
+  }
+  .task-row:active { background: var(--surface-hover); }
+  .task-row .title { font-weight: 500; display: flex; align-items: center; gap: 7px; }
+  .task-row .meta { font-size: 12px; color: var(--text-dim); display: flex; gap: 10px; }
+  .running-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ok); flex-shrink: 0; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .35; } }
+  .empty { text-align: center; color: var(--text-dim); padding: 48px 24px; font-size: 13px; }
+  /* ---- 会话视图 ---- */
+  #chatView { display: none; flex-direction: column; height: 100%; }
+  #messages { flex: 1; overflow-y: auto; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { max-width: 92%; padding: 9px 12px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; font-size: 14px; }
+  .msg.user { align-self: flex-end; background: var(--brand); color: #fff; border-bottom-right-radius: 4px; }
+  .msg.assistant { align-self: flex-start; background: var(--surface); border-bottom-left-radius: 4px; }
+  .msg.tool {
+    align-self: stretch; max-width: 100%; background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; font-size: 12px; color: var(--text-dim); padding: 8px 11px;
+  }
+  .msg.tool .tool-name { color: var(--text); font-weight: 500; margin-bottom: 2px; }
+  .msg.tool.is-error { border-color: var(--err); }
+  .msg .thinking { color: var(--text-dim); font-size: 12px; }
+  /* ---- assistant 消息 markdown 样式（marked 产出）---- */
+  .msg.assistant h1, .msg.assistant h2, .msg.assistant h3, .msg.assistant h4 {
+    margin: 10px 0 4px; line-height: 1.4; font-size: 15px;
+  }
+  .msg.assistant h1:first-child, .msg.assistant h2:first-child, .msg.assistant h3:first-child { margin-top: 0; }
+  .msg.assistant p { margin: 4px 0; }
+  .msg.assistant ul, .msg.assistant ol { margin: 4px 0; padding-left: 20px; }
+  .msg.assistant li { margin: 2px 0; }
+  .msg.assistant code {
+    font-family: ui-monospace, "Cascadia Code", Consolas, monospace; font-size: 12px;
+    background: var(--surface-hover); border: 1px solid var(--border); border-radius: 4px; padding: 1px 4px;
+  }
+  .msg.assistant pre {
+    background: #0d0e10; border: 1px solid var(--border); border-radius: 8px;
+    padding: 9px 11px; margin: 6px 0; overflow-x: auto;
+  }
+  .msg.assistant pre code { background: none; border: none; padding: 0; font-size: 12px; line-height: 1.5; }
+  .msg.assistant table { border-collapse: collapse; margin: 6px 0; font-size: 12px; display: block; overflow-x: auto; }
+  .msg.assistant th, .msg.assistant td { border: 1px solid var(--border); padding: 4px 8px; text-align: left; }
+  .msg.assistant th { background: var(--surface-hover); }
+  .msg.assistant blockquote {
+    margin: 6px 0; padding: 2px 10px; border-left: 3px solid var(--border);
+    color: var(--text-dim);
+  }
+  .msg.assistant a { color: var(--brand); }
+  .msg.assistant hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+  /* ---- 审批卡 ---- */
+  #approvalBar { display: none; padding: 10px 14px; background: #2a2216; border-top: 1px solid #4a3a1c; }
+  #approvalBar .tool { font-weight: 600; margin-bottom: 4px; }
+  #approvalBar .args { font-size: 11px; color: var(--text-dim); font-family: ui-monospace, monospace; max-height: 90px; overflow-y: auto; white-space: pre-wrap; word-break: break-all; margin-bottom: 10px; }
+  #approvalBar .actions { display: flex; gap: 10px; }
+  #approvalBar button { flex: 1; padding: 11px; border: none; border-radius: 10px; font-size: 14px; font-weight: 600; cursor: pointer; }
+  #approvalBar .deny { background: var(--err); color: #fff; }
+  #approvalBar .allow { background: var(--ok); color: #08130c; }
+  /* ---- 输入条 ---- */
+  #composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0; background: var(--bg); }
+  #composer textarea {
+    flex: 1; background: var(--surface); color: var(--text); border: 1px solid var(--border);
+    border-radius: 12px; padding: 9px 12px; font: inherit; resize: none; height: 42px; outline: none;
+  }
+  #composer textarea:focus { border-color: var(--brand); }
+  #composer .send {
+    width: 42px; height: 42px; border: none; border-radius: 12px; background: var(--brand);
+    color: #fff; font-size: 17px; cursor: pointer; flex-shrink: 0;
+  }
+  #composer .send:disabled { opacity: .35; }
+  #composer .send.stop { background: var(--err); }
+  /* ---- 鉴权失败 ---- */
+  #authError { display: none; padding: 40px 24px; text-align: center; color: var(--text-dim); }
+  #authError code { display: block; margin-top: 10px; color: var(--err); font-size: 12px; }
+</style>
+</head>
+<body>
+  <header>
+    <button class="back" id="backBtn" aria-label="返回">‹</button>
+    <h1 id="headerTitle">任务</h1>
+    <div class="status" id="connStatus"><span class="dot"></span><span id="connText">连接中…</span></div>
+  </header>
+
+  <main id="listView"><div class="empty">加载中…</div></main>
+
+  <div id="chatView">
+    <main id="messages"></main>
+    <div id="approvalBar">
+      <div class="tool" id="approvalTool"></div>
+      <div class="args" id="approvalArgs"></div>
+      <div class="actions">
+        <button class="deny" id="denyBtn">拒绝</button>
+        <button class="allow" id="allowBtn">允许</button>
+      </div>
+    </div>
+    <div id="composer">
+      <textarea id="input" rows="1" placeholder="输入消息…"></textarea>
+      <button class="send" id="sendBtn">↑</button>
+    </div>
+  </div>
+
+  <div id="authError">鉴权失败：token 无效或已重置。<br>请从桌面端设置页重新扫码打开。<code id="authDetail"></code></div>
+
+  <script>/*__MARKED_JS__*/</script>
+  <script>/*__PURIFY_JS__*/</script>
+<script>
+"use strict";
+// ---- token：URL ?token= 优先（自动种 localStorage），之后免参 ----
+const params = new URLSearchParams(location.search);
+let TOKEN = (params.get("token") || localStorage.getItem("reinagent_remote_token") || "").trim();
+if (params.get("token")) {
+  TOKEN = params.get("token").trim();
+  localStorage.setItem("reinagent_remote_token", TOKEN);
+  history.replaceState(null, "", location.pathname); // 清掉 URL 里的 token（防分享泄露）
+}
+
+const $ = (id) => document.getElementById(id);
+const state = {
+  ws: null, helloDone: false,
+  tasks: [],                    // {id,title,updatedAt,running}
+  currentTaskId: null,
+  revisions: new Map(),         // taskId -> 最新 revision
+  messages: [],                 // 当前会话消息
+  running: false,
+  pendingApproval: null,        // {toolName, args}
+  reconnectDelay: 800,
+};
+
+// ---- WS 连接与自动重连 ----
+function wsUrl() {
+  const proto = location.protocol === "https:" ? "wss" : "ws";
+  return proto + "://" + location.host + "/ws" + (TOKEN ? "?token=" + encodeURIComponent(TOKEN) : "");
+}
+function connect() {
+  setConn(false, "连接中…");
+  try { state.ws && state.ws.close(); } catch (e) {}
+  const ws = new WebSocket(wsUrl());
+  state.ws = ws;
+  ws.onopen = () => {
+    // 协议：客户端先发 hello，服务端应答 Hello（server_time）后即视为已连接
+    ws.send(JSON.stringify({ op: "hello" }));
+  };
+  ws.onmessage = (ev) => { try { handle(JSON.parse(ev.data)); } catch (e) { console.error(e); } };
+  ws.onclose = () => {
+    state.helloDone = false;
+    setConn(false, "已断开，重连中…");
+    setTimeout(connect, state.reconnectDelay);
+    state.reconnectDelay = Math.min(state.reconnectDelay * 2, 10000);
+  };
+  ws.onerror = () => { try { ws.close(); } catch (e) {} };
+}
+function send(obj) {
+  if (state.ws && state.ws.readyState === 1) state.ws.send(JSON.stringify(obj));
+}
+function setConn(on, text) {
+  $("connStatus").className = "status" + (on ? " on" : "");
+  $("connText").textContent = text;
+}
+
+function handle(msg) {
+  switch (msg.op) {
+    case "hello":
+      state.helloDone = true;
+      state.reconnectDelay = 800;
+      setConn(true, "已连接");
+      send({ op: "list_tasks", reqId: "init" });
+      if (state.currentTaskId) send({ op: "subscribe", reqId: "re-sub", taskId: state.currentTaskId });
+      break;
+    case "snapshot":
+      state.tasks = msg.tasks || [];
+      if (!state.currentTaskId) renderList();
+      break;
+    case "state": {
+      const rev = state.revisions.get(msg.taskId) || 0;
+      if (msg.revision < rev) break; // 乱序丢弃
+      state.revisions.set(msg.taskId, msg.revision);
+      if (msg.taskId === state.currentTaskId) {
+        state.messages = msg.messages || [];
+        state.running = !!msg.running;
+        renderMessages();
+        renderComposer();
+      }
+      renderList();
+      break;
+    }
+    case "approvalPending":
+      state.pendingApproval = msg;
+      renderApproval();
+      break;
+    case "error":
+      if (msg.message && msg.message.includes("token")) showAuthError(msg.message);
+      break;
+  }
+}
+
+function showAuthError(detail) {
+  document.body.innerHTML = "";
+  $("authError").style.display = "block";
+  $("authDetail").textContent = detail || "";
+}
+
+// ---- 视图：任务列表 ----
+function renderList() {
+  const view = $("listView");
+  if (state.currentTaskId) { view.style.display = "none"; return; }
+  view.style.display = "block";
+  $("headerTitle").textContent = "任务";
+  $("backBtn").style.display = "none";
+  if (!state.tasks.length) {
+    view.innerHTML = '<div class="empty">还没有任务<br>在桌面端创建后这里会出现</div>';
+    return;
+  }
+  view.innerHTML = "";
+  for (const task of state.tasks) {
+    const row = document.createElement("div");
+    row.className = "task-row";
+    const d = new Date(task.updatedAt || task.createdAt || Date.now());
+    const time = isNaN(d) ? "" : (d.getMonth() + 1) + "/" + d.getDate() + " " + String(d.getHours()).padStart(2, "0") + ":" + String(d.getMinutes()).padStart(2, "0");
+    row.innerHTML =
+      '<div class="title">' + (task.running ? '<span class="running-dot"></span>' : "") + '<span></span></div>' +
+      '<div class="meta"><span>' + escapeHtml(time) + '</span><span>' + (task.messageCount != null ? task.messageCount + " 条" : "") + '</span></div>';
+    row.querySelector(".title span:last-child").textContent = task.title || "未命名任务";
+    row.onclick = () => openTask(task.id);
+    view.appendChild(row);
+  }
+}
+
+function openTask(taskId) {
+  state.currentTaskId = taskId;
+  state.messages = [];
+  state.pendingApproval = null;
+  renderApproval();
+  send({ op: "subscribe", reqId: "sub-" + taskId, taskId });
+  $("listView").style.display = "none";
+  $("chatView").style.display = "flex";
+  $("backBtn").style.display = "block";
+  const task = state.tasks.find((t) => t.id === taskId);
+  $("headerTitle").textContent = task ? task.title || "会话" : "会话";
+  $("messages").innerHTML = '<div class="empty">加载中…</div>';
+  renderComposer();
+}
+
+function backToList() {
+  state.currentTaskId = null;
+  state.pendingApproval = null;
+  renderApproval();
+  $("chatView").style.display = "none";
+  $("listView").style.display = "block";
+  renderList();
+}
+$("backBtn").onclick = backToList;
+
+// ---- 视图：会话消息 ----
+function renderMessages() {
+  const box = $("messages");
+  box.innerHTML = "";
+  if (!state.messages.length) {
+    box.innerHTML = '<div class="empty">暂无消息</div>';
+    return;
+  }
+  for (const m of state.messages) {
+    const div = document.createElement("div");
+    if (m.role === "user") {
+      div.className = "msg user";
+      div.textContent = m.text || "";
+    } else if (m.role === "tool") {
+      div.className = "msg tool" + (m.isError ? " is-error" : "");
+      const name = document.createElement("div");
+      name.className = "tool-name";
+      name.textContent = (m.isError ? "✗ " : "") + (m.toolName || "tool");
+      div.appendChild(name);
+      const body = document.createElement("div");
+      body.textContent = String(m.resultText || "").slice(0, 400);
+      div.appendChild(body);
+    } else {
+      div.className = "msg assistant";
+      if (m.thinking) {
+        const think = document.createElement("div");
+        think.className = "thinking";
+        think.textContent = "思考 " + m.thinking.slice(0, 120) + (m.thinking.length > 120 ? "…" : "");
+        div.appendChild(think);
+      }
+      // AI 回复渲染 markdown（user 消息保持纯文本——用户输入不是 markdown）
+      const text = document.createElement("div");
+      renderMarkdown(text, m.text || "");
+      div.appendChild(text);
+    }
+    box.appendChild(div);
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+function renderComposer() {
+  const btn = $("sendBtn");
+  btn.className = "send" + (state.running ? " stop" : "");
+  btn.textContent = state.running ? "■" : "↑";
+  btn.title = state.running ? "停止" : "发送";
+}
+
+// ---- 审批卡 ----
+function renderApproval() {
+  const bar = $("approvalBar");
+  if (!state.pendingApproval || state.pendingApproval.taskId !== state.currentTaskId) {
+    bar.style.display = "none";
+    return;
+  }
+  bar.style.display = "block";
+  $("approvalTool").textContent = "待批准：" + (state.pendingApproval.toolName || "工具调用");
+  $("approvalArgs").textContent = JSON.stringify(state.pendingApproval.args || {}, null, 1).slice(0, 600);
+}
+$("allowBtn").onclick = () => {
+  if (!state.pendingApproval) return;
+  send({ op: "approve", reqId: "ap-" + Date.now(), taskId: state.currentTaskId, decision: "allow" });
+  state.pendingApproval = null;
+  renderApproval();
+};
+$("denyBtn").onclick = () => {
+  if (!state.pendingApproval) return;
+  send({ op: "approve", reqId: "dn-" + Date.now(), taskId: state.currentTaskId, decision: "reject" });
+  state.pendingApproval = null;
+  renderApproval();
+};
+
+// ---- 发送 / 停止 ----
+$("sendBtn").onclick = () => {
+  if (!state.currentTaskId) return;
+  if (state.running) {
+    send({ op: "stop", reqId: "st-" + Date.now(), taskId: state.currentTaskId });
+    return;
+  }
+  const text = $("input").value.trim();
+  if (!text) return;
+  send({ op: "send", reqId: "sd-" + Date.now(), taskId: state.currentTaskId, text });
+  $("input").value = "";
+};
+$("input").addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    $("sendBtn").click();
+  }
+});
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+// ---- Markdown 渲染（对齐 ZCode Streamdown 策略：转义优先 + 流式补全未闭合围栏 + 链接白名单）----
+const HAS_MD_LIB = typeof marked !== "undefined" && typeof DOMPurify !== "undefined";
+
+/** 流式补全：未闭合的 ``` 围栏会吞掉后半条消息，parse 前先补临时闭合（ZCode "remend" 思路） */
+function completeFences(text) {
+  const fences = (text.match(/^```/gm) || []).length;
+  return fences % 2 === 1 ? text + "\n```" : text;
+}
+
+function mdToSafeHtml(text) {
+  if (!HAS_MD_LIB) return escapeHtml(text); // 库缺失时退回纯文本（不静默降级为不安全 HTML）
+  const html = marked.parse(completeFences(text), { gfm: true, breaks: true, async: false });
+  const clean = DOMPurify.sanitize(html, {
+    ALLOWED_URI_REGEXP: /^(?:https?:|mailto:|#)/i, // 链接协议白名单：拦 javascript:/data:
+  });
+  return clean;
+}
+
+// 外链加 noopener（在 sanitize 后的 DOM 上补属性）
+function hardenLinks(container) {
+  for (const a of container.querySelectorAll("a[href]")) {
+    a.target = "_blank";
+    a.rel = "noopener noreferrer";
+  }
+}
+
+function renderMarkdown(el, text) {
+  el.innerHTML = mdToSafeHtml(text);
+  hardenLinks(el);
+  // 代码块加横向滚动样式（marked 产出 pre>code）
+  for (const pre of el.querySelectorAll("pre")) pre.style.overflowX = "auto";
+}
+
+connect();
+</script>
+</body>
+</html>

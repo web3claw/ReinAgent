@@ -3,7 +3,7 @@
 // i18n 铁律：LA 的关闭按钮 aria-label（t("common.dismissNotification")）改为必填
 // props dismissLabel，页面层负责传入 i18n 值。
 import { useReducedMotion } from "motion/react";
-import { memo, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, CheckCircle2, X, XCircle } from "lucide-react";
 
 import { cn } from "../lib/utils";
@@ -67,7 +67,9 @@ export function Toaster(props: {
   );
 }
 
-const ToastEntryView = memo(function ToastEntryView(props: {
+// ⚠️ 不可 memo：toast.ts 原地变更 entry.transitionStatus（引用不变），memo 会拦截
+// enter→idle 的重渲染，toast 永远停在 opacity-0（隐形）。text/边框/背景一律走语义变量。
+function ToastEntryView(props: {
   entry: ToastEntry;
   dismissLabel: string;
 }) {
@@ -97,56 +99,43 @@ const ToastEntryView = memo(function ToastEntryView(props: {
         "pointer-events-auto flex shrink-0 items-start gap-2.5 rounded-lg border",
         notice ? "w-96 max-w-[calc(100vw-2rem)]" : "w-notification",
         "px-3 py-2.5 text-sm",
-        notice ? "bg-background" : "shadow-lg backdrop-blur-xl",
+        notice ? "bg-background" : "bg-[var(--bg-elev)] shadow-lg backdrop-blur-xl",
         "transition-[opacity,translate] motion-reduce:transition-none",
         ending || notification.transitionStatus === "enter" ? "opacity-0" : "opacity-100",
         !prefersReducedMotion && notification.transitionStatus === "enter" && "translate-x-5",
         !prefersReducedMotion && ending && "translate-x-5",
-        notice
-          ? isWarning
-            ? "border-amber-500/30"
-            : isSuccess
-              ? "border-emerald-500/30"
-              : "border-destructive/30"
-          : isWarning
-            ? "border-amber-500/30 bg-amber-50/95 dark:bg-amber-950/80 dark:border-amber-500/25"
-            : isSuccess
-              ? "border-emerald-500/30 bg-emerald-50/95 dark:bg-emerald-950/80 dark:border-emerald-500/25"
-              : "border-red-500/30 bg-red-50/95 dark:bg-red-950/80 dark:border-red-500/25",
+        // 类型色只上边框（背景/文字走语义变量，双主题可读）
+        isWarning
+          ? "border-amber-500/40"
+          : isSuccess
+            ? "border-emerald-500/40"
+            : "border-red-500/40",
       )}
     >
       {isWarning ? (
         <AlertTriangle
           aria-hidden="true"
-          className="mt-0.5 size-4 shrink-0 text-amber-600 dark:text-amber-400"
+          className="mt-0.5 size-4 shrink-0 text-amber-500 dark:text-amber-400"
         />
       ) : isSuccess ? (
         <CheckCircle2
           aria-hidden="true"
-          className="mt-0.5 size-4 shrink-0 text-emerald-600 dark:text-emerald-400"
+          className="mt-0.5 size-4 shrink-0 text-emerald-500 dark:text-emerald-400"
         />
       ) : (
         <XCircle
           aria-hidden="true"
-          className="mt-0.5 size-4 shrink-0 text-red-600 dark:text-red-400"
+          className="mt-0.5 size-4 shrink-0 text-red-500 dark:text-red-400"
         />
       )}
       <div className="min-w-0 flex-1">
         {notification.title ? (
-          <div className="font-medium text-foreground">{notification.title}</div>
+          <div className="font-medium text-[var(--text)]">{notification.title}</div>
         ) : null}
         <div
           className={cn(
-            "whitespace-pre-wrap break-words leading-relaxed",
-            notice
-              ? notification.title
-                ? "mt-0.5 max-h-40 overflow-y-auto text-xs text-muted-foreground"
-                : "text-foreground"
-              : isWarning
-                ? "text-amber-800 dark:text-amber-200"
-                : isSuccess
-                  ? "text-emerald-800 dark:text-emerald-200"
-                  : "text-red-800 dark:text-red-200",
+            "whitespace-pre-wrap break-words leading-relaxed text-[var(--text)]",
+            notice && notification.title ? "mt-0.5 max-h-40 overflow-y-auto text-xs text-[var(--text-dim)]" : "",
           )}
         >
           {notification.description}
@@ -154,7 +143,7 @@ const ToastEntryView = memo(function ToastEntryView(props: {
         {notification.action ? (
           <button
             type="button"
-            className="mt-2 rounded-md border border-border bg-secondary px-2.5 py-1 text-xs text-secondary-foreground"
+            className="mt-2 rounded-md border border-[var(--border)] bg-[var(--bg-elev)] px-2.5 py-1 text-xs text-[var(--text)]"
             onClick={() => {
               notification.action?.onClick();
               toast.dismiss(notification.id);
@@ -177,4 +166,4 @@ const ToastEntryView = memo(function ToastEntryView(props: {
       </button>
     </div>
   );
-});
+}

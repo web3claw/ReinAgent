@@ -1251,6 +1251,22 @@ export default function App() {
     return poolSend(targetTaskId, finalText, buildTurnOptions(images, userAttachments));
   };
 
+  // 远程访问桥：手机发送走同一发送链路（buildTurnOptions 闭包一致）。
+  // 挂 window 由 remoteBridge 调用；重复挂载以最新闭包为准。
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__reinagentRemoteSend = (taskId: string, text: string) => {
+      const trimmed = String(text ?? "").trim();
+      if (!trimmed) return false;
+      // 仅允许向已存在的任务发送（不支持手机新建任务——远程能力白名单）
+      const exists = useAppStore.getState().tasks.some((t) => t.id === taskId);
+      if (!exists) return false;
+      return poolSend(taskId, trimmed, buildTurnOptions(undefined, undefined));
+    };
+    return () => {
+      delete (window as unknown as Record<string, unknown>).__reinagentRemoteSend;
+    };
+  });
+
   useEffect(() => {
     document.documentElement.setAttribute("data-theme", theme);
   }, [theme]);
@@ -1297,6 +1313,12 @@ export default function App() {
 
   if (currentView === "settings") {
     return (
+      <div className="contents">
+      {/* 设置页也挂 toast 容器：设置分支提前 return，工作台的 Toaster 不在树里
+          （否则远程访问/STT/导入等所有设置页 toast 全部无声） */}
+      <div className="hub-scope fixed z-[10010]">
+        <Toaster dismissLabel={t("common.dismissNotification")} />
+      </div>
       <SettingsPage
         settings={settings}
         status={status}
@@ -1306,6 +1328,7 @@ export default function App() {
         memoryModelOptions={hubModelOptions}
         initialTab={settingsInitialTab}
       />
+      </div>
     );
   }
 
@@ -1337,6 +1360,10 @@ export default function App() {
             onOpenSearch={() => setSearchOpen(true)}
             onOpenPlugins={() => {
               setSettingsInitialTab('plugins');
+              setCurrentView('settings');
+            }}
+            onOpenRemoteAccess={() => {
+              setSettingsInitialTab('remote');
               setCurrentView('settings');
             }}
           />
