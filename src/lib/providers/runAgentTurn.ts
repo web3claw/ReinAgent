@@ -179,6 +179,8 @@ export interface RunAgentTurnParams {
   systemPrompt?: string;
   maxSteps?: number;
   workspaceRoot?: string;
+  /** 当前任务的助手 id（人设预设）；general/缺省 = 无注入。 */
+  assistantId?: string;
   signal?: AbortSignal;
   thinkingLevel?: import("../agent/agentRuntime").RunTurnDeps["thinkingLevel"];
   /** 本轮审批模式（任务级，发送时冻结）。缺省 "full"（完全访问，零审批开销）。 */
@@ -371,6 +373,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     onEvent,
     maxSteps,
     workspaceRoot,
+    assistantId,
     thinkingLevel,
     approvalMode = "full",
     approval,
@@ -452,6 +455,22 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
   // 工作区根声明移入 Environment 段（- Working directory 行；避免重复出现两次）
   let effectiveSystemPrompt = prompt;
+  // 助手人设注入（对齐用户定稿：人设段插入默认提示词前部，工具/安全段保留）：
+  // general/未设置 = 无注入；找不到的助手 id 如实跳过（不中断回合）。
+  if (assistantId && assistantId !== "general") {
+    try {
+      const { loadAssistantCatalog } = await import("../assistants/assistantDefs");
+      const catalog = await loadAssistantCatalog();
+      const def = catalog.assistants.find((d) => d.id === assistantId);
+      if (def && def.prompt.trim()) {
+        effectiveSystemPrompt =
+          `# Assistant Persona: ${def.name}\n${def.description}\n\n${def.prompt.trim()}\n\n---\n\n` +
+          effectiveSystemPrompt;
+      }
+    } catch (err) {
+      console.warn("[assistant] persona load failed (continuing without):", err);
+    }
+  }
   const modelLabel =
     config && typeof config === "object" && config.provider && config.modelId
       ? `${config.provider}/${config.modelId}`

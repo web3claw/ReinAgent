@@ -136,7 +136,9 @@ export function Select({
 
   return (
     <SelectValueContext.Provider value={valueContext}>
-      <PopoverPrimitive.Root open={open} onOpenChange={handleOpenChange}>
+      {/* 半受控：open 未受控时用 internalOpen 驱动 Radix——否则 item select 的
+          setOpen(false) 只改包装层状态，碰不到 Radix 内部 popover，弹层永不关闭 */}
+      <PopoverPrimitive.Root open={open ?? internalOpen} onOpenChange={handleOpenChange}>
         <SelectContext.Provider value={context}>{children}</SelectContext.Provider>
       </PopoverPrimitive.Root>
     </SelectValueContext.Provider>

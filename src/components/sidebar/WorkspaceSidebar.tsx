@@ -4,7 +4,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
   Sun, Moon, Plus, Search,
-  Timer, Settings, Monitor, Plug,
+  Timer, Settings, Monitor, Plug, Bot,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
 
@@ -194,6 +194,15 @@ export function WorkspaceSidebar({
           <div className="flex items-center gap-2">
             <Timer className="w-4 h-4" />
             <span className="text-sm font-semibold">{t('automation')}</span>
+          </div>
+        </button>
+        <button
+          onClick={() => setCurrentView('assistants')}
+          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
+        >
+          <div className="flex items-center gap-2">
+            <Bot className="w-4 h-4" />
+            <span className="text-sm font-semibold">{t('assistantNav')}</span>
           </div>
         </button>
       </div>

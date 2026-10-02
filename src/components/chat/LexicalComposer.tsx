@@ -18,6 +18,13 @@ import {
   persistPromptHistoryEntries,
 } from "../../lib/chat/promptHistoryStorage";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
+import { useComposerStt, type SttComposerHandle } from "../../lib/stt/useComposerStt";
+import { desktopSttTransport } from "../../lib/stt/desktopSttTransport";
+import { isProviderConfigured, loadSttSettings, type SttSettings } from "../../lib/stt/settings";
+import { enhancePromptDraft } from "../../lib/promptEnhancement/enhance";
+import { loadPromptEnhancementSettings, type PromptEnhancementSettings } from "../../lib/promptEnhancement/settings";
+import type { ProviderConfig } from "../../lib/providers/modelFactory";
+import { toast } from "../lw/ui/toast";
 import type { ContextUsageData } from "../../lib/chat/contextUsage";
 import { useAppStore } from "../../store/useAppStore";
 import {
@@ -41,6 +48,10 @@ import {
   Lightbulb,
   ShieldCheck,
   ShieldAlert,
+  Mic,
+  Loader2,
+  Sparkles,
+  Undo2,
 } from "lucide-react";
 import { MOCK_PROJECTS } from "../sidebar/WorkspaceSidebar";
 import {
@@ -95,6 +106,8 @@ export interface LexicalComposerProps {
   onClearConversation?: () => void;
   /** `/compact`：手动压缩上下文（App 层执行；未接线时如实提示） */
   onCompactRequest?: () => void;
+  /** 语音输入未配置时引导打开设置「语音输入」tab */
+  onOpenSttSettings?: () => void;
 }
 
 interface ThinkingOption {
@@ -134,6 +147,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   taskId,
   onClearConversation,
   onCompactRequest,
+  onOpenSttSettings,
   onSend,
   onStop,
   providerId = "deepseek",
@@ -268,6 +282,174 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const attachmentsRef = useRef(attachments);
   attachmentsRef.current = attachments;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ---- 语音输入（STT，移植 LiveAgent useComposerStt）----
+  const [sttSettingsState, setSttSettingsState] = useState<SttSettings | null>(null);
+  const sttSettingsRef = useRef<SttSettings | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void loadSttSettings().then((loaded) => {
+        if (cancelled) return;
+        sttSettingsRef.current = loaded;
+        setSttSettingsState(loaded);
+      });
+    };
+    refresh();
+    window.addEventListener("reinagent-stt-settings-changed", refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("reinagent-stt-settings-changed", refresh);
+    };
+  }, []);
+
+  // textarea 临时文本协议：begin 快照草稿 → partial 渲染「草稿+转写」→ commit 写回 / cancel 还原
+  const sttTransientBaseRef = useRef<string | null>(null);
+  const composeTransient = (base: string, spoken: string) =>
+    base ? `${base}${/\s$/.test(base) ? "" : " "}${spoken}` : spoken;
+  const sttComposerRef = useRef<SttComposerHandle | null>(null);
+  if (!sttComposerRef.current) {
+    sttComposerRef.current = {
+      beginTransientText: () => {
+        const el = textareaRef.current;
+        if (!el) return false;
+        sttTransientBaseRef.current = el.value;
+        return true;
+      },
+      updateTransientText: (spoken) => {
+        const base = sttTransientBaseRef.current;
+        if (base === null) return;
+        setText(composeTransient(base, spoken));
+      },
+      commitTransientText: (spoken) => {
+        const base = sttTransientBaseRef.current ?? "";
+        setText(composeTransient(base, spoken));
+        sttTransientBaseRef.current = null;
+        textareaRef.current?.focus();
+      },
+      cancelTransientText: (opts) => {
+        const base = sttTransientBaseRef.current;
+        sttTransientBaseRef.current = null;
+        if (base !== null && !opts?.preserveLastText) setText(base);
+      },
+    };
+  }
+
+  const stt = useComposerStt({
+    composerRef: sttComposerRef,
+    provider: sttSettingsState?.provider ?? null,
+    providerConfigured: sttSettingsState
+      ? sttSettingsState.provider
+        ? isProviderConfigured(sttSettingsState.provider, sttSettingsState.providers[sttSettingsState.provider])
+        : false
+      : false,
+    getProviderSettings: () => {
+      const current = sttSettingsRef.current;
+      return current?.provider ? current.providers[current.provider] : null;
+    },
+    transport: desktopSttTransport,
+    disabled: isStreaming,
+    sessionKey: taskId ?? "__new__",
+    onError: (message) => toast.error(message),
+    onConfigurationRequired: () => {
+      toast.error("语音输入供应商未配置，请先在设置中完成配置");
+      onOpenSttSettings?.();
+    },
+  });
+
+  // ---- 提示词增强（移植 PI-Desktop useComposerSubmit.enhancePrompt，一次性非流式）----
+  const [enhancing, setEnhancing] = useState(false);
+  const [enhancementUndo, setEnhancementUndo] = useState<string | null>(null);
+  const peSettingsRef = useRef<PromptEnhancementSettings | null>(null);
+  const enhanceTokenRef = useRef(0);
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = () => {
+      void loadPromptEnhancementSettings().then((loaded) => {
+        if (cancelled) return;
+        peSettingsRef.current = loaded;
+      });
+    };
+    refresh();
+    window.addEventListener("reinagent-prompt-enhancement-settings-changed", refresh);
+    return () => {
+      cancelled = true;
+      window.removeEventListener("reinagent-prompt-enhancement-settings-changed", refresh);
+    };
+  }, []);
+
+  const buildEnhancementConfig = (pid: string, mid: string): ProviderConfig | null => {
+    const item = providers.find((pp) => pp.id === pid);
+    if (!item || !item.enabled) return null;
+    const model = item.models.find((mm) => mm.id === mid);
+    if (!model) return null;
+    return {
+      provider: item.id as ProviderConfig["provider"],
+      apiKey: item.apiKey,
+      modelId: mid,
+      baseUrl: item.baseUrl,
+      contextWindow: model.contextWindow ?? null,
+      maxOutputTokens: model.maxOutputTokens ?? null,
+      supportsImage: model.supportsImage ?? null,
+    };
+  };
+
+  const enhancePrompt = async () => {
+    const draft = text.trim();
+    if (!draft || draft.startsWith("/") || enhancing || stt.active) return;
+    const cfg = peSettingsRef.current;
+    // 钉住的增强模型是偏好而非硬性要求：不可用时回退 composer 当前模型（对齐 PI）
+    let config: ProviderConfig | null = null;
+    if (cfg?.providerId && cfg?.modelId) config = buildEnhancementConfig(cfg.providerId, cfg.modelId);
+    if (!config) config = buildEnhancementConfig(providerId, modelId);
+    if (!config) {
+      toast.error("没有可用的模型进行提示词增强");
+      return;
+    }
+    const sourceText = text;
+    const requestToken = ++enhanceTokenRef.current;
+    setEnhancing(true);
+    setEnhancementUndo(null);
+    try {
+      const enhanced = await enhancePromptDraft({
+        draft,
+        config,
+        thinkingLevel: cfg?.thinkingLevel ?? "off",
+        customTemplate: cfg?.customTemplate,
+        userTemplate: cfg?.userTemplate,
+      });
+      if (enhanceTokenRef.current !== requestToken) return; // 提交/切任务后丢弃迟到结果
+      setText(enhanced);
+      requestAnimationFrame(() => {
+        const el = textareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(enhanced.length, enhanced.length);
+      });
+      setEnhancementUndo(sourceText);
+    } catch (err) {
+      if (enhanceTokenRef.current === requestToken) {
+        toast.error("提示词增强失败：" + String(err instanceof Error ? err.message : err).slice(0, 160));
+      }
+    } finally {
+      if (enhanceTokenRef.current === requestToken) setEnhancing(false);
+    }
+  };
+
+  // 切任务使增强撤销/迟到结果失效（对齐 PI：切换会话丢弃未决增强）
+  useEffect(() => {
+    enhanceTokenRef.current += 1;
+    setEnhancementUndo(null);
+  }, [taskId]);
+
+  const undoPromptEnhancement = () => {
+    if (enhancementUndo === null) return;
+    setText(enhancementUndo);
+    setEnhancementUndo(null);
+    textareaRef.current?.focus();
+  };
+
+
   const containerRef = useRef<HTMLDivElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
@@ -320,6 +502,9 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const submit = async () => {
     const trimmed = text.trim();
     if ((trimmed.length === 0 && attachments.length === 0) || isStreaming) return;
+    if (stt.active) return; // 语音识别中禁止发送（对齐 LiveAgent controlsDisabled）
+    enhanceTokenRef.current += 1; // 提交使增强撤销/迟到结果失效（对齐 PI invalidatePromptEnhancement）
+    setEnhancementUndo(null);
 
     const supportsImage = currentModel?.supportsImage === true;
     const { payload, imageInputs } = await buildOutgoingPayload(trimmed, attachments, supportsImage);
@@ -897,6 +1082,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
         onKeyDown={handleKeyDown}
         onPaste={handleTextareaPaste}
         placeholder={placeholder}
+        readOnly={stt.active}
         className="w-full resize-none bg-transparent px-4 pt-3.5 pb-2 text-sm text-[var(--text-primary)] placeholder-[var(--text-secondary)] focus:outline-none leading-relaxed"
       />
 
@@ -908,7 +1094,8 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           <button
             type="button"
             onClick={addPickedFiles}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
+            disabled={stt.active}
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
             title={t("attachFile")}
           >
             <Plus className="w-4 h-4" />
@@ -993,7 +1180,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </div>
         </div>
 
-        {/* 右侧：上下文容量、模型选择、思考深度、发送按钮 */}
+        {/* 右侧：上下文容量、模型选择、思考深度、发送按钮、语音输入 */}
         <div className="flex items-center gap-2">
           {contextUsage && <ContextUsageIndicator data={contextUsage} />}
           {/* Model Selector Dropdown */}
@@ -1209,6 +1396,51 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             })()}
           </div>
 
+          {/* ✨ 提示词增强：一次性改写草稿（空/斜杠命令/语音中/增强中禁用）；原文可一键撤回 */}
+          <button
+            type="button"
+            onClick={() => void enhancePrompt()}
+            disabled={!text.trim() || text.trim().startsWith("/") || enhancing || stt.active}
+            title={t("enhancePromptTitle")}
+            className={`p-1.5 rounded-lg transition-colors flex items-center justify-center cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+              enhancing
+                ? "text-[var(--status-warn)]"
+                : "hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            {enhancing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+          </button>
+          {enhancementUndo !== null ? (
+            <button
+              type="button"
+              onClick={undoPromptEnhancement}
+              title={t("enhanceUndoTitle")}
+              className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
+            >
+              <Undo2 className="w-4 h-4" />
+            </button>
+          ) : null}
+          {/* 麦克风：点击开始/停止语音识别（未配置引导去设置） */}
+          <button
+            type="button"
+            onClick={() => {
+              if (stt.active) { void stt.toggle(); return; }
+              if (!stt.available) {
+                toast.error("语音输入未配置，请先在设置中完成配置");
+                onOpenSttSettings?.();
+                return;
+              }
+              void stt.toggle();
+            }}
+            title={t("sttMicTitle")}
+            className={`p-1.5 rounded-lg transition-colors flex items-center justify-center cursor-pointer ${
+              stt.active
+                ? "bg-[var(--status-warn)]/15 text-[var(--status-warn)] animate-pulse"
+                : "hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+          >
+            {stt.state === "buffering" || stt.state === "stopping" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
+          </button>
           {/* Send/Stop Button */}
           <div className="flex items-center ml-1">
             {isStreaming ? (

@@ -17,9 +17,16 @@ async function bootstrap() {
       <App />
     </React.StrictMode>,
   );
+  // startup-ready 收起启动闪屏（#loading z 999999 全屏 PE:auto）——
+  // ⚠ 不能只依赖 rAF：窗口被遮挡时 Chromium 节流 rAF，类永不添加，
+  // 闪屏会变成透明点击盾吃掉全部点击（下拉框关不上/按钮点不动的真因）。
+  // rAF 保留动画首帧语义，setTimeout 300ms 兜底保证功能必达。
   requestAnimationFrame(() => {
     document.body.classList.add("startup-ready");
   });
+  setTimeout(() => {
+    document.body.classList.add("startup-ready");
+  }, 300);
 }
 
 void bootstrap();

@@ -648,6 +648,168 @@ pub async fn fs_read_text_file(
     .map_err(|e| e.to_string())?
 }
 
+// ==================== 导入支持（外部 AI 工具会话归档采样 / CC Switch SQLite） ====================
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileEndsSlice {
+    pub path: String,
+    /// 头部完整行（截到最后一个换行为；文件本身更小则原样）
+    pub head: String,
+    /// 尾部完整行（丢弃首个残行；尾巴从文件头开始则原样）
+    pub tail: String,
+    pub total_bytes: usize,
+    pub mtime_ms: Option<u64>,
+}
+
+/// 一次性读文本文件的头/尾字节区间（大归档采样：Codex 头 1MB / 尾 256KB）。
+/// 上限各 8MB；utf8 无效字节以替换符呈现（jsonl 均为文本）。
+#[tauri::command]
+pub async fn fs_read_file_ends(
+    path: String,
+    head_len: Option<usize>,
+    tail_len: Option<usize>,
+) -> Result<FileEndsSlice, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        const MAX: usize = 8 * 1024 * 1024;
+        let resolved = resolve_path(&path);
+        let meta = fs::metadata(&resolved)
+            .map_err(|e| format!("Failed to stat {}: {}", resolved.display(), e))?;
+        if meta.is_dir() {
+            return Err(format!("{} 是目录，不是文件", resolved.display()));
+        }
+        let total = meta.len() as usize;
+        let head_len = head_len.unwrap_or(0).min(MAX).min(total);
+        let tail_len = tail_len
+            .unwrap_or(0)
+            .min(MAX)
+            .min(total.saturating_sub(head_len));
+        use std::io::{Read, Seek, SeekFrom};
+        let mut file =
+            fs::File::open(&resolved).map_err(|e| format!("Failed to open {}: {}", resolved.display(), e))?;
+        let mut head_bytes = vec![0u8; head_len];
+        if head_len > 0 {
+            file.read_exact(&mut head_bytes)
+                .map_err(|e| format!("Failed to read head: {}", e))?;
+        }
+        let tail_start = total - tail_len;
+        let mut tail_bytes = vec![0u8; tail_len];
+        if tail_len > 0 {
+            file.seek(SeekFrom::Start(tail_start as u64))
+                .map_err(|e| format!("Failed to seek tail: {}", e))?;
+            file.read_exact(&mut tail_bytes)
+                .map_err(|e| format!("Failed to read tail: {}", e))?;
+        }
+        // 头：截到最后一个完整换行；文件全在头里则原样。
+        let head_end = if head_len > 0 && head_len < total {
+            head_bytes.iter().rposition(|&b| b == 0x0a).map(|p| p + 1).unwrap_or(0)
+        } else {
+            head_len
+        };
+        // 尾：丢掉首个残行；尾巴从文件头（BOF）开始则原样。
+        let tail_from = if tail_len > 0 && tail_start > 0 {
+            tail_bytes.iter().position(|&b| b == 0x0a).map(|p| p + 1).unwrap_or(tail_bytes.len())
+        } else {
+            0
+        };
+        let mtime_ms = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as u64);
+        Ok(FileEndsSlice {
+            path: resolved.display().to_string(),
+            head: String::from_utf8_lossy(&head_bytes[..head_end]).into_owned(),
+            tail: String::from_utf8_lossy(&tail_bytes[tail_from..]).into_owned(),
+            total_bytes: total,
+            mtime_ms,
+        })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 按名字批量查询本进程环境变量（导入解析 `env:VAR` / Codex `env_key` 引用）。
+/// 只接受全大写字母/数字/下划线的名字，杜绝任意进程状态探测。
+#[tauri::command]
+pub async fn import_env_lookup(
+    names: Vec<String>,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    let mut out = std::collections::HashMap::new();
+    for name in names {
+        let valid = !name.is_empty()
+            && name
+                .chars()
+                .all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_');
+        if valid {
+            if let Ok(value) = std::env::var(&name) {
+                if !value.trim().is_empty() {
+                    out.insert(name, value);
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CcSwitchProviderRowRaw {
+    pub id: String,
+    pub app_type: String,
+    pub name: String,
+    pub settings_config: String,
+}
+
+/// 只读查询 CC Switch 的 `~/.cc-switch/cc-switch.db` providers 表（模型配置导入源）。
+/// 文件不存在 = 未安装该工具，返回空数组（常态）；SQL 失败如实报错。
+#[tauri::command]
+pub async fn ccswitch_read_providers(db_path: String) -> Result<Vec<CcSwitchProviderRowRaw>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if !std::path::Path::new(&db_path).exists() {
+            return Ok(vec![]);
+        }
+        let conn = rusqlite::Connection::open_with_flags(
+            &db_path,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|e| format!("Failed to open cc-switch db: {}", e))?;
+        let mut stmt = conn
+            .prepare("SELECT id, app_type, name, settings_config FROM providers")
+            .map_err(|e| format!("cc-switch query failed: {}", e))?;
+        let value_to_string = |v: rusqlite::types::Value| -> String {
+            use rusqlite::types::Value as V;
+            match v {
+                V::Null => String::new(),
+                V::Integer(i) => i.to_string(),
+                V::Real(f) => f.to_string(),
+                V::Text(s) => s,
+                V::Blob(b) => String::from_utf8_lossy(&b).into_owned(),
+            }
+        };
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(CcSwitchProviderRowRaw {
+                    id: value_to_string(row.get(0)?),
+                    app_type: value_to_string(row.get(1)?),
+                    name: value_to_string(row.get(2)?),
+                    settings_config: value_to_string(row.get(3)?),
+                })
+            })
+            .map_err(|e| format!("cc-switch query failed: {}", e))?;
+        let mut out = Vec::new();
+        for row in rows {
+            match row {
+                Ok(r) => out.push(r),
+                Err(e) => return Err(format!("cc-switch row read failed: {}", e)),
+            }
+        }
+        Ok(out)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 // ==================== 附件（文件选择 / 图片粘贴） ====================
 
 use base64::Engine as _;

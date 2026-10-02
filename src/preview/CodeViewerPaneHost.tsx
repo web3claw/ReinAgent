@@ -238,7 +238,15 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
   const isPatch = codeViewerSource.type === "patch";
 
   return (
-    <div className="flex h-full flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]">
+    <div
+      className="relative flex h-full flex-shrink-0 flex-col border-l border-[var(--border)] bg-[var(--bg)]"
+      style={{ width: paneW }}
+    >
+      {/* 左缘拖拽调宽把手（与 git/files/browser 分支一致；缺失时内容会把面板撑满全屏） */}
+      <div
+        onMouseDown={startResize}
+        className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-[var(--brand)]/30 transition-colors z-10"
+      />
       <div className="flex h-10 flex-shrink-0 items-center justify-between border-b border-[var(--border)] px-3">
         <div className="flex min-w-0 items-center gap-2">
           <span

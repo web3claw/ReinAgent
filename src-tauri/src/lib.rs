@@ -17,6 +17,7 @@ mod history_search;
 mod hub_http;
 mod web_tools;
 mod usage_stats;
+mod stt;
 mod fs_base64;
 mod fs_tree;
 mod git_panel;
@@ -82,6 +83,7 @@ pub fn run() {
                 }
             }))
             .manage(TerminalState::default())
+            .manage(std::sync::Arc::new(stt::SttManager::default()))
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_store::Builder::new().build())
             .plugin(tauri_plugin_notification::init())
@@ -141,7 +143,16 @@ pub fn run() {
             fs_cmd::fs_import_pasted_file,
             fs_cmd::fs_read_attachment_base64,
             fs_cmd::path_home_dir,
+            stt::stt_start,
+            stt::stt_send_audio,
+            stt::stt_stop,
+            stt::stt_cancel,
+            stt::stt_request_microphone_permission,
+            stt::settings_test_stt,
             fs_cmd::fs_read_text_file,
+            fs_cmd::fs_read_file_ends,
+            fs_cmd::import_env_lookup,
+            fs_cmd::ccswitch_read_providers,
             fs_cmd::fs_clean_reinagent_tmp,
             fs_cmd::fs_delete_file,
             fs_cmd::fs_remove_entry,
@@ -163,6 +174,8 @@ pub fn run() {
             browser::browser_set_bounds,
             browser::browser_navigate,
             browser::browser_eval,
+            browser::browser_read_page,
+            browser::browser_screenshot,
             browser::browser_current_url,
             browser::browser_close,
             browser::browser_is_open,
