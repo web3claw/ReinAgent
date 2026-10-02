@@ -180,3 +180,108 @@ test("restoreState 计数器盖过最大序号：压缩后 hydration 不得重�
   ]);
   assert.equal(exotic.nextMessageSeq, 2);
 });
+
+test("toApiMessages：孤儿 toolResult（对应 toolCall 已被压缩移除）不上送", () => {
+  // 场景复现（线上 11148）：压缩把头部的 assistant toolCall 块删了，toolResult
+  // 残留在历史里。上送会被上游以「tool calls and tool results do not match」整请求 400。
+  const orphanResult = {
+    id: "m-orphan",
+    role: "toolResult",
+    toolCallId: "call_orphan_1",
+    content: [{ type: "text", text: "旧结果" }],
+    timestamp: 3,
+  };
+  const state = {
+    messages: [
+      orphanResult, // 头部孤儿（压缩后 seq 0 就是它）
+      {
+        id: "m-u1",
+        role: "user",
+        text: "后续提问",
+        thinking: "",
+        status: "done",
+        timestamp: 4,
+      },
+      {
+        id: "m-a1",
+        role: "assistant",
+        text: "好的",
+        thinking: "",
+        status: "done",
+        apiMessage: {
+          role: "assistant",
+          content: [{ type: "text", text: "好的" }],
+          timestamp: 5,
+        },
+        timestamp: 5,
+      },
+    ],
+    status: "idle",
+  };
+
+  const api = toApiMessages(state);
+  const roles = api.map((m) => m.role);
+  assert.ok(!roles.includes("toolResult"), "孤儿 toolResult 不得上送");
+  assert.equal(api.filter((m) => m.role === "user").length, 1, "user 消息保留");
+  assert.equal(api[api.length - 1].role, "assistant", "assistant 回复保留");
+});
+
+test("toApiMessages：正常配对的 toolCall/toolResult 完整保留", () => {
+  const call = { type: "toolCall", id: "call_ok_1", name: "read_file", arguments: { p: "a.ts" } };
+  const state = {
+    messages: [
+      { id: "m-u", role: "user", text: "读文件", thinking: "", status: "done", timestamp: 1 },
+      {
+        id: "m-a",
+        role: "assistant",
+        text: "",
+        thinking: "",
+        status: "done",
+        apiMessage: {
+          role: "assistant",
+          content: [{ type: "text", text: "我来读" }, call],
+          timestamp: 2,
+        },
+        timestamp: 2,
+      },
+      {
+        id: "m-t",
+        role: "tool",
+        toolCallId: "call_ok_1",
+        toolName: "read_file",
+        text: "",
+        thinking: "",
+        status: "done",
+        isError: false,
+        apiMessage: {
+          role: "toolResult",
+          toolCallId: "call_ok_1",
+          toolName: "read_file",
+          content: [{ type: "text", text: "file body" }],
+          timestamp: 3,
+        },
+        timestamp: 3,
+      },
+      {
+        id: "m-a2",
+        role: "assistant",
+        text: "读到了",
+        thinking: "",
+        status: "done",
+        apiMessage: {
+          role: "assistant",
+          content: [{ type: "text", text: "读到了" }],
+          timestamp: 4,
+        },
+        timestamp: 4,
+      },
+    ],
+    status: "idle",
+  };
+
+  const api = toApiMessages(state);
+  assert.equal(api.length, 4);
+  assert.equal(api[1].content.filter((b) => b.type === "toolCall").length, 1, "toolCall 保留");
+  assert.equal(api[2].role, "toolResult", "toolResult 保留");
+  assert.equal(api[3].role, "assistant");
+});

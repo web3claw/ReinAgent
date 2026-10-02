@@ -18,6 +18,7 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
   const [ready, setReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const slotRef = useRef<HTMLDivElement | null>(null);
+  const addressRef = useRef<HTMLInputElement | null>(null);
   const boundsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
 
   const reportBounds = () => {
@@ -71,6 +72,28 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
       ro.disconnect();
       window.removeEventListener("resize", onWinResize);
       window.clearInterval(interval);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready]);
+
+  // 地址栏跟随子 WebView 的实际 URL：页内点击链接/重定向时 React 态不会自动更新。
+  // 1s 轮询（无推送事件可用）；用户正在地址栏输入时不抢占。
+  useEffect(() => {
+    if (!ready) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      const input = addressRef.current;
+      if (input && document.activeElement === input) return; // 输入中不覆盖
+      void invoke("browser_current_url")
+        .then((u) => {
+          if (cancelled || typeof u !== "string" || !u) return;
+          setAddress((prev) => (prev === u ? prev : u));
+        })
+        .catch(() => {});
+    }, 1000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
@@ -133,6 +156,7 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
           <Globe className="h-3.5 w-3.5 shrink-0 text-[var(--text-dim)]" />
           <input
             type="text"
+            ref={addressRef}
             value={address}
             onChange={(e) => setAddress(e.currentTarget.value)}
             onKeyDown={(e) => {
