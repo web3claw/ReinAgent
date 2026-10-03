@@ -101,7 +101,7 @@ impl SttManager {
         app: AppHandle<R>,
         session_id: String,
         provider: String,
-        mut config: serde_json::Map<String, serde_json::Value>,
+        config: serde_json::Map<String, serde_json::Value>,
     ) -> Result<(), String> {
         self.start_observed(app, session_id, provider, config, None)
             .await

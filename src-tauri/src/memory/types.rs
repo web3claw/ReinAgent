@@ -382,6 +382,7 @@ pub struct MemoryReadArgs {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)] // history* 字段为后续「记忆历史检索」预留；前端 v1 只传部分字段
 pub struct MemorySearchArgs {
     pub query: String,
     pub scope: Option<String>,

@@ -176,10 +176,6 @@ fn db_conn() -> Result<std::sync::MutexGuard<'static, Connection>, String> {
         .map_err(|e| format!("db lock poisoned: {}", e))
 }
 
-fn rule_from_json(json: &str) -> Result<ScheduleRule, String> {
-    serde_json::from_str(json).map_err(|e| format!("schedule rule parse failed: {}", e))
-}
-
 fn rule_to_json(rule: &ScheduleRule) -> String {
     serde_json::to_string(rule).unwrap_or_else(|_| "{}".into())
 }

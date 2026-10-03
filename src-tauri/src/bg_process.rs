@@ -23,11 +23,6 @@ use std::sync::{Arc, Mutex};
 
 const OUTPUT_CAP_BYTES: usize = 256 * 1024;
 
-#[derive(Default)]
-pub struct BgRegistry {
-    inner: Mutex<HashMap<String, BgProcess>>,
-}
-
 pub struct BgProcess {
     child: Child,
     /// stdout+stderr 合并输出缓冲（读线程持续追加，cap 时丢头部保尾部）

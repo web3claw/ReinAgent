@@ -37,7 +37,6 @@ mod usage_stats_tests;
 #[cfg(test)]
 mod web_tools_tests;
 
-use tauri::Manager;
 use terminal::TerminalState;
 
 /// 单实例聚焦用的主进程句柄（single-instance 回调在第二进程上下文触发，
@@ -79,11 +78,11 @@ pub fn run() {
             // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；
             // 必须最先注册（官方要求）。保证任务栏只有一个应用图标。
             .plugin(tauri_plugin_single_instance::init(|_argv, _cwd, _extra| {
+                use tauri::Manager as _;
                 // 回调运行在「新进程」上下文，此处无法直接拿窗口——通过已有实例的
                 // AppHandle 聚焦；插件会把第二实例的参数转给本回调，聚焦逻辑在
                 // setup 里保存的全局句柄上完成（见 SINGLE_APP_HANDLE OnceLock）。
-                use tauri::Manager;
-                if let Some(app) = SINGLE_APP_HANDLE.get() {
+                                if let Some(app) = SINGLE_APP_HANDLE.get() {
                     if let Some(window) = app.get_webview_window("main") {
                         let _ = window.show();
                         let _ = window.unminimize();

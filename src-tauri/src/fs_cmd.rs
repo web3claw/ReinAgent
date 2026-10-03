@@ -365,7 +365,7 @@ pub async fn fs_execute(
     // 代理环境注入（P2-G2 代理贯通）：设置非空时子进程显式继承 HTTP(S)_PROXY/
     // NO_PROXY（覆盖系统继承值）；为空时**清除**继承的代理变量——设置页语义
     // 「不读取系统环境变量，留空直连」。
-    let proxy_env = read_kv_proxy_settings();
+    let _proxy_env = read_kv_proxy_settings();
     tauri::async_runtime::spawn_blocking(move || {
         const EXEC_TIMEOUT_SECS: u64 = 120;
         // 代理环境注入（P2-G2 代理贯通）：设置非空时子进程显式继承 HTTP(S)_PROXY/
@@ -886,7 +886,7 @@ pub async fn fs_read_image_preview(path: String) -> Result<ImageDataBase64, Stri
 #[tauri::command]
 pub async fn fs_import_pasted_file(
     name: String,
-    mime: String,
+    _mime: String,
     base64_data: String,
     workdir: String,
 ) -> Result<String, String> {

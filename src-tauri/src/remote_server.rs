@@ -18,7 +18,7 @@ use axum::{
     },
     http::{HeaderMap, StatusCode},
     response::IntoResponse,
-    routing::{get, post},
+    routing::get,
     Router,
 };
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,7 @@ use std::{
     },
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 // ---------------- 状态 ----------------
 
@@ -352,7 +352,7 @@ async fn ws_session(socket: WebSocket, app: AppHandle) {
         loop {
             match bridge_rx.recv().await {
                 Ok(event) => {
-                    let mut guard = client_for_bridge.lock().await;
+                    let guard = client_for_bridge.lock().await;
                     match event {
                         BridgeEvent::State { task_id, revision, messages, running } => {
                             if guard.subscribed.contains(&task_id) {

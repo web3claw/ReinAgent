@@ -6,7 +6,7 @@
 //! 先回填再查询，数据即时最新；`usage_query` 在 SQL 层聚合（tz 偏移日桶）。
 //! 无 cost 维度（对齐 ZCode：口径一律 token/请求数）。30 天滚动保留（prune）。
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 /// model_usage 事实表（ZCode migration 0010 精简版）。
 pub(crate) const MODEL_USAGE_SCHEMA: &str = "
@@ -169,7 +169,7 @@ fn usage_reset_watermark(conn: &rusqlite::Connection) -> i64 {
 /// 清空全部模型用量账目并写入水位线（此后回填只收水位线之后的新事实）。
 #[tauri::command]
 pub async fn usage_reset() -> Result<u64, String> {
-    let mut conn = crate::conversation_store::db_conn()?;
+    let conn = crate::conversation_store::db_conn()?;
     let tx = conn
         .unchecked_transaction()
         .map_err(|e| format!("txn failed: {e}"))?;

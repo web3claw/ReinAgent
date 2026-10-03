@@ -5,7 +5,6 @@
 //! browser_eval 经 Webview::eval 在子 WebView 里执行 JS（快照/填值/点击由工具层
 //! 组装脚本）；browser_navigate 走原生 Navigate；browser_current_url 供快照定位。
 
-use std::io::Write as _;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -57,7 +56,7 @@ fn ensure_webmsg_handler(app: &AppHandle) -> Result<(), String> {
     }
     let webview = get_browser_webview(app)?;
     let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
-    webview.with_webview(move |platform| {
+    let _ = webview.with_webview(move |platform| {
         let result = (|| {
             let controller = platform.controller();
             let core = unsafe {
@@ -92,7 +91,7 @@ fn ensure_webmsg_handler(app: &AppHandle) -> Result<(), String> {
     });
     rx.recv_timeout(Duration::from_secs(10))
         .map_err(|_| "browser: 注册消息通道超时".to_string())??;
-    WEBMSG_HANDLER_REGISTERED.set(());
+    let _ = WEBMSG_HANDLER_REGISTERED.set(());
     Ok(())
 }
 
@@ -515,6 +514,7 @@ pub async fn browser_read_page(app: AppHandle, js: String) -> Result<String, Str
     }
 }
 
+#[allow(dead_code)] // 保留：字节协议扫描备用工具
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack
         .windows(needle.len())
@@ -530,7 +530,7 @@ pub async fn browser_screenshot(app: AppHandle) -> Result<String, String> {
     {
         let webview = get_browser_webview(&app)?;
         let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
-        webview.with_webview(move |platform| {
+        let _ = webview.with_webview(move |platform| {
             let result = (|| {
                 // PlatformWebview.controller() 在 windows 下直接返回带类型的接口
                 let controller = platform.controller();
