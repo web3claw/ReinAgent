@@ -22,7 +22,6 @@ dist-ssr
 # Environment
 .env
 .env.*
-!.env.example
 
 # Tauri / Rust build artifacts
 src-tauri/target
