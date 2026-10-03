@@ -18,6 +18,7 @@
     "test:assistants": "node --test src/lib/assistants/assistantDefs.test.mjs",
     "test:import": "node --test src/lib/import/import.test.mjs",
     "test:promptEnhancement": "node --test src/lib/promptEnhancement/promptEnhancement.test.mjs",
+    "test:git": "node --test src/lib/git/branchSwitcherLogic.test.mjs",
     "test:agent": "node --test src/lib/agent/streamFnAdapter.test.mjs src/lib/agent/agentRuntime.test.mjs src/lib/agent/askUserTool.test.mjs src/lib/agent/tools.test.mjs src/lib/agent/workspace.test.mjs",
     "test:providers": "node --test src/lib/providers/runAgentTurn.test.mjs src/lib/providers/approvalGate.test.mjs src/lib/providers/modelFactory.test.mjs src/lib/providers/toolPolicy.test.mjs",
     "test:hub": "bun test src/lib/skills/clawHubCategories.test.mjs src/lib/skills/clawHub.test.mjs src/lib/skills/installedSort.test.mjs src/lib/mcpRegistry/index.test.mjs src/lib/memory/schema.test.mjs src/lib/memory/organizer/quota.test.mjs src/lib/memory/organizer/runRecord.test.mjs"

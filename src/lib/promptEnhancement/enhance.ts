@@ -68,8 +68,11 @@ export function withPromptEnhancementTimeout<T>(
   });
 }
 
-/** 单发补全：system + 单条 user 消息，无工具无历史，聚合文本增量返回。 */
-async function completeOneShot(
+/**
+ * 单发补全：system + 单条 user 消息，无工具无历史，聚合文本增量返回。
+ * 提示词增强与 ✨AI 提交信息（lib/git/commitMessage）共用同一传输通道。
+ */
+export async function completeOneShotText(
   config: ProviderConfig,
   systemPrompt: string,
   userText: string,
@@ -133,7 +136,7 @@ export async function enhancePromptDraft(options: PromptEnhancementOptions): Pro
     const merged = signal
       ? AbortSignal.any([timeoutSignal, signal])
       : timeoutSignal;
-    return completeOneShot(config, DEFAULT_PROMPT_ENHANCEMENT_SYSTEM_PROMPT, userText, thinkingLevel, merged);
+    return completeOneShotText(config, DEFAULT_PROMPT_ENHANCEMENT_SYSTEM_PROMPT, userText, thinkingLevel, merged);
   });
   const cleaned = stripEnhancementDecorations(raw);
   if (!cleaned.trim()) {

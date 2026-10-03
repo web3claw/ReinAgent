@@ -17,6 +17,7 @@ import { CommandPalette, type PaletteCommand } from "./components/chat/CommandPa
 import { McpHubPage } from "./components/mcp/McpHubPage";
 import { AssistantsPage } from "./components/assistants/AssistantsPage";
 import { AssistantChip } from "./components/assistants/AssistantChip";
+import { BranchSwitcher } from "./components/git/BranchSwitcher";
 import { MemoryPanel } from "./components/memory/MemoryPanel";
 import { SkillsHubPage } from "./components/skills/SkillsHubPage";
 import { Toaster } from "./components/lw/ui/toaster";
@@ -747,6 +748,15 @@ export default function App() {
   handleNewTaskRef.current = () => handleNewTask;
 
   (window as any).__newTask = () => handleNewTaskRef.current();
+  // E2E 测试钩子：显式设置草稿态工作区（__newTask 不收参数，路径版本由此承担）
+  (window as any).__selectProject = (project: string | null) => setSelectedProject(project);
+  // E2E 测试钩子：创建并激活指向指定项目的任务（workspaceProject 优先取 activeTask.project，
+  // 草稿态 selectedProject 会被 hydrate 的活动任务覆盖——测试须走任务路径才能钉住工作区）
+  (window as any).__activateProjectTask = (project: string) => {
+    const id = createTask("E2E 临时任务", project);
+    setActiveTaskId(id);
+    return id;
+  };
   const handleNewTask = (project?: string | null) => {
     // 切回草稿态：在途任务留在池中继续跑（新建任务 ≠ 停止任何会话）
     setActiveTaskId(null);
@@ -1466,6 +1476,9 @@ export default function App() {
                 }
               }}
             />
+            {/* 分支切换器（ZCode GitBranchSwitcher 移植）：选择即检出（工作区全局）；
+                非 git 仓库/无工作区自行隐藏；新建任务草稿态与已有任务都可用 */}
+            <BranchSwitcher workspacePath={effectiveWorkspaceRoot || undefined} />
           </div>
           <div className="flex items-center gap-2">
             {/* Git 面板入口：点击直开 Git 管理（分支/变更/历史） */}
