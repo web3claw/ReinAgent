@@ -252,8 +252,10 @@ function AssistantEditor({
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const isCreate = draft.editingId === null;
+  const slug = assistantSlug(draft.name);
+  // 中文名自动转写：slug 生成失败但名字非空 = 回退 id 已可生成 → 不禁用保存
   const saveDisabled =
-    !draft.name.trim() || !assistantSlug(draft.name) || !draft.description.trim() || !draft.prompt.trim();
+    !draft.name.trim() || !slug || !draft.description.trim() || !draft.prompt.trim();
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -264,24 +266,31 @@ function AssistantEditor({
           </h2>
         </DialogHeader>
 
+        <DialogHeader className="gap-1 pb-3">
+          <h2 className="text-lg font-semibold">
+            {isCreate ? t("assistantAdd") : t("assistantEdit")}
+          </h2>
+        </DialogHeader>
+
         <DialogBody className="space-y-4">
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--text-dim)]">{t("subagentName")}</label>
+            <label className="text-sm font-medium text-[var(--text-dim)]">{t("subagentName")}</label>
             <Input
               variant="plain"
               value={draft.name}
               placeholder="my-assistant"
+              className="text-base"
               onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
             />
-            {assistantSlug(draft.name) ? (
+            {slug ? (
               <p className="text-[11px] text-[var(--text-dim)]">
-                {t("subagentSlugHint").replace("{id}", assistantSlug(draft.name))}
+                {t("subagentSlugHint").replace("{id}", slug)}
               </p>
             ) : null}
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--text-dim)]">
+            <label className="text-sm font-medium text-[var(--text-dim)]">
               {t("assistantDescLabel")}
             </label>
             <Textarea
@@ -289,12 +298,13 @@ function AssistantEditor({
               rows={2}
               value={draft.description}
               placeholder={t("assistantDescPlaceholder")}
+              className="text-base"
               onChange={(e) => setDraft({ ...draft, description: e.currentTarget.value })}
             />
           </div>
 
           <div className="space-y-1.5">
-            <label className="text-xs font-medium text-[var(--text-dim)]">
+            <label className="text-sm font-medium text-[var(--text-dim)]">
               {t("assistantPromptLabel")}
             </label>
             <Textarea
@@ -302,7 +312,7 @@ function AssistantEditor({
               rows={8}
               value={draft.prompt}
               placeholder={t("assistantPromptPlaceholder")}
-              className="font-mono text-xs leading-relaxed"
+              className="text-sm leading-relaxed"
               onChange={(e) => setDraft({ ...draft, prompt: e.currentTarget.value })}
             />
             <p className="text-[11px] text-[var(--text-dim)]">{t("assistantPromptHint")}</p>

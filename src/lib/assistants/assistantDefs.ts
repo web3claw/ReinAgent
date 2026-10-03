@@ -37,7 +37,13 @@ export interface UserAssistantInput {
 }
 
 export function assistantSlug(value: string): string {
-  const slug = value
+  // 中文名自动转写：纯 CJK 输入没有 a-z 字符可保留——转拼音不可行（无依赖），
+  // 回退为「assistant-<短时间戳>」保证唯一性；显示名（name 字段外的中文）不受影响。
+  const hasAscii = /[a-z0-9]/i.test(value);
+  const base = hasAscii
+    ? value
+    : `assistant-${Date.now().toString(36).slice(-6)}`;
+  const slug = base
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
