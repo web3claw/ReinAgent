@@ -886,11 +886,24 @@ export function createTools(options) {
         if (paneErr) return browserError(paneErr);
         const { invoke } = await import("@tauri-apps/api/core");
         if (params.action === "screenshot") {
-          const base64 = await invoke("browser_screenshot");
+          const shot = await invoke("browser_screenshot");
+          // Windows 返回裸 base64（JPEG，CDP 截图）；Linux 返回 data URL（PNG，
+          // WebKitGTK 原生 snapshot）——两种返回格式都兼容。
+          if (typeof shot === "string" && shot.startsWith("data:image/")) {
+            const mime = shot.slice(5, shot.indexOf(";"));
+            const data = shot.slice(shot.indexOf(",") + 1);
+            return {
+              content: [
+                { type: "text", text: `已截取当前页面图像（内嵌浏览器视口，${mime}）。` },
+                { type: "image", data, mimeType: mime },
+              ],
+              details: { kind: "browser", action: "screenshot" },
+            };
+          }
           return {
             content: [
               { type: "text", text: "已截取当前页面图像（内嵌浏览器视口，JPEG）。" },
-              { type: "image", data: base64, mimeType: "image/jpeg" },
+              { type: "image", data: shot, mimeType: "image/jpeg" },
             ],
             details: { kind: "browser", action: "screenshot" },
           };

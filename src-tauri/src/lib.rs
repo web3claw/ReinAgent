@@ -66,6 +66,14 @@ fn with_window_state(builder: tauri::Builder<tauri::Wry>) -> tauri::Builder<taur
 pub fn run() {
     // 代理注入必须最先执行（WebView2 环境在 builder 初始化时读取这些变量）
     app_proxy::apply_webview_proxy_env();
+    // Linux/Wayland：强制 X11 后端（XWayland）。wry 0.57 的多 webview 子控件
+    // （内嵌浏览器面板）在纯 Wayland 下 set_bounds 被忽略、固定挂在容器底部
+    // 默认布局位置；x11 路径才有 move_/resize 定位能力。当前环境 100% 缩放，
+    // XWayland 无模糊风险（详见 PROJECT_CONTEXT「Linux 分支移植」）。
+    #[cfg(target_os = "linux")]
+    if std::env::var("GDK_BACKEND").unwrap_or_default() != "x11" {
+        std::env::set_var("GDK_BACKEND", "x11");
+    }
     with_window_state(
         tauri::Builder::default()
             // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；

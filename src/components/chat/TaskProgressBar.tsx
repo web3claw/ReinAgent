@@ -9,7 +9,7 @@
  * - 无清单 / 清单为空 → 不渲染（No-Fallback：不显示假进度）。
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 // ⚠️ 必须用 lw 的 Tooltip（内置 TooltipProvider）——直接用 radix primitive 会因缺
 // Provider 崩掉整棵 React 树（本项目 2026-09-27 有过同类事故；Tauri 端实测复现）
 import { Tooltip, TooltipContent, TooltipTrigger } from "../lw/ui/tooltip";
@@ -17,6 +17,7 @@ import { Check, Circle, ChevronRight, X } from "lucide-react";
 import type { TimelineEntry } from "../../lib/chat/conversationModel";
 import { extractLatestTodos, todoProgress as summarizeTodos } from "../../lib/chat/todoProgress";
 import { useTranslation } from "../../i18n";
+import { kvGet, kvSet } from "../../lib/storage/db";
 
 const RING_RADIUS = 7;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
@@ -25,11 +26,13 @@ export function TaskProgressBar({ messages }: { messages: TimelineEntry[] }) {
   const { t } = useTranslation();
   const todos = useMemo(() => extractLatestTodos(messages), [messages]);
   const todosKey = useMemo(() => JSON.stringify(todos), [todos]);
-  // 手动关闭：仅隐藏当前胶囊；清单数据一变（新一轮 todo 更新）即恢复显示
-  const [dismissed, setDismissed] = useState(false);
-  useEffect(() => {
-    setDismissed(false);
-  }, [todosKey]);
+  // 手动关闭：按清单内容签名持久化（kv）——同一份清单跨重启保持关闭；
+  // 清单数据一变（新一轮 todo 更新）签名不同，胶囊自动恢复显示。
+  // dismissedKey 用 state 镜像：点击 × 立即隐藏（kv 写入非响应式，不触发重渲染）。
+  const [dismissedKey, setDismissedKey] = useState<string | null>(
+    () => kvGet("reinagent-todo-dismissed-key") ?? null,
+  );
+  const dismissed = dismissedKey !== null && dismissedKey === todosKey;
   if (!todos || dismissed) return null;
   const { total, done, current, percent } = summarizeTodos(todos);
   const allDone = done === total;
@@ -114,7 +117,10 @@ export function TaskProgressBar({ messages }: { messages: TimelineEntry[] }) {
     <button
       type="button"
       title={t("todoDismiss")}
-      onClick={() => setDismissed(true)}
+      onClick={() => {
+        setDismissedKey(todosKey);
+        kvSet("reinagent-todo-dismissed-key", todosKey);
+      }}
       className="rounded p-0.5 text-[var(--text-dim)] transition-colors hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
     >
       <X className="size-3" />

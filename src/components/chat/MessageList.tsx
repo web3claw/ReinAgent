@@ -10,6 +10,12 @@ const STICK_TO_BOTTOM_PX = 120;
 const TURN_OVERSCAN = 4;
 /** 未测量轮的估算高度（对齐 ZCode estimateSize 兜底）。 */
 const DEFAULT_TURN_HEIGHT = 220;
+interface ScrollAnchor {
+  /** 视口顶部（最近视口顶）可见的消息 id（data-msg-id 锚点）。 */
+  mid: string;
+  /** 锚点消息顶边距滚动视口顶的像素偏移。 */
+  off: number;
+}
 /** 流式 delta 通知节流（对齐 ZCode flushWindowMs=30）由池层负责；此处常量仅注释引用。 */
 
 /**
@@ -131,12 +137,16 @@ export function MessageList({
   // ---- 滚动权状态机：following 存 ref；用户上滚意图 capture 阶段同帧解除 ----
   const followingRef = useRef(true);
   const programmaticUntilRef = useRef(0);
+  /** 任务进入稳定窗：水合/测量风暴期间忽略滚动事件，强制保持贴底（用户上滚立即取消）。 */
+  const entryStickUntilRef = useRef(0);
+  /** 贴底钉住模式：进入任务（无锚点记忆）后忽略一切滚动事件，直到用户上滚/切任务。 */
+  const stickModeRef = useRef(false);
 
   const stickToBottom = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
     // 程序化贴底标记：时间窗内的 scroll 事件不参与跟随判定（区分 user/programmatic 来源）
-    programmaticUntilRef.current = Date.now() + 120;
+    programmaticUntilRef.current = Date.now() + 250;
     el.scrollTop = el.scrollHeight; // instant：smooth 的中间帧会被滚动判定误读为离底
   }, [scrollRef]);
 
@@ -147,43 +157,65 @@ export function MessageList({
     stickToBottom();
   }, [followSignal, stickToBottom]);
 
-  // ---- 任务切换滚动记忆（P2-G2 尾巴）：切进任务默认贴底；同一任务切回恢复上次阅读位置 ----
-  const lastTaskRef = useRef<string | null>(null);
-  const scrollMemoryRef = useRef<Map<string, number>>(new Map());
+  // ---- 任务切换滚动记忆（P2-G2 尾巴，会话内内存版）：
+  //      软件重启后所有任务默认贴底（记忆清空）；软件运行期间任务切换在内存中
+  //      记忆上次阅读位置（锚点消息 + 偏移），切回不重读数据库----
+  const lastTaskRef = useRef<string | null | undefined>(undefined); // undefined = 尚未初始化
+  const scrollMemoryRef = useRef<Map<string, ScrollAnchor>>(new Map());
+  /** 待恢复的锚点：内容异步水合后才定位得到锚点消息，由 turns 更新驱动的恢复效应重试。 */
+  const [pendingRestore, setPendingRestore] = useState<ScrollAnchor | null>(null);
+
+  /** 保存当前阅读位置：取滚动视口内最顶的 data-msg-id 消息锚点 + 视口顶偏移。 */
+  const saveScrollAnchor = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el || !activeTaskId) return;
+    const elTop = el.getBoundingClientRect().top;
+    let best: ScrollAnchor | null = null;
+    for (const node of el.querySelectorAll<HTMLElement>("[data-msg-id]")) {
+      const r = node.getBoundingClientRect();
+      // 跳过完全滚出视口上方的 overscan 行（DOM 首个 ≠ 视口内首个）；
+      // 允许「跨视口顶的长消息」作为锚点（off 为负，恢复时 render-then-place 按负偏移还原）
+      if (r.bottom < elTop) continue;
+      best = { mid: node.dataset.msgId ?? "", off: Math.round(r.top - elTop) };
+      break;
+    }
+    if (!best || !best.mid) return;
+    scrollMemoryRef.current.set(activeTaskId, best);
+  }, [activeTaskId, scrollRef]);
+
   useEffect(() => {
     if (activeTaskId === lastTaskRef.current) return;
-    // 同任务刷新（如 messages 更新）：不干预滚动
-    const isNewTask = lastTaskRef.current !== null && activeTaskId !== lastTaskRef.current;
+    const firstRun = lastTaskRef.current === undefined;
+    const isNewTask = !firstRun && activeTaskId !== lastTaskRef.current;
     lastTaskRef.current = activeTaskId ?? null;
-    if (!isNewTask) return;
-    // 切换任务：恢复上次阅读位置；无记忆 → 贴底
-    const el = scrollRef.current;
-    if (!el) return;
-    followingRef.current = !activeTaskId; // 新任务（null）贴底；已有任务恢复位置后不强制跟随
+    if (!isNewTask && !firstRun) return; // 同任务刷新（如 messages 更新）：不干预滚动
+    // 进入任务：有记忆（含跨重启）→ 待恢复锚点（水合后由恢复效应定位）；无记忆 → 贴底
+    followingRef.current = !activeTaskId;
     const saved = activeTaskId ? scrollMemoryRef.current.get(activeTaskId) : undefined;
-    if (saved !== undefined) {
-      programmaticUntilRef.current = Date.now() + 120;
-      el.scrollTop = saved;
+    if (activeTaskId && saved) {
+      setPendingRestore(saved);
     } else {
       stickToBottom();
+      stickModeRef.current = true; // 贴底钉住：水合/测量风暴期间忽略滚动事件
+      // 进入稳定窗 2.5s：水合（483 条消息一次性加载）与虚拟化测量重排期间的
+      // 滚动修正不解除跟随——「重启/无记忆默认贴底」能站得住的关键
+      entryStickUntilRef.current = Date.now() + 2500;
+      programmaticUntilRef.current = Math.max(programmaticUntilRef.current, Date.now() + 600);
     }
-  }, [activeTaskId, scrollRef, stickToBottom]);
+  }, [activeTaskId, stickToBottom]);
 
-  // 记录滚动位置（任务切换前 + 用户滚动时防抖存储）
+  // 记录滚动位置（用户滚动/程序化滚动防抖保存锚点 + 落 kv 跨重启）
   useEffect(() => {
     if (!activeTaskId) return;
     const el = scrollRef.current;
     if (!el) return;
-    const save = () => {
-      scrollMemoryRef.current.set(activeTaskId, el.scrollTop);
-    };
+    const save = () => saveScrollAnchor();
     el.addEventListener("scroll", save, { passive: true });
     return () => {
       el.removeEventListener("scroll", save);
-      // 卸载前保存最终位置（任务切换时 scrollMemory 已有最新值）
-      scrollMemoryRef.current.set(activeTaskId, el.scrollTop);
+      saveScrollAnchor();
     };
-  }, [activeTaskId, scrollRef]);
+  }, [activeTaskId, saveScrollAnchor]);
 
   // ---- 搜索跳转定位：滚动到目标消息 + 高亮。消息行是轮内 DOM（虚拟化屏外轮未挂载），
   //      所以先确保目标轮在虚拟列表里渲染（scrollToIndex），再对 data-msg-id 锚点定位。----
@@ -238,6 +270,9 @@ export function MessageList({
     if (!el) return;
     const unfollow = () => {
       followingRef.current = false;
+      stickModeRef.current = false;
+      entryStickUntilRef.current = 0; // 用户上滚 = 稳定窗立即失效
+      setPendingRestore(null); // 用户手动滚动 = 取消位置恢复（避免与用户滚动打架）
     };
     let lastTouchY = 0;
     const onWheel = (e: WheelEvent) => {
@@ -272,6 +307,8 @@ export function MessageList({
     if (!el) return;
     const handleScroll = () => {
       if (Date.now() < programmaticUntilRef.current) return;
+      if (Date.now() < entryStickUntilRef.current) return; // 进入稳定窗：测量重排的滚动修正不解除跟随
+      if (stickModeRef.current) return; // 贴底钉住模式：滚动事件全部忽略
       const distanceToBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
       followingRef.current = distanceToBottom <= STICK_TO_BOTTOM_PX;
     };
@@ -401,12 +438,79 @@ export function MessageList({
     const scrollEl = scrollRef.current;
     if (!listEl || !scrollEl) return;
     const observer = new ResizeObserver(() => {
+      // 贴底钉住模式（重启/进入任务后的水合风暴）：强制保持贴底
+      if (stickModeRef.current) {
+        scrollEl.scrollTop = scrollEl.scrollHeight;
+        return;
+      }
       if (followingRef.current) stickToBottom();
     });
     observer.observe(listEl);
     if (followingRef.current) stickToBottom();
     return () => observer.disconnect();
-  }, [scrollRef, stickToBottom]);
+  }, [scrollEl, scrollRef, stickToBottom]);
+
+  // ---- 待恢复锚点定位（对齐 ZCode 按消息锚定）：锚点消息可能尚未水合，
+  //      且虚拟化懒测量会在定位后继续改变上方高度（漂移）——
+  //      常驻 350ms 重钉循环：锚点已渲染 → 像素钉回记忆偏移；未渲染 → 先渲染该轮，
+  //      直到用户手动滚动（unfollow 取消）或组件卸载；跟随流式与新消息不受影响。----
+  useEffect(() => {
+    if (!pendingRestore) return;
+    const el = scrollRef.current;
+    if (!el || scrollEl === null || scrollEl === undefined) return;
+    const locate = () => {
+      const sel = `[data-msg-id="${CSS.escape(pendingRestore.mid)}"]`;
+      const node = el.querySelector(sel);
+      if (!node) {
+        // 轮未渲染（水合后虚拟列表窗口不在锚点附近）：渲染锚点所在轮，下个 tick 像素定位
+        let turnIdx = historyTurns.findIndex(
+          (turn) =>
+            turn.userMessage?.id === pendingRestore.mid ||
+            turn.activity.some((a) => a.id === pendingRestore.mid) ||
+            turn.lastAssistant?.id === pendingRestore.mid,
+        );
+        if (turnIdx === -1) {
+          const liveTurn = turns[liveIndex] ?? null;
+          const inLive =
+            liveTurn &&
+            (liveTurn.userMessage?.id === pendingRestore.mid ||
+              liveTurn.activity.some((a) => a.id === pendingRestore.mid) ||
+              liveTurn.lastAssistant?.id === pendingRestore.mid);
+          if (!inLive) return;
+        }
+        virtualizer.scrollToIndex(turnIdx, { align: "start" });
+        return;
+      }
+      // 已渲染：把锚点钉回记忆偏移（off 可为负 = 跨视口顶的长消息）
+      const target =
+        el.scrollTop +
+        node.getBoundingClientRect().top -
+        el.getBoundingClientRect().top -
+        pendingRestore.off;
+      programmaticUntilRef.current = Date.now() + 350;
+      el.scrollTo({ top: Math.max(0, target), behavior: "auto" });
+      followingRef.current = false;
+    };
+    locate();
+    const timer = window.setInterval(() => locate(), 350);
+    // 用户任何主动交互（滚轮/触摸/键盘/拖滚动条）= 取消恢复重钉，
+    // 否则 350ms 重钉会把用户滚动到的位置拽回锚点（程序化窗口覆盖了整个间隔）
+    const cancelRestore = () => setPendingRestore(null);
+    el.addEventListener("wheel", cancelRestore, { passive: true, capture: true });
+    el.addEventListener("touchstart", cancelRestore, { passive: true, capture: true });
+    el.addEventListener("touchmove", cancelRestore, { passive: true, capture: true });
+    el.addEventListener("keydown", cancelRestore, { capture: true });
+    el.addEventListener("pointerdown", cancelRestore, { capture: true });
+    return () => {
+      window.clearInterval(timer);
+      el.removeEventListener("wheel", cancelRestore, { capture: true });
+      el.removeEventListener("touchstart", cancelRestore, { capture: true });
+      el.removeEventListener("touchmove", cancelRestore, { capture: true });
+      el.removeEventListener("keydown", cancelRestore, { capture: true });
+      el.removeEventListener("pointerdown", cancelRestore, { capture: true });
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 由待恢复锚点与水合驱动
+  }, [pendingRestore, messages, historyTurns, liveIndex, virtualizer, scrollRef, scrollEl]);
 
   const virtualItems = virtualizer.getVirtualItems();
 

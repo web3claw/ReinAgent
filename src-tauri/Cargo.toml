@@ -74,3 +74,10 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Linux 专属：内嵌浏览器的 WebKitGTK 读通道（run_javascript 取值）与原生截图（snapshot→PNG）
+[target.'cfg(target_os = "linux")'.dependencies]
+webkit2gtk = { version = "2", features = ["v2_40"] }
+cairo-rs = { version = "0.18", features = ["png"] }
+javascriptcore = { version = "1", package = "javascriptcore-rs" }
+gtk = { version = "0.18", package = "gtk" }
