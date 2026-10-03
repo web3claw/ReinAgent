@@ -69,6 +69,7 @@ tauri-runtime = "2"
 
 # Read the optimization guideline for more details: https://tauri.app/concept/size/#cargo-configuration
 [profile.release]
+# crt-static 经 .cargo/config.toml 的 rustflags 设置（cargo 配置不支持在 TOML 里写该参数）
 codegen-units = 1
 lto = true
 opt-level = 3
@@ -81,3 +82,5 @@ webkit2gtk = { version = "2", features = ["v2_40"] }
 cairo-rs = { version = "0.18", features = ["png"] }
 javascriptcore = { version = "1", package = "javascriptcore-rs" }
 gtk = { version = "0.18", package = "gtk" }
+
+# 单文件 exe：静态链接 CRT（下面主 [profile.release] 中），产物不依赖目标机的 VC++ 运行库
