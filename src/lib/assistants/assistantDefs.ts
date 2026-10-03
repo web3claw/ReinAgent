@@ -37,18 +37,17 @@ export interface UserAssistantInput {
 }
 
 export function assistantSlug(value: string): string {
-  // 中文名自动转写：纯 CJK 输入没有 a-z 字符可保留——转拼音不可行（无依赖），
-  // 回退为「assistant-<短时间戳>」保证唯一性；显示名（name 字段外的中文）不受影响。
-  const hasAscii = /[a-z0-9]/i.test(value);
-  const base = hasAscii
-    ? value
-    : `assistant-${Date.now().toString(36).slice(-6)}`;
-  const slug = base
+  const slug = value
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 40);
   return /^[a-z0-9]/.test(slug) ? slug : "";
+}
+
+/** 生成中文名助手的稳定 ASCII id（调用方在「打开编辑器」时固定一次，勿在渲染期调用）。 */
+export function fallbackAssistantId(): string {
+  return `assistant-${Date.now().toString(36).slice(-6)}`;
 }
 
 // ---------- frontmatter 解析 / 序列化（与子智能体同风格） ----------
@@ -78,9 +77,11 @@ export function parseAssistantDocument(raw: string): {
 } {
   const errors: string[] = [];
   const { meta, body } = splitFrontmatter(raw);
-  const name = meta.name ?? "";
+  const displayName = meta.name ?? "";
   const description = meta.description ?? "";
-  if (!name) errors.push("missing name");
+  // id：显式 id 行优先（用户助手保存时写入）；回退 name（内置预设 name==id）
+  const id = meta.id ?? displayName;
+  if (!displayName) errors.push("missing name");
   if (!description) errors.push("missing description");
   if (!body) errors.push("empty prompt body");
   if (new TextEncoder().encode(raw).length > MAX_ASSISTANT_BYTES) errors.push("document too large");
@@ -89,8 +90,8 @@ export function parseAssistantDocument(raw: string): {
     ok: true,
     errors: [],
     def: {
-      id: name,
-      name,
+      id,
+      name: displayName,
       description,
       prompt: body,
     },
@@ -103,7 +104,11 @@ export function renderAssistantDocument(def: {
   description: string;
   prompt: string;
 }): string {
-  const lines = ["---", `name: ${def.id}`, `description: ${def.description}`, "---", "", def.prompt.trim(), ""];
+  // name = 用户起的显示名（支持中文）；id = 稳定 ASCII 句柄（文件名/#提及用）。
+  // name 与 id 一致时不写冗余 id 行（内置预设与旧文件同形态）。
+  const lines = ["---", `name: ${def.name}`, `description: ${def.description}`];
+  if (def.id !== def.name) lines.push(`id: ${def.id}`);
+  lines.push("---", "", def.prompt.trim(), "");
   return lines.join("\n");
 }
 
@@ -113,15 +118,21 @@ const BUILTIN_DOCUMENTS: readonly { id: string; name: string; description: strin
   {
     id: "general",
     name: "通用助手",
-    description: "默认人设——不注入任何定制指令，行为与未引入助手功能前完全一致。",
-    prompt: "",
+    description: "日常与工作通用的默认人设，覆盖生活咨询与一般性任务。",
+    prompt: `You are a versatile general-purpose assistant. Preferences for this conversation:
+
+- Match the user's intent and level: answer everyday questions directly and practically; for work tasks, be structured and precise.
+- Prefer concrete, actionable answers over abstract advice; when a decision is needed, state a recommended option with one-line reasoning.
+- Ask a clarifying question only when the request is genuinely ambiguous and the answer would change materially.
+- Answer in the user's language; keep formatting light (plain sentences first, lists only when they aid scanning).`,
   },
   {
     id: "coder",
     name: "代码专家",
     description: "先读后改、小步提交式修改，回答直给代码与关键取舍。",
-    prompt: `You are a senior software engineer assistant. Preferences for this conversation:
+    prompt: `You are ReinAgent, an interactive coding agent that helps users with software engineering tasks. You can read, write and edit files, execute commands in the terminal, and help users with coding tasks. Preferences for this conversation:
 
+- One-off scripts, analysis artifacts and other temporary files must be placed under \`.ReinAgent/temp/\` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under \`.ReinAgent/\` as well (each kind in its own subdirectory), never in the project root.
 - Lead with code, not prose: give the minimal correct change first, then a short rationale.
 - Always read the target file before proposing edits; never guess line contents.
 - Keep changes minimal and scoped; call out any side effects you notice.
@@ -193,7 +204,10 @@ export async function listUserAssistants(): Promise<AssistantsScan> {
         diagnostics.push(`${name}: ${parsed.errors.join("; ")}`);
         continue;
       }
-      records.push({ ...parsed.def, builtin: false });
+      // 文件名 = 稳定 ASCII id（写入时生成）；name 行是中文显示名。
+      // id 与文件名脱钩时的兜底：无 id 行的旧文件 id 仍取 name。
+      const fileId = name.replace(/\.md$/i, "");
+      records.push({ ...parsed.def, id: parsed.def.id || fileId, builtin: false });
     } catch (err) {
       diagnostics.push(`${name}: ${String(err)}`);
     }
@@ -221,7 +235,15 @@ export function loadAssistantCatalog(): Promise<AssistantCatalog> {
     const byId = new Map<string, AssistantDef>();
     for (const b of builtins) byId.set(b.id, b);
     for (const u of users) byId.set(u.id, u);
-    const assistants = [...byId.values()].sort((a, b) => a.id.localeCompare(b.id));
+    // 排序：内置在前（按 id），用户自定义在后（按显示名）——新添加的助手出现在列表底部，
+    // 不再因 assistant-* 前缀 id 排到内置之前（用户反馈）。
+    const assistants = [...byId.values()].sort((a, b) => {
+      const aBuiltin = a.builtin === true;
+      const bBuiltin = b.builtin === true;
+      if (aBuiltin !== bBuiltin) return aBuiltin ? -1 : 1;
+      if (aBuiltin) return a.id.localeCompare(b.id);
+      return a.name.localeCompare(b.name, "zh");
+    });
     const userPaths: Record<string, string> = {};
     for (const u of users) userPaths[u.id] = resolveWorkspacePath(ASSISTANTS_DIR_DISPLAY, "") + `/${u.id}.md`;
     return { assistants, userPaths, diagnostics };

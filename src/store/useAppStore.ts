@@ -86,7 +86,7 @@ interface AppState {
   /** 右侧代码/变更预览面板（ZCode PreviewPane 移植）的打开状态 */
   codeViewerSource:
     | { type: "file"; title: string; path: string }
-    | { type: "text"; title: string; content: string; language: string; path?: string }
+    | { type: "text"; title: string; content: string; language: string; path?: string; liveCategory?: string }
     | { type: "patch"; title: string; path: string; patch: string }
     | { type: "multi-file-diff"; title: string; path?: string }
     | { type: "subagents"; title: string; focusId?: string }
@@ -110,7 +110,7 @@ interface AppState {
   openCodeViewer: (
     source:
       | { type: "file"; title: string; path: string }
-      | { type: "text"; title: string; content: string; language: string; path?: string }
+      | { type: "text"; title: string; content: string; language: string; path?: string; liveCategory?: string }
       | { type: "patch"; title: string; path: string; patch: string }
       | { type: "multi-file-diff"; title: string; path?: string }
       | { type: "subagents"; title: string; focusId?: string }

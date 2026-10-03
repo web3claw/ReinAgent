@@ -120,6 +120,8 @@ export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
                             title: `${t("contextUsageTitle")} · ${t(cat.labelKey as TranslationKey)}`,
                             content,
                             language: cat.language ?? type,
+                            // 面板打开期间内容变化（如切换助手 → 系统提示词变化）自动跟随刷新
+                            liveCategory: cat.key,
                           });
                         },
                       }

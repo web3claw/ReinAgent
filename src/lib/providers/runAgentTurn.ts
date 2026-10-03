@@ -40,8 +40,8 @@ export interface ApprovalCoordinator {
 }
 
 export const DEFAULT_SYSTEM_PROMPT = [
-  "You are ReinAgent, an interactive coding agent that helps users with software engineering tasks. You can read, write and edit files, execute commands in the terminal, and help users with coding tasks. One-off scripts, analysis artifacts and other temporary files must be placed under `.ReinAgent/temp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under `.ReinAgent/` as well (each kind in its own subdirectory), never in the project root.",
-  "",
+  // 身份/目录约定段已迁移：目录约定并入「代码专家」人设与 Environment 段
+  // （Workspace conventions 行）；此处不再有身份句（通用/翻译/文档/自定义助手不注入）
   "# Communication",
   "Before your first tool call, say in a sentence what you're about to do; while working, give brief updates when you find something load-bearing or change direction. Keep text between tool calls to brief status notes; everything the user needs from this turn must be in your final text message, with no tool calls after it.",
   "",
@@ -101,6 +101,12 @@ export function buildEnvironmentSection(input: EnvironmentSectionInput): string 
   if (workspaceRoot) {
     lines.push(
       `- Working directory: ${workspaceRoot} (relative paths in tool calls resolve against this root)`,
+    );
+  }
+  // 工作区目录约定（原系统提示词身份段内容移入此处）：工具/无助手场景都保留完整信息
+  if (workspaceRoot) {
+    lines.push(
+      "- Workspace conventions: One-off scripts, analysis artifacts and other temporary files must be placed under `.ReinAgent/temp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under `.ReinAgent/` as well (each kind in its own subdirectory), never in the project root.",
     );
   }
   if (osBadge) lines.push(`- System: ${osBadge}`);
@@ -455,17 +461,15 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
   // 工作区根声明移入 Environment 段（- Working directory 行；避免重复出现两次）
   let effectiveSystemPrompt = prompt;
-  // 助手人设注入（对齐用户定稿：人设段插入默认提示词前部，工具/安全段保留）：
-  // general/未设置 = 无注入；找不到的助手 id 如实跳过（不中断回合）。
-  if (assistantId && assistantId !== "general") {
+  // 助手人设注入（用户定稿：只注入人设正文，名称/描述不进提示词）：
+  // 未设置/查不到/正文为空 = 无注入（不中断回合）。
+  if (assistantId) {
     try {
       const { loadAssistantCatalog } = await import("../assistants/assistantDefs");
       const catalog = await loadAssistantCatalog();
       const def = catalog.assistants.find((d) => d.id === assistantId);
       if (def && def.prompt.trim()) {
-        effectiveSystemPrompt =
-          `# Assistant Persona: ${def.name}\n${def.description}\n\n${def.prompt.trim()}\n\n---\n\n` +
-          effectiveSystemPrompt;
+        effectiveSystemPrompt = `${def.prompt.trim()}\n\n---\n\n` + effectiveSystemPrompt;
       }
     } catch (err) {
       console.warn("[assistant] persona load failed (continuing without):", err);

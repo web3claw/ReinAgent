@@ -16,6 +16,7 @@ import { useAppStore } from "../../store/useAppStore";
 import {
   GENERAL_ASSISTANT_ID,
   assistantSlug,
+  fallbackAssistantId,
   deleteAssistantById,
   loadAssistantCatalog,
   saveUserAssistant,
@@ -30,7 +31,10 @@ import { CapabilityBadge, CapabilityGroupHeader, CapabilityRow, matchesCapabilit
 
 interface Draft {
   editingId: string | null;
+  /** 表单里的名字（支持中文）。 */
   name: string;
+  /** 稳定 ASCII id（新增时打开编辑器的瞬间固定一次；中文名回退 assistant-xxxxxx）。 */
+  draftId: string;
   description: string;
   prompt: string;
 }
@@ -38,6 +42,7 @@ interface Draft {
 const emptyDraft = (): Draft => ({
   editingId: null,
   name: "",
+  draftId: "",
   description: "",
   prompt: "",
 });
@@ -79,8 +84,8 @@ export function AssistantsPage() {
     try {
       const slug = assistantSlug(draft.name);
       await saveUserAssistant({
-        id: draft.editingId ?? slug,
-        name: slug,
+        id: draft.editingId ?? (slug || draft.draftId),
+        name: draft.name.trim(),
         description: draft.description.trim(),
         prompt: draft.prompt,
       });
@@ -110,7 +115,7 @@ export function AssistantsPage() {
         key={def.id}
         glyph={<Bot className="size-4" />}
         name={def.name}
-        command={isGeneral ? undefined : `#${def.id}`}
+        command={isGeneral ? undefined : `#${def.name}`}
         badges={
           <>
             {def.builtin ? <CapabilityBadge label={t("subagentBuiltinBadge")} /> : null}
@@ -137,7 +142,8 @@ export function AssistantsPage() {
                 onClick={() =>
                   setDraft({
                     editingId: def.id,
-                    name: def.id,
+                    name: def.name,
+                    draftId: def.id,
                     description: def.description,
                     prompt: def.prompt,
                   })
@@ -195,7 +201,7 @@ export function AssistantsPage() {
         </div>
         <Button
           size="sm"
-          onClick={() => setDraft(emptyDraft())}
+          onClick={() => setDraft({ ...emptyDraft(), draftId: fallbackAssistantId() })}
         >
           <Plus className="size-3.5" />
           {tf("assistantAdd")}
@@ -252,20 +258,15 @@ function AssistantEditor({
   const { t } = useTranslation();
   const [error, setError] = useState<string | null>(null);
   const isCreate = draft.editingId === null;
+  // 保存用的稳定 id：ASCII 名转 slug；中文名用打开编辑器时固定的 draftId
   const slug = assistantSlug(draft.name);
-  // 中文名自动转写：slug 生成失败但名字非空 = 回退 id 已可生成 → 不禁用保存
+  const effectiveId = draft.editingId ?? (slug || draft.draftId);
   const saveDisabled =
-    !draft.name.trim() || !slug || !draft.description.trim() || !draft.prompt.trim();
+    !draft.name.trim() || !effectiveId || !draft.description.trim() || !draft.prompt.trim();
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="flex max-h-[92vh] max-w-xl flex-col" closeLabel={t("cancel")}>
-        <DialogHeader className="gap-1 pb-3">
-          <h2 className="text-base font-semibold">
-            {isCreate ? t("assistantAdd") : t("assistantEdit")}
-          </h2>
-        </DialogHeader>
-
         <DialogHeader className="gap-1 pb-3">
           <h2 className="text-lg font-semibold">
             {isCreate ? t("assistantAdd") : t("assistantEdit")}
@@ -282,9 +283,9 @@ function AssistantEditor({
               className="text-base"
               onChange={(e) => setDraft({ ...draft, name: e.currentTarget.value })}
             />
-            {slug ? (
+            {draft.name.trim() && effectiveId ? (
               <p className="text-[11px] text-[var(--text-dim)]">
-                {t("subagentSlugHint").replace("{id}", slug)}
+                {t("subagentSlugHint").replace("{id}", effectiveId)}
               </p>
             ) : null}
           </div>
@@ -331,7 +332,8 @@ function AssistantEditor({
             size="sm"
             disabled={saveDisabled}
             onClick={() => {
-              if (!assistantSlug(draft.name)) {
+              // 校验与 saveDisabled 同口径：中文名用 draftId 兜底，不再要求 slug
+              if (!draft.name.trim() || !effectiveId) {
                 setError(t("subagentErrorSlug"));
                 return;
               }

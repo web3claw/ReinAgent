@@ -331,6 +331,31 @@ export default function App() {
   // 快捷动作卡预填状态（EmptyState → 输入框；hooks 必须在设置页早退 return 之前声明）
   const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(null);
   const prefillNonceRef = useRef(0);
+  // 当前生效助手的完整人设文本（与 runAgentTurn 注入格式同构；「系统提示词」导出用）
+  const [activePersonaText, setActivePersonaText] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const assistantId = activeTask?.assistantId ?? globalDefaultAssistantId;
+    if (!assistantId) {
+      setActivePersonaText(null);
+      return;
+    }
+    void (async () => {
+      try {
+        const { loadAssistantCatalog } = await import("./lib/assistants/assistantDefs");
+        const catalog = await loadAssistantCatalog();
+        const def = catalog.assistants.find((d) => d.id === assistantId);
+        if (cancelled) return;
+        // 只注入人设正文（名称/描述不进提示词）
+        setActivePersonaText(def && def.prompt.trim() ? `${def.prompt.trim()}\n\n---\n\n` : null);
+      } catch {
+        if (!cancelled) setActivePersonaText(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [activeTask?.assistantId, globalDefaultAssistantId]);
 
   // 全局会话搜索弹窗（侧栏放大镜触发）
   const [searchOpen, setSearchOpen] = useState(false);
@@ -476,13 +501,15 @@ export default function App() {
     };
     const buildSystemPromptExport = (): string => {
       // 与真实发送链路（runAgentTurn）同构：root 长句已并入 Environment 的
-      // Working directory 行；System/Terminal shell 来自 system_info + 终端配置
+      // Working directory 行；System/Terminal shell 来自 system_info + 终端配置；
+      // 助手人设段（若有）在最前部——与 runAgentTurn 的注入格式逐字一致。
       const osInfo = getCachedOsInfo();
       const osBadge = osInfo
         ? [osInfo.version, osInfo.arch].filter(Boolean).join(" ")
         : undefined;
       const terminalShell = getTerminalSettings().shell || undefined;
       return (
+        (activePersonaText ?? "") +
         DEFAULT_SYSTEM_PROMPT +
         `\n\n${buildEnvironmentSection({
           workspaceRoot: effectiveWorkspaceRoot,
@@ -507,7 +534,8 @@ export default function App() {
       total: currentModel?.contextWindow,
       hitRate,
       messages: state.messages,
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
+      // 人设段计入「系统提示词」类别字符数（与导出内容同口径）
+      systemPrompt: (activePersonaText ?? "") + DEFAULT_SYSTEM_PROMPT,
       toolsJson: JSON.stringify(getTools({ workspaceRoot: effectiveWorkspaceRoot })),
       skillsJson: skillsSectionText || undefined,
       mcpToolsJson: mcpToolsJson || undefined,
@@ -534,7 +562,23 @@ export default function App() {
     skillsSectionText,
     mcpToolsJson,
     memorySectionText,
+    activePersonaText,
   ]);
+
+  // ---- 上下文类别面板跟随刷新：面板打开期间该类内容变化（切换助手 → 系统提示词变、
+  //      技能/MCP 启停等）时，用最新内容原位更新同一面板（保持标题与语言不变）。
+  const liveCategory = codeViewerSource?.type === "text" ? codeViewerSource.liveCategory : undefined;
+  useEffect(() => {
+    if (!liveCategory || !contextUsage) return;
+    const cat = contextUsage.categories.find((c) => c.key === liveCategory);
+    if (!cat || typeof cat.buildContent !== "function") return;
+    const latest = cat.buildContent();
+    const current = useAppStore.getState().codeViewerSource;
+    if (current?.type !== "text" || current.liveCategory !== liveCategory) return;
+    if (current.content === latest) return; // 内容未变不动（避免无谓重开）
+    openCodeViewer({ ...current, content: latest });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 由上下文快照驱动
+  }, [contextUsage, liveCategory]);
 
   // 会话统计：轮数 / 工具步数 / LLM 与工具累计耗时 / token 用量（真实 usage 累加）
   const sessionStats = useMemo(() => {

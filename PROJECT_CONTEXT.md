@@ -1104,3 +1104,18 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **治本（toApiMessages 发送兜底）**：walk 时维护 declaredCalls 集合（assistant apiMessage 的 toolCall 块 id）；tool 条目的 toolCallId 配不上任何前序声明 → 该 toolResult 不上送（console.warn 计数）。正常配对完整保留（单测守护：孤儿剪除 + 正常配对保留两用例）。B-2 尾部合成结果逻辑不变。
   - **治标（本任务数据修复）**：一次性脚本剪除头部 3 条孤儿行（conversation_sync 重写，485→482 行），复验孤儿数 0。注意：任务若在桌面打开着，池内存态可能在后续编辑时重写回孤儿——但发送已被治本兜底，无害。
   - 测试：chat 套件 132→134（新增孤儿剪除/正常配对保留两用例）。
+
+- **提示词结构变更：身份/目录约定段迁移 ✅（2026-10-03 用户定稿）**：
+  - **改动**：`DEFAULT_SYSTEM_PROMPT` 移除首行「身份与目录约定」段（公共提示词不再含身份句——通用助手/翻译官/文档写手/所有自定义助手一律不注入）；目录约定（`.ReinAgent/temp` 与 `.ReinAgent/` 持久资料规则）并入两处：①「代码专家」助手人设正文（身份句 + 目录约定 + 4 条偏好，用户提供定稿文本）；② Environment 段新增 `- Workspace conventions:` 行（仅工作区根存在时注入，完整原句）。
+  - **影响链**：runAgentTurn（助手人设注入 + buildEnvironmentSection）、App.tsx 系统提示词导出（follows DEFAULT + env，自动一致）、自动化任务与 useConversation 的旧路径引用同一常量自动跟随。
+  - **E2E 四点**：默认提示词不含身份句/不含 temp 规则、以 # Communication 开头 ✓；Environment 含 Workspace conventions 完整句 ✓；coder 人设 = 定稿合并文本 ✓；general/writer/translator 均不含身份段与 temp 规则 ✓。tsc 0 + 相关套件绿（providers 3 败为存量 .js 尾缀问题）。
+
+- **助手人设注入格式与通用助手定稿 ✅（2026-10-03 用户定稿）**：
+  - **只注入正文**：`runAgentTurn` 与 App 的「系统提示词」导出统一改为 `<人设正文>\n\n---\n\n` 前缀——不再有 `# Assistant Persona: <名称>` 标题行与描述行（名称/描述不进提示词）。E2E 实证：导出内容首行即 coder 正文，`Assistant Persona` 与描述均不存在。
+  - **通用助手不再是空人设**：`general` 现在带生活/工作通用人设（匹配用户意图与层次、具体可执行、必要时才追问、跟随用户语言）；注入逻辑同步移除 `assistantId !== "general"` 跳过（改为「正文为空才跳过」）。测试断言同步更新（general 有正文）。
+  - 影响链：runAgentTurn 注入、App 系统提示词导出（activePersonaText）、上下文面板该行列数与内容一致。tsc 0 + 全套绿（providers 3 败为存量 .js 尾缀问题）。
+
+- **上下文类别面板跟随刷新 ✅（2026-10-03 用户要求）**：
+  - **需求**：打开「上下文容量 · 系统提示词」面板时，切换助手（任务内 chip 或全局默认变化）后提示词面板要跟着更新。
+  - **实现**：`codeViewerSource` 的 text 形态新增 `liveCategory?: string`（ContextUsageIndicator 点开时写入类别 key，如 systemPrompt）；App 监听 `contextUsage` 快照 + liveCategory，类别内容变化时用最新 `buildContent()` 原位重开同一面板（内容相同不动，避免无谓重开）。不止助手——技能/MCP 启停等类别内容变化同样跟随。
+  - **E2E 四点**：面板显示 coder 正文 ✓ → 任务切 translator → 面板自动变 translator 正文且 coder 正文消失 ✓ → 切回 coder 又恢复 ✓。tsc 0 + 全套绿。
