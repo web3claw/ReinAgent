@@ -89,7 +89,8 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
   return (
     <div className="flex h-screen w-full bg-[var(--bg)] text-[var(--text)]">
       {/* Left Nav */}
-      <div className="w-56 bg-[var(--settings-nav-bg)] border-r border-[var(--border)] flex flex-col">
+      {/* Left Nav —— shrink-0：宽度恒定，内容再宽也不许挤压侧栏（内层溢出在内容区内部消化） */}
+      <div className="w-56 shrink-0 bg-[var(--settings-nav-bg)] border-r border-[var(--border)] flex flex-col">
         <div className="p-4 border-b border-[var(--border)]">
           <button
             onClick={onBack}
@@ -123,9 +124,14 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           （px-5 sm:6 lg:8 xl:10、顶 pt-4 底 pb-6）+ 内容 max-w-1320px 居中。
           ⚠ 底部间距放在滚动内容上（inner pb-6）+ items-start，原因见 git 历史：
           flex 滚动容器 padding-bottom 不计入可滚动区域、stretch 会把 inner 拉成固定高。 */}
-      <div className="flex min-h-0 flex-1 bg-background">
+      {/* min-w-0：阻断内层（如 skills 分类胶囊行）min-content 向上传播——
+          否则 flex 默认 min-width:auto 会让内容面板被撑宽、把侧栏挤压缩窄。 */}
+      <div className="flex min-h-0 min-w-0 flex-1 bg-background">
       {activeTab === 'skills' || activeTab === 'mcp' || activeTab === 'memory' ? (
-        <div className="flex min-h-0 w-full flex-col overflow-hidden">
+        /* [scrollbar-gutter:stable]：hub 页内容区自身不滚动、无滚动条占位，若不常驻预留
+           槽位会比滚动页（基础设置等）宽一个滚动条宽度，切 tab 时右边缘跳动
+           （用户反馈「skills 页比其他页宽」）。skills/mcp/memory 三个 hub 共用此包裹层。 */
+        <div className="flex min-h-0 w-full flex-col overflow-hidden [scrollbar-gutter:stable]">
           {activeTab === 'skills' && <SkillsHubPage />}
           {activeTab === 'mcp' && <McpHubPage />}
           {activeTab === 'memory' && (
@@ -136,26 +142,26 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           )}
         </div>
       ) : activeTab === 'remote' ? (
-        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 sm:px-6 lg:px-8 xl:px-10">
+        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 [scrollbar-gutter:stable] sm:px-6 lg:px-8 xl:px-10">
           <div className="mx-auto w-full max-w-1320px">
             <RemoteAccessSection />
           </div>
         </div>
       ) : activeTab === 'enhance' ? (
-        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 sm:px-6 lg:px-8 xl:px-10">
+        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 [scrollbar-gutter:stable] sm:px-6 lg:px-8 xl:px-10">
           <div className="mx-auto w-full max-w-1320px">
             <PromptEnhancementCard />
           </div>
         </div>
       ) : activeTab === 'stt' ? (
-        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 sm:px-6 lg:px-8 xl:px-10">
+        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 [scrollbar-gutter:stable] sm:px-6 lg:px-8 xl:px-10">
           <div className="mx-auto w-full max-w-1320px">
             <SttSection />
           </div>
         </div>
       ) : activeTab === 'import' ? (
         /* 导入工作台：四类外部数据源（会话/模型/技能/MCP），hub 同款内边距节奏 */
-        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 sm:px-6 lg:px-8 xl:px-10">
+        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 [scrollbar-gutter:stable] sm:px-6 lg:px-8 xl:px-10">
           <ImportSection />
         </div>
       ) : activeTab === 'provider' ? (
@@ -167,7 +173,10 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           </div>
         </div>
       ) : (
-      <div className="flex-1 overflow-y-auto px-5 pt-4 sm:px-6 lg:px-8 xl:px-10 flex justify-center items-start">
+      <div className="flex-1 overflow-y-auto px-5 pt-4 [scrollbar-gutter:stable] sm:px-6 lg:px-8 xl:px-10 flex justify-center items-start">
+        {/* [scrollbar-gutter:stable]：常驻滚动条槽位——Skills/MCP/记忆等 hub 页内容区
+            自身不滚动（无滚动条占位），若此处不预留，滚动页比 hub 页窄一个滚动条宽度，
+            切 tab 时右边缘会跳动（用户反馈「skills 页比其他页宽」）。 */}
         <div className="w-full max-w-1320px pb-6 transition-all duration-200">
           {activeTab === 'general' && (
             <div className="space-y-6">

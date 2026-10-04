@@ -23,7 +23,7 @@ const tabsListVariants = cva(
         plain: "",
         segmented: "h-9 gap-0.5 rounded-xl bg-segmented-track p-1 ring-1 ring-foreground/5",
         filter:
-          "flex h-auto max-w-full flex-nowrap justify-start gap-1 overflow-x-auto rounded-none bg-transparent p-0 pb-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          "flex h-auto max-w-full flex-wrap justify-start gap-1 rounded-none bg-transparent p-0 pb-0.5",
       },
     },
     defaultVariants: { variant: "default" },
