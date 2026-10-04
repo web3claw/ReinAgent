@@ -55,7 +55,14 @@ pub fn shell_detect() -> std::collections::BTreeMap<String, String> {
     let mut out = std::collections::BTreeMap::new();
     for name in candidates {
         let probe = if cfg!(target_os = "windows") {
-            Command::new("where").arg(name).output()
+            let mut c = Command::new("where");
+            c.arg(name);
+            #[cfg(windows)]
+            {
+                use std::os::windows::process::CommandExt;
+                c.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+            }
+            c.output()
         } else {
             Command::new("which").arg(name).output()
         };

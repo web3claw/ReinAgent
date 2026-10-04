@@ -1171,3 +1171,13 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **点击通知跳转**：Rust `notify_send` 增 `task_id` 参数——Windows Toast `on_activated` / Linux freedesktop `default` action + `wait_for_action("default")` → `emit_notify_activate`（聚焦主窗口 show+unminimize+set_focus + emit "notify-activate"）→ 前端 listen → setActiveTaskId + `followSignal` 强制贴底（无视滚动记忆）；任务已删则仅聚焦窗口。
   - **Windows dev 横幅缺失根因（重点坑）**：未注册 AUMID 的应用 Toast **只进通知中心不弹横幅**（API 成功、History 有记录、但无横幅）。修复：setup 时 `ensure_windows_aumid_registered()`——仅 dev 版（exe 在 target\debug|release）用 PowerShell 幂等写 `HKCU:\Software\Classes\AppUserModelId\com.reinagent.app`（DisplayName+IconUri）；安装版由 Tauri NSIS 安装器注册。**验证铁律：注册后 Toast 横幅 GDI 截屏实证弹出了**；通知中心 History.GetHistory 数条数+读正文。
   - 回归：tsc 0 / 前端绿 / Rust 185。测试任务与残留 E2E 任务已清。
+
+- **构建警告清理 ✅（2026-10-04 用户要求，三类全处理）**：
+  - **② INEFFECTIVE_DYNAMIC_IMPORT（8 处）**：同模块既被静态又被动态 import → 动态形式被 Rolldown 忽略（纯代码异味）。全部改静态：App.tsx（event listen×2 / hooksRuntime×5 / systemInfo / skills/index 命名空间）、PluginsSection（skills invalidate）、runAgentTurn（hooksRuntime PreToolUse×2 + lifecycle fireLifecycleHook + systemInfo Promise.all 解构）、hooksRuntime（pluginRegistry×2）、skills/index（pluginRegistry）、import/scan（importers）、FilesPanel + AgentSubagentsPage（opener reveal）、conversationPool + subagentDefinitions（model-provider/types loadProvidersConfigFromDisk）。行为零变化（打包器本就忽略），tsc 0 + chat/git/agent 套件绿。
+  - **③ STATIC_VCRUNTIME deprecation**：`build.windows.staticVCRuntime: true` 写入 tauri.conf.json（新官方方式）；`src-tauri/.cargo/config.toml` 的 rustflags `+crt-static` 保留（真正的代码生成标志，两者配合）。release 重编后二进制不含 VCRUNTIME140/MSVCP140（静态 CRT 保持），tauri-build 弃用警告消失（build.rs 强制重跑验证）。
+  - **① chunk 大小告警**：主 chunk 3.1MB（pi-ai/shiki 级依赖集中）——桌面端无网络加载瓶颈不做代码拆分；`build.chunkSizeWarningLimit: 3500`（先试 1000 仍超，按实测调）。vite build 输出零警告。
+
+- **dev 运行持续闪 cmd 窗修复 ✅（2026-10-04 用户报，全仓 spawn 审计）**：
+  - **根因**：GUI 进程在 Windows 上 spawn 控制台程序（git/powershell/cmd）时，系统会为无窗口子进程分配**可见控制台**——`git_panel.rs` 的 git 调用（Git 面板 10s 轮询×3 命令 + 切分支/提交/identity/check-ref-format）与 AUMID 注册的 powershell 全部裸 `Command::new`，构成持续闪烁。terminal/pty、bg_process、fs_execute、hooks、mcp、skills 等旧代码原本就带 CREATE_NO_WINDOW，本批新写的 git/通知代码漏了。
+  - **修复**：git_panel.rs 顶部加 `no_window()` helper（Windows 下挂 `CREATE_NO_WINDOW` 0x0800_0000，非 Windows 无操作），全部 spawn 统一走它；全仓审计补齐 3 处同款裸 spawn：`system_info.rs`（cmd /c ver，启动即调）、`plugins.rs`（插件市场 git clone）、`fs_cmd.rs shell_detect`（where/which，设置页触发）。
+  - 教训：**Windows GUI 应用 spawn 控制台程序必须 CREATE_NO_WINDOW**——新代码引入 `Command::new` 时默认要带（尤其会周期轮询的）。

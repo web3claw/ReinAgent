@@ -299,10 +299,14 @@ pub async fn plugin_install_from_git(
 }
 
 fn run_git_clone(url: &str, dst: &Path) -> Result<(), String> {
-    let output = std::process::Command::new("git")
-        .args(["clone", "--depth", "1", url])
-        .arg(dst)
-        .output()
+    let mut cmd = std::process::Command::new("git");
+    cmd.args(["clone", "--depth", "1", url]).arg(dst);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let output = cmd.output()
         .map_err(|e| format!("git 不可用：{e}"))?;
     if output.status.success() {
         Ok(())

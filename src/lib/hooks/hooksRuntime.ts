@@ -16,6 +16,7 @@
  */
 
 import { kvGet, kvSet } from "../storage/db";
+import { getEnabledPluginHooks, getPluginOptions } from "../plugins/pluginRegistry";
 
 // ---- 事件体系（2026-10-01 对齐 LiveAgent Hooks 页面）----
 // 生命周期事件：页面主分组，8 个按对话生命周期顺序排列；观察性（不阻塞主流程）。
@@ -196,7 +197,7 @@ export async function discoverWorkspaceHooks(workspaceRoot: string): Promise<Dis
  */
 export async function discoverPluginHooks(): Promise<HookConfigEntry[]> {
   try {
-    const { getEnabledPluginHooks } = await import("../plugins/pluginRegistry");
+    { /* getEnabledPluginHooks 静态引入 */ }
     return await getEnabledPluginHooks();
   } catch (err) {
     console.warn("[hooks] plugin hooks discovery failed:", err);
@@ -393,7 +394,7 @@ async function runHookEntries(
     const pluginName = (entry as { pluginName?: unknown }).pluginName;
     if (typeof pluginName === "string") {
       try {
-        const { getPluginOptions } = await import("../plugins/pluginRegistry");
+        { /* getPluginOptions 静态引入 */ }
         pluginOptions = getPluginOptions(pluginName, null);
       } catch {
         pluginOptions = undefined;

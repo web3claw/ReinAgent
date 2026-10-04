@@ -66,6 +66,8 @@ import { PlanModeCard } from "./components/chat/PlanModeCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { kvGet } from "./lib/storage/db";
 import { useAppStore } from "./store/useAppStore";
+import { listen } from "@tauri-apps/api/event";
+import { discoverWorkspaceHooks, runWorkspaceHooks, trustWorkspaceHooks, untrustWorkspaceHooks } from "./lib/hooks/hooksRuntime";
 import { useTranslation } from "./i18n";
 import {
   SHORTCUT_ACTIONS,
@@ -73,6 +75,8 @@ import {
   matchesShortcut,
 } from "./lib/shortcuts/shortcuts";
 import { getCachedOsInfo } from "./lib/system/systemInfo";
+import * as skillsLib from "./lib/skills/index";
+import { getOsInfo } from "./lib/system/systemInfo";
 import { getTerminalSettings } from "./lib/terminal/terminalSettings";
 import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
@@ -178,7 +182,7 @@ export default function App() {
     }
     void (async () => {
       try {
-        const skillsLib = await import("./lib/skills/index");
+        // skillsLib 已静态引入（skillsLib.*）
         const discovery = await skillsLib.discoverSkills();
         const selectedSkills = discovery.skills.filter((skill) =>
           hubSkillsSettings.selected.includes(skill.name),
@@ -898,7 +902,7 @@ export default function App() {
     let cancelled = false;
     void (async () => {
       try {
-        const { listen } = await import("@tauri-apps/api/event");
+        // listen 已静态引入
         const stop = await listen<AutomationDuePayload>("automation-due", (event) => {
           dispatchAutomationRunRef.current(event.payload);
         });
@@ -950,7 +954,7 @@ export default function App() {
     let cancelled = false;
     void (async () => {
       try {
-        const { listen } = await import("@tauri-apps/api/event");
+        // listen 已静态引入
         const stop = await listen<{ taskId: string }>("notify-activate", (event) => {
           const taskId = event.payload?.taskId;
           const store = useAppStore.getState();
@@ -982,7 +986,7 @@ export default function App() {
     return subscribeTaskTerminal((event) => {
       void (async () => {
         try {
-          const { runWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+          { /* runWorkspaceHooks 静态引入 */ }
           await runWorkspaceHooks(
             "Stop",
             { payload: { taskId: event.taskId, outcome: event.outcome, error: event.error ?? null } },
@@ -1006,7 +1010,7 @@ export default function App() {
     if (!effectiveWorkspaceRoot) return;
     void (async () => {
       try {
-        const { discoverWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+        { /* discoverWorkspaceHooks 静态引入 */ }
         const discovered = await discoverWorkspaceHooks(effectiveWorkspaceRoot);
         if (!cancelled && discovered && discovered.entries.length > 0 && !discovered.trusted) {
           setHooksPendingTrust({
@@ -1269,7 +1273,7 @@ export default function App() {
     if (effectiveWorkspaceRoot) {
       void (async () => {
         try {
-          const { runWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+          { /* runWorkspaceHooks 静态引入 */ }
           const outcome = await runWorkspaceHooks(
             "UserPromptSubmit",
             { payload: { prompt: text } },
@@ -1365,7 +1369,6 @@ export default function App() {
   useEffect(() => {
     void (async () => {
       try {
-        const { getOsInfo } = await import("./lib/system/systemInfo");
         await getOsInfo();
       } catch {
         // 拉取失败无害：导出缺 System 行而已
@@ -1578,7 +1581,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   void (async () => {
-                    const { trustWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+                    { /* trustWorkspaceHooks 静态引入 */ }
                     trustWorkspaceHooks(effectiveWorkspaceRoot || "", hooksPendingTrust.raw);
                     setHooksPendingTrust(null);
                     toast.success("已批准工作区 hooks");
@@ -1592,7 +1595,7 @@ export default function App() {
                 type="button"
                 onClick={() => {
                   void (async () => {
-                    const { untrustWorkspaceHooks } = await import("./lib/hooks/hooksRuntime");
+                    { /* untrustWorkspaceHooks 静态引入 */ }
                     untrustWorkspaceHooks(effectiveWorkspaceRoot || "");
                     setHooksPendingTrust(null);
                   })();

@@ -44,9 +44,14 @@ pub fn system_info() -> SystemInfo {
 /// Windows：`cmd /c ver` 输出形如 "Microsoft Windows [Version 10.0.26100.9444]"，
 /// 取第三段（build 号）判 Win 10/11（≥22000 = Win 11）。
 fn windows_version() -> String {
-    let output = std::process::Command::new("cmd")
-        .args(["/C", "ver"])
-        .output();
+    let mut cmd = std::process::Command::new("cmd");
+    cmd.args(["/C", "ver"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
+    }
+    let output = cmd.output();
     let text = match output {
         Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
         Err(_) => return "Windows".to_string(),

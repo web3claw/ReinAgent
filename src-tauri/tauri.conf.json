@@ -7,7 +7,10 @@
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "bun run build",
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "windows": {
+      "staticVCRuntime": true
+    }
   },
   "app": {
     "windows": [
@@ -32,7 +35,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "appimage"],
+    "targets": [
+      "app",
+      "appimage"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

@@ -7,6 +7,7 @@ import { buildModel } from "./modelFactory";
 import type { ProviderConfig } from "./modelFactory";
 import { getFauxAgentSource } from "./fauxSource";
 import type { ProviderType } from "./catalog";
+import { runWorkspaceHooks, fireLifecycleHook } from "../hooks/hooksRuntime";
 import { createMcpTools } from "../mcp/mcpTools";
 import { createAskUserQuestionTool } from "../agent/askUserTool";
 import { EXIT_PLAN_MODE_TOOL_NAME, createExitPlanModeTool } from "../agent/exitPlanModeTool";
@@ -267,7 +268,6 @@ export function createApprovalGate(
     let hooksApprove = false;
     if (hooksWorkspaceRoot) {
       try {
-        const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
         const hookOutcome = await runWorkspaceHooks(
           "PreToolUse",
           { toolName, payload: ctx.args },
@@ -320,7 +320,6 @@ export function createApprovalGate(
     // （approve = 免审放行；block = 拒绝；无裁决走正常挂起）。
     if (hooksWorkspaceRoot) {
       try {
-        const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
         const outcome = await runWorkspaceHooks(
           "PermissionRequest",
           { toolName, payload: { args: ctx.args } },
@@ -539,7 +538,6 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
   // 提示词尾部；blocked = 本轮拒绝启动（真实错误上抛，绝不静默放行）。
   if (workspaceRoot) {
     try {
-      const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
       const outcome = await runWorkspaceHooks(
         "SessionStart",
         { payload: { workspaceRoot } },
@@ -592,7 +590,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
                   : "message" in event
                     ? { role: event.message.role }
                     : {};
-            import("../hooks/hooksRuntime")
+            Promise.resolve({ fireLifecycleHook })
               .then(({ fireLifecycleHook }) => {
                 fireLifecycleHook(event.type, { payload }, workspaceRoot);
               })
@@ -631,8 +629,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
       workspaceRoot
         ? async (ctx: import("@earendil-works/pi-agent-core").AfterToolCallContext) => {
             try {
-              const { runWorkspaceHooks } = await import("../hooks/hooksRuntime");
-              const resultText =
+                    const resultText =
                 ctx.result?.content
                   ?.filter((block: { type: string }): block is { type: "text"; text: string } => block.type === "text")
                   .map((block) => block.text)

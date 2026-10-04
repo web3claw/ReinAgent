@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import {
   FileText,
   Folder,
@@ -151,7 +152,7 @@ export function FilesPanel({
   const revealEntry = (relPath: string) => {
     void (async () => {
       try {
-        const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+        { /* revealItemInDir 静态引入 */ }
         await revealItemInDir(relPath ? `${workspacePath}/${relPath}` : workspacePath!);
       } catch (err) {
         toast.error(String(err).slice(0, 200));

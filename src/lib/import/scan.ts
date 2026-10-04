@@ -5,6 +5,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getStoredUserHome } from "../storage/db";
 import { createSessionImporters } from "./importers";
+import { scanCodexSessionsResult } from "./importers";
 import type { ImportFs } from "./fsApi";
 import type { ExternalSessionSummary, ExternalSource, ImportedSession } from "./types";
 
@@ -62,7 +63,7 @@ export async function scanAllSessions(): Promise<{
     importers.map(async (imp) => {
       try {
         if (imp.source === "codex") {
-          const { scanCodexSessionsResult } = await import("./importers");
+          { /* scanCodexSessionsResult 静态引入（同模块 ./importers） */ }
           const result = await scanCodexSessionsResult(tauriImportFs, home, CODEX_SCAN_MAX_FILES);
           if (result.truncated) truncated.codex = CODEX_SCAN_MAX_FILES;
           return result.sessions;

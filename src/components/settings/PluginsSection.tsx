@@ -11,6 +11,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Download, Loader2, PackageOpen, Trash2 } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useTranslation } from "../../i18n";
+import { invalidateSkillsDiscoveryCache } from "../../lib/skills/index";
 import {
   getPluginEnabledMap,
   getPluginOptions,
@@ -70,7 +71,7 @@ export function PluginsSection() {
       }
       // 插件可能贡献技能：使技能发现缓存失效（下次进 Skills 页重新扫描）
       try {
-        const { invalidateSkillsDiscoveryCache } = await import("../../lib/skills/index");
+        invalidateSkillsDiscoveryCache();
         invalidateSkillsDiscoveryCache();
       } catch {
         // 缓存失效失败无害：仅延迟到下次自然刷新

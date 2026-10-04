@@ -71,10 +71,25 @@ pub struct GitLogResponse {
     pub is_git_repo: bool,
 }
 
+/// Windows GUI 进程 spawn 控制台程序（git/powershell）会分配可见控制台窗口——
+/// 不加此标志每次 git 调用都会闪一个 cmd 窗（Git 面板 10s 轮询即持续闪烁）。
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+
+/// Windows 下给 spawn 挂 CREATE_NO_WINDOW（GUI 进程起控制台程序会闪可见 cmd 窗）。
+#[cfg(windows)]
+fn no_window(cmd: &mut Command) -> &mut Command {
+    use std::os::windows::process::CommandExt;
+    cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd
+}
+
 fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
-    let output = Command::new("git")
-        .args(args)
-        .current_dir(cwd)
+    let mut cmd = Command::new("git");
+    cmd.args(args).current_dir(cwd);
+    #[cfg(windows)]
+    no_window(&mut cmd);
+    let output = cmd
         .output()
         .map_err(|e| format!("git 启动失败（未安装或不在 PATH）：{e}"))?;
     let stdout = String::from_utf8_lossy(&output.stdout).to_string();
@@ -374,9 +389,11 @@ fn invalid_branch_issue(detail: Option<String>) -> GitBranchIssue {
 
 /// git check-ref-format --branch 校验分支名（对齐 ZCode validateBranchName）。
 fn validate_branch_name(cwd: &str, name: &str) -> Result<Option<GitBranchIssue>, String> {
-    let output = Command::new("git")
-        .args(["check-ref-format", "--branch", name])
-        .current_dir(cwd)
+    let mut cmd = Command::new("git");
+    cmd.args(["check-ref-format", "--branch", name]).current_dir(cwd);
+    #[cfg(windows)]
+    no_window(&mut cmd);
+    let output = cmd
         .output()
         .map_err(|e| format!("git 启动失败（未安装或不在 PATH）：{e}"))?;
     if output.status.success() {
@@ -792,9 +809,11 @@ pub struct GitIdentityResponse {
 pub async fn git_identity(cwd: String) -> Result<GitIdentityResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let read = |key: &str| -> Result<Option<String>, String> {
-            let output = Command::new("git")
-                .args(["config", "--get", key])
-                .current_dir(&cwd)
+            let mut cmd = Command::new("git");
+            cmd.args(["config", "--get", key]).current_dir(&cwd);
+            #[cfg(windows)]
+            no_window(&mut cmd);
+            let output = cmd
                 .output()
                 .map_err(|e| format!("git 启动失败（未安装或不在 PATH）：{e}"))?;
             if output.status.success() {
@@ -1199,7 +1218,9 @@ pub fn ensure_windows_aumid_registered() {
              Set-ItemProperty -Path $key -Name IconUri -Value '{exe_str}';
            }}"#
     );
-    let _ = Command::new("powershell")
-        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
-        .output();
+    let mut ps = Command::new("powershell");
+    ps.args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script]);
+    #[cfg(windows)]
+    no_window(&mut ps);
+    let _ = ps.output();
 }

@@ -20,6 +20,7 @@ import { diagnoseError } from "./errors.js";
 import { runAgentTurn } from "../providers/runAgentTurn";
 import type { AgentSource, ApprovalCoordinator, ApprovalDecision } from "../providers/runAgentTurn";
 import { invoke } from "@tauri-apps/api/core";
+import { loadProvidersConfigFromDisk } from "../../components/settings/model-provider/types";
 
 /** 发送选项形状 = controller deps 的 getOptions 返回类型（单一真源，避免漂移） */
 type ControllerDeps = Parameters<typeof createConversationController>[0];
@@ -649,9 +650,7 @@ async function maybeExtractMemory(taskId: string, entry: PoolEntry): Promise<voi
     > | null = null;
     try {
       const { useHubSettings } = await import("../../store/hubSettingsStore");
-      const { loadProvidersConfigFromDisk } = await import(
-        "../../components/settings/model-provider/types"
-      );
+
       const memory = useHubSettings.getState().settings.memory;
       const providers = await loadProvidersConfigFromDisk();
       independent = await import("../memory/modelResolution").then((m) =>

@@ -13,6 +13,7 @@
 
 import { kvGetJSON, kvSetJSON } from "../storage/db";
 import { resolveWorkspacePath } from "../agent/workspace";
+import { loadProvidersConfigFromDisk } from "../../components/settings/model-provider/types";
 
 export const SUBAGENTS_DIR_DISPLAY = "~/.agents/subagents";
 export const MAX_USER_SUBAGENTS = 64;
@@ -597,9 +598,7 @@ export async function resolveSubagentModelPin(pin: string): Promise<ResolvedSuba
   const providerId = slash > 0 ? pin.slice(0, slash).trim() : "";
   const modelId = slash > 0 ? pin.slice(slash + 1).trim() : "";
   if (!providerId || !modelId) return null;
-  const { loadProvidersConfigFromDisk } = await import(
-    "../../components/settings/model-provider/types"
-  );
+
   const providers = await loadProvidersConfigFromDisk();
   const provider = providers.find((item) => item.id === providerId);
   if (!provider) return null;

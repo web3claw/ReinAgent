@@ -1,4 +1,5 @@
 // LiveAgent 移植：crates/agent-ui/src/lib/skills/index.ts（invoke 改用 @tauri-apps/api/core）
+import { getEnabledPluginSkillDirs } from "../plugins/pluginRegistry";
 import { invoke } from "@tauri-apps/api/core";
 
 import { sortSkillsForDisplay } from "./builtin";
@@ -504,7 +505,6 @@ async function loadSkillsDiscovery(): Promise<SkillDiscovery> {
   // 插件技能贡献（P2-G2 v2）：启用插件的 skills 目录（每子目录一个 SKILL.md）
   // 追加进发现结果；单条失败仅跳过（不拖垮整体发现）。
   try {
-    const { getEnabledPluginSkillDirs } = await import("../plugins/pluginRegistry");
     const dirs = await getEnabledPluginSkillDirs();
     for (const dir of dirs) {
       try {

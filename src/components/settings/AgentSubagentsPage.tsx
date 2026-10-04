@@ -8,6 +8,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Copy, FolderOpen, Pencil, Plus, Trash2 } from "lucide-react";
 import { useTranslation } from "../../i18n";
+import { loadProvidersConfigFromDisk } from "../../components/settings/model-provider/types";
+import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { toast } from "../lw/ui/toast";
 import {
   SUBAGENTS_DIR_DISPLAY,
@@ -62,9 +64,6 @@ function builtinDisplayName(handle: string, t: (key: string) => string): string 
 
 async function loadModelOptions(): Promise<ModelPickerOption[]> {
   try {
-    const { loadProvidersConfigFromDisk } = await import(
-      "../../components/settings/model-provider/types"
-    );
     const providers = await loadProvidersConfigFromDisk();
     return providers.flatMap((provider) =>
       provider.models.map((model) => ({
@@ -169,7 +168,7 @@ export function AgentSubagentsPage() {
   const reveal = (record: UserSubagentRecord) => {
     void (async () => {
       try {
-        const { revealItemInDir } = await import("@tauri-apps/plugin-opener");
+        // opener 插件的 reveal（已静态引入）
         await revealItemInDir(record.path);
       } catch (err) {
         console.warn("[subagents] reveal failed:", err);
