@@ -1,8 +1,9 @@
 //! 关闭窗口时隐藏到托盘（P2-G2 尾巴）。
 //!
-//! 仅 Windows 生效：点击关闭按钮或关闭窗口快捷键时隐藏窗口而非退出；
-//! 托盘菜单的「退出」仍完全退出应用。设置存 kv `reinagent-hide-to-tray`
-//! （缺省开启）。TS 侧通过 `set_hide_to_tray` 命令切换，Rust 侧缓存即时生效。
+//! Windows + Linux 生效（以托盘创建成功为前提，见 app_tray::is_tray_available）：
+//! 点击关闭按钮或关闭窗口快捷键时隐藏窗口而非退出；托盘菜单的「退出」仍完全
+//! 退出。设置存 kv `reinagent-hide-to-tray`（缺省开启）。TS 侧通过
+//! `set_hide_to_tray` 命令切换，Rust 侧缓存即时生效。
 
 use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};

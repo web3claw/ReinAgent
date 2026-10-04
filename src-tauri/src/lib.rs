@@ -107,9 +107,14 @@ pub fn run() {
         let _ = SINGLE_APP_HANDLE.set(app.handle().clone());
         // 恢复「关闭时隐藏到托盘」设置（缺省开启）
         hide_to_tray::restore_hide_to_tray();
-        // 关闭窗口 → 隐藏到托盘（设置开启时拦截 close，仅 Windows 生效；
-        // 托盘菜单「退出」仍完全退出，不受此拦截影响）
-        if cfg!(target_os = "windows") {
+        // 系统托盘（P2-G2）：菜单 + 左键切换主窗口显隐；失败如实打日志不阻断启动
+        if let Err(error) = app_tray::setup_tray(app) {
+            eprintln!("failed to setup system tray: {error}");
+        }
+        // 关闭窗口 → 隐藏到托盘（Windows + Linux；托盘菜单「退出」仍完全退出，
+        // 不受此拦截影响）。仅托盘创建成功时拦截——托盘不可用的系统上隐藏窗口
+        // 会让应用无法恢复，保持直接退出。
+        if app_tray::is_tray_available() {
             use tauri::Manager;
             let main_window = app.get_webview_window("main").expect("main window");
             let window_clone = main_window.clone();
@@ -121,10 +126,6 @@ pub fn run() {
                     }
                 }
             });
-        }
-        // 系统托盘（P2-G2）：菜单 + 左键切换主窗口显隐；失败如实打日志不阻断启动
-        if let Err(error) = app_tray::setup_tray(app) {
-            eprintln!("failed to setup system tray: {error}");
         }
         // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
         automation::start_scheduler(app.handle().clone());
