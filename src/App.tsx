@@ -37,6 +37,7 @@ import { useConfirmDialog } from "./components/ui/ConfirmDialog";
 import { toast } from "./components/lw/ui/toast";
 import { invoke } from "@tauri-apps/api/core";
 import { FileManagerIcon } from "./components/icons/FileManagerIcon";
+import { getMessageTheme, subscribeMessageTheme, type MessageTheme } from "./lib/settings/messageTheme";
 import { useHubSettings } from "./store/hubSettingsStore";
 
 // 上下文面板 MCP 分类枚举缓存（60s TTL；避免 HoverCard 反复触发服务器连接）
@@ -413,6 +414,10 @@ export default function App() {
   // 的相对挂载时序存在竞态——若虚拟列表在 ref 接上之前采样到 null 会永久停摆（行数 0）。
   // ref 回调 setState 保证元素挂载后必然触发一次渲染，让 useVirtualizer 稳定拿到元素。
   const [chatScrollEl, setChatScrollEl] = useState<HTMLDivElement | null>(null);
+
+  // 消息区主题（设置页「消息配色」→ 事件订阅即时生效；作用于滚动视口 = 消息画布 + 两侧留白）
+  const [messageTheme, setMessageThemeState] = useState<MessageTheme>(getMessageTheme);
+  useEffect(() => subscribeMessageTheme(setMessageThemeState), []);
   // P2-A2：滚动离底感知（回顶按钮 + 输入区 dock 分离感）——传 state 值（元素挂载后触发重跑）
   const { awayFromBottom: chatAwayFromBottom, scrollToTop: chatScrollToTop } =
     useChatScrollState(chatScrollEl);
@@ -1700,6 +1705,7 @@ export default function App() {
                     setChatScrollEl(el);
                   }}
                   data-scroll-viewport
+                  data-message-theme={messageTheme}
                   className="flex-1 overflow-y-auto min-h-0"
                 >
                 <div className="relative min-h-full flex flex-col justify-between">

@@ -122,6 +122,99 @@
   font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
 }
 
+/* ---------- 消息区主题（message-theme）：仅作用于消息/对话列表的独立配色 ----------
+   默认 antigravity = 现状（无覆盖）；opencode 取自 opencode v2 默认主题
+   （packages/tui/src/theme/assets/opencode.json，MIT）。做法：在消息容器作用域内
+   重定义宿主语义变量，子组件（MessageItem/工具卡等）零改动自动继承；
+   明暗跟随 data-theme（light 侧取 opencode.json 的 light 定义）。
+   字体 IBM Plex Mono（OFL，latin 子集 woff2 内嵌；中文回退系统字体——终端混排同款观感）。 */
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("../assets/fonts/ibm-plex-mono-400.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 500;
+  font-display: swap;
+  src: url("../assets/fonts/ibm-plex-mono-500.woff2") format("woff2");
+}
+@font-face {
+  font-family: "IBM Plex Mono";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("../assets/fonts/ibm-plex-mono-600.woff2") format("woff2");
+}
+
+[data-message-theme="opencode"] {
+  background-color: #0a0a0a;
+  --text: #eeeeee;
+  --text-primary: #eeeeee;
+  --text-secondary: #808080;
+  --text-dim: #808080;
+  --brand: #fab283;
+  --accent: #fab283;
+  --accent-dim: #b97f52;
+  --surface: #1e1e1e;
+  --surface-hover: #282828;
+  --bg-card: #1e1e1e;
+  --bg-elev: #141414;
+  --bg-elev-2: #1e1e1e;
+  --bg-hover: #282828;
+  --border: #3c3c3c;
+  --code-inline-fg: #7fd88f;
+  --code-inline-bg: rgba(127, 216, 143, 0.08);
+  --danger: #e06c75;
+  --warn-bg: #2b2110;
+  --warn-border: #7a5a20;
+  --warn-text: #f5a742;
+}
+
+/* 等宽字体只作用于消息内容本身（滚动视口里的查找条/审批条等保持 UI 字体） */
+[data-message-theme="opencode"] .message-list {
+  font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas,
+    "Noto Sans Mono CJK SC", "Microsoft YaHei", monospace;
+}
+
+/* 粗体 = opencode markdownStrong（覆盖 .md strong 的正文白，特异性 0,2,1 > 0,1,1） */
+[data-message-theme="opencode"] .md strong,
+[data-message-theme="opencode"] .md b {
+  color: #f5a742;
+}
+
+[data-theme="light"] [data-message-theme="opencode"] {
+  background-color: #ffffff;
+  --text: #1a1a1a;
+  --text-primary: #1a1a1a;
+  --text-secondary: #8a8a8a;
+  --text-dim: #8a8a8a;
+  --brand: #3b7dd8;
+  --accent: #3b7dd8;
+  --accent-dim: #2968c3;
+  --surface: #f5f5f5;
+  --surface-hover: #ebebeb;
+  --bg-card: #f5f5f5;
+  --bg-elev: #fafafa;
+  --bg-elev-2: #f5f5f5;
+  --bg-hover: #ebebeb;
+  --border: #d4d4d4;
+  --code-inline-fg: #3d9a57;
+  --code-inline-bg: rgba(61, 154, 87, 0.08);
+  --danger: #d1383d;
+  --warn-bg: #faf0d0;
+  --warn-border: #b0851f;
+  --warn-text: #b0851f;
+}
+
+[data-theme="light"] [data-message-theme="opencode"] .md strong,
+[data-theme="light"] [data-message-theme="opencode"] .md b {
+  color: #d68c27;
+}
+
 * {
   box-sizing: border-box;
 }

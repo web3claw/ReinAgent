@@ -3,6 +3,7 @@ import { Settings } from '../../lib/settings/store';
 import { SettingsStatus } from '../../lib/settings/useSettings';
 import { useTranslation } from '../../i18n';
 import { isNotificationSoundEnabled, setNotificationSoundEnabled } from '../../lib/chat/taskNotifications';
+import { getMessageTheme, setMessageTheme, type MessageTheme } from '../../lib/settings/messageTheme';
 import { getWebProxy, setWebProxy, getWebNoProxy, setWebNoProxy } from '../../lib/web/webProxy';
 import { ModelProviderSettings } from './model-provider/ModelProviderSettings';
 import { AppUpdaterCard } from './AppUpdaterCard';
@@ -57,6 +58,7 @@ interface SettingsPageProps {
 export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot, memoryModelOptions, initialTab }: SettingsPageProps) {
   const { t } = useTranslation();
   const [soundEnabled, setSoundEnabled] = useState(isNotificationSoundEnabled());
+  const [messageTheme, setMessageThemeState] = useState<MessageTheme>(getMessageTheme);
   const [proxyInput, setProxyInput] = useState(getWebProxy());
   const [noProxyInput, setNoProxyInput] = useState(getWebNoProxy());
   const [proxySavedNote, setProxySavedNote] = useState(false);
@@ -211,10 +213,32 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
                     aria-label={t('darkMode')}
                     className={`w-10 h-10 rounded-lg border flex items-center justify-center transition-colors ${theme === 'dark' ? 'border-[var(--brand)] bg-[var(--brand-dim)] text-[var(--brand)]' : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--brand)]'}`}
                   >
-                    <Moon className="w-4 h-4" />
-                  </button>
-                </div>
+                  <Moon className="w-4 h-4" />
+                </button>
               </div>
+            </div>
+            {/* 消息配色：仅作用于消息/对话区（message-theme 作用域换肤），切换即时生效 */}
+            <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between">
+              <div>
+                <div className="font-medium">{t('messageThemeLabel')}</div>
+                <div className="text-sm text-[var(--text-dim)]">{t('messageThemeDesc')}</div>
+              </div>
+              <div className="flex gap-2">
+                {(['antigravity', 'opencode'] as const).map((mt) => (
+                  <button
+                    key={mt}
+                    onClick={() => {
+                      setMessageTheme(mt);
+                      setMessageThemeState(mt);
+                    }}
+                    aria-pressed={messageTheme === mt}
+                    className={`px-3 h-10 rounded-lg border flex items-center gap-2 text-sm transition-colors ${messageTheme === mt ? 'border-[var(--brand)] bg-[var(--brand-dim)] text-[var(--brand)]' : 'border-[var(--border)] text-[var(--text-dim)] hover:border-[var(--brand)]'}`}
+                  >
+                    {mt === 'opencode' ? t('messageThemeOpencode') : t('messageThemeAntigravity')}
+                  </button>
+                ))}
+              </div>
+            </div>
               <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between">
                 <div>
                   <div className="font-medium">{t('notificationSound')}</div>

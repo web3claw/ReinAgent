@@ -246,6 +246,7 @@ ReinAgent 架构全景
 ### 6. 顶栏操作与国际化
 - **中英文切换**：融合版 SVG 地球仪镂空刻字图标，根据当前语言动态镂空刻印 `中` 或 `EN`。
 - **亮暗主题**：全系统变量级 CSS 变量换肤，支持即时切换并持久化保存。
+- **消息配色 message-theme（2026-10-04）**：消息/对话区独立配色，设置页「外观主题」下方卡片切换。两套：**AntiGravity**（默认 = 现状，无覆盖）/ **OpenCode**（取自 opencode v2 默认主题 `packages/tui/src/theme/assets/opencode.json`，MIT：#0a0a0a 画布 + #eeeeee 正文 + #fab283 primary 等，light 侧取其 light 定义，跟随 data-theme）。实现 = **滚动视口容器（App `data-scroll-viewport`）挂 `data-message-theme`**（画布 + 左右留白整体变色，用户反馈 v1 只挂 message-list 会留色带断层），global.css 在该作用域**重定义宿主语义变量**（--text/--surface/--brand/--code-inline-* 等），消息组件零改动自动继承；等宽字体限定 `[data-message-theme] .message-list`（查找条/审批条等保持 UI 字体）；**粗体 = opencode markdownStrong**（`[data-message-theme] .md strong` #f5a742/#d68c27，特异性 0,2,1 压过 .md strong 的正文白——用户反馈 v1 粗体是白色）。字体 IBM Plex Mono（OFL，400/500/600 latin woff2 内嵌于 `src/assets/fonts/`，中文回退系统字体）。状态：`lib/settings/messageTheme.ts`（kv `reinagent-message-theme` + window 事件广播 `reinagent-message-theme-change`，App 订阅即时生效）。
 
 ---
 
