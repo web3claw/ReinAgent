@@ -5,7 +5,9 @@
 //! browser_eval 经 Webview::eval 在子 WebView 里执行 JS（快照/填值/点击由工具层
 //! 组装脚本）；browser_navigate 走原生 Navigate；browser_current_url 供快照定位。
 
+#[cfg(target_os = "windows")]
 use std::sync::Mutex;
+#[cfg(target_os = "windows")]
 use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::command;
@@ -219,8 +221,7 @@ fn reparent_browser_webview_to_fixed(
                 });
 
             match overlay {
-                Some(gtk_win) => {
-                    let alloc = gtk_win.allocation();
+                Some(_) => {
                     // Fixed 尺寸不铺满窗口：随 webview 的实际矩形增长（place 里再精确设定），
                     // 配合 pass-through 保证非 webview 区域完全不影响原 UI 交互。
                     fixed.set_size_request(1, 1);
@@ -465,11 +466,11 @@ pub async fn browser_read_page(app: AppHandle, js: String) -> Result<String, Str
     }
     #[cfg(not(target_os = "windows"))]
     {
-        // Linux（WebKitGTK）：与 Windows 的 postMessage 槽位不同——run_javascript
-        // 的完成回调直接带回 JS 结果值（经 JSC Value::to_str），无需页面侧上报。
+        // Linux（WebKitGTK）：与 Windows 的 postMessage 槽位不同——evaluate_javascript
+        // 的完成回调直接带回 JS 结果值（JSC Value::to_str），无需页面侧上报。
         // with_webview 的闭包由 tauri 派发到事件线程（= GTK 主线程）执行，
         // WebKitGTK API 的 MainContext 断言天然满足。
-        // ⚠ run_javascript 不解析 Promise——提取脚本须为同步 IIFE（tools.js 现有脚本均满足）。
+        // ⚠ evaluate_javascript 不解析 Promise——提取脚本须为同步 IIFE（tools.js 现有脚本均满足）。
         let webview = get_browser_webview(&app)?;
         let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
         let full_js = format!(
@@ -479,19 +480,20 @@ pub async fn browser_read_page(app: AppHandle, js: String) -> Result<String, Str
             .with_webview(move |platform| {
                 let wk = platform.inner();
                 use webkit2gtk::WebViewExt;
-                wk.run_javascript(&full_js, None::<&webkit2gtk::gio::Cancellable>, move |result| {
-                    let out = match result {
-                        Ok(jsr) => {
-                            use javascriptcore::ValueExt as _;
-                            match jsr.js_value() {
-                                Some(v) => v.to_str().to_string(),
-                                None => "ERR: 空的 JS 结果".to_string(),
-                            }
-                        }
-                        Err(e) => format!("ERR: {e}"),
-                    };
-                    let _ = tx.send(Ok(out));
-                });
+                wk.evaluate_javascript(
+                    &full_js,
+                    None::<&str>,
+                    None::<&str>,
+                    None::<&webkit2gtk::gio::Cancellable>,
+                    move |result| {
+                        use javascriptcore::ValueExt as _;
+                        let out = match result {
+                            Ok(v) => v.to_str().to_string(),
+                            Err(e) => format!("ERR: {e}"),
+                        };
+                        let _ = tx.send(Ok(out));
+                    },
+                );
             })
             .map_err(|e| format!("browser read: with_webview 派发失败: {e}"))?;
         let deadline = std::time::Instant::now() + Duration::from_secs(15);

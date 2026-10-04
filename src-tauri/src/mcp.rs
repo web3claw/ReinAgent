@@ -307,7 +307,8 @@ fn windows_cmd_quote_arg(value: &str) -> String {
 }
 
 /// Windows 下按 PATHEXT 解析裸程序名（`npx` → `npx.cmd`），使 cmd.exe 转发
-/// 与批量脚本命中成为可能；非 Windows 直接展开 `~`。
+/// 与批量脚本命中成为可能；非 Windows 直接展开 `~`（current_dir 仅 Windows 分支使用）。
+#[cfg_attr(not(windows), allow(unused_variables))]
 fn resolve_program_path_with_current_dir(raw: &str, current_dir: Option<&Path>) -> PathBuf {
     let expanded = expand_tilde_path(raw);
 

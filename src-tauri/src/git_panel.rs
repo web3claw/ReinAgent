@@ -1162,13 +1162,11 @@ pub async fn notify_send(args: NotifySendArgs) -> Result<(), String> {
         {
             let task_id = task_id.clone();
             // default action = 点击通知正文（freedesktop 规范：action "default"）
-            let mut n = notify_rust::Notification::new()
+            let handle = notify_rust::Notification::new()
                 .summary(&title)
                 .body(&body)
                 .appname("ReinAgent")
-                .action("default", "查看");
-            n = n.finalize();
-            let handle = n
+                .action("default", "查看")
                 .show()
                 .map_err(|e| format!("通知发送失败: {e}"))?;
             // notify-rust xdg 的 wait_for_action 回调签名是 &str：

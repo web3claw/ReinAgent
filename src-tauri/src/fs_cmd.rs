@@ -433,6 +433,8 @@ pub async fn fs_execute(
         //   pwsh/powershell → -Command；bash/zsh/fish/sh → -c；cmd/未配置 → cmd /C。
         fn spawn_shell(command: &str, exec_dir: &Path, shell: Option<&str>, proxy_env: &[(String, String)]) -> std::io::Result<std::process::Child> {
             let shell_name = shell.unwrap_or("").trim().to_lowercase();
+            // exe_name 仅 Windows 分支使用（按 pwsh/powershell/bash 等名字分派）
+            #[cfg(target_os = "windows")]
             let exe_name = shell_name.rsplit(['\\', '/']).next().unwrap_or("");
             let build = |mut cmd: Command| {
                 cmd.current_dir(exec_dir);
