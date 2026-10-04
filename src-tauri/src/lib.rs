@@ -147,6 +147,7 @@ pub fn run() {
             terminal::terminal_close,
             fs_cmd::fs_read_file,
             fs_cmd::fs_path_exists,
+            fs_cmd::open_in_file_manager,
             hide_to_tray::get_hide_to_tray,
             hide_to_tray::set_hide_to_tray,
             fs_cmd::shell_detect,

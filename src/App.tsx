@@ -35,6 +35,8 @@ import {
 } from "./lib/chat/conversationPool";
 import { useConfirmDialog } from "./components/ui/ConfirmDialog";
 import { toast } from "./components/lw/ui/toast";
+import { invoke } from "@tauri-apps/api/core";
+import { FileManagerIcon } from "./components/icons/FileManagerIcon";
 import { useHubSettings } from "./store/hubSettingsStore";
 
 // 上下文面板 MCP 分类枚举缓存（60s TTL；避免 HoverCard 反复触发服务器连接）
@@ -1520,6 +1522,22 @@ export default function App() {
             {/* 分支切换器（ZCode GitBranchSwitcher 移植）：选择即检出（工作区全局）；
                 非 git 仓库/无工作区自行隐藏；新建任务草稿态与已有任务都可用 */}
             <BranchSwitcher workspacePath={effectiveWorkspaceRoot || undefined} />
+            {/* 系统文件管理器入口：用系统文件管理器打开当前项目目录（无工作区 → 默认
+                工作区）；web 模式隐藏（浏览器无系统能力）。目录不存在/命令失败 toast
+                如实提示（No-Fallback）。 */}
+            {"__TAURI_INTERNALS__" in window ? (
+              <button
+                onClick={() => {
+                  void invoke("open_in_file_manager", { path: effectiveWorkspaceRoot ?? null }).catch(
+                    (err: unknown) => toast.error(err instanceof Error ? err.message : String(err)),
+                  );
+                }}
+                className="p-1 rounded hover:bg-[var(--surface-hover)] transition-colors"
+                title="在系统文件管理器中打开项目目录"
+              >
+                <FileManagerIcon className="w-5 h-5" />
+              </button>
+            ) : null}
           </div>
           <div className="flex items-center gap-2">
             {/* Git 面板入口：点击直开 Git 管理（分支/变更/历史） */}

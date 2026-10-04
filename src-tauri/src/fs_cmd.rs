@@ -26,6 +26,36 @@ fn resolve_path(raw_path: &str) -> PathBuf {
     }
 }
 
+/// 用系统文件管理器打开目录（Windows explorer / Linux xdg-open / macOS open）。
+/// path 为空时打开默认工作区（~/.ReinAgent/DefaultProject）。目录不存在或启动
+/// 失败时如实返回错误（前端 toast 提示，No-Fallback）。
+#[tauri::command]
+pub async fn open_in_file_manager(path: Option<String>) -> Result<(), String> {
+    let dir = match path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
+        Some(p) => resolve_path(p),
+        None => get_default_workspace(),
+    };
+    if !dir.is_dir() {
+        return Err(format!("目录不存在：{}", dir.display()));
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        let result = Command::new("explorer.exe").arg(&dir).spawn().map(|_| ());
+        #[cfg(target_os = "linux")]
+        let result = Command::new("xdg-open").arg(&dir).spawn().map(|_| ());
+        #[cfg(target_os = "macos")]
+        let result = Command::new("open").arg(&dir).spawn().map(|_| ());
+        #[cfg(not(any(target_os = "windows", target_os = "linux", target_os = "macos")))]
+        let result: std::io::Result<()> = Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "unsupported platform",
+        ));
+        result.map_err(|e| format!("打开文件管理器失败: {e}"))
+    })
+    .await
+    .map_err(|e| format!("打开文件管理器失败: {e}"))?
+}
+
 #[tauri::command]
 pub async fn fs_read_file(path: String) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
