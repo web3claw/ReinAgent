@@ -26,13 +26,15 @@
 
 ## 3. Linux Compilation & Execution Environment (编译与运行规范)
 
-编译与运行**统一在仓库根目录**使用 Bun 执行，唯一命令：
+编译测试/运行验证**由 Agent 执行**，命令（仓库根目录）：
 
 ```bash
-bun run tauri build
+bun run tauri dev
 ```
 
-- 依赖安装/变更同样在仓库根目录执行 `bun install`（根目录 `node_modules` 为真实目录，无需任何隔离区或软链接）。
+**正式发布构建 `bun run tauri build` 由用户本人运行，Agent 严禁代跑**（避免长时间占用构建产物与 bundle 目录）。
+
+- 依赖安装/变更：仓库根目录直接执行 `bun install`（根目录 `node_modules` 为真实目录，无需任何隔离区或软链接）。
 - 历史上的 `run-linux.sh` 与 `/tmp/reinagent` 隔离区流程**已废弃并删除**（源码盘非网络挂载，可直接编译），严禁再按旧文档执行 rsync 同步或引用隔离区路径。
 
 ---
