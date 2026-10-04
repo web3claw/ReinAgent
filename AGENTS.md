@@ -24,28 +24,16 @@
 
 ---
 
-## 3. Linux Compilation & Execution Environment (run-linux.sh 专用配置记忆)
+## 3. Linux Compilation & Execution Environment (编译与运行规范)
 
-由于当前开发环境可能处于网络共享盘/虚拟挂载目录（CIFS/SMB 文件系统不支持 Linux 符号链接及文件锁），因此**本机的编译、前端启动与 Tauri 开发运行必须严格遵循 `run-linux.sh` 的环境隔离配置**：
+编译与运行**统一在仓库根目录**使用 Bun 执行，唯一命令：
 
-1. **工作区隔离目录**：
-   - 运行与编译工作区：`/tmp/reinagent`
-   - Rust 编译缓存目录：`TARGET_DIR="/tmp/reinagent/target"`（通过环境变量 `export CARGO_TARGET_DIR="$TARGET_DIR"` 指定）
-   - 原生依赖路径：`/tmp/reinagent/node_modules`（在 `/tmp` 下执行 `bun install` 生成，避免网络盘软链接失败）
-   - 宿主软链接机制：根目录下 `node_modules -> /tmp/reinagent/node_modules` 软链接仅供 VS Code 等编辑器做类型高亮与补全；重命名或删除不影响实际构建与运行，但若需恢复 IDE 智能提示可随时建立此软链接。
-2. **源码同步机制**：
-   - 每次编译或运行前，通过 `rsync` 将源码同步到 `/tmp/reinagent/`：
-     ```bash
-     rsync -av --delete --exclude 'node_modules' --exclude 'target' --exclude '.git' "$PROJECT_DIR/" "/tmp/reinagent/"
-     ```
-3. **前端构建与测试验证**：
-   - 验证构建必须在本地环境运行：
-     ```bash
-     rsync -av --delete --exclude 'node_modules' --exclude 'target' --exclude '.git' /home/web3claw/DevCode/ReinAgent/ReinAgent/ /tmp/reinagent/ && cd /tmp/reinagent && bun run build
-     ```
-4. **启动服务机制**：
-   - 前端 Vite 运行在端口 `1420`：`(cd /tmp/reinagent && bun /tmp/reinagent/node_modules/vite/bin/vite.js --port 1420) &`
-   - Tauri 桌面启动命令：`cd "$PROJECT_DIR" && cargo tauri dev -c '{"build": {"beforeDevCommand": ""}}'`
+```bash
+bun run tauri build
+```
+
+- 依赖安装/变更同样在仓库根目录执行 `bun install`（根目录 `node_modules` 为真实目录，无需任何隔离区或软链接）。
+- 历史上的 `run-linux.sh` 与 `/tmp/reinagent` 隔离区流程**已废弃并删除**（源码盘非网络挂载，可直接编译），严禁再按旧文档执行 rsync 同步或引用隔离区路径。
 
 ---
 
@@ -53,7 +41,7 @@
 
 1. **包管理器限制 (Package Manager Rule)**：
    - 项目采用 **Bun**（`bun@1.4.2` 与 `bun.lock`）。严禁使用 npm/pnpm 更改锁定文件。
-   - 严禁直接在网络共享盘根目录执行软链接安装，所有依赖变更必须在 `/tmp/reinagent` 隔离区进行。
+   - 依赖安装与变更一律在仓库根目录执行 `bun install`，严禁引入任何外部隔离目录或软链接方案。
 2. **Tauri 2 + Web 双模兼容 (Dual-mode Compatibility Rule)**：
    - 涉及系统级能力（终端、文件操作、对话框等）时，必须编写 Web Mock / Browser Fallback 兼容层，保证在 Headless Chrome（无头自动化测试/截图回归）或浏览器环境下依然可完整运行。
 3. **Tailwind CSS v4 语义化变量 (Theme Styling Rule)**：

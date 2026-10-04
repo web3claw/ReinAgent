@@ -333,40 +333,17 @@ ReinAgent 架构全景
 对话与任务数据的全部 localStorage 键（`reinagent-task-msg-*`、`reinagent-tasks` 等）已于 2026-09-25 移除，历史数据不迁移（从零开始）。例外：ZCode 预览面板移植件内部零散偏好已改走 kv；仅第三方库内部缓存不归本项目管辖。
 
 
-## 六、Linux 编译、运行与环境隔离规范（严格基于 run-linux.sh）
+## 六、Linux 编译、运行与环境规范
 
-由于宿主工程目录位于网络共享盘（CIFS/SMB 文件系统不支持 Linux 符号链接与标准文件锁机制），为了防止 `bun install` 软链接失败或 Cargo 编译锁死，**所有构建、类型检查与运行必须严格遵循 `run-linux.sh` 的环境隔离配置**：
+源码盘为本地磁盘，可直接编译（**历史上的网络共享盘隔离方案已废弃**）。编译与运行统一在**仓库根目录**使用 Bun 执行，唯一命令：
 
-### 1. 核心隔离参数
-- **本地工作区**：`WORK_DIR="/tmp/reinagent"`
-- **Rust Target 目录**：`TARGET_DIR="/tmp/reinagent/target"`（通过 `export CARGO_TARGET_DIR="$TARGET_DIR"` 挂载）
-- **依赖隔离**：原生 Linux node_modules 安装在 `/tmp/reinagent/node_modules` 下。
-- **根目录 `node_modules` 软链接机制**：
-  - 工程根目录下的 `node_modules` 为指向 `/tmp/reinagent/node_modules` 的软链接（`ln -sfn /tmp/reinagent/node_modules node_modules`）；
-  - **核心作用**：仅供宿主 VS Code / 编辑器（TSServer / Language Server）进行模块语法高亮、TypeScript 类型推导与代码自动补全；
-  - **解耦影响**：若该软链接被删除或重命名（如 `node_modules.bak`），**不会影响任何编译与运行**（因 `run-linux.sh` 与构建脚本使用 `/tmp/reinagent/node_modules` 原生依赖），但会导致宿主编辑器出现找不到模块的红线警告并失去代码补全。如需恢复 IDE 提示，仅需重新建立指向 `/tmp/reinagent/node_modules` 的软链接即可。
-
-### 2. 标准编译与验证命令
 ```bash
-# 1. 增量同步源码至本地临时工作区
-rsync -av --delete --exclude 'node_modules' --exclude 'target' --exclude '.git' /home/web3claw/DevCode/ReinAgent/ReinAgent/ /tmp/reinagent/
-
-# 2. 前端类型检查与打包构建
-cd /tmp/reinagent && bun run build
-
-# 3. 单元测试 (Chat 状态机模型与调度逻辑)
-npm run test:chat
+bun run tauri build
 ```
 
-### 3. 本地启动脚本执行（run-linux.sh）
-- **启动前端 Vite 服务**：端口 `1420`，`(cd /tmp/reinagent && bun /tmp/reinagent/node_modules/vite/bin/vite.js --port 1420) &`
-- **启动 Tauri 桌面应用**：`cargo tauri dev -c '{"build": {"beforeDevCommand": ""}}'`
-
-### 4. 自动化无头视觉回归
-本地运行 dev server 后（默认端口 1420），可通过 Chrome 无头模式快速截取实际渲染图像进行像素级对比：
-```bash
-google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-size=1280,800 http://localhost:1420
-```
+- 依赖安装/变更：仓库根目录直接执行 `bun install`（根目录 `node_modules` 为真实目录，无软链接、无隔离区）。
+- 历史的 `run-linux.sh` 与 `/tmp/reinagent` 隔离区（rsync 同步、`CARGO_TARGET_DIR` 重定向、`node_modules` 软链接）已于 2026-10-04 全部删除，**严禁再引用或复活该流程**。
+- 自动化无头视觉回归（仅测试用途，非标准构建流程）：`google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-size=1280,800 http://localhost:1420`。
 
 ---
 
@@ -374,7 +351,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 
 1. **包管理器限制 (Package Manager Rule)**：
    - 项目采用 **Bun**（`bun@1.4.2` 与 `bun.lock`）。
-   - 严禁使用 npm/pnpm 篡改依赖锁定文件；所有依赖安装与更新必须在 `/tmp/reinagent` 隔离区进行，防止损坏网络共享挂载盘的软链接。
+   - 严禁使用 npm/pnpm 篡改依赖锁定文件；所有依赖安装与更新一律在仓库根目录执行 `bun install`。
 2. **Tauri 2 + Web 双模兼容 (Dual-mode Compatibility Rule)**：
    - 涉及系统级能力（终端 PTY、受控文件操作等）时，必须保留 Web Mock / Fallback 兼容层，保证在 Headless Chrome（无头自动化测试/截图回归）或普通浏览器中依然能完整渲染并正常调试。
 3. **Tailwind CSS v4 语义化主题 (Theme Styling Rule)**：
@@ -557,7 +534,7 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
 **方案 B（纯 Wayland 折中）**：只做上述 2+3（不切 X11）——尺寸可恢复（钳制后不再触发合成器覆盖），位置永远记不住（Wayland 硬限制）。
 
 ### 4. 复验手段（实施后验收用）
-- Wayland 现状复现：`WAYLAND_DEBUG=1 /tmp/reinagent/target/debug/reinagent` 抓 `set_window_geometry` / `configure` 序列；
+- Wayland 现状复现：`WAYLAND_DEBUG=1 src-tauri/target/debug/ReinAgent` 抓 `set_window_geometry` / `configure` 序列；
 - X11 恢复验证：`GDK_BACKEND=x11` 启动后 `xdotool search --name ReinAgent getwindowgeometry`（本机有 xdotool/xwininfo；GNOME 50 的 Shell Screenshot/Introspect DBus 已确认 AccessDenied 不可用）。
 
 
