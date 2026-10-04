@@ -1158,3 +1158,16 @@ google-chrome --headless --disable-gpu --screenshot=/tmp/screen.png --window-siz
   - **git 隐形（用户拍板方案：`.ReinAgent/.gitignore` 而非 info/exclude）**：创建 `.ReinAgent/.temp` 时幂等补建 `.ReinAgent/.gitignore`（内容 `.temp/` + `.gitignore` 自忽略——git 允许自忽略且读取不受影响），使 `.ReinAgent/.temp` 与 `.gitignore` 自身对用户仓库完全隐形。触发挂钩三处创建点：`fs_write_file`（agent 写 .ReinAgent 下任意深度文件，路径组件精确匹配 ".ReinAgent"）、`fs_import_pasted_file`、`fs_create_dir`；**存在不覆盖**（用户改过内容不回滚）。不碰 `.git`、无需仓库根定位、跨仓库跟随工作区目录。
   - **限制（不自动处理）**：已跟踪的历史 temp 文件 ignore 无效（照常显示为真变更）；用户手删 `.gitignore` 会在下次写 .ReinAgent 时重建。
   - **E2E**：app 内 `fs_write_file` 写 `.ReinAgent/.temp/scratch.js` → `.gitignore` 自动生成（内容 `.temp/`+`.gitignore`）→ `git status -uall` 无任何 `.ReinAgent` 条目、`git check-ignore -v` 实证两条规则命中 ✓。单测 2 例（幂等不覆盖/任意深度命中+.ReinAgentFoo 不触发）。回归 tsc 0 / 前端绿 / Rust 185。
+
+- **任务完成系统通知修复 ✅（2026-10-04 用户报「设置已开声音提醒但完成无通知无声」，Windows Toast 实证入列）**：
+  - **根因（tauri-plugin-notification 源码级）**：其 desktop 实现在 Windows 仅当 exe **不在** `target/debug|release`（安装版）时才设置 AppUserModelID——dev/本地构建的 Toast 无 AUMID 被 Windows 静默丢弃（API 返回成功、通知中心无内容）；桌面端 `permission_state` 硬编码 Granted，前端 `isPermissionGranted()` 返回 false 是 JS 转义假象。声音链路本身通（AudioContext OK），但 suspended 起始态未 resume。
+  - **修复**：新 Rust 命令 `notify_send {title, body}`（git_panel.rs）绕过插件直发——Windows 用 `tauri-winrt-notification`（插件同款底层）显式携带 AUMID `com.reinagent.app`；Linux 用 `notify-rust`（org.freedesktop.Notifications）——dev 与安装版行为一致。前端 `sendSystemNotification` 改走该命令（去掉插件的假权限检查）；`playNotificationSound` 补 `ctx.resume()`（Windows suspended 起始态）。依赖按平台挂进 Cargo.toml 既有 target 段（windows: tauri-winrt-notification 0.8 / linux: notify-rust 4）。⚠️ 顺手修：Cargo.toml 首次插入把既有 target 段劈成重复键（duplicate key），合并进既有段才对。
+  - **终态触发条件（未改，复核确认）**：任务进终态 +（非当前任务或窗口不可见）+ 同轮去重（runKey）+ 审批挂起不算终态——正常任务在后台完成必有通知；用户正盯着看的任务完成不打扰（对齐 ZCode）。
+  - **E2E 实证**：`notify_send` 直发 + taskNotifications 模块全链发送成功；`ToastNotificationManager::History.GetHistory('com.reinagent.app')` 返回 3 条且正文逐字匹配（真进通知中心，非 API 假成功）；AudioContext resume 后 state=running。回归 tsc 0 / 前端绿 / Rust 185。
+
+- **通知/提示音行为定稿 ✅（2026-10-04 用户两轮拍板，Windows 真机验证）**：
+  - **声音**：任务终态**无条件**播放（不看焦点/是否当前任务）；WebAudio 三音上行（A5→C#6→E6，0.45s）+ 缓入缓出包络；共享 AudioContext（suspended 起始 resume 后再播）；**gain 峰值 0.38（用户定档）**——旧 0.06 双音在真机喇叭上几乎不可闻（管线通但「听不见」，教训：音量需实测电平而非只看链路）。
+  - **系统通知**：仅 **`document.hasFocus() === false`**（失焦/最小化/切窗口）时弹；有焦点只有声音。任务名 + 结果摘要 120 字；同轮去重。
+  - **点击通知跳转**：Rust `notify_send` 增 `task_id` 参数——Windows Toast `on_activated` / Linux freedesktop `default` action + `wait_for_action("default")` → `emit_notify_activate`（聚焦主窗口 show+unminimize+set_focus + emit "notify-activate"）→ 前端 listen → setActiveTaskId + `followSignal` 强制贴底（无视滚动记忆）；任务已删则仅聚焦窗口。
+  - **Windows dev 横幅缺失根因（重点坑）**：未注册 AUMID 的应用 Toast **只进通知中心不弹横幅**（API 成功、History 有记录、但无横幅）。修复：setup 时 `ensure_windows_aumid_registered()`——仅 dev 版（exe 在 target\debug|release）用 PowerShell 幂等写 `HKCU:\Software\Classes\AppUserModelId\com.reinagent.app`（DisplayName+IconUri）；安装版由 Tauri NSIS 安装器注册。**验证铁律：注册后 Toast 横幅 GDI 截屏实证弹出了**；通知中心 History.GetHistory 数条数+读正文。
+  - 回归：tsc 0 / 前端绿 / Rust 185。测试任务与残留 E2E 任务已清。

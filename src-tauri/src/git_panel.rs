@@ -1079,3 +1079,127 @@ pub struct GitDiffFileArgs {
     #[serde(default)]
     pub untracked: bool,
 }
+
+// ---------------------------------------------------------------------------
+// 系统通知（Windows/Linux 直发，绕过 tauri-plugin-notification 的 dev 限制）
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NotifySendArgs {
+    pub title: String,
+    pub body: String,
+    /// 关联任务 id（点击通知 → `notify-activate` 事件带回前端切任务；可空）
+    #[serde(default)]
+    pub task_id: Option<String>,
+}
+
+/// 点击通知后的统一动作：聚焦主窗口 + 向 webview 发 `notify-activate`（带 taskId）。
+/// 前端监听后 setActiveTaskId（任务已删则仅聚焦）。
+fn emit_notify_activate(task_id: Option<&str>) {
+    use tauri::{Emitter, Manager};
+    if let Some(app) = crate::SINGLE_APP_HANDLE.get() {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+        let payload = serde_json::json!({ "taskId": task_id });
+        let _ = app.emit("notify-activate", payload);
+    }
+}
+
+/// 发系统通知（对齐用户需求：Windows + Linux 都要有真实通知）。
+///
+/// 为什么不用 tauri-plugin-notification：其 desktop 实现在 Windows 上仅当 exe
+/// **不在** `target/debug|release`（即安装版）时才设置 AppUserModelID——dev/本地
+/// 构建发的 Toast 无 AppId，Windows 静默丢弃（API 返回成功但通知中心无内容）。
+/// 这里自行处理：
+/// - Windows：`tauri-winrt-notification`（插件同款底层 crate）+ 显式 AUMID
+///   `com.reinagent.app`；**on_activated 回调**（点击 Toast 正文）→ emit_notify_activate。
+/// - Linux：`notify-rust`（org.freedesktop.Notifications）+ default action（点击正文）
+///   回调 → emit_notify_activate。
+#[tauri::command]
+pub async fn notify_send(args: NotifySendArgs) -> Result<(), String> {
+    let title = args.title;
+    let body = args.body;
+    let task_id = args.task_id;
+    tauri::async_runtime::spawn_blocking(move || {
+        #[cfg(target_os = "windows")]
+        {
+            const APP_ID: &str = "com.reinagent.app";
+            let task_id = task_id.clone();
+            let toast = tauri_winrt_notification::Toast::new(APP_ID)
+                .title(&title)
+                .text1(&body)
+                .on_activated(move |_action| {
+                    // 点击 Toast 正文（无 button 时 action 为 None）
+                    emit_notify_activate(task_id.as_deref());
+                    Ok(())
+                });
+            toast.show().map_err(|e| format!("toast 显示失败: {e}"))
+        }
+        #[cfg(target_os = "linux")]
+        {
+            let task_id = task_id.clone();
+            // default action = 点击通知正文（freedesktop 规范：action "default"）
+            let mut n = notify_rust::Notification::new()
+                .summary(&title)
+                .body(&body)
+                .appname("ReinAgent")
+                .action("default", "查看");
+            n = n.finalize();
+            let handle = n
+                .show()
+                .map_err(|e| format!("通知发送失败: {e}"))?;
+            // notify-rust xdg 的 wait_for_action 回调签名是 &str：
+            // 点击正文（default action）→ "default"；按钮 → action id；关闭 → "closed"。
+            std::thread::spawn(move || {
+                handle.wait_for_action(|action: &str| {
+                    if action == "default" {
+                        emit_notify_activate(task_id.as_deref());
+                    }
+                });
+            });
+            Ok(())
+        }
+        #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+        {
+            let _ = (title, body, task_id);
+            Ok(())
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// Windows dev 构建补注册 AUMID（`com.reinagent.app`）。
+///
+/// 背景：未在系统注册过 AppUserModelID 的应用，Windows 只把 Toast 投进通知中心、
+/// **不弹横幅**（安装版由 Tauri NSIS 安装器写注册表，dev exe 没有这个步骤）。
+/// 幂等：已注册（InstallPath/DisplayName 存在且一致）时不重复写。
+#[cfg(target_os = "windows")]
+pub fn ensure_windows_aumid_registered() {
+    use std::process::Command;
+    const APP_ID: &str = "com.reinagent.app";
+    let exe = std::env::current_exe().unwrap_or_default();
+    let exe_str = exe.to_string_lossy().to_string();
+    // 只对 dev/未安装版做（安装版由安装器注册；这里简化：检查当前 exe 是否位于
+    // target\debug|release，dev 场景才写）
+    let is_dev = exe_str.ends_with(r"target\debug\ReinAgent.exe")
+        || exe_str.ends_with(r"target\release\ReinAgent.exe");
+    if !is_dev {
+        return;
+    }
+    let script = format!(
+        r#"$key='HKCU:\Software\Classes\AppUserModelId\{APP_ID}';
+           if (-not (Test-Path $key)) {{
+             New-Item -Path $key -Force | Out-Null;
+             Set-ItemProperty -Path $key -Name DisplayName -Value 'ReinAgent';
+             Set-ItemProperty -Path $key -Name IconUri -Value '{exe_str}';
+           }}"#
+    );
+    let _ = Command::new("powershell")
+        .args(["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", &script])
+        .output();
+}

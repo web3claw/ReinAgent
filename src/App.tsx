@@ -915,7 +915,10 @@ export default function App() {
   }, []);
 
   // ---- 后台任务完成通知（E1，对齐 ZCode taskNotificationOrchestrator）----
-  // 触发：任务跑到终态且（不是当前正在看的任务 或 窗口不可见）；同轮去重。
+  // 用户定稿（2026-10-04）：
+  // - 声音：终态**无条件**播放（不看焦点/是否当前任务）；
+  // - 系统通知：仅窗口失焦时弹（document.hasFocus()=false，含最小化/切任务/切窗口）；
+  // - 点击通知 → 聚焦窗口 + 切到对应任务 + 贴底（notify-activate 事件，Rust 侧 Toast/action 回调发出）。
   const notifiedRunsRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const handle = (event: TaskTerminalEvent) => {
@@ -928,16 +931,49 @@ export default function App() {
       if (notifiedRunsRef.current.size > 200) {
         notifiedRunsRef.current = new Set(Array.from(notifiedRunsRef.current).slice(-100));
       }
-      const isActiveVisible = event.taskId === activeTaskId && document.visibilityState === "visible";
-      if (isActiveVisible) return; // 用户正在看的任务完成：不打扰
       const task = useAppStore.getState().tasks.find((t) => t.id === event.taskId);
       const title = task?.title ?? "后台任务";
       const body = summarizeOutcome(event.outcome, event.lastAssistantText, event.error);
-      void sendSystemNotification(title, body);
+      // 声音无条件（用户在不在看都要「叮」）
       if (isNotificationSoundEnabled()) playNotificationSound();
+      // 系统通知只在窗口失焦时（有焦点=人正在用软件，无需通知）
+      if (!document.hasFocus()) {
+        void sendSystemNotification(title, body, event.taskId);
+      }
     };
     return subscribeTaskTerminal(handle);
-  }, [activeTaskId]);
+  }, []);
+
+  // 点击系统通知 → 切到对应任务 + 强制贴底（Rust Toast on_activated / Linux action 回调发出）
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const stop = await listen<{ taskId: string }>("notify-activate", (event) => {
+          const taskId = event.payload?.taskId;
+          const store = useAppStore.getState();
+          if (taskId && store.tasks.some((t) => t.id === taskId)) {
+            store.setActiveTaskId(taskId);
+            // 强制贴底（无视滚动记忆）——用户语义是「回到这轮对话的最底部」；
+            // followSignal 在 activeTaskId 切换 effect 之后触发，顺序保证先切后贴
+            requestAnimationFrame(() => setFollowSignal((c) => c + 1));
+          }
+          // 任务可能已被删：无论如何都拉起窗口（Rust 侧在 Toast 点击时已聚焦，此处兜底）
+          window.focus();
+        });
+        if (cancelled) stop();
+        else unlisten = stop;
+      } catch (err) {
+        console.warn("[notify] notify-activate listen unavailable (web mode)", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
 
   // ---- Stop hooks（P2-G2）：任务终态 fire-and-forget（结果只进 hook 进程）。
   // 生命周期口径的 agent_end 由 agent 循环的原生 agent_end 事件触发（runAgentTurn），此处不重发。----

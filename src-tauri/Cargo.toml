@@ -54,7 +54,10 @@ toml = "0.9"
 tokio = { version = "1", features = ["rt", "time"] }
 axum = { version = "0.8.9", features = ["ws"] }
 
+# 系统通知直发（notify_send）：tauri-plugin-notification 在 Windows dev 构建
+# （exe 位于 target/debug|release）不设置 AUMID，Toast 被系统静默丢弃
 [target.'cfg(target_os = "windows")'.dependencies]
+tauri-winrt-notification = "0.8"
 webview2-com = "0.39"
 windows = { version = "0.62", features = [
     "Win32_Foundation",
@@ -78,6 +81,7 @@ strip = true
 
 # Linux 专属：内嵌浏览器的 WebKitGTK 读通道（run_javascript 取值）与原生截图（snapshot→PNG）
 [target.'cfg(target_os = "linux")'.dependencies]
+notify-rust = "4"
 webkit2gtk = { version = "2", features = ["v2_40"] }
 cairo-rs = { version = "0.18", features = ["png"] }
 javascriptcore = { version = "1", package = "javascriptcore-rs" }

@@ -128,6 +128,9 @@ pub fn run() {
         }
         // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
         automation::start_scheduler(app.handle().clone());
+        // Windows dev 构建：补注册 AUMID（未注册 AppId 的 Toast 只进通知中心不弹横幅）
+        #[cfg(target_os = "windows")]
+        git_panel::ensure_windows_aumid_registered();
         // 内置技能种子（对齐 LiveAgent setup：skills-installer / skills-creator /
         // liveagent-code-review 写入 ~/.ReinAgent/skills，失败不阻断启动）
         if let Err(error) = skills::ensure_builtin_agent_skills_sync() {
@@ -224,6 +227,7 @@ pub fn run() {
             git_panel::git_init,
             git_panel::git_push,
             git_panel::git_diff_patch,
+            git_panel::notify_send,
             git_panel::git_diff_file,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,
