@@ -91,10 +91,37 @@ pub async fn fs_write_file(
         if let Some(parent) = resolved.parent() {
             fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
+        ensure_gitignore_for_reinagent_path(&resolved);
         fs::write(&resolved, content).map_err(|e| format!("Failed to write {}: {}", resolved.display(), e))
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// `<x>/.ReinAgent/.gitignore` 内容：忽略 agent 一次性产物目录 + 忽略自身
+/// （git 允许 .gitignore 忽略自身，读取不受影响），使 `.ReinAgent/.temp` 对用户仓库完全隐形。
+pub const REINAGENT_GITIGNORE: &str = ".temp/\n.gitignore\n";
+
+/// 在 `.ReinAgent` 目录幂等补建 .gitignore（存在不覆盖）。
+pub fn ensure_reinagent_gitignore(reinagent_dir: &std::path::Path) {
+    let _ = fs::create_dir_all(reinagent_dir);
+    let gitignore = reinagent_dir.join(".gitignore");
+    if !gitignore.exists() {
+        let _ = fs::write(gitignore, REINAGENT_GITIGNORE);
+    }
+}
+
+/// 若写入路径位于某个 `.ReinAgent/` 目录之下（任意深度），定位该目录并幂等补建 .gitignore。
+/// 组件名必须精确等于 ".ReinAgent"（`.ReinAgentFoo` 不触发）。
+pub fn ensure_gitignore_for_reinagent_path(resolved: &std::path::Path) {
+    let mut cur = resolved.parent();
+    while let Some(dir) = cur {
+        if dir.file_name().map(|n| n == ".ReinAgent").unwrap_or(false) {
+            ensure_reinagent_gitignore(dir);
+            return;
+        }
+        cur = dir.parent();
+    }
 }
 
 /// 推导写入目标的检查点（root, rel_path）并捕获前像。
@@ -120,8 +147,8 @@ fn capture_write_pre_image(ctx: &crate::checkpoint::CheckpointCtx, resolved: &Pa
     crate::checkpoint::capture_pre_image(Some(ctx), &root, rel, pre_image);
 }
 
-/// 清理工作区白名单临时目录 `<workspace>/.ReinAgent/temp/`（整目录递归删除，幂等）。
-/// 安防：目标路径必须严格等于 workspace_root/.ReinAgent/temp 两级，拒绝越界。
+/// 清理工作区白名单临时目录 `<workspace>/.ReinAgent/.temp/`（整目录递归删除，幂等）。
+/// 安防：目标路径必须严格等于 workspace_root/.ReinAgent/.temp 两级，拒绝越界。
 #[derive(serde::Serialize)]
 pub struct CleanTmpResult {
     pub deleted_entries: u32,
@@ -144,13 +171,13 @@ pub async fn fs_clean_reinagent_tmp(
 ) -> Result<CleanTmpResult, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let root = resolve_path(&workspace_root);
-        let target = root.join(".ReinAgent").join("temp");
-        // 白名单安防：路径必须严格等于 root/.ReinAgent/temp（两级均固定），拒绝越界。
-        if target.file_name().map(|n| n != "temp").unwrap_or(true) {
-            return Err("清理目标必须是工作区下的 .ReinAgent/temp 目录".into());
+        let target = root.join(".ReinAgent").join(".temp");
+        // 白名单安防：路径必须严格等于 root/.ReinAgent/.temp（两级均固定），拒绝越界。
+        if target.file_name().map(|n| n != ".temp").unwrap_or(true) {
+            return Err("清理目标必须是工作区下的 .ReinAgent/.temp 目录".into());
         }
         if target.parent().map(|p| p.file_name().map(|n| n != ".ReinAgent").unwrap_or(true)).unwrap_or(true) {
-            return Err("清理目标必须是工作区下的 .ReinAgent/temp 目录".into());
+            return Err("清理目标必须是工作区下的 .ReinAgent/.temp 目录".into());
         }
         let meta = match fs::metadata(&target) {
             // 目录不存在：幂等成功（无事可清）。
@@ -237,7 +264,10 @@ pub async fn fs_create_dir(path: String) -> Result<(), String> {
         if !parent.is_dir() {
             return Err(format!("父目录不存在: {}", parent.display()));
         }
-        fs::create_dir(&resolved).map_err(|e| format!("Failed to create {}: {}", resolved.display(), e))
+        fs::create_dir(&resolved).map_err(|e| format!("Failed to create {}: {}", resolved.display(), e))?;
+        // 用户/agent 显式创建 .ReinAgent（或其子目录）时幂等补建 .gitignore
+        ensure_gitignore_for_reinagent_path(&resolved);
+        Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
@@ -881,8 +911,8 @@ pub async fn fs_read_image_preview(path: String) -> Result<ImageDataBase64, Stri
     .map_err(|e| e.to_string())?
 }
 
-/// 粘贴图片落盘：base64 解码写入 <workdir>/.ReinAgent/temp/pasted/<时间戳>-<消毒后文件名>，
-/// 返回绝对路径（对齐「一次性产物进 .ReinAgent/temp/」约定）。
+/// 粘贴图片落盘：base64 解码写入 <workdir>/.ReinAgent/.temp/pasted/<时间戳>-<消毒后文件名>，
+/// 返回绝对路径（对齐「一次性产物进 .ReinAgent/.temp/」约定）。
 #[tauri::command]
 pub async fn fs_import_pasted_file(
     name: String,
@@ -912,7 +942,8 @@ pub async fn fs_import_pasted_file(
             sanitized
         };
         let root = resolve_path(&workdir);
-        let dir = root.join(".ReinAgent").join("temp").join("pasted");
+        ensure_reinagent_gitignore(&root.join(".ReinAgent"));
+        let dir = root.join(".ReinAgent").join(".temp").join("pasted");
         fs::create_dir_all(&dir).map_err(|e| format!("创建暂存目录失败: {}", e))?;
         let target = dir.join(format!("{}-{}", std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)

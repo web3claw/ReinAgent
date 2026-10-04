@@ -191,3 +191,44 @@ fn stage_skips_vanished_paths_and_stages_rest() {
     assert!(status.contains("M  a.txt"), "a.txt 应已暂存: {status}");
     let _ = fs::remove_dir_all(&repo);
 }
+
+#[test]
+fn untracked_patch_synthesis_covers_no_newline_and_binary() {
+    use crate::git_panel::synthesize_untracked_patch;
+    use std::fs;
+    let dir = std::env::temp_dir().join(format!("reinagent-untracked-test-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    // 无尾换行：patch 末尾应有 \ No newline 标记
+    fs::write(dir.join("a.txt"), "line1\nline2").unwrap();
+    let r = synthesize_untracked_patch(dir.to_str().unwrap(), "a.txt").unwrap();
+    assert_eq!(r.availability, "patch");
+    let patch = r.patch.unwrap();
+    assert!(patch.contains("+++ b/a.txt"));
+    assert!(patch.contains("@@ -0,0 +1,2 @@"));
+    assert!(patch.contains("+line1"));
+    assert!(patch.contains("\\ No newline at end of file"));
+    // 二进制（含 0 字节）→ availability=binary
+    fs::write(dir.join("img.bin"), [0x89u8, 0x50, 0x00, 0x4e]).unwrap();
+    let r2 = synthesize_untracked_patch(dir.to_str().unwrap(), "img.bin").unwrap();
+    assert_eq!(r2.availability, "binary");
+    assert!(r2.patch.is_none());
+    let _ = fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn not_repo_detection_is_case_insensitive() {
+    use crate::git_panel::is_not_repo_error;
+    // 仓库外 `git diff` 的 warning 是大写 N（用户报错原文），必须与 status/log 的小写等价识别
+    assert!(is_not_repo_error("GIT_NOT_REPO"));
+    assert!(is_not_repo_error(
+        "git diff 失败：warning: Not a git repository. Use --no-index to compare two paths outside a working tree"
+    ));
+    assert!(is_not_repo_error(
+        "fatal: not a git repository (or any of the parent directories): .git"
+    ));
+    // 空仓库不是「非仓库」
+    assert!(!is_not_repo_error(
+        "git log 失败：fatal: your current branch 'main' does not have any commits yet"
+    ));
+}

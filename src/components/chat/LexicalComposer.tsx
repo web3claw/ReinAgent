@@ -814,7 +814,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     setAttachments((prev) => prev.filter((a) => a.path !== path));
   };
 
-  /** Ctrl+V 粘贴图片：base64 → Rust 落盘 .ReinAgent/temp/pasted/ → 路径引用附件 */
+  /** Ctrl+V 粘贴图片：base64 → Rust 落盘 .ReinAgent/.temp/pasted/ → 路径引用附件 */
   const handlePasteFiles = async (files: File[]) => {
     const { invoke } = await import("@tauri-apps/api/core");
     for (const file of files) {

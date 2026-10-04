@@ -81,7 +81,10 @@ fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
     let stderr = String::from_utf8_lossy(&output.stderr).to_string();
     if !output.status.success() {
         let combined = format!("{stdout}{stderr}");
-        if combined.contains("not a git repository") {
+        // 大小写不敏感：仓库外 `git diff` 输出的是 "Not a git repository"（大写 N），
+        // 与 status/log 的 "fatal: not a git repository" 大小写不同，漏判会把整屏
+        // usage 帮助当错误抛给前端。
+        if combined.to_lowercase().contains("not a git repository") {
             return Err("GIT_NOT_REPO".to_string());
         }
         return Err(format!("git {} 失败：{}", args.first().unwrap_or(&""), combined.trim()));
@@ -89,14 +92,16 @@ fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
     Ok(stdout)
 }
 
-fn is_not_repo_error(err: &str) -> bool {
-    err == "GIT_NOT_REPO"
+pub fn is_not_repo_error(err: &str) -> bool {
+    // 兜底再兜一层原始文案（防御绕过 run_git 的调用路径）
+    err == "GIT_NOT_REPO" || err.to_lowercase().contains("not a git repository")
 }
 
 #[tauri::command]
 pub async fn git_status(cwd: String) -> Result<GitStatusResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        let porcelain = match run_git(&cwd, &["status", "--porcelain=v1", "-b"]) {
+        // -uall：untracked 目录展开成具体文件（对齐 ZCode 变更列表逐文件展示，不折叠成目录行）
+        let porcelain = match run_git(&cwd, &["status", "--porcelain=v1", "-b", "-uall"]) {
             Ok(out) => out,
             Err(e) if is_not_repo_error(&e) => {
                 return Ok(GitStatusResponse { entries: vec![], branch: String::new(), is_git_repo: false });
@@ -727,12 +732,52 @@ pub async fn git_numstat(cwd: String) -> Result<GitNumStatResponse, String> {
         parse_numstat(&staged, &mut staged_files);
         let mut unstaged_files = Vec::new();
         parse_numstat(&unstaged, &mut unstaged_files);
+        append_untracked_stats(&cwd, &mut unstaged_files);
         staged_files.sort_by(|a, b| a.path.cmp(&b.path));
         unstaged_files.sort_by(|a, b| a.path.cmp(&b.path));
         Ok(GitNumStatResponse { staged: staged_files, unstaged: unstaged_files, is_git_repo: true })
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// untracked 文件计入未暂存行数（对齐 ZCode buildUntrackedStats：读文件数行，
+/// 二进制记 0、单文件超 1MB 记 0；最多统计 200 个防巨仓拖慢，其余保持 0/0）。
+fn append_untracked_stats(cwd: &str, files: &mut Vec<GitNumStatFile>) {
+    use std::io::Read;
+    const MAX_FILES: usize = 200;
+    const MAX_BYTES: usize = 1024 * 1024;
+    let out = match run_git(cwd, &["ls-files", "--others", "--exclude-standard"]) {
+        Ok(out) => out,
+        Err(_) => return,
+    };
+    let base = std::path::Path::new(cwd);
+    let mut counted = 0usize;
+    for line in out.lines() {
+        if line.is_empty() || counted >= MAX_FILES {
+            continue;
+        }
+        let rel = line.replace('\\', "/");
+        if files.iter().any(|f| f.path == rel) {
+            continue;
+        }
+        let mut file = match std::fs::File::open(base.join(line.trim())) {
+            Ok(f) => f,
+            Err(_) => continue,
+        };
+        let mut buf: Vec<u8> = Vec::new();
+        if file.read_to_end(&mut buf).is_err() || buf.len() > MAX_BYTES || buf.contains(&0) {
+            continue;
+        }
+        let mut added = buf.iter().filter(|b| **b == b'\n').count() as i64;
+        if let Some(last) = buf.last() {
+            if *last != b'\n' {
+                added += 1;
+            }
+        }
+        files.push(GitNumStatFile { path: rel, added, removed: 0 });
+        counted += 1;
+    }
 }
 
 #[derive(Serialize)]
@@ -932,4 +977,105 @@ pub async fn git_diff_patch(args: GitDiffPatchArgs) -> Result<String, String> {
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitFileDiffResponse {
+    /// unified patch 原文；availability != "patch" 时为 None
+    pub patch: Option<String>,
+    /// patch | binary | truncated（untracked 超过 1MB）
+    pub availability: String,
+}
+
+const UNTRACKED_DIFF_MAX_BYTES: u64 = 1024 * 1024;
+
+/// 未跟踪文件合成最小 unified patch（对齐 ZCode buildUntrackedTextDiffResult：
+/// `--- /dev/null` + `+++ b/<path>` + `@@ -0,0 +1,N @@` + 全 `+` 行；无尾换行补
+/// `\ No newline at end of file`）。二进制（含 0 字节）与超 1MB 文件不生成 patch。
+pub fn synthesize_untracked_patch(cwd: &str, path: &str) -> Result<GitFileDiffResponse, String> {
+    use std::io::Read;
+    let full = std::path::Path::new(cwd).join(path);
+    let mut file = match std::fs::File::open(&full) {
+        Ok(f) => f,
+        Err(_) => {
+            return Ok(GitFileDiffResponse { patch: None, availability: "unavailable".to_string() });
+        }
+    };
+    let mut buf: Vec<u8> = Vec::new();
+    if file.read_to_end(&mut buf).is_err() {
+        return Ok(GitFileDiffResponse { patch: None, availability: "unavailable".to_string() });
+    }
+    if buf.len() as u64 > UNTRACKED_DIFF_MAX_BYTES {
+        return Ok(GitFileDiffResponse { patch: None, availability: "truncated".to_string() });
+    }
+    if buf.contains(&0) {
+        return Ok(GitFileDiffResponse { patch: None, availability: "binary".to_string() });
+    }
+    let content = String::from_utf8_lossy(&buf);
+    let has_trailing_newline = content.ends_with('\n');
+    let normalized = content.replace("\r\n", "\n");
+    let mut lines: Vec<&str> = normalized.split('\n').collect();
+    if has_trailing_newline {
+        lines.pop();
+    }
+    let mut patch_lines: Vec<String> = vec![
+        "--- /dev/null".to_string(),
+        format!("+++ b/{}", path.replace('\\', "/")),
+    ];
+    if !lines.is_empty() {
+        patch_lines.push(format!("@@ -0,0 +1,{} @@", lines.len()));
+        patch_lines.extend(lines.iter().map(|l| format!("+{l}")));
+    }
+    if !has_trailing_newline && !lines.is_empty() {
+        patch_lines.push("\\ No newline at end of file".to_string());
+    }
+    Ok(GitFileDiffResponse {
+        patch: Some(format!("{}\n", patch_lines.join("\n"))),
+        availability: "patch".to_string(),
+    })
+}
+
+/// 单文件 diff（对齐 ZCode getDiff 的单文件路径：未暂存=`git diff -- <path>`、
+/// 已暂存=`git diff --cached -- <path>`；untracked 文件不在 diff 里，合成最小 patch）。
+#[tauri::command]
+pub async fn git_diff_file(args: GitDiffFileArgs) -> Result<GitFileDiffResponse, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if args.untracked {
+            return synthesize_untracked_patch(&args.cwd, &args.path);
+        }
+        let cmd: Vec<&str> = if args.staged {
+            vec!["diff", "--cached", "--no-ext-diff", "--no-color", "--binary", "--", &args.path]
+        } else {
+            vec!["diff", "--no-ext-diff", "--no-color", "--binary", "--", &args.path]
+        };
+        match run_git(&args.cwd, &cmd) {
+            Ok(out) => {
+                if out.is_empty() {
+                    return Ok(GitFileDiffResponse { patch: None, availability: "unavailable".to_string() });
+                }
+                if out.contains("GIT binary patch") || out.contains("Binary files ") {
+                    return Ok(GitFileDiffResponse { patch: None, availability: "binary".to_string() });
+                }
+                Ok(GitFileDiffResponse { patch: Some(out), availability: "patch".to_string() })
+            }
+            Err(e) if is_not_repo_error(&e) => Err(e),
+            Err(e) => Err(e),
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GitDiffFileArgs {
+    pub cwd: String,
+    pub path: String,
+    /// true = 已暂存 diff（HEAD vs index）
+    #[serde(default)]
+    pub staged: bool,
+    /// true = 未跟踪文件（合成最小 patch，git diff 不含它们）
+    #[serde(default)]
+    pub untracked: bool,
 }

@@ -187,3 +187,17 @@ export function gitPush(cwd: string) {
 export function gitDiffPatch(cwd: string, staged: boolean) {
   return invoke<string>("git_diff_patch", { args: { cwd, staged } });
 }
+
+export interface GitFileDiffResponse {
+  /** unified patch 原文；availability != "patch" 时为 null */
+  patch: string | null;
+  /** patch | binary | truncated | unavailable */
+  availability: string;
+}
+
+/** 单文件 diff（未暂存/已暂存/untracked 合成 patch）。 */
+export function gitDiffFile(cwd: string, path: string, staged: boolean, untracked: boolean) {
+  return invoke<GitFileDiffResponse>("git_diff_file", {
+    args: { cwd, path, staged, untracked },
+  });
+}

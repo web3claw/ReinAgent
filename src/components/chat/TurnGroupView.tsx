@@ -165,7 +165,7 @@ function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntr
 
   // 同一文件在一轮内被多次编辑时按路径聚合：original 取第一次编辑前、final 取最后一次编辑后，
   // 只显示净变更（对齐 ZCode taskChangeSummary 的按路径合并语义）。
-  // `.ReinAgent/temp/` 下的一次性脚本不进摘要（不列行、不计入数量与增删统计）。
+  // `.ReinAgent/.temp/` 下的一次性脚本不进摘要（不列行、不计入数量与增删统计）。
   const changes = useMemo(() => {
     const byPath = new Map<string, { path: string; originalContent: string; finalContent: string }>();
     for (const change of collectTurnFileChanges(entries)) {

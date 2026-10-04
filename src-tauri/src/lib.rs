@@ -33,6 +33,8 @@ mod updater;
 #[cfg(test)]
 mod git_panel_tests;
 #[cfg(test)]
+mod fs_cmd_tests;
+#[cfg(test)]
 mod usage_stats_tests;
 #[cfg(test)]
 mod web_tools_tests;
@@ -222,6 +224,7 @@ pub fn run() {
             git_panel::git_init,
             git_panel::git_push,
             git_panel::git_diff_patch,
+            git_panel::git_diff_file,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,
             conversation_store::conversation_load_page,

@@ -190,7 +190,7 @@
 
 > # Environment
 > - Working directory: ${workspaceRoot} (relative paths in tool calls resolve against this root)
-> - Workspace conventions: One-off scripts, analysis artifacts and other temporary files must be placed under `.ReinAgent/temp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under `.ReinAgent/` as well (each kind in its own subdirectory), never in the project root.（2026-10-03 从系统提示词身份段移入；仅工作区根存在时注入）
+> - Workspace conventions: One-off scripts, analysis artifacts and other temporary files must be placed under `.ReinAgent/.temp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under `.ReinAgent/` as well (each kind in its own subdirectory), never in the project root.（2026-10-03 从系统提示词身份段移入；仅工作区根存在时注入）
 > - System: ${osBadge}（Rust system_info 命令；build ≥22000 = Win 11；Linux 读 os-release PRETTY_NAME）
 > - Terminal shell: ${所选 shell 绝对路径} — 语法提示跟随实际 shell（cmd / PowerShell / Unix bash 各异；2026-09-30 起从终端配置读取，不再写死 cmd）
 > - Model: ${modelLabel}
@@ -203,7 +203,7 @@
 
 > You are ReinAgent, an interactive coding agent that helps users with software engineering tasks. You can read, write and edit files, execute commands in the terminal, and help users with coding tasks. Preferences for this conversation:
 >
-> - One-off scripts, analysis artifacts and other temporary files must be placed under \`.ReinAgent/temp/\` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under \`.ReinAgent/\` as well (each kind in its own subdirectory), never in the project root.
+> - One-off scripts, analysis artifacts and other temporary files must be placed under \`.ReinAgent/.temp/\` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under \`.ReinAgent/\` as well (each kind in its own subdirectory), never in the project root.
 > - Lead with code, not prose: give the minimal correct change first, then a short rationale.
 > - Always read the target file before proposing edits; never guess line contents.
 > - Keep changes minimal and scoped; call out any side effects you notice.
@@ -238,7 +238,7 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 | edit_file | **read-before-edit 强制**（未读先改报 "File has not been read yet. Read it first before writing to it: <path>"）；target 不唯一时报匹配数并要求加长上下文；找不到 target 时提示精确复制（含缩进空白）；文件不存在时同样给相似文件建议 |
 | list_dir | 目录列表（JSON） |
 | exec_command | 接受 `command`（`cmd` 为兼容别名，执行前归一化，双缺时报出实际收到的参数名）；cwd 缺省为工作区根；**输出上限 30KB**（对齐 ZCode `MAX_INLINE_OUTPUT_BYTES`，超出截断并附标记） |
-| 附件（图片粘贴/文件添加） | Composer 附件条：图片缩略图（点击 Lightbox 放大）+ 文件横条 + X 删除，上限 9 个；发送时文本附件以 `[Attached file: <路径>]` 路径引用追加、图片转原生 image content block（非视觉模型降级为「无法查看图片」路径引用提示）；粘贴图片落盘 `.ReinAgent/temp/pasted/` |
+| 附件（图片粘贴/文件添加） | Composer 附件条：图片缩略图（点击 Lightbox 放大）+ 文件横条 + X 删除，上限 9 个；发送时文本附件以 `[Attached file: <路径>]` 路径引用追加、图片转原生 image content block（非视觉模型降级为「无法查看图片」路径引用提示）；粘贴图片落盘 `.ReinAgent/.temp/pasted/` |
 | 审批门拒绝文案 | "[Approval] 用户拒绝了本次 ${toolName} 调用。不要重试同样的调用；请说明意图或改用其它方案继续。" |
 | 计划模式拦截文案 | "[Plan Mode] 已拦截：当前任务处于计划模式，禁止写入/修改文件与执行命令。请继续只读调研并输出实施计划，不要重试该调用。" |
 

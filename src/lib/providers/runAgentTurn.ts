@@ -106,7 +106,7 @@ export function buildEnvironmentSection(input: EnvironmentSectionInput): string 
   // 工作区目录约定（原系统提示词身份段内容移入此处）：工具/无助手场景都保留完整信息
   if (workspaceRoot) {
     lines.push(
-      "- Workspace conventions: One-off scripts, analysis artifacts and other temporary files must be placed under `.ReinAgent/temp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under `.ReinAgent/` as well (each kind in its own subdirectory), never in the project root.",
+      "- Workspace conventions: One-off scripts, analysis artifacts and other temporary files must be placed under `.ReinAgent/.temp/` at the workspace root — never scattered in the project; files there are considered disposable and may be cleaned up. Notes, memories and other persistent reference material you produce for later use must be saved under `.ReinAgent/` as well (each kind in its own subdirectory), never in the project root.",
     );
   }
   if (osBadge) lines.push(`- System: ${osBadge}`);

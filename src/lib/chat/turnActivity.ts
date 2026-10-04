@@ -381,12 +381,12 @@ export function pathDirectory(path: string): string | undefined {
 }
 
 /**
- * 判定路径是否位于工作区临时目录 `.ReinAgent/temp/` 下（分隔符无关：正斜杠/反斜杠、
+ * 判定路径是否位于工作区临时目录 `.ReinAgent/.temp/` 下（分隔符无关：正斜杠/反斜杠、
  * 绝对/相对路径均可识别）。命中者不进文件更改摘要卡（一次性脚本无需审查/列出）。
  */
 export function isReinAgentTempPath(path: string): boolean {
   const normalized = path.replace(/\\/g, "/");
-  return normalized.startsWith(".ReinAgent/temp/") || normalized.includes("/.ReinAgent/temp/");
+  return normalized.startsWith(".ReinAgent/.temp/") || normalized.includes("/.ReinAgent/.temp/");
 }
 
 /**
