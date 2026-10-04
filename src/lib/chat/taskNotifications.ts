@@ -6,11 +6,13 @@
  * - 任务跑到**终态**（done/error/stopped）且**不是当前正在看的任务**（或窗口不可见）；
  * - 同一任务同一轮只通知一次（runId 去重）。
  *
- * 提示音：WebAudio 合成短 beep（无音频资源依赖）；开关持久化 kv。
+ * 提示音：双平台共用打包内资源 task-done.wav（Linux 经 Rust pw-play 播放，
+ * Windows/macOS 经 WebAudio 解码播放）；开关持久化 kv。
  */
 
 import { invoke } from "@tauri-apps/api/core";
 import { kvGet, kvSet } from "../storage/db";
+import taskDoneWavUrl from "../../assets/sounds/task-done.wav";
 
 const SOUND_ENABLED_KEY = "reinagent-notification-sound";
 
@@ -36,41 +38,49 @@ function getSharedAudioCtx(): AudioContext | null {
   return sharedAudioCtx;
 }
 
-/** 三音上行完成提示音（约 0.45s，gain 峰值 0.38——用户定档：比系统提示音略响，仍留爆音余量）。 */
+/** 任务提示音：双平台播放**同一个 wav 资源**（src/assets/sounds/task-done.wav，
+ * 用户自选 Mixkit "Software Interface Start" 前 1s，PCM16 44.1kHz，结尾 60ms 淡出）。
+ *
+ * Linux：WebKitGTK 的 WebAudio 引擎故障（AudioContext 起始即 suspended 且 resume()
+ * 的 Promise 永不 settle，实测 libwebkit2gtk 2.52.6，关沙箱复现相同），WebAudio 无法
+ * 出声——改调 Rust `notify_beep`（编译期 include_bytes 嵌入同一文件 → pw-play 播放）。
+ * Windows/macOS：fetch + decodeAudioData 经共享 AudioContext 播放（保留 suspended
+ * resume 兜底）。失败如实 console.warn（No-Fallback：不静默伪装成功）。 */
+let cachedNotifyBuffer: AudioBuffer | null = null;
+
 export function playNotificationSound(): void {
+  if (navigator.userAgent.includes("Linux")) {
+    invoke("notify_beep").catch((err: unknown) => {
+      // No-Fallback：真实失败如实输出，不静默伪装成功
+      console.warn("[notify] 提示音播放失败:", err);
+    });
+    return;
+  }
+  void playWavNotificationSound();
+}
+
+/** Windows/macOS：解码并播放打包内提示音 wav（解码结果缓存，重复播放零解码开销）。 */
+async function playWavNotificationSound(): Promise<void> {
   try {
     const ctx = getSharedAudioCtx();
     if (!ctx) return;
-    const play = () => {
-      const t0 = ctx.currentTime;
-      const gain = ctx.createGain();
-      // 缓入缓出包络：避免起止爆音；峰值 0.38（用户定档）
-      gain.gain.setValueAtTime(0, t0);
-      gain.gain.linearRampToValueAtTime(0.38, t0 + 0.02);
-      gain.gain.setValueAtTime(0.38, t0 + 0.28);
-      gain.gain.linearRampToValueAtTime(0, t0 + 0.42);
-      gain.connect(ctx.destination);
-      const osc = ctx.createOscillator();
-      osc.type = "sine";
-      osc.connect(gain);
-      // A5 → C#6 → E6 上行三音（「完成」听感）
-      osc.frequency.setValueAtTime(880, t0);
-      osc.frequency.setValueAtTime(1108.73, t0 + 0.14);
-      osc.frequency.setValueAtTime(1318.51, t0 + 0.28);
-      osc.start();
-      osc.stop(t0 + 0.45);
-    };
     // Windows/Chromium 的 AudioContext 起始可能是 suspended（自动播放策略）：
     // 先 resume 再播；resume 期间无声直接播会静默失败。
     if (ctx.state === "suspended") {
-      void ctx.resume().then(play).catch(() => {
-        // resume 失败（无音频设备等）：静默
-      });
-    } else {
-      play();
+      await ctx.resume();
     }
-  } catch {
-    // 无声环境/自动播放策略：忽略
+    if (!cachedNotifyBuffer) {
+      const res = await fetch(taskDoneWavUrl);
+      if (!res.ok) throw new Error(`提示音资源加载失败: HTTP ${res.status}`);
+      cachedNotifyBuffer = await ctx.decodeAudioData(await res.arrayBuffer());
+    }
+    const src = ctx.createBufferSource();
+    src.buffer = cachedNotifyBuffer;
+    src.connect(ctx.destination);
+    src.start();
+  } catch (err) {
+    // No-Fallback：真实失败如实输出，不静默伪装成功
+    console.warn("[notify] 提示音播放失败:", err);
   }
 }
 

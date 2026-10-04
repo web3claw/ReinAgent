@@ -228,6 +228,7 @@ pub fn run() {
             git_panel::git_push,
             git_panel::git_diff_patch,
             git_panel::notify_send,
+            git_panel::notify_beep,
             git_panel::git_diff_file,
             conversation_store::conversation_sync,
             conversation_store::conversation_load,

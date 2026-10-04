@@ -1190,6 +1190,43 @@ pub async fn notify_send(args: NotifySendArgs) -> Result<(), String> {
     .map_err(|e| e.to_string())?
 }
 
+/// Linux 任务提示音兜底：WebKitGTK 的 WebAudio 引擎故障（AudioContext 起始即
+/// suspended 且 resume() 的 Promise 永不 settle，实测 libwebkit2gtk 2.52.6，
+/// 关沙箱复现相同），前端 beep 无法出声。改为播放**编译期嵌入二进制的提示音
+/// 资源**（src/assets/sounds/task-done.wav，用户自选的 Mixkit "Software Interface
+/// Start" 前 1s——Windows 端 WebAudio 播放的也是这一个文件，双平台听感一致）：
+/// 落临时文件后经 pw-play 播放（缺失时回退 gst-launch playbin）。
+/// 非 Linux 平台为 no-op（前端仅在 Linux 调用）。
+#[tauri::command]
+pub async fn notify_beep() -> Result<(), String> {
+    #[cfg(target_os = "linux")]
+    {
+        let path = write_notify_wav()?;
+        // spawn 不等待：提示音不得阻塞通知链路；启动失败如实上报（No-Fallback 铁律）
+        let spawned = std::process::Command::new("pw-play").arg(&path).spawn();
+        if spawned.is_err() {
+            let uri = format!("file://{}", path.display());
+            std::process::Command::new("gst-launch-1.0")
+                .args(["-q", "playbin", &uri])
+                .spawn()
+                .map_err(|e| format!("提示音播放失败（pw-play / gst-launch 均不可用）: {e}"))?;
+        }
+    }
+    Ok(())
+}
+
+/// 提示音资源：src/assets/sounds/task-done.wav（编译期嵌入，与前端共用同一文件）。
+#[cfg(target_os = "linux")]
+const NOTIFY_WAV: &[u8] = include_bytes!("../../src/assets/sounds/task-done.wav");
+
+/// 把嵌入的 wav 落到临时目录（pw-play 只认路径；每次覆盖，约 172KB 开销可忽略）。
+#[cfg(target_os = "linux")]
+fn write_notify_wav() -> Result<std::path::PathBuf, String> {
+    let path = std::env::temp_dir().join("reinagent-notify.wav");
+    std::fs::write(&path, NOTIFY_WAV).map_err(|e| format!("提示音 wav 写入失败: {e}"))?;
+    Ok(path)
+}
+
 /// Windows dev 构建补注册 AUMID（`com.reinagent.app`）。
 ///
 /// 背景：未在系统注册过 AppUserModelID 的应用，Windows 只把 Toast 投进通知中心、

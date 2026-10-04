@@ -335,11 +335,7 @@ ReinAgent 架构全景
 
 ## 六、Linux 编译、运行与环境规范
 
-源码盘为本地磁盘，可直接编译（**历史上的网络共享盘隔离方案已废弃**）。编译与运行统一在**仓库根目录**使用 Bun 执行，唯一命令：
-
-```bash
-bun run tauri build
-```
+编译测试/运行验证使用 **`bun run tauri dev`**（仓库根目录）；正式构建 `bun run tauri build` 由用户本人运行。
 
 - 依赖安装/变更：仓库根目录直接执行 `bun install`（根目录 `node_modules` 为真实目录，无软链接、无隔离区）。
 - 历史的 `run-linux.sh` 与 `/tmp/reinagent` 隔离区（rsync 同步、`CARGO_TARGET_DIR` 重定向、`node_modules` 软链接）已于 2026-10-04 全部删除，**严禁再引用或复活该流程**。
@@ -691,14 +687,16 @@ bun run tauri build
 ### 8.5 批次 E（通知与红点）落地（2026-09-28，P0 收尾）
 - **E1 后台任务完成系统通知 + 提示音**：
   - Rust：`tauri-plugin-notification = "2"`（capabilities 加 `notification:default`，lib.rs 注册插件）。
-  - 前端 `src/lib/chat/taskNotifications.ts`：`sendSystemNotification`（权限请求 + 发送，Web 模式静默跳过）、`playNotificationSound`（WebAudio 合成双音 880→1320Hz，无音频资源依赖，失败静默）、`summarizeOutcome`（终态摘要：错误原文/已停止/末条 assistant 文本截 120 字）、开关持久化 kv `reinagent-notification-sound`（缺省开）。
+  - 前端 `src/lib/chat/taskNotifications.ts`：`sendSystemNotification`（权限请求 + 发送，Web 模式静默跳过）、`playNotificationSound`（**双平台播放同一 wav 资源 `src/assets/sounds/task-done.wav`**：Linux → Rust 命令 `notify_beep`（编译期 include_bytes 嵌入 → pw-play）；Windows/macOS → fetch + decodeAudioData 缓存解码结果经共享 AudioContext 播放；失败如实 console.warn，不静默）、`summarizeOutcome`（终态摘要：错误原文/已停止/末条 assistant 文本截 120 字）、开关持久化 kv `reinagent-notification-sound`（缺省开）。
   - 池：`refreshStreamingSet` 里检测「上一轮在流式、现在不在」的任务 → `subscribeTaskTerminal` 发终态事件（done/error/stopped + 末条 assistant 文本 + error + **awaitingDecision 标记**——审批挂起不算真终态）。
-  - App 接线：订阅终态 → 「不是当前可见任务」才通知（`activeTaskId` + `document.visibilityState` 双判）→ 系统通知 + 提示音；runKey 去重（taskId+outcome+正文前 40 字），Set 上限 200 防泄漏。
+  - App 接线：订阅终态 → 审批挂起不算终态 → **提示音不去重（每次真实终态必响；曾放在 runKey 去重后导致同任务同文案的第二次完成被误吞）** → runKey 去重（taskId+outcome+正文前 40 字，上限 200）只作用于系统通知；通知仅窗口失焦时发。
   - 设置页：基础设置加「任务提示音」开关（WebAudio 播放开关，系统通知始终开）。
 - **E2 侧栏审批红点（TaskInteractionBadge 最小版）**：
   - 池：`subscribePendingApprovals` / `getPendingApprovalTaskIds`（与流式集合同款签名通知，只有集合变化才重算；挂进 flushNotify）。
   - ProjectList 两类任务行（项目任务行 + 通用任务行）渲染琥珀色脉冲点（`--status-warn` + animate-pulse，title=approvalRequiredBadge）；点击任务即进入处理（现有行为）。
 - **Tauri 实测**：任务 A 发消息后立即切到任务 B → A 完成（done）触发通知链路、console 零错误；模块/开关/订阅全部验证。**系统通知弹窗本体在 Windows 通知中心**（首次会请求授权），提示音为可听验证项。
+- **Linux 提示音引擎故障与兜底（2026-10-04，用户反馈 Linux 无声）**：本机 libwebkit2gtk 2.52.6 的 WebAudio 故障——`AudioContext` 起始 suspended 且 `resume()` 的 Promise **永不 settle**（gjs + WebKit2-4.1 隔离复现，禁 WebProcess 沙箱相同；系统 gst-launch 管线正常、autoplay 策略为 Allow），Windows WebView2 不受影响。`playNotificationSound` 按平台分流：**Linux 走新 Rust 命令 `notify_beep`**（git_panel.rs），Windows/macOS 保持 WebAudio 三音。诊断脚本留存于 /tmp/webaudio_diag/。
+- **提示音资源化（2026-10-04 三次迭代：合成三音 → Yaru complete → 用户自选文件）**：`notify_beep` 最终形态 = **编译期 `include_bytes!` 嵌入 `src/assets/sounds/task-done.wav`**（用户自选 Mixkit "Software Interface Start" 前 1s，PCM16 44.1kHz 立体声、峰值 -1.0dB、结尾 60ms 淡出防切音）写入 `$TMPDIR/reinagent-notify.wav` 经 `pw-play` 播放（回退 `gst-launch-1.0 -q playbin`）；Windows 端 `playWavNotificationSound()` 经 vite 资源导入 fetch + `decodeAudioData`（AudioBuffer 模块级缓存）播放**同一文件**。换音只需替换该 wav：两个平台无需改代码。
 - 验证：`tsc` 0、`build` ✓、五套前端测试全绿（128/43/18/6/12）+ hub 57 + cargo **138**。
 - **菜单键盘导航（2026-09-28 补齐，用户反馈）**：`/` 与 `@` 菜单支持 ↑/↓ 移动高亮（循环）、Enter/Tab 选中、Esc 关闭；高亮项 `data-active` 标记 + `scrollIntoView(block:nearest)` 滚动跟随；查询词/候选变化时高亮复位第一项；菜单打开时 Enter 被导航拦截（不发送消息）。菜单过滤列表提升为组件层 `slashFiltered`（keydown 与渲染共用同一份）。Tauri 实测：两菜单 ↑↓↑ 与 Enter 选中全链路通过。
 

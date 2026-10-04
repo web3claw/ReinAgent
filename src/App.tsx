@@ -928,6 +928,10 @@ export default function App() {
     const handle = (event: TaskTerminalEvent) => {
       // 审批挂起的「终态」不是真终态——用户决策后还会继续，不通知（角标由 E2 处理）
       if (event.awaitingDecision) return;
+      // 声音不去重：池层每次「流式→终态」转变只发一次事件，任何真实终态都要「叮」；
+      // （曾放在 runKey 去重之后 → 同任务同文案的第二次完成被误吞，提示音只响一次）
+      if (isNotificationSoundEnabled()) playNotificationSound();
+      // runKey 去重只作用于系统通知，避免同一终态的重复弹窗
       const runKey = `${event.taskId}:${event.outcome}:${event.lastAssistantText?.slice(0, 40) ?? ""}`;
       if (notifiedRunsRef.current.has(runKey)) return;
       notifiedRunsRef.current.add(runKey);
@@ -938,8 +942,6 @@ export default function App() {
       const task = useAppStore.getState().tasks.find((t) => t.id === event.taskId);
       const title = task?.title ?? "后台任务";
       const body = summarizeOutcome(event.outcome, event.lastAssistantText, event.error);
-      // 声音无条件（用户在不在看都要「叮」）
-      if (isNotificationSoundEnabled()) playNotificationSound();
       // 系统通知只在窗口失焦时（有焦点=人正在用软件，无需通知）
       if (!document.hasFocus()) {
         void sendSystemNotification(title, body, event.taskId);
