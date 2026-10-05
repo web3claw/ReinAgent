@@ -1,11 +1,16 @@
 //! 应用级 HTTP 代理（P2-G2 尾巴）：设置页 kv（`reinagent-web-proxy` /
-//! `reinagent-web-proxy-no-proxy`）→ 启动早期注入 WebView2 代理参数。
+//! `reinagent-web-proxy-no-proxy`）→ 注入内置 webview 的网络栈代理。
 //!
-//! WebView2 的网络栈承载**模型 API fetch 与应用渲染层**出口流量——`--proxy-server`
-//! 必须在 WebView2 环境初始化前设置（`std::env::set_var` 即可，WebView2 启动时读取），
-//! 因此代理修改后需重启应用生效。未配置时**不注入也不读系统环境变量**（直连，
-//! 显式清除继承的代理变量，对齐 ZCode「设置页优先于 shell 继承」语义）。
-//! No Proxy（不使用代理的地址，逗号分隔）映射到 `--proxy-bypass-list`。
+//! - **Windows（WebView2）**：启动早期注入 `--proxy-server` / `--proxy-bypass-list`
+//!   环境变量，WebView2 环境初始化时读取。未配置时**不注入也不读系统环境变量**
+//!   （直连，显式清除继承的代理变量，对齐 ZCode「设置页优先于 shell 继承」语义）。
+//! - **Linux（WebKitGTK）**：`apply_webkit_proxy_settings` 在 GTK/WebContext 创建前
+//!   设置默认 WebsiteDataManager 的网络代理（v2_32 API）。WebKitGTK 的代理是
+//!   **会话级、创建后不可改**——所以与 Windows 一样：改设置需重启应用生效。
+//!   未配置时置 `NoProxy`（显式直连，不跟随系统/环境代理）。
+//!
+//! 注：内置浏览器（browser.rs 的 child webview）与主 webview 共用同一 WebContext，
+//! 因此本设置对两者同时生效。
 
 use std::path::PathBuf;
 
@@ -82,4 +87,57 @@ pub fn apply_webview_proxy_env() {
         format!("{existing} {args}")
     };
     std::env::set_var("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS", merged);
+}
+
+/// Linux（WebKitGTK）代理注入：对已创建的 webview 会话设置网络代理。
+///
+/// 时机：必须在**页面加载之前**调用（Tauri 的 WebContext 由内部创建、无外部钩子，
+/// 只能取到 webview 后经 `webview.context()` → `website_data_manager()` 设置）。
+/// 本项目的调用点在 main webview 创建后立即执行（见 lib.rs setup 早期）。
+/// WebKitGTK 的代理是会话级设置、进程内生效——改设置需重启应用（同 Windows 语义）。
+///
+/// - kv 有代理 → `Custom` + 每 scheme 代理 URI，no-proxy 规则映射 `ignore_hosts`
+/// - kv 为空 → `NoProxy`（显式直连，不跟随系统环境代理/GSettings）
+///
+/// 需跨线程投递到 GTK 主线程执行（WebKitGTK 断言）。
+#[cfg(target_os = "linux")]
+pub fn apply_webkit_proxy_settings(app: &tauri::AppHandle) {
+    use tauri::Manager;
+    let Some(webview) = app.get_webview_window("main") else {
+        eprintln!("apply webkit proxy: main webview not found");
+        return;
+    };
+    let (proxy, no_proxy) = read_proxy_settings();
+    let proxy_trimmed = proxy.trim().to_string();
+    if let Err(e) = webview.with_webview(move |platform| {
+        use webkit2gtk::{
+            NetworkProxyMode, NetworkProxySettings, WebContextExt, WebViewExt,
+            WebsiteDataManagerExt,
+        };
+        let wk = platform.inner();
+        let Some(context) = wk.context() else {
+            eprintln!("apply webkit proxy: webview context unavailable");
+            return;
+        };
+        let Some(data_manager) = context.website_data_manager() else {
+            eprintln!("apply webkit proxy: website data manager unavailable");
+            return;
+        };
+        if proxy_trimmed.is_empty() {
+            data_manager.set_network_proxy_settings(NetworkProxyMode::NoProxy, None);
+            return;
+        }
+        let ignore_hosts: Vec<&str> = no_proxy
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        let mut settings = NetworkProxySettings::new(Some(&proxy_trimmed), &ignore_hosts);
+        for scheme in ["http", "https"] {
+            settings.add_proxy_for_scheme(scheme, &proxy_trimmed);
+        }
+        data_manager.set_network_proxy_settings(NetworkProxyMode::Custom, Some(&mut settings));
+    }) {
+        eprintln!("apply webkit proxy: dispatch failed: {e}");
+    }
 }

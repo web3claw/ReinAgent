@@ -17,7 +17,12 @@ import { kvGet } from "../storage/db";
 export const WEB_PROXY_KEY = "reinagent-web-proxy";
 export const WEB_PROXY_NO_PROXY_KEY = "reinagent-web-proxy-no-proxy";
 
-/** 判断 url 的 host 是否命中 no-proxy 规则（后缀/通配/精确，与 Rust 侧语义一致）。 */
+/**
+ * 判断 url 的 host 是否命中 no-proxy 规则（与 Rust 侧 llm_proxy::matches_no_proxy 同语义）：
+ * - `*` 单独一项 → 全部命中；
+ * - 含通配符（`192.168.*` / `*.deepseek.com`）→ 去星后按 host 包含匹配；
+ * - 纯域名/IP 前缀 → 精确匹配、子域后缀匹配，或前缀匹配（内网 `192.168.` 之类写法）。
+ */
 function matchesNoProxy(url: string, noProxy: string): boolean {
   let host: string;
   try {
@@ -27,17 +32,17 @@ function matchesNoProxy(url: string, noProxy: string): boolean {
   }
   return noProxy
     .split(",")
-    .map((s) => s.trim().toLowerCase().replace(/^\./, ""))
+    .map((s) => s.trim().toLowerCase())
     .filter(Boolean)
-    .some((rule) => {
-      if (rule === "*") return true;
-      // 通配前缀：192.168.* / *.lan
-      if (rule.includes("*")) {
-        const pattern = rule.replace(/\*/g, "");
-        return host.includes(pattern);
-      }
-      // 后缀匹配（example.com 命中 a.example.com 与 example.com 本身）
-      return host === rule || host.endsWith(`.${rule}`);
+    .some((raw) => {
+      if (raw === "*") return true;
+      const rule = raw.startsWith(".") ? raw.slice(1) : raw;
+      // 通配：去星后按原始 host 做包含匹配（192.168.* / *.deepseek.com）
+      if (rule.includes("*")) return host.includes(rule.replace(/\*/g, ""));
+      // 纯域名：精确或子域后缀
+      if (host === rule || host.endsWith(`.${rule}`)) return true;
+      // 内网前缀写法（规则尾部已带点，如 192.168. / 172.16.）
+      return rule.endsWith(".") && host.startsWith(rule);
     });
 }
 

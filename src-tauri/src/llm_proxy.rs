@@ -245,7 +245,15 @@ fn read_kv_proxy_settings() -> (String, String) {
     (read("reinagent-web-proxy"), read("reinagent-web-proxy-no-proxy"))
 }
 
-/// no-proxy 规则命中判定（与前端 matchesNoProxy 同语义：通配包含 + 后缀匹配）。
+/// no-proxy 规则命中判定（与前端 proxiedFetch.matchesNoProxy 同语义）：
+/// - `*` 单独一项 → 全部命中；
+/// - 含通配符（`192.168.*` / `*.deepseek.com`）→ 去星后做 host 包含匹配；
+/// - 纯域名 → 精确匹配或后缀匹配（`deepseek.com` 命中 `api.deepseek.com` 及自身）。
+///
+/// ⚠ 历史 bug（2026-10-05 修复）：旧实现把**规则**去点去星后与**原始 host** 做
+/// contains——`api.deepseek.com` 对规则 `*.deepseek.com`（去点后 `deepseekcom`）
+/// 恒不命中，导致 no-proxy 白名单完全失效，所有请求被送进代理（用户实测：
+/// 代理不可用时 DeepSeek/内网 API 全部访问失败）。
 fn matches_no_proxy(url: &str, no_proxy: &str) -> bool {
     let host = match reqwest::Url::parse(url) {
         Ok(u) => u.host_str().unwrap_or_default().to_ascii_lowercase(),
@@ -253,9 +261,22 @@ fn matches_no_proxy(url: &str, no_proxy: &str) -> bool {
     };
     no_proxy
         .split(',')
-        .map(|s| s.trim().to_ascii_lowercase().replace('.', "").replace('*', ""))
+        .map(|s| s.trim().to_ascii_lowercase())
         .filter(|s| !s.is_empty())
-        .any(|rule| host.contains(&rule))
+        .any(|rule| {
+            if rule == "*" {
+                return true;
+            }
+            let rule = rule.strip_prefix('.').unwrap_or(&rule).to_string();
+            if rule.contains('*') {
+                // 通配：去星后按原始 host 做包含匹配
+                return host.contains(&rule.replace('*', ""));
+            }
+            // 纯域名/IP 前缀：精确或子域后缀匹配
+            host == rule || host.ends_with(&format!(".{rule}"))
+                // 内网前缀写法（192.168./10./172.16.）在规则本身带点时按前缀匹配
+                || host.starts_with(&rule)
+        })
 }
 
 fn preflight_response(request_headers: &HeaderMap) -> Response {

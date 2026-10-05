@@ -103,6 +103,10 @@ pub fn run() {
             .plugin(tauri_plugin_updater::Builder::new().build()),
     )
     .setup(|app| {
+        // Linux：把「联网代理」设置注入 WebKitGTK 会话（内置浏览器 + 主 webview 共用）。
+        // 必须在页面加载前设置 → 放在 setup 最前面（webview 已创建、尚未导航完成）。
+        #[cfg(target_os = "linux")]
+        app_proxy::apply_webkit_proxy_settings(app.handle());
         // 远程访问服务：恢复持久化配置（开启则启动监听）
         remote_server::restore_on_startup(app.handle());
         // 单实例：保存本实例句柄（二次启动回调聚焦用）
