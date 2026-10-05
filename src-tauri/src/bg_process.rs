@@ -23,6 +23,14 @@ use std::sync::{Arc, Mutex};
 
 const OUTPUT_CAP_BYTES: usize = 256 * 1024;
 
+/// 停止流程的等待预算：TERM 后 2s 仍未终止 → 升级 KILL，再等 0.5s。
+const STOP_TERM_GRACE_MS: u64 = 2000;
+const STOP_KILL_GRACE_MS: u64 = 500;
+
+/// taskId 单调序号：仅用毫秒会在一轮并发 spawn（或并行测试）里撞 id，
+/// 后注册者覆盖前者，导致 `bg_output` 报「任务不存在」、stop 误删他人注册表项。
+static TASK_SEQ: AtomicUsize = AtomicUsize::new(0);
+
 pub struct BgProcess {
     child: Child,
     /// stdout+stderr 合并输出缓冲（读线程持续追加，cap 时丢头部保尾部）
@@ -59,7 +67,12 @@ pub struct BgOutput {
 #[serde(rename_all = "camelCase")]
 pub struct BgStopResult {
     pub task_id: String,
+    /// 仅在**确认进程组已终止**时为 true；任务不存在或未能终止 → false。
     pub stopped: bool,
+    /// 是否因 TERM 未奏效而升级到 KILL。
+    pub forced: bool,
+    /// 未能终止时的真实原因（No-Fallback；成功收敛时为 None）。
+    pub error: Option<String>,
 }
 
 fn now_ms() -> u64 {
@@ -133,7 +146,7 @@ pub(crate) fn bg_spawn_sync(command: String, cwd: Option<String>) -> Result<BgSp
             });
         }
 
-        let task_id = format!("bg-{}", now_ms());
+        let task_id = format!("bg-{}-{}", now_ms(), TASK_SEQ.fetch_add(1, Ordering::Relaxed));
         let process = BgProcess {
             child,
             output,
@@ -186,13 +199,18 @@ fn spawn_shell(command: &str, exec_dir: &std::path::Path) -> std::io::Result<Chi
     }
     #[cfg(not(target_os = "windows"))]
     {
-        Command::new("sh")
-            .arg("-c")
+        use std::os::unix::process::CommandExt;
+        let mut cmd = Command::new("sh");
+        cmd.arg("-c")
             .arg(command)
             .current_dir(exec_dir)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()
+            .stderr(Stdio::piped());
+        // 独立进程组（pgid == 子进程 pid）：bg_stop 的 `kill -<pid>` 才能命中整棵进程树。
+        // 与 mcp.rs::configure_child_process_group 同款；缺这一步时信号发给一个不存在的
+        // 进程组（ESRCH），停止按钮表现为完全无反应。
+        cmd.process_group(0);
+        cmd.spawn()
     }
 }
 
@@ -238,7 +256,117 @@ fn is_child_exited(child: &mut Child) -> bool {
     matches!(child.try_wait(), Ok(Some(_)))
 }
 
-/// 停止后台进程（进程树）。任务不存在时 stopped=false（幂等）。
+/// 向整个进程组发信号（force=false → TERM，true → KILL）；失败返回真实原因，不静默吞掉。
+#[cfg(not(target_os = "windows"))]
+fn signal_process_group(pid: u32, force: bool) -> Result<(), String> {
+    let signal = if force { "-KILL" } else { "-TERM" };
+    let output = Command::new("kill")
+        // `--` 必需：否则 `-<pid>` 会被 coreutils kill 当作选项解析，信号发不出去。
+        .args([signal, "--", &format!("-{pid}")])
+        .output()
+        .map_err(|e| format!("kill {signal} -{pid} 启动失败: {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "kill {signal} -{pid} 失败: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn signal_process_group(pid: u32, force: bool) -> Result<(), String> {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    let mut args = vec!["/PID".to_string(), pid.to_string(), "/T".to_string()];
+    if force {
+        args.push("/F".to_string());
+    }
+    let output = Command::new("taskkill")
+        .args(&args)
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+        .map_err(|e| format!("taskkill 启动失败: {e}"))?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(format!(
+            "taskkill 失败: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ))
+    }
+}
+
+/// 进程组是否仍有存活成员。
+#[cfg(not(target_os = "windows"))]
+pub(crate) fn process_group_alive(pid: u32) -> bool {
+    // `kill -0 -- -<pid>`：组存在且可发信号 → 退出码 0；不存在 → ESRCH 非 0。
+    // `--` 必需，否则 `-<pid>` 被当作选项解析、返回值不可信（实测会反着报）。
+    // 用 output() 而非 status()：组不存在时的 ESRCH 是预期结果，不该把 stderr 打到应用输出。
+    Command::new("kill")
+        .args(["-0", "--", &format!("-{pid}")])
+        .output()
+        .map(|output| output.status.success())
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn process_group_alive(pid: u32) -> bool {
+    use std::os::windows::process::CommandExt;
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    match Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+        .creation_flags(CREATE_NO_WINDOW)
+        .output()
+    {
+        Ok(output) => String::from_utf8_lossy(&output.stdout).contains(&pid.to_string()),
+        Err(_) => false,
+    }
+}
+
+/// 短临界区收割子进程（try_wait 会回收僵尸）——**不持锁等待**。
+///
+/// 必须边探边收：僵尸 leader 会让 `kill -0 -- -<pgid>` 一直为真，
+/// 不收割就会误判"进程组仍在"，把本该立即完成的停止拖到超时。
+fn reap_child(task_id: &str) {
+    if let Ok(mut registry) = registry().lock() {
+        if let Some(process) = registry.get_mut(task_id) {
+            let _ = process.child.try_wait();
+        }
+    }
+}
+
+/// 有界轮询等待整个进程组消失；超时返回 false（绝不无限阻塞）。
+fn wait_process_group_gone(task_id: &str, pid: u32, timeout_ms: u64) -> bool {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(timeout_ms);
+    loop {
+        reap_child(task_id);
+        if !process_group_alive(pid) {
+            return true;
+        }
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+}
+
+/// 测试用：取某后台任务的 pid。
+#[cfg(test)]
+pub(crate) fn bg_task_pid(task_id: &str) -> Option<u32> {
+    registry()
+        .lock()
+        .ok()?
+        .get(task_id)
+        .map(|process| process.child.id())
+}
+
+/// 停止后台进程（进程树）。
+///
+/// 语义：任务不存在 → `stopped=false`（幂等）；仅在**确认进程组已终止**时返回
+/// `stopped=true`，未能终止则如实返回 `stopped=false` + `error`（No-Fallback）。
+/// 等待在 registry 锁**之外**进行，最坏 ~2.5s 返回——绝不阻塞等待子进程自然退出。
 #[tauri::command]
 pub async fn bg_stop(task_id: String) -> Result<BgStopResult, String> {
     tauri::async_runtime::spawn_blocking(move || bg_stop_sync(task_id))
@@ -247,38 +375,63 @@ pub async fn bg_stop(task_id: String) -> Result<BgStopResult, String> {
 }
 
 pub(crate) fn bg_stop_sync(task_id: String) -> Result<BgStopResult, String> {
-        let child = {
-            let mut registry = registry().lock().map_err(|e| e.to_string())?;
-            match registry.get_mut(&task_id) {
-                Some(p) => {
-                    let pid = p.child.id();
-                    // Windows: taskkill 进程树；Unix: kill 进程组（未 setpgid 时退化为单进程）
-                    #[cfg(target_os = "windows")]
-                    {
-                        use std::os::windows::process::CommandExt;
-                        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-                        let _ = Command::new("taskkill")
-                            .args(["/PID", &pid.to_string(), "/T", "/F"])
-                            .creation_flags(CREATE_NO_WINDOW)
-                            .status();
-                    }
-                    #[cfg(not(target_os = "windows"))]
-                    {
-                        let _ = Command::new("kill")
-                            .args(["-TERM", &format!("-{pid}")])
-                            .status();
-                    }
-                    let _ = p.child.wait();
-                    true
-                }
-                None => false,
+    // 1) 短临界区只取 pid / 探一次退出态——等待必须在锁外，否则卡住会连累
+    //    bg_list / bg_output / bg_spawn（它们共用同一把 registry 锁）。
+    let (pid, already_exited) = {
+        let mut registry = registry().lock().map_err(|e| e.to_string())?;
+        match registry.get_mut(&task_id) {
+            Some(process) => {
+                let exited = matches!(process.child.try_wait(), Ok(Some(_)));
+                (process.child.id(), exited)
             }
-        };
-        // 停止后从注册表移除（读取历史不再可用——与 ZCode stopped 语义一致）
-        if child {
-            let _ = registry().lock().map_err(|e| e.to_string())?.remove(&task_id);
+            None => {
+                return Ok(BgStopResult {
+                    task_id,
+                    stopped: false,
+                    forced: false,
+                    error: None,
+                })
+            }
         }
-        Ok(BgStopResult { task_id, stopped: child })
+    };
+
+    // 2) 锁外终止进程组：TERM → 有界等待 → KILL → 有界等待。
+    //    已自然退出则不发信号——避免 pid 已被回收后被误当进程组 id 而伤及无关进程。
+    let mut forced = false;
+    let mut error = None;
+    let mut terminated = already_exited;
+    if !terminated {
+        error = signal_process_group(pid, false).err();
+        terminated = wait_process_group_gone(&task_id, pid, STOP_TERM_GRACE_MS);
+        if !terminated {
+            forced = true;
+            if let Err(escalation) = signal_process_group(pid, true) {
+                if error.is_none() {
+                    error = Some(escalation);
+                }
+            }
+            terminated = wait_process_group_gone(&task_id, pid, STOP_KILL_GRACE_MS);
+        }
+    }
+
+    // 3) 仅确认终止才移除注册表项（未能终止则保留——徽标继续如实显示该任务仍在运行）。
+    if terminated {
+        let mut registry = registry().lock().map_err(|e| e.to_string())?;
+        if let Some(mut process) = registry.remove(&task_id) {
+            let _ = process.child.try_wait(); // 收割僵尸
+        }
+    }
+
+    Ok(BgStopResult {
+        task_id,
+        stopped: terminated,
+        forced,
+        error: if terminated {
+            None
+        } else {
+            error.or_else(|| Some("进程组在超时后仍未终止".to_string()))
+        },
+    })
 }
 
 /// 列出全部后台任务（刷新用）。

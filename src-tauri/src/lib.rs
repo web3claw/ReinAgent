@@ -126,6 +126,15 @@ pub fn run() {
         remote_server::restore_on_startup(app.handle());
         // 单实例：保存本实例句柄（二次启动回调聚焦用）
         let _ = SINGLE_APP_HANDLE.set(app.handle().clone());
+        // dev 构建（`bun run tauri dev` 走 debug profile）在窗口标题标注 (dev)，
+        // 便于与 release 实例区分；release 编译期剔除，保持 tauri.conf.json 的 "ReinAgent"。
+        #[cfg(debug_assertions)]
+        {
+            use tauri::Manager as _;
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.set_title("ReinAgent (dev)");
+            }
+        }
         // 恢复「关闭时隐藏到托盘」设置（缺省开启）
         hide_to_tray::restore_hide_to_tray();
         // LLM 流式本地反代：SDK 出站走 127.0.0.1 反代直连上游（绕开 webview 网络栈
