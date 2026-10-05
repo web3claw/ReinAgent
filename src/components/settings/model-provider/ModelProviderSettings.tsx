@@ -52,21 +52,29 @@ export function ModelProviderSettings({
   const [providers, setProviders] = useState<ProviderItem[]>(() =>
     getInitialPresetProviders(settings)
   );
+  // F18：配置读取/解析失败 → 显示错误态横幅并禁止写盘（避免用空白预设覆盖用户配置）
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
-    loadProvidersConfigFromDisk(settings).then((loaded) => {
-      if (mounted && loaded && loaded.length > 0) {
-        setProviders(loaded);
-        // 记忆的选中项已不存在（配置被外部删改）→ 回退系统默认/首个，并同步记忆
-        const remembered = readStoredProviderSelection();
-        if (!loaded.some((p) => p.id === remembered)) {
-          const fallback =
-            loaded.find((p) => p.id === settings.provider) || loaded[0];
-          setSelectedProviderId(fallback.id);
+    loadProvidersConfigFromDisk(settings)
+      .then((loaded) => {
+        if (mounted && loaded && loaded.length > 0) {
+          setProviders(loaded);
+          setLoadError(null);
+          // 记忆的选中项已不存在（配置被外部删改）→ 回退系统默认/首个，并同步记忆
+          const remembered = readStoredProviderSelection();
+          if (!loaded.some((p) => p.id === remembered)) {
+            const fallback =
+              loaded.find((p) => p.id === settings.provider) || loaded[0];
+            setSelectedProviderId(fallback.id);
+          }
         }
-      }
-    });
+      })
+      .catch((err) => {
+        // 读取失败绝不静默：显示横幅（用户配置保持原样，未被覆盖）
+        if (mounted) setLoadError(err instanceof Error ? err.message : String(err));
+      });
     return () => {
       mounted = false;
     };
@@ -96,12 +104,21 @@ export function ModelProviderSettings({
     }, 2500);
   };
 
+  // F18：读取失败（loadError）时禁止任何写盘，避免用内存里的空白预设覆盖用户磁盘配置。
+  const persistProviders = (next: ProviderItem[]) => {
+    if (loadError) {
+      console.error("[provider_config] 读取失败态下拒绝写盘（保护用户配置）", loadError);
+      return;
+    }
+    saveProvidersConfigToDisk(next);
+  };
+
   const handleUpdateProvider = (updated: ProviderItem) => {
     const nextProviders = providers.map((p) =>
       p.id === updated.id ? updated : p
     );
     setProviders(nextProviders);
-    saveProvidersConfigToDisk(nextProviders);
+    persistProviders(nextProviders);
 
     // 如果更新的是当前系统默认的服务商，自动同步写入 settings
     if (settings.provider === updated.id) {
@@ -116,7 +133,7 @@ export function ModelProviderSettings({
     const target = providers.find((p) => p.id === id);
     const nextProviders = providers.filter((p) => p.id !== id);
     setProviders(nextProviders);
-    saveProvidersConfigToDisk(nextProviders);
+    persistProviders(nextProviders);
     if (selectedProviderId === id) {
       setSelectedProviderId(nextProviders[0]?.id ?? "");
     }
@@ -152,7 +169,7 @@ export function ModelProviderSettings({
     };
     const nextProviders = [...providers, newProvider];
     setProviders(nextProviders);
-    saveProvidersConfigToDisk(nextProviders);
+    persistProviders(nextProviders);
     setSelectedProviderId(newProvider.id);
     showToast(isZh ? `已添加 "${name}"，请在右侧填写配置` : `Added "${name}" - configure it on the right`);
   };
@@ -182,6 +199,26 @@ export function ModelProviderSettings({
         <div className="absolute top-4 right-4 z-50 flex items-center gap-2 px-3.5 py-2 bg-emerald-500 text-white rounded-xl shadow-lg text-xs font-medium animate-in fade-in slide-in-from-top-2 duration-200">
           <CheckCircle2 className="w-4 h-4" />
           <span>{successToast}</span>
+        </div>
+      )}
+
+      {/* F18：配置读取失败错误态——禁止写盘，用户配置保持原样 */}
+      {loadError && (
+        <div className="flex items-start gap-2 px-5 py-2.5 bg-red-500/10 border-b border-red-500/30 text-xs text-red-600 dark:text-red-400">
+          <AlertTriangle className="w-4 h-4 mt-0.5 shrink-0" />
+          <div className="flex flex-col gap-0.5">
+            <span className="font-medium">
+              {isZh
+                ? "服务商配置读取失败，已停止自动写盘以保护现有配置"
+                : "Failed to read provider config — auto-save disabled to protect existing config"}
+            </span>
+            <span className="text-[var(--text-secondary)] break-all">
+              {isZh
+                ? "你的 ~/.ReinAgent/provider_config.json 可能已损坏。请修复文件后重启应用；当前不会用空白预设覆盖它。"
+                : "Your ~/.ReinAgent/provider_config.json may be corrupted. Fix it and restart; it will NOT be overwritten with blank presets."}
+            </span>
+            <span className="font-mono opacity-80 break-all">{loadError}</span>
+          </div>
         </div>
       )}
 

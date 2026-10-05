@@ -145,29 +145,52 @@ export function getInitialPresetProviders(currentSettings?: Settings): ProviderI
 
 /**
  * 从后端 ~/.ReinAgent/provider_config.json 读取多服务商配置
+ *
+ * F18（2026-10-05）：读取失败与「文件不存在」必须区分——旧实现把两者都当成
+ * `list=[]`，随后走初始化分支把空白预设**写盘覆盖**用户配置（含全部 API Key），
+ * 不可恢复。现约定：
+ *  - 文件不存在（Rust 返回空串）→ 正常初始化预设并写盘（首次运行语义）；
+ *  - 读取/解析失败（invoke 异常、JSON 损坏、结构非法）→ **抛错**，绝不自动写盘，
+ *    由调用方（设置页）显示错误态横幅，用户修复文件后重启即可恢复。
  */
 export async function loadProvidersConfigFromDisk(currentSettings?: Settings): Promise<ProviderItem[]> {
   let list: ProviderItem[] = [];
+  let rawContent = "";
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    const content = await invoke<string>("provider_config_load");
-    if (content && content.trim()) {
-      const parsed = JSON.parse(content);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        list = parsed.map((item) => {
-          const cleanedBaseUrl = cleanBaseUrl(item.baseUrl);
-          if (item.apiFormat === "openai-completions") {
-            return { ...item, baseUrl: cleanedBaseUrl, apiFormat: "openai-chat-completions" };
-          }
-          return { ...item, baseUrl: cleanedBaseUrl };
-        });
-      }
-    }
+    rawContent = await invoke<string>("provider_config_load");
   } catch (e) {
-    console.warn("[provider_config] Failed to load provider_config.json from disk", e);
+    // invoke 异常 = 后端读取失败（IO 错误等），绝不能当「空配置」覆盖用户数据。
+    throw new Error(
+      `读取 provider_config.json 失败（未做任何写盘，用户配置保持原样）：${e instanceof Error ? e.message : String(e)}`,
+    );
   }
 
-  // 若磁盘文件为空或不存在，生成初始预设并立即写盘初始化 ~/.ReinAgent/provider_config.json
+  if (rawContent && rawContent.trim()) {
+    // 文件存在且有内容：解析失败或结构非法 → 抛错（禁止用空白预设覆盖）。
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(rawContent);
+    } catch (e) {
+      throw new Error(
+        `provider_config.json 解析失败（文件已损坏，未做任何写盘）：${e instanceof Error ? e.message : String(e)}`,
+      );
+    }
+    if (!Array.isArray(parsed)) {
+      throw new Error("provider_config.json 结构非法（期望数组，未做任何写盘）");
+    }
+    if (parsed.length > 0) {
+      list = parsed.map((item) => {
+        const cleanedBaseUrl = cleanBaseUrl(item.baseUrl);
+        if (item.apiFormat === "openai-completions") {
+          return { ...item, baseUrl: cleanedBaseUrl, apiFormat: "openai-chat-completions" };
+        }
+        return { ...item, baseUrl: cleanedBaseUrl };
+      });
+    }
+  }
+
+  // 文件确实不存在（rawContent 为空串）或内容为空数组 → 首次运行，初始化预设并写盘。
   if (list.length === 0) {
     list = getInitialPresetProviders(currentSettings);
     saveProvidersConfigToDisk(list).catch((err) => {

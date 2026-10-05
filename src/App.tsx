@@ -112,12 +112,15 @@ export default function App() {
     globalDefaultAssistantId, setGlobalDefaultAssistant,
     selectedProject, setSelectedProject,
     thinkingLevel,
+    approvalMode: globalApprovalMode,
   } = useAppStore();
 
   // 任务级隔离：推理等级/审批模式优先读活动任务的覆盖，缺省回退全局默认（新任务/草稿档位）。
   const activeTask = activeTaskId ? tasks.find((task) => task.id === activeTaskId) ?? null : null;
   const activeThinkingLevel = activeTask?.thinkingLevel ?? thinkingLevel;
-  const activeApprovalMode = activeTask?.approvalMode ?? "full";
+  // F17：缺省必须回退「全局默认审批模式」，不能硬编码 "full"——草稿态（无活动任务）
+  // 用户在输入框所选就是全局默认，硬编码 full 会让草稿首轮静默绕过审批门。
+  const activeApprovalMode = activeTask?.approvalMode ?? globalApprovalMode;
 
   const { t, locale } = useTranslation();
   const { settings, status, update } = useSettings();
@@ -126,7 +129,13 @@ export default function App() {
   
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   useEffect(() => {
-    loadProvidersConfigFromDisk(settings).then(setProviders).catch(console.error);
+    // F18：读取失败（配置损坏）绝不静默吞掉——如实告警；loadProvidersConfigFromDisk
+    // 在解析失败时抛错且不写盘，用户配置保持原样。
+    loadProvidersConfigFromDisk(settings)
+      .then(setProviders)
+      .catch((err) => {
+        console.error("[provider_config] 读取失败，设置页将显示错误横幅：", err);
+      });
   }, [settings?.provider, settings?.modelId, currentView]);
 
   // Hub 设置切片订阅：技能/MCP 的启用状态变化驱动上下文容量面板的技能/MCP 分类
@@ -780,36 +789,48 @@ export default function App() {
   };
 
   // 轮次发送选项（send 与 editResend 共用；审批模式在发送瞬间冻结，整轮生效）。
+  // F17：审批模式/助手在「发送瞬间」从 store 实时解析，不用渲染闭包里的值——
+  // 草稿首轮 createTask 后 activeTaskId 才刚设置，本函数闭包（本次渲染）里
+  // activeTask 仍为 null，若沿用闭包值会把首轮审批冻结成全局默认，绕过刚落库的
+  // 任务级审批模式（例如草稿选 ask、首轮却按 full 直接跑工具）。
+  // 传入 taskId 时按该任务记录解析；不传（自动化/远程无任务上下文）沿用渲染闭包。
   const buildTurnOptions = useCallback(
     (
       images?: { base64: string; mimeType: string }[],
       userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
-    ) => ({
-      source,
-      config: {
-        provider: activeProviderId as any,
-        apiKey: activeApiKey,
-        modelId: activeModelId,
-        baseUrl: activeBaseUrl,
-        // 设置页所选 API 格式 → 真实线上协议（openai-responses 等）
-        apiFormat: currentProvider?.apiFormat,
-        hasEffort: isReasoningSupported,
-        // 真实元数据透传（No-Fallback）：未声明即为未知，由 buildModel 走
-        // 「未知」语义（不发送 max_tokens / 不声明多模态 / 容量面板不渲染）
-        contextWindow: currentModel?.contextWindow ?? null,
-        maxOutputTokens: currentModel?.maxOutputTokens ?? null,
-        supportsImage: currentModel?.supportsImage ?? null,
-      },
-      systemPrompt: DEFAULT_SYSTEM_PROMPT,
-      maxSteps,
-      workspaceRoot: effectiveWorkspaceRoot,
-      assistantId: activeTask?.assistantId ?? globalDefaultAssistantId,
-      thinkingLevel: effectiveThinkingLevel,
-      approvalMode: activeApprovalMode,
-      toolPolicies: activeTask?.toolPolicies,
-      images,
-      userAttachments,
-    }),
+      taskId?: string | null,
+    ) => {
+      const store = useAppStore.getState();
+      const task = taskId ? store.tasks.find((item) => item.id === taskId) ?? null : null;
+      const turnApprovalMode = task?.approvalMode ?? activeApprovalMode;
+      const turnAssistantId = task?.assistantId ?? activeTask?.assistantId ?? globalDefaultAssistantId;
+      return {
+        source,
+        config: {
+          provider: activeProviderId as any,
+          apiKey: activeApiKey,
+          modelId: activeModelId,
+          baseUrl: activeBaseUrl,
+          // 设置页所选 API 格式 → 真实线上协议（openai-responses 等）
+          apiFormat: currentProvider?.apiFormat,
+          hasEffort: isReasoningSupported,
+          // 真实元数据透传（No-Fallback）：未声明即为未知，由 buildModel 走
+          // 「未知」语义（不发送 max_tokens / 不声明多模态 / 容量面板不渲染）
+          contextWindow: currentModel?.contextWindow ?? null,
+          maxOutputTokens: currentModel?.maxOutputTokens ?? null,
+          supportsImage: currentModel?.supportsImage ?? null,
+        },
+        systemPrompt: DEFAULT_SYSTEM_PROMPT,
+        maxSteps,
+        workspaceRoot: effectiveWorkspaceRoot,
+        assistantId: turnAssistantId,
+        thinkingLevel: effectiveThinkingLevel,
+        approvalMode: turnApprovalMode,
+        toolPolicies: activeTask?.toolPolicies,
+        images,
+        userAttachments,
+      };
+    },
     [
       source,
       activeProviderId,
@@ -1127,7 +1148,7 @@ export default function App() {
         targetTaskId,
         messageId,
         payload,
-        buildTurnOptions(imageInputs.length > 0 ? imageInputs : undefined, keptAttachments.length > 0 ? keptAttachments : undefined),
+        buildTurnOptions(imageInputs.length > 0 ? imageInputs : undefined, keptAttachments.length > 0 ? keptAttachments : undefined, targetTaskId),
       );
       if (accepted) setFollowSignal((c) => c + 1);
       return accepted;
@@ -1174,7 +1195,7 @@ export default function App() {
         targetTaskId,
         anchor.id,
         anchor.text,
-        buildTurnOptions(images.length > 0 ? images : undefined, attachments.length > 0 ? attachments : undefined),
+        buildTurnOptions(images.length > 0 ? images : undefined, attachments.length > 0 ? attachments : undefined, targetTaskId),
       );
       if (accepted) setFollowSignal((c) => c + 1);
     },
@@ -1357,10 +1378,12 @@ export default function App() {
 
     // 草稿提升竞态：setActiveTaskId 后 hook 闭包里的 taskId 仍是旧的（null），
     // 必须用新 taskId 直接调池（池的 ensureEntry 会为新任务建条目）。
+    // F17：buildTurnOptions 显式传 targetTaskId，按刚落库的任务记录解析审批模式
+    // （闭包里 activeTask 仍为 null，不传会把草稿所选审批模式冻结成全局默认绕过审批门）。
     // P2-C1：发送即消费选区引用——正文尾部拼 userselect 尾块（taskId 确定后）。
     const finalText = buildPromptWithSelections(targetTaskId, text);
     consumeSelectionReferences(targetTaskId);
-    return poolSend(targetTaskId, finalText, buildTurnOptions(images, userAttachments));
+    return poolSend(targetTaskId, finalText, buildTurnOptions(images, userAttachments, targetTaskId));
   };
 
   // 远程访问桥：手机发送走同一发送链路（buildTurnOptions 闭包一致）。
@@ -1372,7 +1395,7 @@ export default function App() {
       // 仅允许向已存在的任务发送（不支持手机新建任务——远程能力白名单）
       const exists = useAppStore.getState().tasks.some((t) => t.id === taskId);
       if (!exists) return false;
-      return poolSend(taskId, trimmed, buildTurnOptions(undefined, undefined));
+      return poolSend(taskId, trimmed, buildTurnOptions(undefined, undefined, taskId));
     };
     return () => {
       delete (window as unknown as Record<string, unknown>).__reinagentRemoteSend;

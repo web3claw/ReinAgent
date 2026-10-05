@@ -6,7 +6,7 @@
 //   embedded 不传（LA 本页组件体仅消费 embedded，isAgentMode 未使用）。
 // - 主题作用域：根 div 追加 hub-scope（弹层 Portal 内容在各自文件里单独追加）。
 import { useMemo, useState } from "react";
-import { Cloud, Download, Plus, Search, Server } from "lucide-react";
+import { Cloud, Download, Plus, Search, Server, AlertTriangle } from "lucide-react";
 
 import { HubHeader } from "../lw/hub/HubChrome";
 import { Badge } from "../lw/ui/badge";
@@ -225,5 +225,26 @@ function McpHubPageInner(props: {
 export function McpHubPage() {
   const settings = useHubSettings((s) => s.settings);
   const setSettings = useHubSettings((s) => s.setSettings);
-  return <McpHubPageInner settings={settings} setSettings={setSettings} />;
+  const mcpDegradedError = useHubSettings((s) => s.mcpDegradedError);
+  // F19：MCP 配置读取失败 → 顶部醒目错误横幅，明确告知未覆盖磁盘配置。
+  const degradedBanner = mcpDegradedError ? (
+    <div className="mx-5 mt-3 flex items-start gap-2 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-2.5 text-xs text-red-600 dark:text-red-400 sm:mx-6 lg:mx-8 xl:mx-10">
+      <AlertTriangle className="mt-0.5 size-4 shrink-0" />
+      <div className="flex flex-col gap-0.5">
+        <span className="font-medium">
+          读取 MCP 配置失败，已停止自动写盘以保护现有配置
+        </span>
+        <span className="text-muted-foreground break-all">
+          ~/.ReinAgent/mcp_servers.json 可能已损坏；请修复文件后重启应用。当前不会用空列表覆盖它。
+        </span>
+        <span className="font-mono opacity-80 break-all">{mcpDegradedError}</span>
+      </div>
+    </div>
+  ) : null;
+  return (
+    <>
+      {degradedBanner}
+      <McpHubPageInner settings={settings} setSettings={setSettings} />
+    </>
+  );
 }

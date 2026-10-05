@@ -51,7 +51,12 @@ const fmt = (template: string, params: Record<string, string | number>): string 
 async function resolveGenerationConfig(settings: Settings): Promise<ProviderConfig | null> {
   const [peSettings, providers] = await Promise.all([
     loadPromptEnhancementSettings().catch(() => null),
-    loadProvidersConfigFromDisk(settings).catch(() => [] as ProviderItem[]),
+    // F18：配置损坏时 loadProvidersConfigFromDisk 会抛错（且不写盘）——此处按"无可用
+    // 供应商"处理（返回 null，调用方提示未配置模型），不静默造假配置。
+    loadProvidersConfigFromDisk(settings).catch((err) => {
+      console.error("[commit-message] provider 配置读取失败：", err);
+      return [] as ProviderItem[];
+    }),
   ]);
   const build = (pid?: string | null, mid?: string | null): ProviderConfig | null => {
     if (!pid || !mid) return null;

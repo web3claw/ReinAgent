@@ -101,11 +101,23 @@ fn servers_path() -> PathBuf {
     Path::new(&home).join(".ReinAgent").join("mcp_servers.json")
 }
 
-fn load_servers() -> Vec<McpServerConfig> {
-    let Ok(text) = std::fs::read_to_string(servers_path()) else {
-        return Vec::new();
-    };
-    serde_json::from_str(&text).unwrap_or_default()
+/// 读取服务器配置。F19（2026-10-05）：区分「文件不存在」与「读取/解析失败」——
+/// 旧实现两者都返回空 Vec，前端会把空表当成"用户没有服务器"，任意设置变更即把
+/// 空表整表回写，**覆盖用户真实的 MCP 配置**。现约定：
+/// - 文件不存在 / 空文件 → Ok(vec![])（首次运行语义）；
+/// - 读取 IO 失败 / JSON 损坏 / 结构非法 → Err（结构化错误），调用方不得写盘。
+fn load_servers() -> Result<Vec<McpServerConfig>, String> {
+    let path = servers_path();
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+    let text = std::fs::read_to_string(&path)
+        .map_err(|e| format!("读取 MCP 配置失败 {}: {e}", path.display()))?;
+    if text.trim().is_empty() {
+        return Ok(Vec::new());
+    }
+    serde_json::from_str::<Vec<McpServerConfig>>(&text)
+        .map_err(|e| format!("MCP 配置解析失败（文件已损坏，未做任何写盘）{}: {e}", path.display()))
 }
 
 fn save_servers(servers: &[McpServerConfig]) -> Result<(), String> {
@@ -1984,10 +1996,11 @@ pub async fn mcp_save_servers(servers: Vec<McpServerConfig>) -> Result<(), Strin
         .map_err(|e| format!("mcp_save_servers join failed: {e}"))?
 }
 
-/// 列出全部服务器配置。
+/// 列出全部服务器配置。F19：配置损坏时返回 Err（区别于「无服务器」的空列表），
+/// 前端据此进入 degraded 态并禁止整表回写，避免覆盖用户配置。
 #[tauri::command]
 pub async fn mcp_list_servers() -> Result<Vec<McpServerConfig>, String> {
-    Ok(load_servers())
+    load_servers()
 }
 
 /// 枚举全部已启用服务器上的工具（LA 语义：入参为前端传来的全量服务器列表；
@@ -2498,5 +2511,68 @@ mod tests {
             windows_cmd_c_argument(program, &args),
             r#"""C:\Program Files\nodejs\npx.cmd" "-y" "@modelcontextprotocol/server-filesystem" "C:\Users\me\docs\\"""#
         );
+    }
+
+    // F19：load_servers 必须区分「文件不存在」（Ok 空）与「文件损坏」（Err），
+    // 避免前端把损坏文件当成空配置并整表回写覆盖用户数据。
+    fn load_servers_from(path: &Path) -> Result<Vec<McpServerConfig>, String> {
+        if !path.exists() {
+            return Ok(Vec::new());
+        }
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| format!("读取 MCP 配置失败 {}: {e}", path.display()))?;
+        if text.trim().is_empty() {
+            return Ok(Vec::new());
+        }
+        serde_json::from_str::<Vec<McpServerConfig>>(&text)
+            .map_err(|e| format!("MCP 配置解析失败（文件已损坏，未做任何写盘）{}: {e}", path.display()))
+    }
+
+    #[test]
+    fn load_servers_missing_file_is_empty_ok() {
+        let dir = std::env::temp_dir().join(format!("reinagent_mcp_missing_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let path = dir.join("absent.json");
+        let loaded = load_servers_from(&path).expect("missing file must be Ok(empty)");
+        assert!(loaded.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_servers_empty_file_is_empty_ok() {
+        let dir = std::env::temp_dir().join(format!("reinagent_mcp_empty_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let path = dir.join("empty.json");
+        std::fs::write(&path, "   \n").expect("write");
+        let loaded = load_servers_from(&path).expect("empty file must be Ok(empty)");
+        assert!(loaded.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_servers_corrupt_file_is_err() {
+        let dir = std::env::temp_dir().join(format!("reinagent_mcp_corrupt_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let path = dir.join("corrupt.json");
+        std::fs::write(&path, "[{\"id\": \"x\", ").expect("write");
+        let err = load_servers_from(&path).expect_err("corrupt file must be Err");
+        assert!(err.contains("解析失败"), "unexpected error: {err}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_servers_valid_roundtrip() {
+        let dir = std::env::temp_dir().join(format!("reinagent_mcp_valid_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("mkdir");
+        let path = dir.join("servers.json");
+        let cfg = stdio_config("demo", "node");
+        std::fs::write(&path, serde_json::to_string(&vec![cfg.clone()]).expect("ser")).expect("write");
+        let loaded = load_servers_from(&path).expect("valid file must be Ok");
+        assert_eq!(loaded, vec![cfg]);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

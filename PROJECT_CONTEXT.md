@@ -2,7 +2,7 @@
 
 > **文档定位**：供后续开发 Agent 与工程师快速接手本项目的**单点真相全景指南（Single Source of Truth）**。涵盖系统定位、架构分层、核心交互规范、最新进度、关键状态流转及避坑指南。
 >
-> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./docs/ROADMAP.md)（三方功能差距分析 vs LiveAgent/ZCode + 优先级路线图，2026-09-28）、**[TASKS.md](./docs/TASKS.md)（P0 起步的分步开发任务清单，可验证可测试）**、**[FIXPLAN.md](./docs/FIXPLAN.md)（写死数据与装饰性功能审计修复计划，2026-10-05，待确认）**。
+> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./docs/ROADMAP.md)（三方功能差距分析 vs LiveAgent/ZCode + 优先级路线图，2026-09-28）、**[TASKS.md](./docs/TASKS.md)（P0 起步的分步开发任务清单，可验证可测试）**、**[FIXPLAN.md](./docs/FIXPLAN.md)（写死数据与装饰性功能审计修复计划，2026-10-05，**已经复核修订待确认**——详见本文第十八节）**。
 
 ---
 
@@ -1178,3 +1178,11 @@ ReinAgent 架构全景
   - **根因**：GUI 进程在 Windows 上 spawn 控制台程序（git/powershell/cmd）时，系统会为无窗口子进程分配**可见控制台**——`git_panel.rs` 的 git 调用（Git 面板 10s 轮询×3 命令 + 切分支/提交/identity/check-ref-format）与 AUMID 注册的 powershell 全部裸 `Command::new`，构成持续闪烁。terminal/pty、bg_process、fs_execute、hooks、mcp、skills 等旧代码原本就带 CREATE_NO_WINDOW，本批新写的 git/通知代码漏了。
   - **修复**：git_panel.rs 顶部加 `no_window()` helper（Windows 下挂 `CREATE_NO_WINDOW` 0x0800_0000，非 Windows 无操作），全部 spawn 统一走它；全仓审计补齐 3 处同款裸 spawn：`system_info.rs`（cmd /c ver，启动即调）、`plugins.rs`（插件市场 git clone）、`fs_cmd.rs shell_detect`（where/which，设置页触发）。
   - 教训：**Windows GUI 应用 spawn 控制台程序必须 CREATE_NO_WINDOW**——新代码引入 `Command::new` 时默认要带（尤其会周期轮询的）。
+
+- **写死数据 / 装饰性设置 / 失效开关审计（2026-10-05，复核修订版）**：
+  - **来源**：`docs/FIXPLAN.md`（三路并行扫描 + 人工逐条复核）。**本轮已对初稿逐条复核修正**（初稿成文早于 `f5a47cf` / `f003127` 两提交，含过时项与错路径）。开工一律以 FIXPLAN.md 现版为准。
+  - **已修（不再排期）**：F1 max_tokens 注入（[runAgentTurn.ts:286-291](src/lib/providers/runAgentTurn.ts) `wrapStreamWithProxiedFetch` 经 `resolveMaxTokens` 注入，未知发 32000 兜底）；F2 buildModel fail-fast 抛错（[modelFactory.ts:92-129](src/lib/providers/modelFactory.ts)）；F3 titleGenerator 改由 `apiFormat` 判定协议 + 调用点传会话 provider（[titleGenerator.ts:89-110](src/lib/chat/titleGenerator.ts)）；F15 modelFactory 变更历史注释保留。
+  - **已关闭（判定有误）**：F22（"人设查不到连 warn 都无"不成立——`runAgentTurn.ts:543-545` 已有 console.warn）。
+  - **待修高危（建议优先，批次 0）**：**F17** 草稿首轮审批门被绕过（[App.tsx:117-120](src/App.tsx) 注释承诺"回退全局默认"、实现硬编码 `?? "full"`；`buildTurnOptions` 闭包冻结 activeTask=null）——**审批被绕过**；**F18** provider_config.json 读取失败即用空白预设覆盖写盘（[src/components/settings/model-provider/types.ts:149-176](src/components/settings/model-provider/types.ts)）——**用户配置丢失**；**F19** mcp_servers.json 损坏→空表静默回写（[src-tauri/mcp.rs:104-108](src-tauri/src/mcp.rs) + hubSettingsStore.ts:144-153），与 F18 同构。
+  - **⚠️ 关键纠错（避免后续开发踩坑）**：① `src/lib/providers/types.ts` **不存在**，服务商配置相关代码在 `src/components/settings/model-provider/types.ts`（F18/F24/L3 初稿路径全错）；② `McpSettings.serverPolicy` 是**死 UI**（从未映射进 `mcp__<id>__<tool>` 工具名），但通用 `toolPolicies` 审批链路**是活的**（runAgentTurn.ts:365），勿混为一谈；③ Rust `get_hide_to_tray` **已存在**（hide_to_tray.rs:42，lib.rs:162 注册），F13 只差前端初始化回读；④ `preview/useTheme.ts` 中**只有 `useTheme()` hook 与 `reinagent-preview-theme` 键**是死的，`resolveTheme`/`Theme` 仍在用，**不可整个删文件**；⑤ F25 的 schedule_rule 兜底只在内存 `row_to_automation` 替换、**不回写 DB 列**，不会持久污染原值；⑥ F20 初稿"空 Key 把 legacy Key 发往该供应商 baseUrl"**不成立**（`ProviderItem.apiKey` 非可选 string，`??` 不在空串回退）。
+  - **其余待办**：F4-F7（开关语义，属实）、F8-F16（装饰性清理，含 D2/D3 决策；F12/F13/F14 语义已校准）、F20/F21/F23-F26（静默设计）、L1-L12 低危。详见 FIXPLAN.md。

@@ -109,6 +109,12 @@ interface HubSettingsState {
   mcpEnumNotice: McpEnumNotice | null;
   setMcpEnumNotice: (message: string) => void;
   settings: HubAppSettings;
+  /**
+   * F19：MCP 配置读取失败态（文件损坏等）。非 null 时**禁止任何整表回写**
+   * （setSettings / updateMcpOps 一律跳过 mcp_save_servers），避免把内存里的
+   * 空表覆盖到磁盘，丢失用户真实的 MCP 配置。null = 正常。
+   */
+  mcpDegradedError: string | null;
   /** 启动/首次进入 Hub 时装载 MCP 服务器列表（Rust JSON 为真相源） */
   hydrateMcp: () => Promise<void>;
   setSettings: (updater: (prev: HubAppSettings) => HubAppSettings) => void;
@@ -119,6 +125,7 @@ interface HubSettingsState {
 export const useHubSettings = create<HubSettingsState>((set, get) => ({
   mcpEnumNotice: null,
   setMcpEnumNotice: (message) => set({ mcpEnumNotice: { message, at: Date.now() } }),
+  mcpDegradedError: null,
   settings: {
     skills: defaultSkillsSettings(),
     mcp: { servers: [], selected: [] },
@@ -129,6 +136,7 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
     try {
       const servers = await invoke<McpServerConfig[]>("mcp_list_servers");
       set((state) => ({
+        mcpDegradedError: null,
         settings: {
           ...state.settings,
           // serverPolicy 是纯前端字段，从上一份 mcp 切片保留（hydrate 不覆盖用户配置）
@@ -136,8 +144,12 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
         },
       }));
     } catch (err) {
-      // Web/无头环境后端不可达：保留空列表（页面会用空态），如实告警
-      console.warn("[hubSettings] mcp_list_servers unavailable:", err);
+      // F19：后端把「文件损坏/读取失败」与「无服务器」区分开了——这里收到的 Err
+      // 意味着磁盘上的配置出了问题，进入 degraded 态：保留空列表，但**禁止写盘**，
+      // 并如实上抛错误供 UI 显示横幅（不再静默吞掉）。
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[hubSettings] mcp_list_servers 读取失败（进入保护态，禁止回写）:", message);
+      set({ mcpDegradedError: message });
     }
   },
 
@@ -147,9 +159,14 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
     kvSetJSON(SKILLS_KEY, next.skills);
     kvSetJSON(MEMORY_KEY, next.memory);
     // mcp 切片整表写回 Rust（防抖由调用频度决定：页面级操作非高频，直接写）
-    void invoke("mcp_save_servers", { servers: next.mcp.servers }).catch((err) =>
-      console.error("[hubSettings] mcp_save_servers failed:", err),
-    );
+    // F19：读取失败态下跳过写盘，避免用空表覆盖用户真实配置。
+    if (get().mcpDegradedError) {
+      console.error("[hubSettings] MCP 处于读取失败保护态，跳过 mcp_save_servers");
+    } else {
+      void invoke("mcp_save_servers", { servers: next.mcp.servers }).catch((err) =>
+        console.error("[hubSettings] mcp_save_servers failed:", err),
+      );
+    }
     set({ settings: next });
   },
 
@@ -157,9 +174,14 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
     const prev = get().settings;
     const mcp = applyMcpOps(prev.mcp, ops);
     kvSetJSON(SKILLS_KEY, prev.skills);
-    void invoke("mcp_save_servers", { servers: mcp.servers }).catch((err) =>
-      console.error("[hubSettings] mcp_save_servers failed:", err),
-    );
+    // F19：同上，读取失败保护态下禁止整表写盘。
+    if (get().mcpDegradedError) {
+      console.error("[hubSettings] MCP 处于读取失败保护态，跳过 mcp_save_servers");
+    } else {
+      void invoke("mcp_save_servers", { servers: mcp.servers }).catch((err) =>
+        console.error("[hubSettings] mcp_save_servers failed:", err),
+      );
+    }
     set({ settings: { ...prev, mcp } });
   },
 }));

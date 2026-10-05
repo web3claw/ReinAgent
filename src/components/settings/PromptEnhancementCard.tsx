@@ -48,6 +48,10 @@ export function PromptEnhancementCard() {
     });
     void loadProvidersConfigFromDisk().then((list) => {
       if (!cancelled) setProviders(list);
+    }).catch((err) => {
+      // F18：配置损坏时读取抛错（且不写盘）——无法列出模型，留空并如实告警。
+      console.error("[prompt-enhancement] provider 配置读取失败：", err);
+      if (!cancelled) setProviders([]);
     });
     return () => {
       cancelled = true;
