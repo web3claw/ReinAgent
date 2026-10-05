@@ -2,7 +2,7 @@
 
 > **文档定位**：2026-10-05 全库审计（三路并行扫描 + 人工逐条复核）产出的修复计划。
 > 审计范围：装饰性设置（UI 有、运行时零消费）、写死数据（违反 No-Fallback 铁律）、失效开关（操作后不改变运行时行为）。
-> **状态**：待确认（D1/D2/D3 三个决策点 + 批次整体确认后开工）。
+> **状态**：批次 0（F17/F18/F19，1d0e563）、批次 1（F1/F2/F3，f5a47cf / f003127）与批次 2（F4-F7，b1e3b8a）**已完成**（2026-10-06 补勾）；批次 3 待 D2/D3 拍板后开工（D1 已定稿：发）；批次 4 其余（F20-F26、L1-L12）待确认。
 > **维护纪律**：完成任务后勾选 `[x]`、写完成日期与提交号，并同步 `PROJECT_CONTEXT.md`。
 >
 > **⚠️ 复核修订（2026-10-05 晚，逐条对照当前工作区亲验）**：审计初稿成文于修复提交 `f5a47cf`（max_tokens 注入）与 `f003127`（no silent DeepSeek fallback）**之前**，故 F1/F3 的"问题"描述已过时（实际已修）；F18/F24 文件路径写错（`src/lib/providers/types.ts` 不存在，实为 `src/components/settings/model-provider/types.ts`）；F22 判定有误（warn 已存在）；另有若干行号/表述需校准。**已按下文逐条订正，开工请以本版为准。**
@@ -54,37 +54,43 @@
 
 ## 三、批次 2：开关语义（让开关名副其实）
 
-### F4 · 禁用服务商/模型后系统默认照发 ✅待修（2026-10-05 复核：属实）
+### F4 · 禁用服务商/模型后系统默认照发 ✅已完成（2026-10-05，提交 b1e3b8a）
 
-- **问题**：enabled 只过滤聊天切换菜单（`LexicalComposer.tsx:1210-1237`，`enabledProviders`/`enabledModels` 仅用于构建切换菜单）；`buildTurnOptions`（`App.tsx:783-832`）主链路无 enabled 检查——禁用系统默认服务商/模型后请求照发；删除默认模型则 `settings.modelId` 悬空照发已删 id 且元数据静默归零；「设为默认」对禁用项无守卫。
+- **问题（修复前状态，现均已不成立）**：enabled 只过滤聊天切换菜单（`LexicalComposer.tsx:1210-1237`，`enabledProviders`/`enabledModels` 仅用于构建切换菜单）；`buildTurnOptions`（`App.tsx:783-832`）主链路无 enabled 检查——禁用系统默认服务商/模型后请求照发；删除默认模型则 `settings.modelId` 悬空照发已删 id 且元数据静默归零；「设为默认」对禁用项无守卫。
 - **复核补充**：`handleDeleteModel`（`ProviderDetailCard.tsx:212-234`）只重算该服务商自身的 `defaultModelId`，**从不触碰全局 `settings.modelId`**；而 `handleDeleteProvider`（`ModelProviderSettings.tsx:115-134`）会重指派默认——两者不对称，佐证缺口属实。
-- **修复**：
-  1. buildTurnOptions 链路检查 enabled，禁用 → 发送时报错「当前服务商/模型已禁用」，composer 模型 chip 显示警告态；
-  2. `handleSetAsDefault` 加守卫：禁用的服务商/模型不允许设为默认（按钮置灰）；
-  3. 禁用默认模型（且它是 settings.modelId）→ 提示并自动迁移到该服务商下一个启用模型；
-  4. 删除默认模型 → 同步迁移 settings.modelId（现在只迁移 provider.defaultModelId）。
+- **修复（已落地，提交 b1e3b8a）**：
+  1. `handleSend` 新增 enabled 守卫：当前服务商或模型被禁用 → toast 明确提示并早退，绝不发请求（对齐既有 hook-block 样式；不走 isDemo 以免伪装成演示）；
+  2. `handleSetAsDefault` 加守卫：禁用的服务商/模型不允许设为系统默认；
+  3. 删除模型若恰是 `settings.modelId` → 新增 `onMigrateDefaultModel` 迁移全局默认到同供应商下一个可用模型（补齐相对 `handleDeleteProvider` 缺失的对称迁移）。⚠️ 与计划的差异：计划点 3「**禁用**默认模型时自动迁移」未做——禁用场景由上述发送守卫以明确报错覆盖（用户知情后自行切换/迁移），仅删除路径做自动迁移。
 - **验证**：CDP——禁用默认服务商后发送得到明确报错；设为默认按钮对禁用项置灰；删除默认模型后设置自动切到下一个启用模型。
 - **风险**：中——行为收紧（禁用从「照常能用」变「明确报错」，正是开关本义）。
 
-### F5 · Ollama 免 Key 陷阱：绿点亮但实际走 faux 本地假流 ✅待修（2026-10-05 复核：属实）
+### F5 · Ollama 免 Key 陷阱：绿点亮但实际走 faux 本地假流 ✅已完成（2026-10-05，提交 b1e3b8a）
 
-- **问题**：UI 提示「本地 Ollama 无需填写 API Key」（`ProviderDetailCard.tsx:429`）、导航绿点豁免 ollama（`ProviderNavigation.tsx:53`）；但 `App.tsx:330-333` `activeApiKey = currentProvider?.apiKey ?? settings.apiKey ?? ""` → `isDemo = activeApiKey.trim().length === 0` → faux 演示假流，真实请求一个字节不发。custom 本地网关（LM Studio 类免 Key）同理。
-- **修复**：`isDemo` 判定改为——无 Key 且（id==="ollama" 或 custom 且有 baseUrl）仍走真实请求（网关要鉴权则如实 401）；只有「完全未配置」才进 demo。
+- **问题（修复前状态，现均已不成立）**：UI 提示「本地 Ollama 无需填写 API Key」（`ProviderDetailCard.tsx:429`）、导航绿点豁免 ollama（`ProviderNavigation.tsx:53`）；但 `App.tsx:330-333` `activeApiKey = currentProvider?.apiKey ?? settings.apiKey ?? ""` → `isDemo = activeApiKey.trim().length === 0` → faux 演示假流，真实请求一个字节不发。custom 本地网关（LM Studio 类免 Key）同理。
+- **修复（已落地，提交 b1e3b8a）**：
+  1. 新增 `providerAllowsMissingApiKey` / `isProviderUsable` 作为免 Key 判定**单一真相源**，收编原散落 5 处的 `id === "ollama"` 硬编码（testConnectivity / fetchModels / ProviderNavigation / ProviderDetailCard）；
+  2. `isDemo` 改为「无 Key **且需要 Key**」，主链路与自动化派发同口径：免 Key 本地网关走真实请求，网关要鉴权则如实 401；
+  3. 连带修复：faux 会跳过记忆管线（conversationPool source === "faux"），旧行为下 Ollama 会话的记忆提取被静默禁用，一并恢复；
+  4. `ProviderDetailCard` 占位文案改为通用「本地网关通常无需 API Key」。
 - **验证**：CDP——免 Key 网关发送 → 真实请求（401 如实显示而非假回复）。
 - **风险**：低——免 Key 网关从假流变真流；配错网关从假流变 401 报错，都更诚实。
 
-### F6 · UI 显示 Default 实发 Max ✅待修（2026-10-05 复核：主症状属实，表述需校准）
+### F6 · UI 显示 Default 实发 Max ✅已完成（2026-10-05，提交 b1e3b8a）
 
-- **问题**：未声明 effort 元数据的模型跳过档位对齐 effect（`App.tsx:297` 守卫 `isReasoningSupported && currentModel?.effort`；`isReasoningSupported` 硬编码 true 于 287 行），任务档位残留 xhigh/max 时实际请求发 Max，按钮回落显示 "Default"。
+- **问题（修复前状态，现均已不成立）**：未声明 effort 元数据的模型跳过档位对齐 effect（`App.tsx:297` 守卫 `isReasoningSupported && currentModel?.effort`；`isReasoningSupported` 硬编码 true 于 287 行），任务档位残留 xhigh/max 时实际请求发 Max，按钮回落显示 "Default"。
 - **复核校准**：`LexicalComposer.tsx` 的 `currentOpt` 回落链（1311-1327）是**数据驱动**的：无 effort 元数据时 `supportedList` 取默认集 `[default,low,medium,high]`，`visibleOptions` 首项是 THINKING_OPTIONS[0]（label "Default"）——因此"显示 Default"是默认集首位的结果，**并非硬编码回落成 "Default"**；且 xhigh/max 对未知模型会被排除。症状成立，但修复点应落在"对齐 effect 的守卫条件"上，而非改 `currentOpt` 回落链。
-- **修复**：① 对齐 effect：未声明 effort 时用隐式档位集（default/low/medium/high）同样收敛残留 xhigh/max；② currentOpt 显示实际生效档位。
+- **修复（已落地，提交 b1e3b8a）**：新增 `IMPLICIT_EFFORT_LEVELS`（default/low/medium/high）与 `resolveSupportedEffortLevels` 单一真相源，收编两处重复兜底数组；App 对齐 effect 去掉 `currentModel?.effort` 守卫——未声明元数据的模型同样收敛残留的 xhigh/max；`LexicalComposer` 改用同一函数取档位集，显示与实发同源。
 - **验证**：单测对齐逻辑；实测——任务档位 xhigh → 切无 effort 元数据模型 → 按钮与请求一致。
 - **风险**：低。
 
-### F7 · 记忆/子代理 enabled 运行时不复查 + 候选列表不过滤 ✅待修（2026-10-05 复核：属实）
+### F7 · 记忆/子代理 enabled 运行时不复查 + 候选列表不过滤 ✅已完成（2026-10-05，提交 b1e3b8a）
 
-- **问题**：`modelResolution.ts:33-39`、`subagentDefinitions.ts:603-607` 运行时只查存在性+apiKey（无 enabled 检查）；`AgentSubagentsPage.tsx:65-81` 候选列表 `flatMap` 不过滤 provider/model 的 enabled。
-- **修复**：运行时加 enabled 检查（禁用 → 抛错/回落，与「apiKey 为空抛错」同风格）；候选列表过滤禁用项。
+- **问题（修复前状态，现均已不成立）**：`modelResolution.ts:33-39`、`subagentDefinitions.ts:603-607` 运行时只查存在性+apiKey（无 enabled 检查）；`AgentSubagentsPage.tsx:65-81` 候选列表 `flatMap` 不过滤 provider/model 的 enabled。
+- **修复（已落地，提交 b1e3b8a）**：
+  1. `resolveIndependentMemoryModelDeps` / `resolveSubagentModelPin` 增加 enabled 与模型存在性复查（禁用/已删 → 抛错，与既有「apiKey 为空抛错」同风格），并接上免 Key 判定；
+  2. `AgentSubagentsPage.loadModelOptions` 过滤已禁用供应商与模型；
+  3. 测试：`modelResolution.test.mjs` 扩充 F5/F7 用例（10 项，含免 Key 判定真相源），并接入 test:hub（此前未被任何脚本引用）。
 - **验证**：单测 + CDP——禁用已钉选的记忆模型 → 整理任务明确报错。
 - **风险**：低。
 
@@ -119,15 +125,15 @@
 
 ## 六、批次 4：第二轮审计 · 静默设计专项（2026-10-05 复扫新发现，待确认）
 
-> 背景：F2 修复后按「全库不留静默设计」指令复查。已跳过批次 2/3 已立案项。新发现按危险级别排列；标注「✅已亲验」的经过人工代码复核。
+> 背景：F2 修复后按「全库不留静默设计」指令复查。已跳过批次 2/3 已立案项。新发现按危险级别排列；标注「✅已亲验」的经过人工代码复核。**（2026-10-06 更新：三项高危 F17/F18/F19 已修复落地，提交 1d0e563；其余项待确认。）**
 
 ### 高危
 
 | 编号 | 问题 | 位置 | 修复方案 | 验证 |
 |---|---|---|---|---|
-| **F17** | **草稿首轮审批门被绕过**✅已亲验（2026-10-05 复核：行号订正——注释在 App.tsx:117，硬编码在 120，sendNow 在 1313-1364）：新建任务首条消息 createTask 落库了草稿所选 approvalMode，但 buildTurnOptions 闭包里 activeTask 仍为 null → `?? "full"` 冻结进首轮（无审批直接执行工具 + maxSteps 0 无上限）；UI 徽标显示 ask 实跑 full。`App.tsx:117` 注释「缺省回退全局默认」与 `:120` 实现 `activeTask?.approvalMode ?? "full"` 矛盾（thinkingLevel 走全局 `?? thinkingLevel`，唯独 approvalMode 硬编码 full） | App.tsx:117-120 + sendNow 1313-1364 | ① `?? "full"` 改 `?? 全局默认 approvalMode`；② buildTurnOptions 改为发送时从 store 实时读任务记录（或 sendNow 显式传新建任务的 approvalMode/thinkingLevel 覆盖），消除闭包冻结 | 单测：草稿提升轮的 turn options 断言任务 approvalMode；实测：草稿选 ask → 首轮写文件必须挂审批 |
-| **F18** | **provider_config.json 读取失败 → 空白预设立即写盘覆盖用户全部配置（含 Key）**✅已亲验（2026-10-05 复核：**路径订正**，初稿路径不存在）：loadProvidersConfigFromDisk catch → `list=[]` → 初始化分支 `saveProvidersConfigToDisk` 持久化覆盖，不可恢复 | **src/components/settings/model-provider/types.ts:149-176**（初稿误写 src/lib/providers/types.ts） | 读失败（invoke 异常/JSON 解析失败）≠ 文件不存在：区分两者——解析失败时抛错并在设置页横幅明示，**禁止自动写盘**；仅确认文件不存在时才初始化预设 | 单测：损坏 JSON → 不写盘 + 报错态；实测：手改坏文件 → 重启见横幅而非空配置 |
-| **F19** | **mcp_servers.json 损坏 → 空表静默回写覆盖用户 MCP 配置**（与 F18 同构，Rust `load_servers` 失败静默返回空 + 前端任意设置变更整表回写）✅已亲验：mcp.rs:104-108（读失败/解析失败均返回空）、save_servers:111-119 整表截断写；hubSettingsStore.ts:144-153 任意 setSettings 都回写 | src-tauri/mcp.rs:104-108 + hubSettingsStore.ts:144-153 | Rust load 失败返回结构化错误（非空 Vec）；前端 hydrate 失败时置 degraded 态并禁止后续整表回写 | 单测 + 手动：损坏文件 → 启动报错横幅 |
+| **F17** ✅已完成（2026-10-05，提交 1d0e563） | **草稿首轮审批门被绕过**（修复前状态）✅已亲验（2026-10-05 复核：行号订正——注释在 App.tsx:117，硬编码在 120，sendNow 在 1313-1364）：新建任务首条消息 createTask 落库了草稿所选 approvalMode，但 buildTurnOptions 闭包里 activeTask 仍为 null → `?? "full"` 冻结进首轮（无审批直接执行工具 + maxSteps 0 无上限）；UI 徽标显示 ask 实跑 full。`App.tsx:117` 注释「缺省回退全局默认」与 `:120` 实现 `activeTask?.approvalMode ?? "full"` 矛盾（thinkingLevel 走全局 `?? thinkingLevel`，唯独 approvalMode 硬编码 full） | App.tsx:117-120 + sendNow 1313-1364 | **已落地（1d0e563）**：① `?? "full"` 改回退全局默认审批模式；② buildTurnOptions 新增 taskId 参数，发送瞬间从 store 实时解析任务 approvalMode/助手；sendNow/editResend/retry/远程发送均显式传 taskId，消除闭包冻结 | 单测：草稿提升轮的 turn options 断言任务 approvalMode；实测：草稿选 ask → 首轮写文件必须挂审批 |
+| **F18** ✅已完成（2026-10-05，提交 1d0e563） | **provider_config.json 读取失败 → 空白预设立即写盘覆盖用户全部配置（含 Key）**（修复前状态）✅已亲验（2026-10-05 复核：**路径订正**，初稿路径不存在）：loadProvidersConfigFromDisk catch → `list=[]` → 初始化分支 `saveProvidersConfigToDisk` 持久化覆盖，不可恢复 | **src/components/settings/model-provider/types.ts:149-176**（初稿误写 src/lib/providers/types.ts） | **已落地（1d0e563）**：读失败（invoke 异常/JSON 损坏/结构非法）与文件不存在区分——前者抛错且**绝不写盘**，设置页新增错误横幅 + persistProviders 守卫（读取失败态下拒绝写盘）；仅确认文件不存在才初始化预设。调用方（App/CommitDialog/PromptEnhancementCard 等）不再静默吞错 | 单测：损坏 JSON → 不写盘 + 报错态；实测：手改坏文件 → 重启见横幅而非空配置 |
+| **F19** ✅已完成（2026-10-05，提交 1d0e563） | **mcp_servers.json 损坏 → 空表静默回写覆盖用户 MCP 配置**（修复前状态；与 F18 同构，Rust `load_servers` 失败静默返回空 + 前端任意设置变更整表回写）✅已亲验：mcp.rs:104-108（读失败/解析失败均返回空）、save_servers:111-119 整表截断写；hubSettingsStore.ts:144-153 任意 setSettings 都回写 | src-tauri/mcp.rs:104-108 + hubSettingsStore.ts:144-153 | **已落地（1d0e563）**：Rust load_servers 返回 Result（文件不存在/空→Ok(空)；读取/解析失败→Err），mcp_list_servers 透传错误（移除 unwrap_or_default）；前端 hubSettingsStore 新增 mcpDegradedError 保护态，setSettings/updateMcpOps 两处整表回写均加守卫，MCP 页显示错误横幅；新增 4 例 Rust 单测（缺失/空/损坏/正常） | 单测 + 手动：损坏文件 → 启动报错横幅 |
 | **F20** | **自动化派发凭证错投**：providerId 与 modelId 独立回退（App.tsx:839-840）可拼出「A 家供应商+B 家模型」 | App.tsx:836-875 | 供应商与模型必须同源解析（provider 存在 → 模型必须属于它，否则该次运行 failed 并注明原因）；Key/baseUrl 只取所配供应商，缺则 failed，禁止跨源拼接。⚠️ **复核订正：初稿"空 Key 把 legacy Key 发往该供应商 baseUrl"子项不成立**——`ProviderItem.apiKey` 是非可选 string，`??` 不会在空串上回退（App.tsx:844）；legacy Key 仅在 provider 整个为 undefined 时随 baseUrl 一并回退，属一致的 legacy 组合，非"错投" | 单测 + 手动：构造缺 model 的 automation → run failed 带明确错误 |
 
 ### 中危
@@ -150,8 +156,10 @@ L1 `automation_run_finished` 空 catch 补 warn（App.tsx:876-880 / 894-900，�
 ## 七、执行顺序与验收（批次 1-4 原有编号顺延；每批完成后同标准验收）
 
 > ⚠️ **2026-10-05 复核后的顺序调整（重要）**：批次 4 的三项高危 F17/F18/F19 经亲验**全部属实**，且分别会造成「**审批门被绕过**」与「**用户配置被覆盖丢失**」——危害等级高于批次 1-3 的多数项。建议把 F17/F18/F19 提到最前（"批次 0"）先修，再按原顺序推进。同时 F1、F3 已修完（见上），F22 判定有误已关闭，实际待办范围已收窄。
+>
+> **2026-10-06 进度补记**：批次 0（F17/F18/F19，提交 1d0e563）与批次 2（F4-F7，提交 b1e3b8a）**已完成**，上文各节已补勾并记录与计划的差异点。
 
-1. **顺序**：~~批次 1 → 批次 2 → 批次 3~~ **（订正）批次 0（F17/F18/F19 数据安全与审批）→ 批次 2（开关语义）→ 批次 3（装饰性清理）→ 批次 1 剩余（F4-F7 归入批次 2 关联）→ 批次 4 其余。** F15 已随 F1 完成；F1/F3 已完成不再排期。
+1. **顺序**：~~批次 1 → 批次 2 → 批次 3~~ **（订正）批次 0（F17/F18/F19 数据安全与审批，✅ 1d0e563）→ 批次 2（开关语义，✅ b1e3b8a）→ 批次 3（装饰性清理，待 D2/D3 拍板）→ 批次 4 其余。** F15 已随 F1 完成；F1/F3/F17/F18/F19/F4-F7 已完成不再排期。
 2. **每批验收**：
    - `bunx tsc --noEmit` 0 错误；
    - `bun run test:providers / test:chat / test:settings / test:agent / test:hub`（及其余全部测试脚本）全绿；

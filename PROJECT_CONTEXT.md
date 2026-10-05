@@ -2,7 +2,7 @@
 
 > **文档定位**：供后续开发 Agent 与工程师快速接手本项目的**单点真相全景指南（Single Source of Truth）**。涵盖系统定位、架构分层、核心交互规范、最新进度、关键状态流转及避坑指南。
 >
-> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./docs/ROADMAP.md)（三方功能差距分析 vs LiveAgent/ZCode + 优先级路线图，2026-09-28）、**[TASKS.md](./docs/TASKS.md)（P0 起步的分步开发任务清单，可验证可测试）**、**[FIXPLAN.md](./docs/FIXPLAN.md)（写死数据与装饰性功能审计修复计划，2026-10-05，**已经复核修订待确认**——详见本文第十八节）**。
+> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./docs/ROADMAP.md)（三方功能差距分析 vs LiveAgent/ZCode + 优先级路线图，2026-09-28）、**[TASKS.md](./docs/TASKS.md)（P0 起步的分步开发任务清单，可验证可测试）**、**[FIXPLAN.md](./docs/FIXPLAN.md)（写死数据与装饰性功能审计修复计划，2026-10-05；批次 0/1/2 已完成（2026-10-06 补勾），批次 3 待 D2/D3 拍板——详见下方「写死数据 / 装饰性设置 / 失效开关审计」条目）**。
 
 ---
 
@@ -1193,10 +1193,11 @@ ReinAgent 架构全景
 - **写死数据 / 装饰性设置 / 失效开关审计（2026-10-05，复核修订版）**：
   - **来源**：`docs/FIXPLAN.md`（三路并行扫描 + 人工逐条复核）。**本轮已对初稿逐条复核修正**（初稿成文早于 `f5a47cf` / `f003127` 两提交，含过时项与错路径）。开工一律以 FIXPLAN.md 现版为准。
   - **已修（不再排期）**：F1 max_tokens 注入（[runAgentTurn.ts:286-291](src/lib/providers/runAgentTurn.ts) `wrapStreamWithProxiedFetch` 经 `resolveMaxTokens` 注入，未知发 32000 兜底）；F2 buildModel fail-fast 抛错（[modelFactory.ts:92-129](src/lib/providers/modelFactory.ts)）；F3 titleGenerator 改由 `apiFormat` 判定协议 + 调用点传会话 provider（[titleGenerator.ts:89-110](src/lib/chat/titleGenerator.ts)）；F15 modelFactory 变更历史注释保留。
+  - **已修（2026-10-05 批次 0 高危，提交 1d0e563）**：**F17** 草稿首轮审批门绕过（[App.tsx](src/App.tsx) `?? "full"` 改回退全局默认审批模式；`buildTurnOptions` 新增 taskId 参数、发送瞬间从 store 实时解析任务审批模式/助手，sendNow/editResend/retry/远程发送均显式传 taskId，消除闭包冻结）；**F18** provider_config.json 读取失败即覆盖写盘（[types.ts](src/components/settings/model-provider/types.ts) 区分「文件不存在」与「损坏」——损坏抛错且绝不写盘，设置页新增错误横幅 + persistProviders 守卫，调用方不再静默吞错）；**F19** mcp_servers.json 损坏→空表静默回写（[mcp.rs](src-tauri/src/mcp.rs) load_servers 返回 Result 透传错误 + hubSettingsStore mcpDegradedError 守卫两处整表回写 + MCP 页错误横幅 + 4 例 Rust 单测）。
+  - **已修（2026-10-05 批次 2 开关语义，提交 b1e3b8a）**：**F4** 禁用服务商/模型照发（handleSend enabled 守卫明确报错早退 + 设默认守卫 + 删除默认模型迁移 settings.modelId；⚠️ 计划点「禁用默认模型自动迁移」未做——禁用场景由发送守卫以明确报错覆盖，仅删除路径做自动迁移）；**F5** 免 Key 网关 faux 假流（`providerAllowsMissingApiKey`/`isProviderUsable` 单一真源收编 5 处 `id==="ollama"` 硬编码，isDemo=无 Key 且需要 Key，连带恢复 Ollama 会话记忆提取）；**F6** UI 显示 Default 实发 Max（`IMPLICIT_EFFORT_LEVELS` + `resolveSupportedEffortLevels` 单一真源，未声明 effort 的模型同样收敛残留 xhigh/max）；**F7** 记忆/子代理独立模型 enabled 运行时复查（禁用/已删抛错，同 apiKey 空风格；modelResolution 测试扩 F5/F7 用例并接入 test:hub）+ 子智能体页候选列表过滤禁用项。
   - **已关闭（判定有误）**：F22（"人设查不到连 warn 都无"不成立——`runAgentTurn.ts:543-545` 已有 console.warn）。
-  - **待修高危（建议优先，批次 0）**：**F17** 草稿首轮审批门被绕过（[App.tsx:117-120](src/App.tsx) 注释承诺"回退全局默认"、实现硬编码 `?? "full"`；`buildTurnOptions` 闭包冻结 activeTask=null）——**审批被绕过**；**F18** provider_config.json 读取失败即用空白预设覆盖写盘（[src/components/settings/model-provider/types.ts:149-176](src/components/settings/model-provider/types.ts)）——**用户配置丢失**；**F19** mcp_servers.json 损坏→空表静默回写（[src-tauri/mcp.rs:104-108](src-tauri/src/mcp.rs) + hubSettingsStore.ts:144-153），与 F18 同构。
   - **⚠️ 关键纠错（避免后续开发踩坑）**：① `src/lib/providers/types.ts` **不存在**，服务商配置相关代码在 `src/components/settings/model-provider/types.ts`（F18/F24/L3 初稿路径全错）；② `McpSettings.serverPolicy` 是**死 UI**（从未映射进 `mcp__<id>__<tool>` 工具名），但通用 `toolPolicies` 审批链路**是活的**（runAgentTurn.ts:365），勿混为一谈；③ Rust `get_hide_to_tray` **已存在**（hide_to_tray.rs:42，lib.rs:162 注册），F13 只差前端初始化回读；④ `preview/useTheme.ts` 中**只有 `useTheme()` hook 与 `reinagent-preview-theme` 键**是死的，`resolveTheme`/`Theme` 仍在用，**不可整个删文件**；⑤ F25 的 schedule_rule 兜底只在内存 `row_to_automation` 替换、**不回写 DB 列**，不会持久污染原值；⑥ F20 初稿"空 Key 把 legacy Key 发往该供应商 baseUrl"**不成立**（`ProviderItem.apiKey` 非可选 string，`??` 不在空串回退）。
-  - **其余待办**：F4-F7（开关语义，属实）、F8-F16（装饰性清理，含 D2/D3 决策；F12/F13/F14 语义已校准）、F20/F21/F23-F26（静默设计）、L1-L12 低危。详见 FIXPLAN.md。
+  - **其余待办**：F8-F16（装饰性清理，含 D2/D3 决策；F12/F13/F14 语义已校准）、F20/F21/F23-F26（静默设计）、L1-L12 低危。详见 FIXPLAN.md。
 
 - **上下文预算两道防线修复 ✅（2026-10-05，用户实测「23 轮 / 226 步会话思考几秒后 Connection error.」）**：
   - **定位（实测）**：`task-1791193797808-146rh`（23 轮 / 226 步 / 467 条，deepseek/deepseek-flash，apiFormat=openai-responses）每步重发 **~55.3 万 prompt tokens**（`usage: input 219 + cacheRead 551,680 + output 1,093 = 552,992`），请求体重建约 **1.60MB**（`input` 数组 1,600,283 B + 16 个内置工具 schema ~9KB + 系统/元数据若干），在 `m500` 以 `Connection error.`（OpenAI SDK 连接级错误）断连——上一轮 `m499` 仍正常流式完成（思考 4.3s）。
