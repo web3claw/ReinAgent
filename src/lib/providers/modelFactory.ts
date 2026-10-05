@@ -1,5 +1,5 @@
 import type { Model } from "@earendil-works/pi-ai";
-import { getProviderMeta, type ProviderType, DEFAULT_PROVIDER } from "./catalog";
+import { findProviderMeta, type ProviderType } from "./catalog";
 
 export type ApiFormatType =
   | "openai-chat-completions"
@@ -90,23 +90,52 @@ export function normalizeBaseUrl(raw: string | undefined): string | undefined {
 export const ANTHROPIC_REQUIRED_MAX_TOKENS = 32_000;
 
 export function buildModel(config: ProviderConfig): Model<any> {
-  const provider = config.provider || DEFAULT_PROVIDER;
-  const meta = getProviderMeta(provider);
-  const rawBaseUrl = normalizeBaseUrl(config.baseUrl) || meta.defaultBaseUrl;
-  const modelId = config.modelId || meta.defaultModelId;
+  // ---- No-Fallback（2026-10-05 F2）：配置不完整一律抛错，绝不静默回落 ----
+  // 旧行为：`config.modelId || meta.defaultModelId` + 未知 provider 回落
+  // PROVIDERS[0]（deepseek）——自定义服务商配了 Key 但模型/URL 留空时，请求被
+  // 静默发往 api.deepseek.com + "deepseek-chat"，烧的是用户自己的 Key。
+  const provider = config.provider?.trim();
+  if (!provider) {
+    throw new Error("未指定服务商（provider）：拒绝构造模型请求");
+  }
+  // catalog 外的 id（自定义服务商）→ undefined，不走 deepseek meta 兜底
+  const meta = findProviderMeta(provider);
 
-  // 真实线上协议：优先取设置页所选 apiFormat（provider_config.json），未知/缺省回落 catalog meta
+  const modelId = config.modelId?.trim();
+  if (!modelId) {
+    throw new Error(
+      `未选择模型：请先在设置中为「${provider}」选择模型，或为当前会话指定模型`,
+    );
+  }
+
+  const rawBaseUrl = normalizeBaseUrl(config.baseUrl);
+  if (!rawBaseUrl && !meta) {
+    throw new Error(
+      `自定义服务商「${provider}」未配置 Base URL：拒绝把请求发往内置默认端点（No-Fallback）`,
+    );
+  }
+  // catalog 预设（deepseek/openai/anthropic/gemini/ollama）未填 baseUrl 时用其
+  // 文档化官方端点——这是预设语义而非静默猜测；自定义服务商已在上方拦截。
+  const finalBaseUrl = rawBaseUrl || meta!.defaultBaseUrl;
+
+  // 真实线上协议：优先取设置页所选 apiFormat（provider_config.json）。
+  // 自定义服务商缺/非法 apiFormat → 抛错（旧行为会静默套 deepseek 的协议）。
   const api =
-    (config.apiFormat && API_FORMAT_TO_WIRE[config.apiFormat]) || meta.api;
+    (config.apiFormat && API_FORMAT_TO_WIRE[config.apiFormat]) || meta?.api;
+  if (!api) {
+    throw new Error(
+      `服务商「${provider}」未配置有效的 API 格式：请在该服务商设置中选择`,
+    );
+  }
 
   // ⚠ 两个 SDK 的 baseURL 约定不同，绝不能统一补 /v1：
   // - OpenAI SDK：baseURL 必须含 /v1，SDK 自行追加 /chat/completions 或 /responses
   //   （baseURL 不带 /v1 → POST /chat/completions → 404）；
   // - Anthropic SDK：baseURL 必须不带 /v1，SDK 自身追加 /v1/messages
   //   （baseURL 带 /v1 → POST /v1/v1/messages → 404 page not found，2026-10-05 实测）。
-  let runtimeBaseUrl = rawBaseUrl;
+  let runtimeBaseUrl = finalBaseUrl;
   if (api === "openai-completions" || api === "openai-responses") {
-    runtimeBaseUrl = ensureV1BaseUrl(rawBaseUrl);
+    runtimeBaseUrl = ensureV1BaseUrl(finalBaseUrl);
   }
 
   // 推理能力（对齐 LiveAgent 乐观兜底）：优先取真实元数据（模型 effort 声明），

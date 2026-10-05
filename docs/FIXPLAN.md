@@ -29,7 +29,7 @@
 - **验证**：① A2 测试新增「已知发真实值 / 未知不发」断言；② CDP 实测：未知元数据模型请求体无 max_tokens，已知元数据模型带真实值。
 - **风险**：低。已知元数据模型从「从不发」变「发真实值」，属元数据本义；官方 API 均接受 ≤ 上限的值。
 
-### F2 · buildModel 兜底链静默发 DeepSeek ✅待修
+### F2 · buildModel 兜底链静默发 DeepSeek ✅已完成（2026-10-05，未提交；含 titleGenerator 与 App 调用点）
 
 - **问题**：`src/lib/providers/modelFactory.ts:92-95` —— custom 服务商（catalog 外 id）配了 Key 但 modelId/baseUrl 留空时，`config.modelId || meta.defaultModelId` + `getProviderMeta || PROVIDERS[0]` 把请求静默发往 `api.deepseek.com` + `"deepseek-chat"`，用用户自己的 Key。
 - **修复**：
@@ -111,7 +111,37 @@
 
 ---
 
-## 六、执行顺序与验收
+## 六、批次 4：第二轮审计 · 静默设计专项（2026-10-05 复扫新发现，待确认）
+
+> 背景：F2 修复后按「全库不留静默设计」指令复查。已跳过批次 2/3 已立案项。新发现按危险级别排列；标注「✅已亲验」的经过人工代码复核。
+
+### 高危
+
+| 编号 | 问题 | 位置 | 修复方案 | 验证 |
+|---|---|---|---|---|
+| **F17** | **草稿首轮审批门被绕过**✅已亲验：新建任务首条消息 createTask 落库了草稿所选 approvalMode，但 buildTurnOptions 闭包里 activeTask 仍为 null → `?? "full"` 冻结进首轮（无审批直接执行工具 + maxSteps 0 无上限）；UI 徽标显示 ask 实跑 full。`App.tsx:120` 注释「缺省回退全局默认」与实现矛盾（thinkingLevel 走全局，唯独 approvalMode 硬编码 full） | App.tsx:120 + sendNow 1313-1363 | ① `?? "full"` 改 `?? 全局默认 approvalMode`；② buildTurnOptions 改为发送时从 store 实时读任务记录（或 sendNow 显式传新建任务的 approvalMode/thinkingLevel 覆盖），消除闭包冻结 | 单测：草稿提升轮的 turn options 断言任务 approvalMode；CDP：草稿选 ask → 首轮写文件必须挂审批 |
+| **F18** | **provider_config.json 读取失败 → 空白预设立即写盘覆盖用户全部配置（含 Key）**✅已亲验：loadProvidersConfigFromDisk catch → `list=[]` → 初始化分支 `saveProvidersConfigToDisk` 持久化覆盖，不可恢复 | types.ts:149-176 | 读失败（invoke 异常/JSON 解析失败）≠ 文件不存在：区分两者——解析失败时抛错并在设置页横幅明示，**禁止自动写盘**；仅确认文件不存在时才初始化预设 | 单测：损坏 JSON → 不写盘 + 报错态；CDP：手改坏文件 → 重启见横幅而非空配置 |
+| **F19** | **mcp_servers.json 损坏 → 空表静默回写覆盖用户 MCP 配置**（与 F18 同构，Rust `load_servers` 失败静默返回空 + 前端任意设置变更整表回写） | src-tauri/mcp.rs:103-109 + hubSettingsStore.ts:144-154 | Rust load 失败返回结构化错误（非空 Vec）；前端 hydrate 失败时置 degraded 态并禁止后续整表回写 | 单测 + 手动：损坏文件 → 启动报错横幅 |
+| **F20** | **自动化派发凭证错投**：providerId 与 modelId 独立回退可拼出「A 家供应商+B 家模型」；供应商 Key 为空时把 legacy settings 的 Key 发往该供应商 baseUrl | App.tsx:839-868 | 供应商与模型必须同源解析（provider 存在 → 模型必须属于它，否则该次运行 failed 并注明原因）；Key/baseUrl 只取所配供应商，缺则 failed，禁止跨源拼接 | 单测 + 手动：构造缺 model 的 automation → run failed 带明确错误 |
+
+### 中危
+
+| 编号 | 问题 | 位置 | 修复方案 |
+|---|---|---|---|
+| F21 | classic hook 执行失败被完全吞掉（连 console 都无）——防护型 hook 失效时工具照常执行 | hooksRuntime.ts:324-330（消费方只读 blocked，从不看 runs[].error） | hook 执行错误 → toast/审批区红点（对齐既有审批反馈通道）；错误进 runs 已有，补消费端 |
+| F22 | 助手人设查不到时静默不注入（连 warn 都无）——整轮以通用助手运行 | runAgentTurn.ts:535-546 | 「查不到」分支补 warn；回合事件里带一条人设降级提示（模型/用户可见） |
+| F23 | 会话/kv 持久化失败仅 console——重启丢数据无感知（settingsStore 有 degraded 通道，db.ts/conversationPool 没有） | conversationPool.ts:248-250 / storage/db.ts | 复用 settingsStore 的 degraded/warning UI 通道：持久化失败 → 顶栏持久化警示 |
+| F24 | 服务商配置写盘失败静默（设置页假成功） | types.ts:231-233（Promise 照常 resolve） | saveProvidersConfigToDisk 返回成功/失败；失败时设置页 toast 如实报错 |
+| F25 | automation schedule_rule 损坏 → 静默改写为每天 09:00 真实触发 | src-tauri/automation.rs:189-196 | 解析失败 → 该自动化标记 error 状态 + last_error，**不猜默认计划**；next_run 置 NULL 且不参与 claim（区别于「立即触发」） |
+| F26 | 记忆抽取独立模型解析失败静默回落主模型（organizer 同错误却是显式抛错，双路径语义分叉） | conversationPool.ts:651-663 | 统一为可见失败（错误进抽取状态并跳过本轮，注明原因），或统一回落+双路径声明一致（待选） |
+
+### 低危（列出，随批顺带或接受）
+
+L1 `automation_run_finished` 空 catch 补 warn（App.tsx:877-879）；L2 `getInitialTasks` 单行损坏静默丢任务补 console.error（useAppStore.ts:165-172）；L3 `updateModelEffortDefaultLevel` 找不到目标静默 return 补提示（types.ts:246-261）；L4 `API_FORMAT_TO_TYPE ?? "openai"`（下游已兜住，改注释）；L9 checkpoint_list 失败空列表与「无回退点」区分（checkpointRewind.tsx:180-181）；L12 conversationPool `getOptions` 不可达兜底改断言抛错（:300-310）。**ProviderForm.tsx 为死组件**（无引用方），建议删除（内含写死 catalog 默认模型的 onChange）。
+
+---
+
+## 七、执行顺序与验收（批次 1-4 原有编号顺延；每批完成后同标准验收）
 
 1. **顺序**：批次 1 → 批次 2 → 批次 3。F1 与 F15 同改一处必须同批；每批完成后跑全量验收再进下一批。
 2. **每批验收**：

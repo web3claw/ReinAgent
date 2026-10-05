@@ -151,3 +151,37 @@ test("A2-8 · apiFormat 决定真实线上协议（设置页「API 格式」接�
   });
   assert.equal(anthropicWithV1.baseUrl, "https://api.anthropic.com", "用户多输的 /v1 也要剥掉（SDK 会自己补）");
 });
+
+test("F2-1 · buildModel No-Fallback：配置不完整一律抛错，绝不静默回落 deepseek", () => {
+  // 空 modelId：旧行为静默发 "deepseek-chat"
+  assert.throws(
+    () => buildModel({ apiKey: "k", provider: "custom-123", baseUrl: "https://gw.example.com", apiFormat: "openai-chat-completions", modelId: "" }),
+    /未选择模型/,
+    "空 modelId 必须抛错",
+  );
+  // 自定义服务商缺 baseUrl：旧行为静默发 api.deepseek.com
+  assert.throws(
+    () => buildModel({ apiKey: "k", provider: "custom-123", baseUrl: "", modelId: "m", apiFormat: "openai-chat-completions" }),
+    /未配置 Base URL/,
+    "custom 缺 baseUrl 必须抛错",
+  );
+  // 自定义服务商缺 apiFormat：旧行为静默套 deepseek 的协议
+  assert.throws(
+    () => buildModel({ apiKey: "k", provider: "custom-123", baseUrl: "https://gw.example.com", modelId: "m" }),
+    /API 格式/,
+    "custom 缺 apiFormat 必须抛错",
+  );
+  // 空 provider：拒绝构造
+  assert.throws(
+    () => buildModel({ apiKey: "k", provider: "", modelId: "m" }),
+    /未指定服务商/,
+    "空 provider 必须抛错",
+  );
+  // catalog 预设缺 baseUrl：走文档化官方端点（预设语义，合法不抛）
+  const preset = buildModel({ apiKey: "k", provider: "deepseek", baseUrl: "", modelId: "m" });
+  assert.equal(preset.baseUrl, "https://api.deepseek.com/v1", "预设语义：deepseek 官方端点 + /v1");
+  // custom 配置齐全：用调用方显式值，零兜底
+  const custom = buildModel({ apiKey: "k", provider: "custom-123", baseUrl: "https://gw.example.com", modelId: "m", apiFormat: "openai-chat-completions" });
+  assert.equal(custom.baseUrl, "https://gw.example.com/v1");
+  assert.equal(custom.provider, "custom-123");
+});

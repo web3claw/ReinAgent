@@ -88,6 +88,16 @@ export function getProviderMeta(provider: ProviderType): ProviderMeta {
   return PROVIDERS.find((p) => p.id === provider) || PROVIDERS[0];
 }
 
+/**
+ * 精确查找供应商 meta；catalog 外的 id（`custom-*` 自定义服务商）返回
+ * **undefined** —— 绝不静默回落到 PROVIDERS[0]（deepseek），否则自定义服务商
+ * 缺配置时请求会被悄悄发往 api.deepseek.com（No-Fallback 铁律）。
+ * 构造真实请求请用本函数并显式处理 undefined。
+ */
+export function findProviderMeta(provider: string): ProviderMeta | undefined {
+  return PROVIDERS.find((p) => p.id === provider);
+}
+
 export function getAllModelsForProvider(provider: ProviderType) {
   const meta = getProviderMeta(provider);
   return meta.models;

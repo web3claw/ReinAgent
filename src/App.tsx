@@ -81,7 +81,6 @@ import { getCachedOsInfo } from "./lib/system/systemInfo";
 import * as skillsLib from "./lib/skills/index";
 import { getOsInfo } from "./lib/system/systemInfo";
 import { getTerminalSettings } from "./lib/terminal/terminalSettings";
-import { getProviderMeta } from "./lib/providers/catalog";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import { buildContextUsageData } from "./lib/chat/contextUsage";
 import { getTools } from "./lib/agent/tools";
@@ -332,7 +331,6 @@ export default function App() {
   const activeBaseUrl = currentProvider?.baseUrl ?? settings.baseUrl ?? "";
   const isDemo = activeApiKey.trim().length === 0;
   const source: import("./lib/providers/runAgentTurn").AgentSource = isDemo ? "faux" : (activeProviderId as any);
-  const currentProviderMeta = getProviderMeta(activeProviderId as any);
 
   const [focusTrigger, setFocusTrigger] = useState(0);
 
@@ -860,6 +858,9 @@ export default function App() {
           apiKey,
           modelId,
           baseUrl: provider?.baseUrl ?? settings.baseUrl ?? "",
+          // 设置页所选 API 格式 → 真实线上协议（自动化派发与主对话同口径；
+          // 缺失时自定义服务商会在 buildModel 处 fail-fast 而非静默套错协议）
+          apiFormat: provider?.apiFormat,
           hasEffort: true,
           // 真实元数据透传（与 buildTurnOptions 同口径，No-Fallback）
           contextWindow: automationModel?.contextWindow ?? null,
@@ -1333,11 +1334,15 @@ export default function App() {
       setActiveTaskId(targetTaskId);
 
       // Trigger AI session title generation or heuristic summarization in background sidecar
+      // 标题请求跟随任务实际使用的会话供应商/模型（旧代码用 legacy settings——
+      // 任务钉在别家时标题请求会静默打到另一家，属静默错配，2026-10-05 F2 修正）。
+      const titleProvider = providers.find((p) => p.id === sessionProviderId);
       generateSessionTitle(text, {
-        provider: settings.provider,
-        apiKey: settings.apiKey,
-        modelId: settings.modelId,
-        baseUrl: settings.baseUrl,
+        provider: (sessionProviderId || settings.provider) as Parameters<typeof generateSessionTitle>[1]["provider"],
+        apiKey: titleProvider?.apiKey ?? settings.apiKey,
+        modelId: sessionModelId || settings.modelId,
+        baseUrl: titleProvider?.baseUrl ?? settings.baseUrl,
+        apiFormat: titleProvider?.apiFormat,
       }).then((aiTitle) => {
         if (aiTitle && targetTaskId) {
           updateTaskTitle(targetTaskId, aiTitle);
@@ -1679,7 +1684,7 @@ export default function App() {
                     onSend={handleSend}
                     onStop={stop}
                     providerId={activeProviderId}
-                    providerName={currentProvider?.name || currentProviderMeta.name}
+                    providerName={currentProvider?.name || activeProviderId}
                     modelId={activeModelId}
                     currentModel={currentModel}
                     providers={providers}
@@ -1856,7 +1861,7 @@ export default function App() {
                       onSend={handleSend}
                       onStop={stop}
                       providerId={activeProviderId}
-                      providerName={currentProvider?.name || currentProviderMeta.name}
+                      providerName={currentProvider?.name || activeProviderId}
                       modelId={activeModelId}
                       currentModel={currentModel}
                       providers={providers}

@@ -203,7 +203,8 @@ test("2 · 分支选择：deepseek 且无有效 Key → 走真实分支（非 fa
     const events = [];
     const result = await runAgentTurn({
       source: "deepseek",
-      config: { apiKey: "", modelId: "deepseek-flash" },
+      // F2 No-Fallback：provider 必须显式声明（旧的 `|| DEFAULT_PROVIDER` 静默回落已移除）
+      config: { apiKey: "", modelId: "deepseek-flash", provider: "deepseek" },
       messages: [userMessage("hi")],
       systemPrompt: "sys",
       onEvent: (ev) => events.push(ev),
@@ -233,7 +234,8 @@ test("2 · 分支选择：deepseek 且无有效 Key → 走真实分支（非 fa
     const before = fetchCalls;
     await runAgentTurn({
       source: "deepseek",
-      config: { apiKey: "not-a-real-key", modelId: "deepseek-flash", baseUrl: "http://127.0.0.1:9" },
+      // F2 No-Fallback：provider 必须显式声明
+      config: { apiKey: "not-a-real-key", modelId: "deepseek-flash", baseUrl: "http://127.0.0.1:9", provider: "deepseek" },
       messages: [userMessage("hi")],
       systemPrompt: "sys",
       onEvent: () => { },
@@ -276,7 +278,8 @@ test("4 · apiKey trim：带首尾空白的 Key 进入网络前被 trim（Author
     // baseUrl 指向本机必然拒连的端口；有 Key → 会发起 fetch（被桩拦下），无需真网络。
     await runAgentTurn({
       source: "deepseek",
-      config: { apiKey: PADDED, modelId: "deepseek-flash", baseUrl: "http://127.0.0.1:9" },
+      // F2 No-Fallback：provider 必须显式声明（旧的 `|| DEFAULT_PROVIDER` 静默回落已移除）
+      config: { apiKey: PADDED, modelId: "deepseek-flash", baseUrl: "http://127.0.0.1:9", provider: "deepseek" },
       messages: [userMessage("hi")],
       systemPrompt: "sys",
       onEvent: () => { },

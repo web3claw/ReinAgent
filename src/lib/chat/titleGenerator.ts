@@ -1,7 +1,7 @@
 import type { ProviderConfig } from "../providers/modelFactory";
-import { ensureV1BaseUrl } from "../providers/modelFactory";
+import { API_FORMAT_TO_WIRE, ensureV1BaseUrl } from "../providers/modelFactory";
 import { proxiedFetch } from "../web/proxiedFetch";
-import { getProviderMeta } from "../providers/catalog";
+import { findProviderMeta } from "../providers/catalog";
 
 const SESSION_TITLE_SYSTEM_PROMPT = `Generate a concise title for this coding session.
 
@@ -86,11 +86,28 @@ export async function generateSessionTitle(
     return generateLocalFallbackTitle(promptInput);
   }
 
-  const provider = config.provider || "deepseek";
-  const meta = getProviderMeta(provider);
-  const rawBaseUrl = (config.baseUrl || meta.defaultBaseUrl || "").trim().replace(/\/+$/, "");
-  const modelId = config.modelId || meta.defaultModelId;
+  // ---- No-Fallback（2026-10-05 F2）：配置不完整一律本地降级，绝不猜默认端点/模型 ----
+  // 旧行为：`config.modelId || meta.defaultModelId` + 未知 provider 回落 deepseek
+  // meta——自定义服务商配了 Key 但模型/URL 留空时，标题请求被静默发往
+  // api.deepseek.com + "deepseek-chat"。标题是锦上添花：缺配置就本地提炼。
+  const provider = config.provider?.trim();
+  const modelId = config.modelId?.trim();
+  const meta = provider ? findProviderMeta(provider) : undefined;
+  const rawBaseUrl = config.baseUrl?.trim().replace(/\/+$/, "") || "";
+  if (!provider || !modelId || (!rawBaseUrl && !meta)) {
+    return generateLocalFallbackTitle(promptInput);
+  }
+  const finalBaseUrl = rawBaseUrl || meta!.defaultBaseUrl;
   const apiKey = config.apiKey.trim();
+
+  // 协议判定：apiFormat（设置页所选）优先，catalog 预设回落 meta.api；
+  // 两者皆无（自定义服务商未选格式）→ 本地降级，绝不按猜测的协议发请求。
+  // 旧行为按 provider 字符串/meta 判定——custom id 恒落 deepseek meta，即使
+  // 供应商实为 anthropic/responses 格式也会误走 /v1/chat/completions。
+  const api = (config.apiFormat && API_FORMAT_TO_WIRE[config.apiFormat]) || meta?.api;
+  if (!api) {
+    return generateLocalFallbackTitle(promptInput);
+  }
 
   try {
     const timeoutSignal = AbortSignal.timeout(10000);
@@ -100,8 +117,8 @@ export async function generateSessionTitle(
 
     let response: Response;
 
-    if (provider === "anthropic" || meta.api === "anthropic-messages") {
-      const endpoint = `${rawBaseUrl}/v1/messages`;
+    if (api === "anthropic-messages") {
+      const endpoint = `${finalBaseUrl}/v1/messages`;
       response = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
@@ -128,8 +145,8 @@ export async function generateSessionTitle(
           if (cleaned) return cleaned;
         }
       }
-    } else if (provider === "gemini" || meta.api === "google-generative-ai") {
-      const endpoint = `${rawBaseUrl}/models/${modelId}:generateContent?key=${apiKey}`;
+    } else if (api === "google-generative-ai") {
+      const endpoint = `${finalBaseUrl}/models/${modelId}:generateContent?key=${apiKey}`;
       response = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
@@ -158,9 +175,45 @@ export async function generateSessionTitle(
           if (cleaned) return cleaned;
         }
       }
+    } else if (api === "openai-responses") {
+      // Responses 协议：与对话主链路同端点（openai-responses 格式的供应商可能只部署 /responses）
+      const endpoint = `${ensureV1BaseUrl(finalBaseUrl)}/responses`;
+      response = await proxiedFetch(endpoint, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model: modelId,
+          instructions: SESSION_TITLE_SYSTEM_PROMPT,
+          input: promptInput,
+          max_output_tokens: 30,
+          temperature: 0.3,
+        }),
+        signal: combinedSignal,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        // REST 返回 output 数组（output_text 是 SDK 侧便捷字段，原始 JSON 没有）
+        const messageOutput = Array.isArray(data.output)
+          ? data.output.find((o: { type?: string }) => o?.type === "message")
+          : undefined;
+        const rawContent =
+          (Array.isArray(messageOutput?.content)
+            ? messageOutput.content
+                .map((c: { text?: unknown }) => (typeof c?.text === "string" ? c.text : ""))
+                .join("")
+            : "") || (typeof data.output_text === "string" ? data.output_text : "");
+        if (rawContent) {
+          const cleaned = cleanGeneratedTitle(rawContent);
+          if (cleaned) return cleaned;
+        }
+      }
     } else {
-      // 默认走 OpenAI 兼容协议 (DeepSeek, OpenAI, Ollama, Custom 等)：统一补全 /v1/chat/completions
-      const endpoint = `${ensureV1BaseUrl(rawBaseUrl)}/chat/completions`;
+      // openai-completions（含 chat-completions 格式）：统一补全 /v1/chat/completions
+      const endpoint = `${ensureV1BaseUrl(finalBaseUrl)}/chat/completions`;
 
       response = await proxiedFetch(endpoint, {
         method: "POST",
