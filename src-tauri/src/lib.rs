@@ -80,19 +80,34 @@ pub fn run() {
         tauri::Builder::default()
             // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；
             // 必须最先注册（官方要求）。保证任务栏只有一个应用图标。
-            .plugin(tauri_plugin_single_instance::init(|_argv, _cwd, _extra| {
-                use tauri::Manager as _;
-                // 回调运行在「新进程」上下文，此处无法直接拿窗口——通过已有实例的
-                // AppHandle 聚焦；插件会把第二实例的参数转给本回调，聚焦逻辑在
-                // setup 里保存的全局句柄上完成（见 SINGLE_APP_HANDLE OnceLock）。
-                                if let Some(app) = SINGLE_APP_HANDLE.get() {
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.unminimize();
-                        let _ = window.set_focus();
-                    }
+            .plugin({
+                let single_instance = tauri_plugin_single_instance::Builder::new().callback(
+                    |_app, _argv, _cwd| {
+                        use tauri::Manager as _;
+                        // 回调运行在「新进程」上下文，此处无法直接拿窗口——通过已有实例的
+                        // AppHandle 聚焦；插件会把第二实例的参数转给本回调，聚焦逻辑在
+                        // setup 里保存的全局句柄上完成（见 SINGLE_APP_HANDLE OnceLock）。
+                        if let Some(app) = SINGLE_APP_HANDLE.get() {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let _ = window.show();
+                                let _ = window.unminimize();
+                                let _ = window.set_focus();
+                            }
+                        }
+                    },
+                );
+                // dev 与 release 用不同的实例名（仅 Linux）：同一通道仍互斥（两个 dev
+                // 或两个 release 各自互斥），但 dev 可与 release 同时启动调试。
+                // dbus_id 是 Linux 专用旋钮——Windows/macOS 的插件实现由 bundle
+                // identifier 派生互斥名（无自定义入口），跨通道共存仅 Linux 支持。
+                if cfg!(all(target_os = "linux", debug_assertions)) {
+                    single_instance
+                        .dbus_id("com.web3claw.reinagent.dev")
+                        .build()
+                } else {
+                    single_instance.build()
                 }
-            }))
+            })
             .manage(TerminalState::default())
             .manage(std::sync::Arc::new(stt::SttManager::default()))
             .plugin(tauri_plugin_opener::init())
