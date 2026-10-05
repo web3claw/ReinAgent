@@ -10,6 +10,11 @@ import {
 } from "../../lib/commands/slashCommands";
 import { parseMentionQuery } from "../../lib/chat/mentions";
 import {
+  classifyPaste,
+  createPastedTextFilename,
+  utf8ByteLength,
+} from "../../lib/chat/pasteRouting";
+import {
   appendPromptHistoryEntry,
   navigatePromptHistory,
 } from "../../lib/chat/promptHistory";
@@ -846,9 +851,13 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
                 {
                   path,
                   name,
-                  kind: "image" as const,
+                  kind: (file.type.startsWith("image/") ? "image" : "file") as
+                    | "image"
+                    | "file",
                   sizeBytes: file.size,
-                  previewUrl: URL.createObjectURL(file),
+                  ...(file.type.startsWith("image/")
+                    ? { previewUrl: URL.createObjectURL(file) }
+                    : {}),
                 },
               ],
         );
@@ -858,13 +867,70 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     }
   };
 
+  /**
+   * 原生读剪贴板图片兜底（Linux/WebKitGTK：paste 事件会派发但不交付 clipboardData 图片）。
+   * `null` = 剪贴板里没有图片（静默）；抛错 = 工具缺失/读图失败，如实提示（No-Fallback）。
+   */
+  const handlePasteImageFallback = async () => {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const image = await invoke<{ mime: string; name: string; base64Data: string } | null>(
+        "clipboard_read_image",
+      );
+      if (!image) return;
+      const bytes = Uint8Array.from(atob(image.base64Data), (c) => c.charCodeAt(0));
+      const file = new File([bytes], image.name || "clipboard.png", {
+        type: image.mime || "image/png",
+      });
+      await handlePasteFiles([file]);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      toast.error(t("pasteImageReadFailed").replace("{message}", message));
+    }
+  };
+
+  /**
+   * 粘贴路由（对齐 ZCode）：
+   * - DOM 已交付图片文件 → 既有图片路径；
+   * - 超长文本（≥15KB 字符）→ 落盘为 .txt 附件，不塞进输入框（>10MB 如实报错）；
+   * - 无图且无文本 → WebKitGTK 位图形态，走原生读剪贴板兜底；
+   * - 其余 → 普通文本粘贴，不做任何拦截。
+   */
   const handleTextareaPaste = (e: React.ClipboardEvent<HTMLTextAreaElement>) => {
-    const files = Array.from(e.clipboardData?.files ?? []).filter((f) =>
+    const imageFiles = Array.from(e.clipboardData?.files ?? []).filter((f) =>
       f.type.startsWith("image/"),
     );
-    if (files.length > 0) {
-      e.preventDefault();
-      void handlePasteFiles(files);
+    const text = e.clipboardData?.getData("text/plain") ?? "";
+    const route = classifyPaste({
+      hasImageFile: imageFiles.length > 0,
+      textLength: text.length,
+      textBytes: utf8ByteLength(text),
+    });
+    switch (route.kind) {
+      case "image-file":
+        e.preventDefault();
+        void handlePasteFiles(imageFiles);
+        return;
+      case "text-file":
+        e.preventDefault();
+        void handlePasteFiles([
+          new File([text], createPastedTextFilename(new Date()), { type: "text/plain" }),
+        ]);
+        return;
+      case "text-too-large":
+        e.preventDefault();
+        toast.error(
+          t("pasteTextTooLarge").replace(
+            "{size}",
+            (utf8ByteLength(text) / (1024 * 1024)).toFixed(1),
+          ),
+        );
+        return;
+      case "native-image":
+        void handlePasteImageFallback();
+        return;
+      case "plain":
+        return;
     }
   };
 

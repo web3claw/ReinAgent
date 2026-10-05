@@ -24,6 +24,7 @@ mod fs_tree;
 mod git_panel;
 mod hooks;
 mod plugins;
+mod clipboard_image;
 mod browser;
 mod system_info;
 mod app_tray;
@@ -329,7 +330,8 @@ pub fn run() {
             skills::system_read_skill_metadata,
             skills::system_ensure_builtin_skills,
             skills::mcp_scan_external,
-            skills::mcp_scan_config_file
+            skills::mcp_scan_config_file,
+            clipboard_image::clipboard_read_image
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
