@@ -152,6 +152,9 @@
 
 [data-message-theme="opencode"] {
   background-color: #0a0a0a;
+  /* 作用域内 --bg 跟随画布：输入区 dock（sticky bottom 的 bg-[var(--bg)]）等
+     与消息画布同色，胶囊左右/下方不再透出宿主底色（--bg = #12141a）。 */
+  --bg: #0a0a0a;
   --text: #eeeeee;
   --text-primary: #eeeeee;
   --text-secondary: #808080;
@@ -188,6 +191,8 @@
 
 [data-theme="light"] [data-message-theme="opencode"] {
   background-color: #ffffff;
+  /* 同上：浅色侧画布是白，作用域内 --bg 一并跟随 */
+  --bg: #ffffff;
   --text: #1a1a1a;
   --text-primary: #1a1a1a;
   --text-secondary: #8a8a8a;
@@ -1205,6 +1210,19 @@ select option {
   --color-input: var(--lw-border, var(--border));
   --color-popover: var(--lw-popover, var(--bg-elev));
   --color-popover-foreground: var(--lw-popover-foreground, var(--text));
+  /* 移植组件（preview/components/ui/*）用到、但一直没桥接的 token：缺了它们 Tailwind
+     根本不生成对应工具类（bg-menu 等），弹层会退化成「无背景无边框、菜单项文字直接
+     压在正文上」。取值语义对齐 ZCode packages/ui/src/styles.css：菜单/提示层用浮层色、
+     边框用 border、warning-foreground 用反色前景，不写死色值。 */
+  --color-popover-border: var(--lw-popover-border, var(--border));
+  --color-menu: var(--lw-menu, var(--bg-elev));
+  --color-menu-hover: var(--lw-menu-hover, var(--surface-hover));
+  --color-tooltip: var(--lw-tooltip, var(--bg-elev));
+  --color-tooltip-foreground: var(--lw-tooltip-foreground, var(--text));
+  --color-input-border: var(--lw-input-border, var(--border));
+  --color-warning-foreground: var(--lw-warning-foreground, var(--bg));
+  /* ZCode 原值为半透明中性色 mix；本仓取同层语义的 bg-elev-2，不额外引入 alpha 计算 */
+  --color-background-alt: var(--lw-background-alt, var(--bg-elev-2));
   --color-muted: var(--lw-muted, var(--bg-hover));
   --color-muted-foreground: var(--lw-muted-foreground, var(--text-dim));
   --color-primary: var(--lw-primary, var(--brand));

@@ -1943,8 +1943,14 @@ export default function App() {
           )}
         </div>
 
-        {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅聊天工作台显示 */}
-        {currentView === "workbench" && hasMessages && <SessionStatsBar stats={sessionStats} />}
+        {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅聊天工作台显示。
+            本行在滚动视口之外，需自带 data-message-theme 才能让底色与上方会话画布一致
+            （antigravity 无覆盖块 ⇒ 行为不变）。 */}
+        {currentView === "workbench" && hasMessages && (
+          <div data-message-theme={messageTheme}>
+            <SessionStatsBar stats={sessionStats} />
+          </div>
+        )}
 
         {/* Terminal Pane（仅聊天工作台显示；cwd = 当前任务工作区） */}
         {currentView === "workbench" && isTerminalOpen && (
