@@ -19,6 +19,8 @@
 use serde::Serialize;
 
 /// 与发送链路一致的内联上限（`fs_cmd::ATTACHMENT_INLINE_MAX_BYTES`）。
+// 仅 Linux 读取路径使用：不加 cfg 门的话，非 Linux 构建会报 never used 警告。
+#[cfg(target_os = "linux")]
 const MAX_CLIPBOARD_IMAGE_BYTES: usize = 25 * 1024 * 1024;
 
 /// 剪贴板读取候选：(可执行文件, 参数, mime, 扩展名)——先 Wayland 后 X11，与 ZCode 同序同集合。
