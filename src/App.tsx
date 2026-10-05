@@ -93,7 +93,7 @@ import {
 } from "./lib/chat/selectionReference";
 import { createMemoryOrganizerService, installMemoryOrganizerService } from "./lib/memory/organizer/service";
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
-import { loadProvidersConfigFromDisk, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
+import { loadProvidersConfigFromDisk, providerAllowsMissingApiKey, resolveSupportedEffortLevels, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe
 } from "lucide-react";
@@ -295,20 +295,26 @@ export default function App() {
   // 思考内容仍然只渲染服务端真实流下来的，绝不伪造。
   const isReasoningSupported = true;
 
-  // 当切换模型或配置加载完成时，若模型支持 effort 且定义了 defaultLevel，自动对齐推理档位。
+  // 当切换模型或配置加载完成时，自动对齐推理档位到该模型实际支持的集合。
   // 任务粒度（对齐 ZCode task-local thoughtLevel）：任务有显式覆盖且仍受支持 → 保留不动；
-  // 覆盖不再受支持 → 对齐该模型 defaultLevel（只写该任务）；草稿态 → 对齐全局默认。
+  // 覆盖不再受支持（含切到"未声明 effort"的模型、残留 xhigh/max）→ 收敛到该模型可用档位。
+  //
+  // F6（2026-10-05）：旧实现只在 `currentModel?.effort` 存在时才对，未声明元数据的模型
+  // 直接跳过 → 残留的 xhigh/max 被原样发送（请求发 Max），而 UI 因过滤掉 max 显示
+  // "Default"，界面与请求脱节。现统一走 resolveSupportedEffortLevels（无声明 → 隐式
+  // 档位集 default/low/medium/high），未声明模型同样收敛残留高阶档。
   const prevModelIdRef = useRef<string>(activeModelId);
   useEffect(() => {
     const isModelChanged = prevModelIdRef.current !== activeModelId;
     prevModelIdRef.current = activeModelId;
 
-    if (isReasoningSupported && currentModel?.effort) {
-      const supported = currentModel.effort.supportedLevels || [];
+    if (isReasoningSupported) {
+      const supported = resolveSupportedEffortLevels(currentModel) as string[];
+      const declared = currentModel?.effort;
       const resolveNext = (currentLevel: string) => {
-        if (isModelChanged || !supported.includes(currentLevel as any)) {
-          return (currentModel.effort!.defaultLevel && supported.includes(currentModel.effort!.defaultLevel))
-            ? currentModel.effort!.defaultLevel
+        if (isModelChanged || !supported.includes(currentLevel)) {
+          return (declared?.defaultLevel && supported.includes(declared.defaultLevel))
+            ? declared.defaultLevel
             : supported[0] || "low";
         }
         return null;
@@ -317,7 +323,7 @@ export default function App() {
         const taskLevel = activeTask.thinkingLevel;
         if (taskLevel !== undefined) {
           // 只修正「覆盖不再受支持」的任务，绝不冲掉仍受支持的任务级覆盖。
-          if (!supported.includes(taskLevel as any)) {
+          if (!supported.includes(taskLevel)) {
             const next = resolveNext(taskLevel);
             if (next) updateTaskThinkingLevel(activeTask.id, next as never);
           }
@@ -338,7 +344,10 @@ export default function App() {
 
   const activeApiKey = currentProvider?.apiKey ?? settings.apiKey ?? "";
   const activeBaseUrl = currentProvider?.baseUrl ?? settings.baseUrl ?? "";
-  const isDemo = activeApiKey.trim().length === 0;
+  // F5：免 Key 本地网关（Ollama / 自定义本地 baseUrl）缺 Key 属正常配置，必须走
+  // 真实请求（网关要鉴权则如实 401），不再落入 faux 演示假流。只有「需要 Key 却
+  // 没配」才是未配置状态 → 演示模式。
+  const isDemo = !activeApiKey.trim() && !providerAllowsMissingApiKey(currentProvider);
   const source: import("./lib/providers/runAgentTurn").AgentSource = isDemo ? "faux" : (activeProviderId as any);
 
   const [focusTrigger, setFocusTrigger] = useState(0);
@@ -863,7 +872,8 @@ export default function App() {
       // 自动化所用模型的目录元数据（用于真实 contextWindow/maxTokens/supportsImage 透传）
       const automationModel = provider?.models?.find((m) => m.id === modelId) ?? null;
       const apiKey = provider?.apiKey ?? settings.apiKey ?? "";
-      const isDemo = apiKey.trim().length === 0;
+      // F5：免 Key 本地网关同样走真实请求（与主对话同口径），仅需 Key 而未配才演示。
+      const isDemo = !apiKey.trim() && !providerAllowsMissingApiKey(provider);
       const taskId = store.createTask(
         payload.title,
         payload.workspacePath ?? null,
@@ -1285,6 +1295,29 @@ export default function App() {
     images?: { base64: string; mimeType: string }[],
     userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
   ) => {
+    // F4：当前服务商/模型被禁用 → 明确拦截并提示（禁用是本义上的"不可用"，
+    // 绝不能照发请求）。对齐既有 hook-block 的 toast + 早退样式。
+    const zh = locale === "zh-CN";
+    if (currentProvider && currentProvider.enabled === false) {
+      toast.error(
+        (zh
+          ? `当前服务商「${currentProvider.name || activeProviderId}」已被禁用，无法发送。请在设置中启用或切换服务商。`
+          : `Provider "${currentProvider.name || activeProviderId}" is disabled. Enable it or switch providers in Settings.`
+        ).slice(0, 200),
+        { duration: 6000 },
+      );
+      return false;
+    }
+    if (currentModel && currentModel.enabled === false) {
+      toast.error(
+        (zh
+          ? `当前模型「${currentModel.id}」已被禁用，无法发送。请在设置中启用或切换模型。`
+          : `Model "${currentModel.id}" is disabled. Enable it or switch models in Settings.`
+        ).slice(0, 200),
+        { duration: 6000 },
+      );
+      return false;
+    }
     // UserPromptSubmit hooks（P2-G2）：blocked → toast 说明并不发送（输入已清空，
     // 乐观受理的取舍在文档记录）；运行器异常不阻断发送。
     const dispatch = () => {

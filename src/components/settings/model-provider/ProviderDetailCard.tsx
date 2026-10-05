@@ -23,6 +23,7 @@ import { useAppStore } from "../../../store/useAppStore";
 import { cleanBaseUrl } from "../../../lib/providers/modelFactory";
 import {
   API_FORMAT_OPTIONS,
+  providerAllowsMissingApiKey,
   type ProviderItem,
   type ModelItem,
   type ApiFormatType,
@@ -40,6 +41,11 @@ interface ProviderDetailCardProps {
   onUpdateProvider: (updated: ProviderItem) => void;
   onDeleteProvider?: (id: string) => void;
   onSetAsDefault: (providerId: string, modelId: string) => void;
+  /**
+   * F4：被删除的模型恰是系统默认模型（settings.modelId）时，迁移全局默认到同一
+   * 供应商下的下一个可用模型。为 undefined 时表示该场景不做全局迁移。
+   */
+  onMigrateDefaultModel?: (providerId: string, nextModelId: string) => void;
 }
 
 export function ProviderDetailCard({
@@ -49,6 +55,7 @@ export function ProviderDetailCard({
   onUpdateProvider,
   onDeleteProvider,
   onSetAsDefault,
+  onMigrateDefaultModel,
 }: ProviderDetailCardProps) {
   const { locale } = useTranslation();
   const isZh = locale === "zh-CN";
@@ -231,6 +238,12 @@ export function ProviderDetailCard({
       models: nextModels,
       defaultModelId: nextDefaultModelId,
     });
+    // F4：删掉的若是系统默认模型（settings.modelId 悬空引用）→ 迁移全局默认到
+    // 同供应商下一个可用模型（与 handleDeleteProvider 的迁移语义对称）。
+    if (activeDefaultModelId && activeDefaultModelId === modelId && nextModels.length > 0) {
+      const migrated = nextModels.find((m) => m.enabled)?.id || nextModels[0]?.id || "";
+      if (migrated) onMigrateDefaultModel?.(provider.id, migrated);
+    }
   };
 
   const handleToggleModelEnabled = (modelId: string) => {
@@ -426,7 +439,11 @@ export function ProviderDetailCard({
               type={showApiKey ? "text" : "password"}
               value={provider.apiKey}
               onChange={(e) => onUpdateProvider({ ...provider, apiKey: e.target.value })}
-              placeholder={provider.id === "ollama" ? (isZh ? "本地 Ollama 无需填写 API Key" : "Ollama does not require an API Key") : (isZh ? "请输入 API 密钥" : "Enter API Key")}
+              placeholder={providerAllowsMissingApiKey(provider)
+                ? (isZh
+                    ? "本地网关通常无需 API Key（留空即走真实请求）"
+                    : "Local gateways usually need no API Key (leave empty to send real requests)")
+                : (isZh ? "请输入 API 密钥" : "Enter API Key")}
               className="w-full pl-3 pr-10 py-2 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] font-mono outline-none focus:border-[var(--accent)] transition-colors"
             />
             <button

@@ -13,7 +13,7 @@
 
 import { kvGetJSON, kvSetJSON } from "../storage/db";
 import { resolveWorkspacePath } from "../agent/workspace";
-import { loadProvidersConfigFromDisk } from "../../components/settings/model-provider/types";
+import { loadProvidersConfigFromDisk, providerAllowsMissingApiKey } from "../../components/settings/model-provider/types";
 
 export const SUBAGENTS_DIR_DISPLAY = "~/.agents/subagents";
 export const MAX_USER_SUBAGENTS = 64;
@@ -602,7 +602,16 @@ export async function resolveSubagentModelPin(pin: string): Promise<ResolvedSuba
   const providers = await loadProvidersConfigFromDisk();
   const provider = providers.find((item) => item.id === providerId);
   if (!provider) return null;
-  if (!provider.apiKey.trim()) {
+  // F7：运行时复查 enabled（禁用不该只体现在下拉菜单里）。
+  if (!provider.enabled) {
+    throw new Error(`子智能体模型供应商已被禁用：${provider.name || providerId}`);
+  }
+  const modelItem = provider.models.find((m) => m.id === modelId);
+  if (!modelItem || modelItem.enabled === false) {
+    throw new Error(`子智能体模型不可用（已禁用或已删除）：${providerId}/${modelId}`);
+  }
+  // 免 Key 本地网关缺 Key 属正常配置，不抛错。
+  if (!provider.apiKey.trim() && !providerAllowsMissingApiKey(provider)) {
     throw new Error(`子智能体模型供应商 API Key 为空：${provider.name || providerId}`);
   }
   const { API_FORMAT_TO_TYPE } = await import("../memory/modelResolution");

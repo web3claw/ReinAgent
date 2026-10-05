@@ -1,4 +1,5 @@
 import type { ProviderItem, ModelItem } from "./types";
+import { providerAllowsMissingApiKey } from "./types";
 import { cleanBaseUrl, ensureV1BaseUrl } from "../../../lib/providers/modelFactory";
 import { proxiedFetch } from "../../../lib/web/proxiedFetch";
 
@@ -205,7 +206,8 @@ export async function fetchProviderModels(
     return { success: false, error: "Base URL is required" };
   }
 
-  if (provider.id !== "ollama" && !apiKey) {
+  // 免 Key 本地网关放行（见 providerAllowsMissingApiKey），其余供应商缺 Key 报错。
+  if (!providerAllowsMissingApiKey(provider) && !apiKey) {
     return { success: false, error: "API Key is required" };
   }
 

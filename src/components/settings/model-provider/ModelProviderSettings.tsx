@@ -177,6 +177,25 @@ export function ModelProviderSettings({
   const handleSetAsDefault = (providerId: string, modelId: string) => {
     const targetProvider = providers.find((p) => p.id === providerId);
     if (!targetProvider) return;
+    // F4：禁用的服务商/模型不允许设为系统默认（与发送链路拦截同源，
+    // 避免"默认模型"落在一个根本发不出去的条目上）。
+    if (!targetProvider.enabled) {
+      showToast(
+        isZh
+          ? `「${targetProvider.name}」已被禁用，无法设为默认`
+          : `"${targetProvider.name}" is disabled and cannot be set as default`,
+      );
+      return;
+    }
+    const targetModel = targetProvider.models.find((m) => m.id === modelId);
+    if (targetModel && targetModel.enabled === false) {
+      showToast(
+        isZh
+          ? `模型「${modelId}」已被禁用，无法设为默认`
+          : `Model "${modelId}" is disabled and cannot be set as default`,
+      );
+      return;
+    }
 
     onChange({
       provider: providerId as any,
@@ -189,6 +208,26 @@ export function ModelProviderSettings({
       isZh
         ? `已将 ${targetProvider.name} (${modelId}) 设为系统默认模型`
         : `Set ${targetProvider.name} (${modelId}) as default`
+    );
+  };
+
+  /**
+   * F4：删除的模型恰是系统默认模型时，把全局 settings.modelId 迁移到同供应商下
+   * 的替代模型，避免 settings 悬空引用（旧实现只修供应商自身 defaultModelId）。
+   */
+  const handleMigrateDefaultModel = (providerId: string, nextModelId: string) => {
+    const targetProvider = providers.find((p) => p.id === providerId);
+    if (!targetProvider) return;
+    onChange({
+      provider: providerId as any,
+      modelId: nextModelId,
+      apiKey: targetProvider.apiKey,
+      baseUrl: targetProvider.baseUrl,
+    });
+    showToast(
+      isZh
+        ? `系统默认模型已自动切换为 ${nextModelId}`
+        : `Default model switched to ${nextModelId}`,
     );
   };
 
@@ -261,6 +300,7 @@ export function ModelProviderSettings({
             onUpdateProvider={handleUpdateProvider}
             onDeleteProvider={handleDeleteProvider}
             onSetAsDefault={handleSetAsDefault}
+            onMigrateDefaultModel={handleMigrateDefaultModel}
           />
         )}
       </div>

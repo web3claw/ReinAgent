@@ -21,6 +21,25 @@ export type EffortLevel = "default" | "low" | "medium" | "high" | "xhigh" | "max
 
 export const ALL_EFFORT_LEVELS: EffortLevel[] = ["default", "low", "medium", "high", "xhigh", "max"];
 
+/**
+ * 未声明 effort 元数据的模型所使用的隐式档位集（F6 单一真相源，2026-10-05）。
+ *
+ * 未声明 ≠ 支持全部档位：宁保守不加档（不含 xhigh/max）。发送链路与 UI 选档
+ * 必须共用这一份集合，否则会出现"界面显示 Default、请求实发 Max"的脱节——
+ * 残留的 xhigh/max 必须在切换到无元数据模型时被收敛回本集合。
+ */
+export const IMPLICIT_EFFORT_LEVELS: EffortLevel[] = ["default", "low", "medium", "high"];
+
+/**
+ * 解析模型实际支持的档位集：有声明用声明，无声明用隐式集合。
+ */
+export function resolveSupportedEffortLevels(
+  model: Pick<ModelItem, "effort"> | null | undefined,
+): EffortLevel[] {
+  const declared = model?.effort?.supportedLevels;
+  return declared && declared.length > 0 ? declared : IMPLICIT_EFFORT_LEVELS;
+}
+
 export interface ModelEffortConfig {
   supportedLevels: EffortLevel[];
   defaultLevel?: EffortLevel;
@@ -60,6 +79,41 @@ export interface ProviderItem {
   isCustom?: boolean;
   apiKeyUrl?: string;
   defaultModelId: string;
+}
+
+/**
+ * 免 Key 供应商判定（F5 单一真相源，2026-10-05）。
+ *
+ * 本地网关（Ollama / LM Studio / vLLM 等本地 OpenAI 兼容端点）无需 API Key，
+ * 留空属正常配置，**必须走真实请求**（不再落入 faux 演示假流）；网关若要求鉴权，
+ * 如实返回 401 而不是假装成功。
+ *
+ * 判定规则（与 settings 层既有 testConnectivity / fetchModels 的口径一致）：
+ *  - 预设 `ollama`：本地服务，天然免 Key；
+ *  - 自定义供应商（`isCustom` 且填了 Base URL）：可能是本地网关，按免 Key 处理。
+ *
+ * 注意：这里只回答「缺 Key 是否代表未配置」，不回答「供应商是否可用」——
+ * 后者还要看 `enabled`。
+ */
+export function providerAllowsMissingApiKey(
+  provider: Pick<ProviderItem, "id" | "isCustom" | "baseUrl"> | null | undefined,
+): boolean {
+  if (!provider) return false;
+  if (provider.id === "ollama") return true;
+  return Boolean(provider.isCustom && provider.baseUrl?.trim());
+}
+
+/**
+ * 供应商「可用」判定：已启用，且要么有 Key、要么是免 Key 网关。
+ * 禁用或（云端）缺 Key 都视为不可用——调用方据此 fail-fast，绝不静默回落。
+ */
+export function isProviderUsable(
+  provider: Pick<ProviderItem, "id" | "isCustom" | "baseUrl" | "apiKey" | "enabled"> | null | undefined,
+): boolean {
+  if (!provider) return false;
+  if (!provider.enabled) return false;
+  if (provider.apiKey?.trim()) return true;
+  return providerAllowsMissingApiKey(provider);
 }
 
 export const PRESET_PROVIDERS: ProviderItem[] = [

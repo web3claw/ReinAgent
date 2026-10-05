@@ -65,15 +65,21 @@ function builtinDisplayName(handle: string, t: (key: string) => string): string 
 async function loadModelOptions(): Promise<ModelPickerOption[]> {
   try {
     const providers = await loadProvidersConfigFromDisk();
-    return providers.flatMap((provider) =>
-      provider.models.map((model) => ({
-        value: `${provider.id}/${model.id}`,
-        label: model.id,
-        ...(model.name ? { description: model.name } : {}),
-        providerName: provider.name || provider.id,
-        providerId: provider.id,
-      })),
-    );
+    // F7：候选列表过滤禁用项（与聊天模型切换菜单同口径）——禁用/已删除的
+    // 供应商与模型不应作为钉选候选出现（否则选了运行时报错）。
+    return providers
+      .filter((provider) => provider.enabled)
+      .flatMap((provider) =>
+        provider.models
+          .filter((model) => model.enabled !== false)
+          .map((model) => ({
+            value: `${provider.id}/${model.id}`,
+            label: model.id,
+            ...(model.name ? { description: model.name } : {}),
+            providerName: provider.name || provider.id,
+            providerId: provider.id,
+          })),
+      );
   } catch (err) {
     console.warn("[subagents] provider options load failed:", err);
     return [];

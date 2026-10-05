@@ -72,6 +72,7 @@ import {
   type ProviderItem,
   formatModelContextWindowLabel,
   updateModelEffortDefaultLevel,
+  resolveSupportedEffortLevels,
 } from "../settings/model-provider/types";
 
 export type { ComposerImageInput, UserAttachmentRef };
@@ -1308,10 +1309,11 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             {(() => {
               // 推理等级兜底（对齐 LiveAgent）：未声明 effort 的模型乐观视为支持思考，
               // 提供通用档位（不含 xhigh / max —— 这两档需要模型显式映射，未知模型不发）。
+              // F6：档位集合与 App 的对齐 effect 共用 resolveSupportedEffortLevels 单一
+              // 真相源，保证"显示什么档位"与"实际发什么档位"一致（不再出现显示 Default、
+              // 请求实发 Max 的脱节）。
               const isEffortSupported = true;
-              const supportedList = currentModel?.effort?.supportedLevels?.length
-                ? currentModel.effort.supportedLevels
-                : ["default", "low", "medium", "high"];
+              const supportedList = resolveSupportedEffortLevels(currentModel);
 
               // 声明了 supportedLevels 的模型仍严格按声明过滤（不臆测加档）
               const visibleOptions = THINKING_OPTIONS.filter(

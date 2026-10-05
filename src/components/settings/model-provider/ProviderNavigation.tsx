@@ -1,6 +1,7 @@
 import { Plus } from "lucide-react";
 import { ProviderLogo } from "./ProviderLogo";
 import type { ProviderItem } from "./types";
+import { isProviderUsable } from "./types";
 import { useTranslation } from "../../../i18n";
 
 interface ProviderNavigationProps {
@@ -50,7 +51,7 @@ export function ProviderNavigation({
           <div className="space-y-0.5">
             {presetProviders.map((p) => {
               const isSelected = p.id === selectedId;
-              const isConfigured = p.enabled && (Boolean(p.apiKey.trim()) || p.id === "ollama");
+              const isConfigured = isProviderUsable(p);
 
               return (
                 <button
@@ -91,7 +92,7 @@ export function ProviderNavigation({
             <div className="space-y-0.5">
               {customProviders.map((p) => {
                 const isSelected = p.id === selectedId;
-                const isConfigured = p.enabled && Boolean(p.baseUrl.trim());
+                const isConfigured = isProviderUsable(p);
 
                 return (
                   <button
