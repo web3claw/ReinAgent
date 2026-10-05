@@ -1135,7 +1135,7 @@ fn emit_notify_activate(task_id: Option<&str>) {
 /// 构建发的 Toast 无 AppId，Windows 静默丢弃（API 返回成功但通知中心无内容）。
 /// 这里自行处理：
 /// - Windows：`tauri-winrt-notification`（插件同款底层 crate）+ 显式 AUMID
-///   `com.reinagent.app`；**on_activated 回调**（点击 Toast 正文）→ emit_notify_activate。
+///   `com.web3claw.reinagent`；**on_activated 回调**（点击 Toast 正文）→ emit_notify_activate。
 /// - Linux：`notify-rust`（org.freedesktop.Notifications）+ default action（点击正文）
 ///   回调 → emit_notify_activate。
 #[tauri::command]
@@ -1146,7 +1146,7 @@ pub async fn notify_send(args: NotifySendArgs) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
         {
-            const APP_ID: &str = "com.reinagent.app";
+            const APP_ID: &str = "com.web3claw.reinagent";
             let task_id = task_id.clone();
             let toast = tauri_winrt_notification::Toast::new(APP_ID)
                 .title(&title)
@@ -1227,7 +1227,7 @@ fn write_notify_wav() -> Result<std::path::PathBuf, String> {
     Ok(path)
 }
 
-/// Windows dev 构建补注册 AUMID（`com.reinagent.app`）。
+/// Windows dev 构建补注册 AUMID（`com.web3claw.reinagent`）。
 ///
 /// 背景：未在系统注册过 AppUserModelID 的应用，Windows 只把 Toast 投进通知中心、
 /// **不弹横幅**（安装版由 Tauri NSIS 安装器写注册表，dev exe 没有这个步骤）。
@@ -1235,7 +1235,7 @@ fn write_notify_wav() -> Result<std::path::PathBuf, String> {
 #[cfg(target_os = "windows")]
 pub fn ensure_windows_aumid_registered() {
     use std::process::Command;
-    const APP_ID: &str = "com.reinagent.app";
+    const APP_ID: &str = "com.web3claw.reinagent";
     let exe = std::env::current_exe().unwrap_or_default();
     let exe_str = exe.to_string_lossy().to_string();
     // 只对 dev/未安装版做（安装版由安装器注册；这里简化：检查当前 exe 是否位于

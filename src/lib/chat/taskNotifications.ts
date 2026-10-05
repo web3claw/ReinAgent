@@ -90,7 +90,7 @@ async function playWavNotificationSound(): Promise<void> {
  * 为什么不走 tauri-plugin-notification：其 Windows 实现仅在 exe 不位于
  * `target/debug|release`（安装版）时才设置 AppUserModelID——dev/本地构建的
  * Toast 无 AppId 会被系统静默丢弃（API 返回成功但通知中心无内容）。
- * `notify_send` 在 Windows 显式携带 AUMID `com.reinagent.app`，Linux 走
+ * `notify_send` 在 Windows 显式携带 AUMID `com.web3claw.reinagent`，Linux 走
  * notify-rust（org.freedesktop.Notifications），dev 与安装版行为一致。
  * `taskId` 用于点击通知回跳（Rust 发 `notify-activate` 事件）。
  * 失败如实 console.warn（No-Fallback：不静默伪装成功）。

@@ -64,6 +64,23 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
   const [proxySavedNote, setProxySavedNote] = useState(false);
   const [noProxySavedNote, setNoProxySavedNote] = useState(false);
   const [hideToTray, setHideToTray] = useState(true);
+  // 应用版本号：从 Tauri 运行时读取（源头 = src-tauri/tauri.conf.json 的 version），
+  // 前端不再手写第二份（避免版本漂移）。Web 回退（无 Tauri IPC）显示「未知」。
+  const [appVersion, setAppVersion] = useState<string>("");
+  useEffect(() => {
+    let mounted = true;
+    import("@tauri-apps/api/app")
+      .then((m) => m.getVersion())
+      .then((v) => {
+        if (mounted && v) setAppVersion(v);
+      })
+      .catch(() => {
+        // web 回退：无 Tauri IPC，保持空（UI 显示「未知」）
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
   const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'skills' | 'mcp' | 'memory' | 'usage' | 'hooks' | 'plugins' | 'import' | 'stt' | 'enhance' | 'remote' | 'about'>('general');
   // 外部定位（侧栏插件图标 → plugins）：initialTab 变化时跟随切换
   useEffect(() => {
@@ -389,7 +406,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
                   </div>
                   <div>
                     <h3 className="text-lg font-semibold">ReinAgent</h3>
-                    <p className="text-sm text-[var(--text-dim)]">Version 0.1.0</p>
+                    <p className="text-sm text-[var(--text-dim)]">Version {appVersion || "—"}</p>
                   </div>
                 </div>
                 <div className="pt-4 border-t border-[var(--border)] text-sm text-[var(--text-dim)] space-y-2">

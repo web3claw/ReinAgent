@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "ReinAgent",
-  "version": "0.1.0",
-  "identifier": "com.reinagent.app",
+  "version": "0.1.1",
+  "identifier": "com.web3claw.reinagent",
   "build": {
     "beforeDevCommand": "bun run dev",
     "devUrl": "http://localhost:1420",
