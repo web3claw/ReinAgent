@@ -461,7 +461,13 @@ function TurnGroupViewImpl({
                         // 结束后由下方外显的 MessageItem 接管——时间线位置不变。
                         <div className="w-full text-sm text-[var(--text)] leading-relaxed">
                           <div className="md">
-                            <MarkdownText text={entry.text} streaming={entry.status === "streaming"} />
+                            {/* 高亮开关必须用「整轮是否还在跑」兜底：每次 turn_end 都会把该
+                                条目置 done，多步循环里（回复→调工具→继续）此时整轮仍在跑，
+                                仅看条目状态会让这段的代码块立刻 Shiki 高亮并整块换 DOM。 */}
+                            <MarkdownText
+                              text={entry.text}
+                              streaming={streaming || entry.status === "streaming"}
+                            />
                             {entry.status === "streaming" ? (
                               <ChatLoading loading size="sm" className="mt-1" />
                             ) : null}

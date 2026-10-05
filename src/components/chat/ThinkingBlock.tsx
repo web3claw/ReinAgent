@@ -6,8 +6,9 @@
  *   「思考 · 持续了 N 秒」；用户手动点击后以用户为准（自动行为不再覆盖，对齐 ZCode
  *   shouldAutoCollapseReasoning 原则）。
  * - header：BrainIcon + 「思考」（流式「正在思考」）+ 「持续了 N 秒 / 持续了几秒」；
- * - 正文：最暗文字层 + 左导线缩进 + 限高 240px 滚动 + `whitespace-pre-wrap` 纯文本
- *   （流式期不做 Markdown 解析，对齐 ZCode 性能取舍）；
+ * - 正文：最暗文字层 + 左导线缩进 + 限高 240px 滚动 + Markdown 渲染。流式期必须把
+ *   `streaming` 透传给 CodeBlock——思考里的代码块同样要跳过高亮，否则每个 delta 都会
+ *   重跑 Shiki（主线程 codeToHtml）并整块替换 DOM，在限高滚动容器里表现为「花屏」；
  * - 时长：完成态用冻结的 `thinkingDurationMs`（整秒向上取整）；流式且展开时用 liveNowMs
  *   实时跳动；历史数据无打点时如实显示「持续了几秒」，绝不伪造。
  */
@@ -85,7 +86,7 @@ export function ThinkingBlock({ entry, liveNowMs, turnRunning = false }: Thinkin
       {open && (
         <div className="thinking-body" ref={bodyRef}>
           <div className="thinking-text md">
-            <MarkdownText text={entry.thinking} />
+            <MarkdownText text={entry.thinking} streaming={active} />
           </div>
         </div>
       )}
