@@ -4,6 +4,7 @@ import {
   BUILTIN_COMMANDS,
   expandCommandTemplate,
   filterCommands,
+  matchBuiltinCommand,
   parseSlashQuery,
   toCustomCommands,
   type SlashCommand,
@@ -509,6 +510,13 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
 
   const submit = async () => {
     const trimmed = text.trim();
+    // 斜杠内置命令：回车提交时执行（`/` 菜单选中只负责把 `/name ` 填进输入框，不直接执行）。
+    // 精确匹配 `/clear|/compact|/help`；`/foo`、路径等一律不命中，走下面的普通发送。
+    const builtin = matchBuiltinCommand(trimmed);
+    if (builtin) {
+      runBuiltinCommand(builtin.command, builtin.args);
+      return;
+    }
     if ((trimmed.length === 0 && attachments.length === 0) || isStreaming) return;
     if (stt.active) return; // 语音识别中禁止发送（对齐 LiveAgent controlsDisabled）
     enhanceTokenRef.current += 1; // 提交使增强撤销/迟到结果失效（对齐 PI invalidatePromptEnhancement）
@@ -563,9 +571,8 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       if (e.key === "Enter" || e.key === "Tab") {
         e.preventDefault();
         const cmd = slashFiltered[Math.min(slashIndex, slashFiltered.length - 1)];
-        const args = text.trim().split(/\s+/).slice(1).join(" ");
-        if (cmd.kind === "builtin") runBuiltinCommand(cmd, args);
-        else applyCustomCommand(cmd, args);
+        // 选中只把命令填进输入框（内置填 `/name `、自定义展开模板），执行交给回车提交。
+        selectSlashCommand(cmd);
         return;
       }
     }
@@ -733,15 +740,46 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     textareaRef.current?.focus();
   };
 
-  /** 选中内置命令：交给 App 层执行（清空/压缩/帮助）。 */
+  /**
+   * 从 `/` 菜单选中一条命令（↑/↓ + Enter/Tab 或点击）——**只填词，不执行**：
+   * - 内置命令 → 把 `/name ` 填进输入框，光标移到末尾；用户再按回车才执行；
+   * - 自定义命令 → 展开模板填入输入框（原有语义）。
+   * 执行入口见 submit() 里的 matchBuiltinCommand → runBuiltinCommand。
+   */
+  const selectSlashCommand = (cmd: SlashCommand) => {
+    setShowSlashMenu(false);
+    if (cmd.kind === "custom") {
+      applyCustomCommand(cmd, text.trim().split(/\s+/).slice(1).join(" "));
+      return;
+    }
+    const inserted = `/${cmd.name} `;
+    setText(inserted);
+    requestAnimationFrame(() => {
+      const el = textareaRef.current;
+      if (!el) return;
+      el.focus();
+      el.setSelectionRange(inserted.length, inserted.length);
+    });
+  };
+
+  /** 执行内置命令（由回车提交触发；清空/压缩/帮助）。 */
   const runBuiltinCommand = (cmd: SlashCommand, args: string) => {
     setShowSlashMenu(false);
     if (cmd.name === "clear") {
+      // 草稿态（尚无任务）没有可清空的对象：如实提示，绝不静默清空输入框。
+      if (!taskId) {
+        toast.error("当前还没有会话，无法执行 /clear");
+        return;
+      }
       onClearConversation?.();
       setText("");
       return;
     }
     if (cmd.name === "compact") {
+      if (!taskId) {
+        toast.error("当前还没有会话，无法执行 /compact");
+        return;
+      }
       onCompactRequest?.();
       setText("");
       return;
@@ -1079,8 +1117,6 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           （.ReinAgent/commands/*.md，模板展开填入输入框） */}
       {showSlashMenu && (() => {
         const filtered = slashFiltered;
-        // 参数串 = 用户在命令名后输入的内容（`/review foo` 的 `foo`）
-        const args = text.trim().split(/\s+/).slice(1).join(" ");
         return (
           <div ref={slashMenuRef} data-menu="slash" className="absolute bottom-full left-4 mb-2 w-80 max-h-64 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
             <div className="sticky top-0 px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)] bg-[var(--capsule-bg)]">
@@ -1094,11 +1130,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
                   key={`${cmd.kind}-${cmd.name}`}
                   type="button"
                   data-active={index === slashIndex ? "true" : undefined}
-                  onClick={() =>
-                    cmd.kind === "builtin"
-                      ? runBuiltinCommand(cmd, args)
-                      : applyCustomCommand(cmd, args)
-                  }
+                  onClick={() => selectSlashCommand(cmd)}
                   className={`w-full text-left px-3 py-1.5 text-[var(--text-primary)] flex flex-col ${
                     index === slashIndex ? "bg-[var(--surface-hover)]" : "hover:bg-[var(--surface)]"
                   }`}

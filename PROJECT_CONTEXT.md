@@ -1216,3 +1216,9 @@ ReinAgent 架构全景
 - `llm_proxy.rs` 用 axum `Bytes` 提取器**整体缓冲请求体**，因此继承 axum 默认 **2MB** 请求体上限（axum-core 0.5.6 `default_body_limit.rs` 文档："by default, `Bytes` will not accept bodies larger than 2MB"）。超限时由提取器在进入 handler **之前**拒绝，该 413 **不带任何 CORS 头** → 浏览器 fetch 失败 → OpenAI SDK 报成误导性的 `Connection error.`。
 - **首次排查时（1.6MB，约上限 80%）未触发**；当晚同一会话继续增长到 **2,300,268 字节**后**实锤触顶**：`m174` 即时失败（`started_at == ended_at`，1ms，`Connection error.`），失败后该会话再无任何成功轮（后续轮 usage 为空）——与「历史 api_message 累计字节 ≥ 2MB 后每发必炸」完全吻合。**本次断连的实锤根因即此 2MB 上限**（tokens 水位线 45.9 万尚未触发压缩，字节先爆）。
 - **修复（2026-10-05）**：`llm_proxy.rs` 路由挂 `.layer(DefaultBodyLimit::max(MAX_BODY_BYTES))`，`MAX_BODY_BYTES = 32 * 1024 * 1024`（32MB），彻底解除该悬崖。`cargo check` 通过。验证手段：启动 dev 后对卡死会话重发消息应恢复流式；后续 P1（水位线加字节维度护栏）与 P2（`promptCeiling` 对连接类即时失败也记录经验上限）为可选加固。
+
+### 斜杠命令交互修复（2026-10-05，用户反馈「`/` 菜单 ↑/↓ 选中 clear/compact 后没反应、命令不显示到输入框」）
+- **用户定稿交互模型**：`/` 菜单选中**只把命令填进输入框**（内置 → `/name `；自定义 → 展开模板），**回车提交时才执行**内置命令。
+- **根因两条**：① `LexicalComposer` 的菜单 Enter/Tab/点击直接 `runBuiltinCommand`，对 `clear`/`compact` 是「立即执行 + 清空输入框」，命令文本从不进输入框（与预期相反）；② 草稿态（无活动任务）App 的两个 handler 是 `if (!activeTaskId) return` 静默返回，叠加清空 → 表现为「选了没反应、命令也没了」。另有 ③：`submit()` 无斜杠分支，手打 `/compact` 回车会被当普通提问发给模型。
+- **改动**：`slashCommands.ts` 新增纯函数 `matchBuiltinCommand(text)`——整串精确匹配 `/name` 或 `/name 参数` 且 name ∈ `BUILTIN_COMMANDS` 才命中；`/foo`（未注册）、`/home/user/file`（路径）、非整串一律返回 null 交回普通发送（绝不因「以 / 开头」吞内容）。`LexicalComposer.tsx` 新增 `selectSlashCommand`（菜单选中只填词：内置填 `/name ` 并把光标移到末尾、自定义展开模板），菜单键盘与点击两条路径统一走它；`submit()` 开头用 `matchBuiltinCommand` 拦截并执行内置命令（`runBuiltinCommand`）；`runBuiltinCommand` 加草稿态如实 toast（`/clear`、`/compact` 无会话时提示，不再静默清空输入框）。
+- **验证**：`tsc` 0；`test:chat` 147/147（新增 `matchBuiltinCommand` 用例：trim 命中 / 带参 / 未注册放行 / 路径放行 / 非整串放行）。

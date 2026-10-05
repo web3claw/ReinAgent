@@ -70,6 +70,26 @@ export function filterCommands(commands: SlashCommand[], query: string): SlashCo
 }
 
 /**
+ * 把「整条输入」解析为内置命令调用（用于**回车提交时**执行命令）。
+ *
+ * 交互模型（2026-10-05 用户定稿）：`/` 菜单选中只是把 `/name ` 填进输入框
+ * （见 Composer 的 selectSlashCommand），**不直接执行**；真正的执行发生在用户按回车
+ * 提交时——由本函数判定。因此这里必须精确匹配：
+ * - 命中：整串就是 `/name`（name ∈ BUILTIN_COMMANDS）或 `/name 参数…`；
+ * - 不命中一律返回 null（交回普通发送）：`/foo`（未注册）、`/home/user/file` 这类路径、
+ *   或带前缀的普通文本——绝不因为"以 / 开头"就吞掉用户内容。
+ */
+export function matchBuiltinCommand(
+  text: string,
+): { command: SlashCommand; args: string } | null {
+  const match = /^\/([a-z][a-z0-9_-]*)(?:\s+([\s\S]*))?$/i.exec(text.trim());
+  if (!match) return null;
+  const name = match[1].toLowerCase();
+  const command = BUILTIN_COMMANDS.find((cmd) => cmd.name.toLowerCase() === name);
+  return command ? { command, args: match[2] ?? "" } : null;
+}
+
+/**
  * 展开自定义命令模板：把 `$ARGUMENTS` 替换为参数串（ZCode 同款占位语义）。
  * - 无占位符时：参数非空则把参数追加为末行（否则命令参数会被静默丢弃）；
  * - 无参数且无占位符：原样返回模板。

@@ -30,6 +30,7 @@ const {
   filterCommands,
   expandCommandTemplate,
   toCustomCommands,
+  matchBuiltinCommand,
 } = await import("./slashCommands.ts");
 
 test("parseSlashQuery：仅以 / 开头且未出现空格时进入命令态", () => {
@@ -83,4 +84,18 @@ test("toCustomCommands：防御性解析（脏数据不崩、非法名丢弃）"
 test("BUILTIN_COMMANDS：内置命令清单稳定（clear/compact/help）", () => {
   assert.deepEqual(BUILTIN_COMMANDS.map((c) => c.name).sort(), ["clear", "compact", "help"]);
   assert.ok(BUILTIN_COMMANDS.every((c) => c.kind === "builtin"));
+});
+
+test("matchBuiltinCommand：整串精确命中内置命令才执行；路径/未注册/普通文本一律放行", () => {
+  assert.equal(matchBuiltinCommand("/compact")?.command.name, "compact");
+  assert.equal(matchBuiltinCommand("  /clear  ")?.command.name, "clear", "trim 后命中");
+  assert.deepEqual(matchBuiltinCommand("/compact 额外参数"), {
+    command: BUILTIN_COMMANDS.find((c) => c.name === "compact"),
+    args: "额外参数",
+  });
+  assert.equal(matchBuiltinCommand("/help")?.command.name, "help");
+  assert.equal(matchBuiltinCommand("/unknown"), null, "未注册命令绝不吞掉（交回普通发送）");
+  assert.equal(matchBuiltinCommand("/home/user/file"), null, "路径不误判");
+  assert.equal(matchBuiltinCommand("请执行 /compact"), null, "非整串不触发");
+  assert.equal(matchBuiltinCommand("普通文本"), null);
 });
