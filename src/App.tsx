@@ -692,6 +692,7 @@ export default function App() {
           apiKey: fallback.apiKey,
           modelId: fallback.modelId,
           baseUrl: fallback.baseUrl,
+          apiFormat: providers.find((p) => p.id === fallback.provider)?.apiFormat,
         });
         const stream = await getStreamFnForApi(model.api);
         return {
@@ -792,6 +793,8 @@ export default function App() {
         apiKey: activeApiKey,
         modelId: activeModelId,
         baseUrl: activeBaseUrl,
+        // 设置页所选 API 格式 → 真实线上协议（openai-responses 等）
+        apiFormat: currentProvider?.apiFormat,
         hasEffort: isReasoningSupported,
         // 真实元数据透传（No-Fallback）：未声明即为未知，由 buildModel 走
         // 「未知」语义（不发送 max_tokens / 不声明多模态 / 容量面板不渲染）
@@ -815,6 +818,7 @@ export default function App() {
       activeApiKey,
       activeModelId,
       activeBaseUrl,
+      currentProvider?.apiFormat,
       isReasoningSupported,
       maxSteps,
       effectiveWorkspaceRoot,

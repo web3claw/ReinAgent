@@ -183,6 +183,13 @@ ReinAgent 架构全景
     - **左侧服务商导航栏（ProviderNavigation）**：清晰划分“主流服务商（DeepSeek、OpenAI、Anthropic、Gemini、Ollama）”与“自定义服务商”分组，配备矢量专属 Logo 与状态指示圆点（🟢 已配置并启用 / ⚪ 未配置），右上角支持快捷“+ 添加服务商”；
     - **添加/删除交互重构（2026-10-04，用户定稿去弹窗化）**：**「+ 添加」不再弹 AddProviderDialog（该文件已删除）**——直接在列表末尾追加空白服务商（名称自动编号「新服务商 N」防重名、apiFormat=openai-chat-completions、baseUrl/apiKey/模型留空、enabled=false）并自动选中，配置在右侧表单填写；**删除按钮移至「已启用」开关左侧**，所有服务商均可删（不再限 isCustom），confirm 确认后删除；删除系统默认服务商时默认自动切到剩余第一个（防 settings 悬空引用），删除后绿色 toast 反馈；
     - **右侧服务商详情面板（ProviderDetailCard）**：包含服务商总控开关（Switch）、名称行内重命名、API 端点（Base URL）自定义、**API 格式规范选择（深度对齐 ZCode 原生标准，包含 `Chat Completions (/chat/completions)`、`Anthropic Messages (/v1/messages)`、`Responses (/responses)` 与 `Google Generative AI (/models)`）**、密码显隐切换与官网获取 Key 快捷链接；
+    - **API 格式接入真实请求链路（2026-10-05，用户定稿：格式=真实协议，拒绝「下拉装饰化」）**：
+      - **类型唯一定义**：`ApiFormatType` 定义在 `lib/providers/modelFactory.ts`（设置页 `types.ts` 重导出，防两份联合类型漂移）；
+      - **主链路接线**：`ProviderConfig.apiFormat` → `buildModel` 经 `API_FORMAT_TO_WIRE` 映射为 `model.api`（`openai-chat-completions`/遗留 `openai-completions` → `openai-completions`；`openai-responses` → `openai-responses`；anthropic/google 同名直透），缺省/非法值回落 catalog meta（旧行为）；**⚠ 两个 SDK 的 baseURL 约定不同，绝不能统一补 `/v1`**：OpenAI SDK 的 baseURL 必须含 `/v1`（SDK 追加 `/chat/completions`|`/responses`），Anthropic SDK 的 baseURL 必须不带 `/v1`（SDK 自身追加 `/v1/messages`，带 `/v1` → `/v1/v1/messages` → 404 page not found，2026-10-05 实测）；`getStreamFnForApi` 新增 `openai-responses` 分支（`pi-ai/api/openai-responses` 的 `streamSimple`，含 `wrapStreamWithProxiedFetch` 代理注入）；
+      - **全部调用点透传**：主对话（App `buildTurnOptions`）、记忆整理回落（App organizer）、记忆抽取回落（pool，整包透传自动继承）、独立记忆模型（modelResolution）、子代理钉选模型（subagentDefinitions）、✨提示词增强（LexicalComposer）、提交信息生成（CommitDialog）——凡从 `ProviderItem` 构造 `ProviderConfig` 处一律带 `apiFormat: item.apiFormat`；
+      - **切换格式即探测（Fail-Fast）**：API 格式下拉变更 → 立即用「测试连通性」同款真实请求探测新格式端点（选 defaultModelId 或首个启用模型），通过显示绿色横幅「端点探测通过 (Xms)：对话将按「…」协议发送」，失败显示红色横幅携带完整真实错误（如 404）+「该服务商可能不支持…对话请求按此格式发送将失败」；无模型可测时跳过；
+      - **实测结论（2026-10-05）**：GonkaRouter `/v1/responses` 404 不存在（`/v1/chat/completions` 与 `/v1/messages` 均 200 可用——它同时支持 OpenAI 与 Anthropic 协议）；OpenCodeZen `/v1/responses` 200 真实可用；真实回合 E2E 证实请求端点跟随存量格式（responses 格式下回合如实报 404，不再静默走 chat/completions；anthropic 格式修复双 `/v1` 后流式回复正常）。
+    - **服务商页选中态记忆（2026-10-05）**：左侧导航选中记忆在 localStorage `reinagent-provider-page-selected`（与 `settings.provider` 系统默认严格分离，仅页面浏览记忆不改发请求对象）；进入页面优先恢复，配置外部删改致失效时回退系统默认/首个并同步记忆；所有选中路径（导航点选/添加/删除回退）统一走 `setSelectedProviderId` 同步写。
   - **细粒度模型管理、动态刷新与元数据编辑体系（深度对齐 ZCode 视觉交互规范）**：
     - **模型列表行视觉规范（完全对齐 ZCode）**：
       - **上下文大小 Badge**：显示紧凑技术规格徽标（如 `1M`、`2M`、`128K`、`64K`、`32K` 等），采用等宽字体与深底细边框；

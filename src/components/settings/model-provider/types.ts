@@ -1,12 +1,9 @@
 import type { Settings } from "../../../lib/settings/store";
 import { cleanBaseUrl } from "../../../lib/providers/modelFactory";
 
-export type ApiFormatType =
-  | "openai-chat-completions"
-  | "openai-completions"
-  | "anthropic-messages"
-  | "openai-responses"
-  | "google-generative-ai";
+// API 格式类型唯一定义在 lib/providers/modelFactory（ProviderConfig.apiFormat 同源）
+export type { ApiFormatType } from "../../../lib/providers/modelFactory";
+import type { ApiFormatType } from "../../../lib/providers/modelFactory";
 
 export interface ApiFormatOption {
   value: ApiFormatType;

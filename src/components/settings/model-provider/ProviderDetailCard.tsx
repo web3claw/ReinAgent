@@ -72,6 +72,51 @@ export function ProviderDetailCard({
   const [refreshSuccessMsg, setRefreshSuccessMsg] = useState<string | null>(null);
   const [modelSearch, setModelSearch] = useState("");
 
+  // API 格式切换后的端点探测结果（真实请求验证所选格式端点是否存在）
+  const [formatProbe, setFormatProbe] = useState<{ ok: boolean; message: string } | null>(null);
+  const [isProbingFormat, setIsProbingFormat] = useState(false);
+
+  /**
+   * 切换 API 格式：保存后立即用「测试连通性」同款真实请求探测新格式的端点。
+   * 主聊天链路按此格式发请求（apiFormat 已接入 buildModel），端点不存在必须
+   * 明确警告（如网关未部署 /v1/responses），绝不静默放行。
+   */
+  const handleApiFormatChange = async (next: ApiFormatType) => {
+    onUpdateProvider({ ...provider, apiFormat: next });
+    const probeModelId =
+      provider.defaultModelId ||
+      provider.models.find((m) => m.enabled)?.id ||
+      provider.models[0]?.id ||
+      "";
+    if (!probeModelId) {
+      setFormatProbe(null);
+      return;
+    }
+    setIsProbingFormat(true);
+    setFormatProbe(null);
+    try {
+      const res = await testModelConnectivity({ ...provider, apiFormat: next }, probeModelId);
+      const label = API_FORMAT_OPTIONS.find((o) => o.value === next)?.label ?? next;
+      if (res.success) {
+        setFormatProbe({
+          ok: true,
+          message: isZh
+            ? `端点探测通过 (${res.latencyMs}ms)：对话将按「${label}」协议发送`
+            : `Endpoint probe OK (${res.latencyMs}ms): requests will use "${label}"`,
+        });
+      } else {
+        setFormatProbe({
+          ok: false,
+          message: isZh
+            ? `端点探测失败：${res.error ?? "unknown error"}。该服务商可能不支持「${label}」，对话请求按此格式发送将失败`
+            : `Endpoint probe failed: ${res.error ?? "unknown error"}. This provider may not support "${label}"; requests will fail`,
+        });
+      }
+    } finally {
+      setIsProbingFormat(false);
+    }
+  };
+
   const handleRefreshModels = async () => {
     setRefreshError(null);
     setRefreshSuccessMsg(null);
@@ -320,8 +365,9 @@ export function ProviderDetailCard({
           <div className="relative">
             <select
               value={provider.apiFormat}
-              onChange={(e) => onUpdateProvider({ ...provider, apiFormat: e.target.value as ApiFormatType })}
-              className="w-full appearance-none px-3 py-2 pr-9 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] cursor-pointer"
+              onChange={(e) => void handleApiFormatChange(e.target.value as ApiFormatType)}
+              disabled={isProbingFormat}
+              className="w-full appearance-none px-3 py-2 pr-9 text-sm rounded-lg border border-[var(--border)] bg-[var(--bg-card)] text-[var(--text-primary)] outline-none focus:border-[var(--accent)] cursor-pointer disabled:opacity-60"
             >
               {API_FORMAT_OPTIONS.map((opt) => (
                 <option key={opt.value} value={opt.value} className="bg-[var(--bg-card)] text-[var(--text-primary)]">
@@ -331,6 +377,30 @@ export function ProviderDetailCard({
             </select>
             <ChevronDown className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[var(--text-secondary)] opacity-70" />
           </div>
+          {isProbingFormat && (
+            <div className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)]">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-[var(--accent)]" />
+              <span>{isZh ? "正在探测端点..." : "Probing endpoint..."}</span>
+            </div>
+          )}
+          {formatProbe && !isProbingFormat && (
+            <div
+              className={`flex items-start justify-between gap-2 p-2 rounded-lg text-xs ${
+                formatProbe.ok
+                  ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-500"
+                  : "bg-red-500/10 border border-red-500/20 text-red-500"
+              }`}
+            >
+              <span className="break-all">{formatProbe.message}</span>
+              <button
+                type="button"
+                onClick={() => setFormatProbe(null)}
+                className="shrink-0 opacity-70 hover:opacity-100"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
         </div>
 
         {/* API Key */}

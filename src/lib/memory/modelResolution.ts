@@ -45,6 +45,7 @@ export async function resolveIndependentMemoryModelDeps(
     apiKey: provider.apiKey,
     modelId,
     baseUrl: provider.baseUrl,
+    apiFormat: provider.apiFormat,
   });
   const stream = await getStreamFnForApi(model.api);
   return {

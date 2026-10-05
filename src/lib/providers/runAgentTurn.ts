@@ -230,6 +230,10 @@ export async function getStreamFnForApi(api: string) {
     const mod = await import("@earendil-works/pi-ai/api/google-generative-ai");
     return mod.streamSimple ?? mod.stream;
   }
+  if (api === "openai-responses") {
+    const mod = await import("@earendil-works/pi-ai/api/openai-responses");
+    return wrapStreamWithProxiedFetch(mod.streamSimple ?? mod.stream);
+  }
   const mod = await import("@earendil-works/pi-ai/api/openai-completions");
   return wrapStreamWithProxiedFetch(mod.streamSimple ?? mod.stream);
 }

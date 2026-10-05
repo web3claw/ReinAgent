@@ -18,6 +18,29 @@ interface ModelProviderSettingsProps {
   onChange: (patch: Partial<Settings>) => void;
 }
 
+/**
+ * 设置页「最后浏览选中的服务商」记忆（localStorage）。
+ * 与 settings.provider（系统默认服务商，真正发请求用）严格分离：这里只记住
+ * 用户在左侧导航点了谁，下次进入页面恢复同一选中，不改变发请求走谁。
+ */
+const PROVIDER_PAGE_SELECTED_KEY = "reinagent-provider-page-selected";
+
+function readStoredProviderSelection(): string {
+  try {
+    return localStorage.getItem(PROVIDER_PAGE_SELECTED_KEY) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredProviderSelection(id: string): void {
+  try {
+    localStorage.setItem(PROVIDER_PAGE_SELECTED_KEY, id);
+  } catch {
+    // localStorage 不可用（隐私模式等）时静默降级为会话内记忆
+  }
+}
+
 export function ModelProviderSettings({
   settings,
   status,
@@ -35,16 +58,30 @@ export function ModelProviderSettings({
     loadProvidersConfigFromDisk(settings).then((loaded) => {
       if (mounted && loaded && loaded.length > 0) {
         setProviders(loaded);
+        // 记忆的选中项已不存在（配置被外部删改）→ 回退系统默认/首个，并同步记忆
+        const remembered = readStoredProviderSelection();
+        if (!loaded.some((p) => p.id === remembered)) {
+          const fallback =
+            loaded.find((p) => p.id === settings.provider) || loaded[0];
+          setSelectedProviderId(fallback.id);
+        }
       }
     });
     return () => {
       mounted = false;
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [selectedProviderId, setSelectedProviderId] = useState<string>(() => {
-    return settings.provider || "deepseek";
+  const [selectedProviderId, setSelectedProviderIdState] = useState<string>(() => {
+    return readStoredProviderSelection() || settings.provider || "deepseek";
   });
+
+  // 统一选择入口：本地 state 与 localStorage 记忆同步写（所有选中路径都走这里）
+  const setSelectedProviderId = (id: string) => {
+    setSelectedProviderIdState(id);
+    writeStoredProviderSelection(id);
+  };
 
   const [successToast, setSuccessToast] = useState<string | null>(null);
 

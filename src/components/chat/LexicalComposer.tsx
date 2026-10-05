@@ -389,6 +389,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       apiKey: item.apiKey,
       modelId: mid,
       baseUrl: item.baseUrl,
+      apiFormat: item.apiFormat,
       contextWindow: model.contextWindow ?? null,
       maxOutputTokens: model.maxOutputTokens ?? null,
       supportsImage: model.supportsImage ?? null,

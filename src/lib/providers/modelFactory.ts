@@ -1,12 +1,37 @@
 import type { Model } from "@earendil-works/pi-ai";
 import { getProviderMeta, type ProviderType, DEFAULT_PROVIDER } from "./catalog";
 
+export type ApiFormatType =
+  | "openai-chat-completions"
+  | "openai-completions"
+  | "anthropic-messages"
+  | "openai-responses"
+  | "google-generative-ai";
+
+/**
+ * provider_config.json 的 apiFormat（设置页「API 格式」所选）→ pi-ai 线上协议。
+ * openai-chat-completions 与遗留 openai-completions 都走 Chat Completions 适配器；
+ * openai-responses 走 OpenAI Responses 适配器（POST {base}/v1/responses）。
+ */
+export const API_FORMAT_TO_WIRE: Record<ApiFormatType, string> = {
+  "openai-chat-completions": "openai-completions",
+  "openai-completions": "openai-completions",
+  "anthropic-messages": "anthropic-messages",
+  "openai-responses": "openai-responses",
+  "google-generative-ai": "google-generative-ai",
+};
+
 export interface ProviderConfig {
   provider?: ProviderType;
   apiKey: string;
   modelId: string;
   baseUrl?: string;
   hasEffort?: boolean;
+  /**
+   * 设置页所选 API 格式（provider_config.json 的 apiFormat）。决定真实线上协议，
+   * 缺省/未知值回落 catalog 的 provider meta（旧行为）。
+   */
+  apiFormat?: ApiFormatType;
   /**
    * 模型真实元数据（来自服务商配置 / 上游 /v1/models 解析结果）。
    * No-Fallback 铁律：缺省/非法即为「未知」，绝不按模型名猜数。
@@ -69,9 +94,17 @@ export function buildModel(config: ProviderConfig): Model<any> {
   const rawBaseUrl = normalizeBaseUrl(config.baseUrl) || meta.defaultBaseUrl;
   const modelId = config.modelId || meta.defaultModelId;
 
-  // 针对 OpenAI 兼容（openai-completions / openai-responses）和 Anthropic 协议，自动补全 /v1
+  // 真实线上协议：优先取设置页所选 apiFormat（provider_config.json），未知/缺省回落 catalog meta
+  const api =
+    (config.apiFormat && API_FORMAT_TO_WIRE[config.apiFormat]) || meta.api;
+
+  // ⚠ 两个 SDK 的 baseURL 约定不同，绝不能统一补 /v1：
+  // - OpenAI SDK：baseURL 必须含 /v1，SDK 自行追加 /chat/completions 或 /responses
+  //   （baseURL 不带 /v1 → POST /chat/completions → 404）；
+  // - Anthropic SDK：baseURL 必须不带 /v1，SDK 自身追加 /v1/messages
+  //   （baseURL 带 /v1 → POST /v1/v1/messages → 404 page not found，2026-10-05 实测）。
   let runtimeBaseUrl = rawBaseUrl;
-  if (meta.api === "openai-completions" || meta.api === "anthropic-messages") {
+  if (api === "openai-completions" || api === "openai-responses") {
     runtimeBaseUrl = ensureV1BaseUrl(rawBaseUrl);
   }
 
@@ -110,7 +143,7 @@ export function buildModel(config: ProviderConfig): Model<any> {
   return {
     id: modelId,
     name: modelId,
-    api: meta.api,
+    api,
     provider: provider,
     baseUrl: runtimeBaseUrl,
     reasoning: isReasoning,
