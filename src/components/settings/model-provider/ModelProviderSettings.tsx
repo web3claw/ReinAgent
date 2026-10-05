@@ -3,7 +3,6 @@ import type { Settings } from "../../../lib/settings/store";
 import type { SettingsStatus } from "../../../lib/settings/useSettings";
 import { ProviderNavigation } from "./ProviderNavigation";
 import { ProviderDetailCard } from "./ProviderDetailCard";
-import { AddProviderDialog } from "./AddProviderDialog";
 import {
   getInitialPresetProviders,
   loadProvidersConfigFromDisk,
@@ -47,7 +46,6 @@ export function ModelProviderSettings({
     return settings.provider || "deepseek";
   });
 
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [successToast, setSuccessToast] = useState<string | null>(null);
 
   // 确保选中的 provider 存在
@@ -78,20 +76,48 @@ export function ModelProviderSettings({
   };
 
   const handleDeleteProvider = (id: string) => {
+    const target = providers.find((p) => p.id === id);
     const nextProviders = providers.filter((p) => p.id !== id);
     setProviders(nextProviders);
     saveProvidersConfigToDisk(nextProviders);
     if (selectedProviderId === id) {
-      setSelectedProviderId(nextProviders[0]?.id || "deepseek");
+      setSelectedProviderId(nextProviders[0]?.id ?? "");
     }
+    // 删除的是系统默认服务商 → 默认自动切到剩余第一个，避免 settings 悬空引用
+    if (settings.provider === id && nextProviders.length > 0) {
+      const fallback = nextProviders[0];
+      onChange({
+        provider: fallback.id as any,
+        modelId: fallback.defaultModelId || fallback.models.find((m) => m.enabled)?.id || "",
+        apiKey: fallback.apiKey,
+        baseUrl: fallback.baseUrl,
+      });
+    }
+    showToast(isZh ? `已删除服务商 "${target?.name ?? id}"` : `Deleted "${target?.name ?? id}"`);
   };
 
-  const handleAddProvider = (newProvider: ProviderItem) => {
+  // 「+ 添加」直接在列表末尾追加空白服务商并选中，配置在右侧表单填写（用户定稿：无弹窗）
+  const handleAddProvider = () => {
+    let n = 1;
+    const base = isZh ? "新服务商" : "New Provider";
+    while (providers.some((p) => p.name === (n > 1 ? `${base} ${n}` : base))) n += 1;
+    const name = n > 1 ? `${base} ${n}` : base;
+    const newProvider: ProviderItem = {
+      id: `custom-${Date.now()}`,
+      name,
+      apiFormat: "openai-chat-completions",
+      baseUrl: "",
+      apiKey: "",
+      enabled: false,
+      isCustom: true,
+      defaultModelId: "",
+      models: [],
+    };
     const nextProviders = [...providers, newProvider];
     setProviders(nextProviders);
     saveProvidersConfigToDisk(nextProviders);
     setSelectedProviderId(newProvider.id);
-    showToast(isZh ? `已添加服务商 "${newProvider.name}"` : `Added "${newProvider.name}"`);
+    showToast(isZh ? `已添加 "${name}"，请在右侧填写配置` : `Added "${name}" - configure it on the right`);
   };
 
   const handleSetAsDefault = (providerId: string, modelId: string) => {
@@ -149,7 +175,7 @@ export function ModelProviderSettings({
           providers={providers}
           selectedId={selectedProviderId}
           onSelect={(id) => setSelectedProviderId(id)}
-          onAddProvider={() => setIsAddDialogOpen(true)}
+          onAddProvider={handleAddProvider}
         />
 
         {/* Right Provider Detail Form */}
@@ -164,13 +190,6 @@ export function ModelProviderSettings({
           />
         )}
       </div>
-
-      {/* Add Custom Provider Dialog */}
-      <AddProviderDialog
-        isOpen={isAddDialogOpen}
-        onClose={() => setIsAddDialogOpen(false)}
-        onAdd={handleAddProvider}
-      />
     </div>
   );
 }

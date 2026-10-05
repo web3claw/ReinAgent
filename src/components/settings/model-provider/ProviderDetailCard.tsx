@@ -258,22 +258,9 @@ export function ProviderDetailCard({
           </div>
         </div>
 
-        {/* Right Switch & Delete */}
+        {/* Right Delete & Switch —— 删除在「已启用」左侧（用户定稿）；所有服务商均可删 */}
         <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <span className="text-xs text-[var(--text-secondary)]">
-              {provider.enabled ? (isZh ? "已启用" : "Enabled") : (isZh ? "已禁用" : "Disabled")}
-            </span>
-            <input
-              type="checkbox"
-              checked={provider.enabled}
-              onChange={(e) => onUpdateProvider({ ...provider, enabled: e.target.checked })}
-              className="sr-only peer"
-            />
-            <div className="w-9 h-5 bg-[var(--border)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent)] relative" />
-          </label>
-
-          {provider.isCustom && onDeleteProvider && (
+          {onDeleteProvider && (
             <button
               onClick={() => {
                 if (confirm(isZh ? `确定要删除服务商 "${provider.name}" 吗？` : `Delete provider "${provider.name}"?`)) {
@@ -286,6 +273,18 @@ export function ProviderDetailCard({
               <Trash2 className="w-4 h-4" />
             </button>
           )}
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <span className="text-xs text-[var(--text-secondary)]">
+              {provider.enabled ? (isZh ? "已启用" : "Enabled") : (isZh ? "已禁用" : "Disabled")}
+            </span>
+            <input
+              type="checkbox"
+              checked={provider.enabled}
+              onChange={(e) => onUpdateProvider({ ...provider, enabled: e.target.checked })}
+              className="sr-only peer"
+            />
+            <div className="w-9 h-5 bg-[var(--border)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[var(--accent)] relative" />
+          </label>
         </div>
       </div>
 
