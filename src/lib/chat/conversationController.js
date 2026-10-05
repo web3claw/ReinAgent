@@ -46,13 +46,14 @@ import { isRetryableError } from "../chat/errors.js";
 import { pushRetryAttempt } from "./conversationModel.js";
 import { markTurnEntrance } from "./entranceOnce.js";
 import {
-  COMPACTION_TRIGGER_RATIO,
   applyCompaction,
   buildCompactionPrompt,
   buildCompactionSource,
+  computeCompactionWatermark,
   extractSummary,
   findCompactionRange,
   microcompactMessages,
+  modelKeyOf,
 } from "./compaction.ts";
 
 /**
@@ -78,6 +79,43 @@ function describeErrorChain(err) {
 }
 
 /**
+ * 最近一次「有真实用量」的助手条目所消耗的上下文 tokens。
+ * 口径与 UI 一致：`input + cacheRead + output`。
+ * ⚠ 必须跳过全 0 用量的条目：失败的 assistant 会落一份 usage 全 0 的 apiMessage，
+ * 若直接取末条会得到 0，导致水位线判定永远不触发（历史实现即按「末条有 usage」取，
+ * 压缩触发因此在大会话里失效）。
+ * @param {import("./conversationModel").TimelineEntry[]} messages
+ * @returns {number} 0 = 没有可用用量
+ */
+function lastUsedTokens(messages) {
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const message = messages[i];
+    if (!message || message.role !== "assistant") continue;
+    const usage = message.apiMessage && message.apiMessage.usage;
+    if (!usage) continue;
+    const used =
+      Number(usage.input ?? 0) + Number(usage.cacheRead ?? 0) + Number(usage.output ?? 0);
+    if (used > 0) return used;
+  }
+  return 0;
+}
+
+/**
+ * 是否为「上下文/连接」类失败——Fail-Fast 学习真实 prompt 上限的判据。
+ * 覆盖断连（Connection error / fetch failed / ECONNRESET…）与上下文超限两类：
+ * 在「prompt 已达水位线」的前提下出现这两类失败，都说明我们估的上限偏乐观。
+ * @param {unknown} message
+ */
+export function isContextishError(message) {
+  return (
+    typeof message === "string" &&
+    /connection error|failed to fetch|fetch failed|ECONNRESET|ECONNREFUSED|ETIMEDOUT|socket hang up|network|context length|maximum context|too long|too many tokens|token limit|context_length_exceeded|请求过大|上下文/i.test(
+      message,
+    )
+  );
+}
+
+/**
  * 创建一个会话编排器。
  *
  * @param {{
@@ -98,7 +136,7 @@ function describeErrorChain(err) {
    * }}
    */
 export function createConversationController(deps) {
-  const { getState, setState, runAgentTurn, getOptions } = deps;
+  const { getState, setState, runAgentTurn, getOptions, getPromptCeiling, onPromptCeilingExceeded } = deps;
   const createAbortController = deps.createAbortController ?? (() => new AbortController());
   const now = deps.now ?? (() => Date.now());
 
@@ -193,35 +231,28 @@ export function createConversationController(deps) {
   function launchTurn(turnId, launchOptions = {}) {
     const controller = createAbortController();
     abortRef = controller;
-    // 发送前上下文预算：
-    // - microcompact：裁较早轮的大工具结果（只影响本轮发送视图，不改时间线）；
-    // - 自动压缩：上一轮结束时的使用率超阈值 → 先压缩再发送（异步，压完即发）。
-    //   简化实现：microcompact 在 toApiMessages 后立即生效；autoCompact 用「上一条
-    //   assistant 的 usage / contextWindow」判定，压完把新历史交给本轮。
+    // 发送前上下文预算（两道防线）：
+    // - microcompact（常开）：`toApiMessages` 出参即裁较早的大工具结果——只改发送视图、
+    //   不改时间线；确定性 + 幂等 + 单调，裁过的内容不再变，因此不会每步重写前缀拖累缓存。
+    // - autoCompact（过水位线才触发）：上一轮真实用量 ≥ computeCompactionWatermark
+    //   → 整段压缩后再发（异步，压完把新历史交给本轮）。水位线建在「声明窗口 − 输出预留」
+    //   上，并被 Fail-Fast 学到的经验上限（deps.getPromptCeiling）继续收紧。
     const { autoCompact = false } = launchOptions;
-    const baseGetHistory = () => {
-      const raw = toApiMessages(getState());
-      return microcompactMessages(raw);
-    };
-    const microcompactRef = { value: null };
+    const baseGetHistory = () => microcompactMessages(toApiMessages(getState()));
     if (autoCompact) {
       void (async () => {
         try {
-          const state = getState();
-          const lastUsage = [...state.messages]
-            .reverse()
-            .find((m) => m.role === "assistant" && m.apiMessage?.usage)?.apiMessage?.usage;
-          const contextWindow = getOptions()?.config?.contextWindow;
-          if (
-            lastUsage &&
-            typeof contextWindow === "number" &&
-            contextWindow > 0
-          ) {
-            const used = Number(lastUsage.input ?? 0) + Number(lastUsage.cacheRead ?? 0) + Number(lastUsage.output ?? 0);
-            if (used / contextWindow >= COMPACTION_TRIGGER_RATIO) {
-              const done = await runCompaction({ manual: false });
-              if (done) microcompactRef.value = null; // 压缩后重算（压缩条目已是权威）
-            }
+          const options = getOptions();
+          const watermark = computeCompactionWatermark(
+            options?.config?.contextWindow,
+            options?.config?.maxOutputTokens,
+            getPromptCeiling?.(modelKeyOf(options?.config)),
+          );
+          // 元数据缺失（拿不到 contextWindow）→ 不猜，退化为只给手动 /compact。
+          if (watermark === undefined) return;
+          const used = lastUsedTokens(getState().messages);
+          if (used >= watermark) {
+            await runCompaction({ manual: false });
           }
         } catch (err) {
           console.warn("[compaction] auto check failed (sending as-is):", err);
@@ -314,6 +345,31 @@ export function createConversationController(deps) {
           }
           console.warn("[retry] adjudication errorMessage =", JSON.stringify(errorMessage), "retryable =", isRetryableError(errorMessage), "attempt =", attempt, "MAX =", MAX_AUTO_RETRIES);
           if (!isRetryableError(errorMessage) || attempt >= MAX_AUTO_RETRIES || contentCommitted) {
+            // Fail-Fast（2026-10-05）：prompt 已达水位线仍以「连接/上下文」类错误失败
+            // ⇒ 说明声明窗口偏乐观。把这次失败的 prompt 大小记为经验上限（只收紧不放宽），
+            // 后续 computeCompactionWatermark 会据此更早压缩。此处**不**内联压缩——本轮已
+            // 失败，压缩交给下一次发送的 autoCompact 判定，避免在错误路径上再叠一次可能同样
+            // 失败的模型调用。持久化由注入的 deps.onPromptCeilingExceeded 负责。
+            try {
+              const options = getOptions();
+              const modelKey = modelKeyOf(options?.config);
+              const watermark = computeCompactionWatermark(
+                options?.config?.contextWindow,
+                options?.config?.maxOutputTokens,
+                getPromptCeiling?.(modelKey),
+              );
+              const used = lastUsedTokens(getState().messages);
+              if (
+                used > 0 &&
+                watermark !== undefined &&
+                used >= watermark &&
+                isContextishError(errorMessage)
+              ) {
+                onPromptCeilingExceeded?.(modelKey, used);
+              }
+            } catch (err) {
+              console.warn("[compaction] ceiling fail-fast check failed:", err);
+            }
             // 重试耗尽 / 不可重试 / 内容已提交：收敛为最终 error 行
             // finish 保持 state.retryAttempts（轮次级字段），但要把记录固化到 assistant 条目上
             setState((prev) => {

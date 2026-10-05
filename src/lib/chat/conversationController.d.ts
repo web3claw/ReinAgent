@@ -46,6 +46,16 @@ export interface ConversationControllerOptions {
   onTurnBegin?: (turnId: string) => void;
   /** 压缩生命周期事件（started/done/failed/skipped），供池转发 UI */
   onCompactionEvent?: (event: { type: string; manual?: boolean; error?: string; turnCount?: number; summaryChars?: number }) => void;
+  /**
+   * Fail-Fast：读取某模型（键 `provider/modelId`）的经验 prompt 上限 tokens；
+   * 缺省 = 没有记录。用于把压缩水位线收敛到实测真实限制（见 promptCeiling.ts）。
+   */
+  getPromptCeiling?: (modelKey: string) => number | undefined;
+  /**
+   * Fail-Fast：prompt 已达水位线却仍以连接/上下文类错误失败时上报其大小；
+   * 实现方（池）负责持久化（只收紧不放宽）。
+   */
+  onPromptCeilingExceeded?: (modelKey: string, failedPromptTokens: number) => void;
 }
 
 export interface ConversationController {

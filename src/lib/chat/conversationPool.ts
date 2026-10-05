@@ -21,6 +21,7 @@ import { runAgentTurn } from "../providers/runAgentTurn";
 import type { AgentSource, ApprovalCoordinator, ApprovalDecision } from "../providers/runAgentTurn";
 import { invoke } from "@tauri-apps/api/core";
 import { loadProvidersConfigFromDisk } from "../../components/settings/model-provider/types";
+import { readPromptCeiling, recordPromptCeiling } from "./promptCeiling";
 
 /** 发送选项形状 = controller deps 的 getOptions 返回类型（单一真源，避免漂移） */
 type ControllerDeps = Parameters<typeof createConversationController>[0];
@@ -288,6 +289,11 @@ function createEntry(taskId: string): PoolEntry {
         }
       });
     },
+    // Fail-Fast 经验上限（2026-10-05）：大 prompt 上的连接/上下文类失败会被 controller
+    // 上报，这里落到 kv（只收紧）；下次发送的压缩水位线据此下调，更早触发压缩。
+    getPromptCeiling: (modelKey) => readPromptCeiling(modelKey),
+    onPromptCeilingExceeded: (modelKey, failedPromptTokens) =>
+      recordPromptCeiling(modelKey, failedPromptTokens),
     getState: () => entry.state,
     setState: (updater) => {
       entry.state = updater(entry.state);

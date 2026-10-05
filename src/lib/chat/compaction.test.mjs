@@ -141,26 +141,47 @@ test("extractSummary：剥离代码围栏与首尾空白", () => {
   assert.equal(extractSummary("没有围栏"), "没有围栏");
 });
 
-test("microcompactMessages：只裁较早轮的大工具结果；当轮不动；小结果不动", () => {
+// 微压缩作用于 **发送用的 pi-ai 消息数组**（工具条目 role="toolResult"、正文在 content 的
+// text 块里），不是时间线条目（role="tool" + resultText）——2026-10-05 修正的形状错配。
+const apiUser = (id, text) => ({ role: "user", content: text });
+const apiAssistant = (id, text) => ({
+  role: "assistant",
+  content: [{ type: "text", text }],
+});
+const apiToolResult = (id, text) => ({
+  role: "toolResult",
+  toolCallId: `call-${id}`,
+  toolName: "read_file",
+  content: [{ type: "text", text }],
+  isError: false,
+});
+
+test("microcompactMessages：只裁较早的大工具结果；尾部保持全文；小结果不动；不改原件", () => {
   const big = "x".repeat(5000);
+  const originalBig = apiToolResult("t0", big);
   const messages = [
-    user("u0", "q0"),
-    tool("t0", "read_file", big),               // 早 + 大 → 裁
-    user("u1", "q1"),
-    assistant("a1", "r1"),
-    user("u2", "q2"),
-    assistant("a2", "r2"),
-    tool("t2a", "read_file", big),              // 尾部 6 条内 → 不裁
-    tool("t2b", "read_file", "small"),          // 小 → 不裁
+    apiUser("u0", "q0"),
+    originalBig,                                  // 早 + 大 → 裁
+    apiUser("u1", "q1"),
+    apiAssistant("a1", "r1"),
+    apiUser("u2", "q2"),
+    apiAssistant("a2", "r2"),
+    apiToolResult("t2a", big),                    // 尾部 keepLastEntries 内 → 不裁
+    apiToolResult("t2b", "small"),                // 小 → 不裁
   ];
   const out = microcompactMessages(messages, { keepLastEntries: 6 });
-  assert.ok(out[1].resultText.includes("microcompacted"), "早且大的结果应被裁");
-  assert.ok(out[1].resultText.length < big.length, "裁后应显著变短");
-  assert.equal(out[6].resultText, big, "尾部 6 条内不裁");
-  assert.equal(out[7].resultText, "small", "小结果不裁");
+  const trimmed = out[1].content[0].text;
+  assert.ok(trimmed.includes("microcompacted"), "早且大的结果应被裁");
+  assert.ok(trimmed.length < big.length, "裁后应显著变短");
+  assert.equal(out[6].content[0].text, big, "尾部 keepLastEntries 内不裁");
+  assert.equal(out[7].content[0].text, "small", "小结果不裁");
+  assert.equal(originalBig.content[0].text, big, "不得改写时间线里的 apiMessage 原件");
+  // 幂等/单调：对已裁数组再跑一次结果不变（认省略标记，不再二次裁剪）
+  const twice = microcompactMessages(out, { keepLastEntries: 6 });
+  assert.equal(twice[1].content[0].text, trimmed, "已裁过的结果不再二次裁剪");
 });
 
 test("microcompactMessages：无超限结果时原引用返回（不重建数组）", () => {
-  const messages = [user("u0", "q"), tool("t0", "read_file", "小")];
+  const messages = [apiUser("u0", "q"), apiToolResult("t0", "小")];
   assert.equal(microcompactMessages(messages), messages, "无变化应返回同一引用");
 });

@@ -18,10 +18,79 @@ import type { TimelineEntry } from "./conversationModel";
 
 /** 压缩后保留的原样轮数（对齐 ZCode 默认保留近段）。 */
 export const KEEP_RECENT_TURNS = 4;
-/** 触发自动压缩的上下文使用率阈值（80%，与 TASKS.md 定档一致）。 */
-export const COMPACTION_TRIGGER_RATIO = 0.8;
 /** 压缩条目的 kind 标记。 */
 export const COMPACT_KIND = "compact" as const;
+
+/**
+ * 触发自动压缩的水位线比例——作用于「可用 prompt 空间」而非整个声明窗口。
+ *
+ * 为什么不用「声明窗口 × 80%」（旧实现）：那套算法在大窗口模型上会等得太晚。
+ * 实测 2026-10-05：deepseek-flash 声明 `contextWindow = 1,048,576`，旧阈值要
+ * ~83.9 万 tokens 才触发；而该会话在 **~55 万 tokens 就以 `Connection error.` 断连**
+ * （详见 PROJECT_CONTEXT「LLM 流式本地反代」/ 本模块 design note）。声明窗口偏乐观，
+ * 必须留出余量、并允许被实测经验（见 observedCeilingTokens）继续收紧。
+ */
+export const COMPACTION_WATERMARK_RATIO = 0.7;
+/** 上游未声明 maxOutputTokens 时的输出预留比例（内部预算常量，非对上游元数据的捏造）。 */
+export const OUTPUT_RESERVE_RATIO = 0.25;
+/** 经验上限安全系数：学到「多大会失败」后，把水位线压到它的这个比例之下。 */
+export const OBSERVED_CEILING_SAFETY_RATIO = 0.7;
+
+/** 模型标识键（经验上限按「服务商/模型」维度存储）。 */
+export function modelKeyOf(config?: { provider?: string; modelId?: string } | null): string {
+  return `${config?.provider ?? ""}/${config?.modelId ?? ""}`;
+}
+
+/**
+ * 可用 prompt 空间 = 声明窗口 − 输出预留。
+ *
+ * 我们每个请求都会发 `max_output_tokens`（当前等于模型的 maxOutputTokens，deepseek-flash
+ * 为 393,216）。若上游按 `input + max_output ≤ window` 校验，prompt 真正能占的空间比
+ * 声明窗口小一截（1,048,576 − 393,216 ≈ 655K）——水位线必须建在这个空间上。
+ * `contextWindow` 非法/未知 → undefined（No-Fallback：不猜）。
+ */
+export function availablePromptTokens(
+  contextWindow: unknown,
+  maxOutputTokens: unknown,
+): number | undefined {
+  if (typeof contextWindow !== "number" || !Number.isFinite(contextWindow) || contextWindow <= 0) {
+    return undefined;
+  }
+  const reserve =
+    typeof maxOutputTokens === "number" && Number.isFinite(maxOutputTokens) && maxOutputTokens > 0
+      ? maxOutputTokens
+      : Math.round(contextWindow * OUTPUT_RESERVE_RATIO);
+  const available = contextWindow - reserve;
+  // 预留吃满/超过窗口（如 maxOutputTokens ≥ contextWindow）→ 视为无法判定，
+  // 不返回 0（那会让水位线为 0、每轮都压）；交给手动 /compact，绝不猜。
+  return available > 0 ? available : undefined;
+}
+
+/**
+ * 计算自动压缩水位线（tokens）：
+ * - 基准 = 可用空间 × `COMPACTION_WATERMARK_RATIO`；
+ * - 若已有「经验上限」（某次大 prompt 失败被 Fail-Fast 记录），再取
+ *   `min(基准, 经验上限 × OBSERVED_CEILING_SAFETY_RATIO)`——让系统依据实测收敛到
+ *   本机/本账号的真实限制，而不是相信服务端声明的窗口；
+ * - 拿不到 `contextWindow` → undefined（退化为只给手动 `/compact`，绝不猜）。
+ */
+export function computeCompactionWatermark(
+  contextWindow: unknown,
+  maxOutputTokens: unknown,
+  observedCeilingTokens?: number | null,
+): number | undefined {
+  const available = availablePromptTokens(contextWindow, maxOutputTokens);
+  if (available === undefined) return undefined;
+  const base = Math.round(available * COMPACTION_WATERMARK_RATIO);
+  if (
+    typeof observedCeilingTokens === "number" &&
+    Number.isFinite(observedCeilingTokens) &&
+    observedCeilingTokens > 0
+  ) {
+    return Math.min(base, Math.round(observedCeilingTokens * OBSERVED_CEILING_SAFETY_RATIO));
+  }
+  return base;
+}
 
 export interface TurnSlice {
   /** 轮在 messages 里的起止下标 [start, end)（含 user，含其后全部活动） */
@@ -193,36 +262,70 @@ export function isCompactEntry(entry: TimelineEntry): boolean {
 }
 
 /**
- * microcompact：发送前裁剪**较早轮次**的大工具结果（对齐 ZCode microcompact）。
- * - 只裁 tool 条目的 resultText（首部 + 尾部保留，中间以省略标记替代）；
- * - 当轮（ reciente）条目不动：`keepLastEntries` 指定从尾部起保留多少条不裁；
- * - 只影响发送视图，不改时间线（展示仍看原结果）。
+ * microcompact：发送前裁剪**较早的**大工具结果（对齐 ZCode microcompact）。
+ *
+ * ⚠ 数据形状（2026-10-05 修复历史 bug）：本函数作用于 `toApiMessages()` 产出的
+ * pi-ai 消息数组——工具条目的 `role` 是 `"toolResult"`，正文在 `content` 的
+ * `{ type: "text", text }` 块里。**不是**时间线条目（那是 `role: "tool"` + `resultText`）。
+ * 旧实现只认时间线条目形状，调用点却一直传发送用的消息数组，两边对不上 ⇒ 一条都没
+ * 裁过、上下文只增不减（正是 23 轮 / 226 步会话涨到 55 万 tokens 后断连的根源之一）。
+ *
+ * 语义约束（缓存友好）：
+ * - **只改发送视图**：返回新的数组/对象，绝不改写时间线里的 `apiMessage` 原件
+ *   （`toApiMessages` 是按引用推入这些原件的）；
+ * - **确定性 + 幂等 + 单调**：同一输入永远同一输出；已带省略标记的不再二次裁剪，
+ *   因此「裁过就不再变」，不会每步改写前缀、打穿 prompt 缓存；
+ * - 尾部 `keepLastEntries` 条保持全文（模型当前还在用的结果不裁）；
+ * - 只裁大块（> threshold），小结果与其后随内容不动——无收益的改写只会拖累缓存。
  */
 export const MICROCOMPACT_THRESHOLD_BYTES = 4096;
 export const MICROCOMPACT_KEEP_HEAD = 800;
 export const MICROCOMPACT_KEEP_TAIL = 400;
+export const MICROCOMPACT_KEEP_LAST_ENTRIES = 6;
+const MICROCOMPACT_MARKER = "…[microcompacted:";
 
-export function microcompactMessages(
-  messages: TimelineEntry[],
-  options?: { thresholdBytes?: number; keepLastEntries?: number },
-): TimelineEntry[] {
+/** microcompact 作用的最小消息形状（pi-ai `Message` 的结构子集，避免类型耦合）。 */
+export interface MicrocompactMessage {
+  role?: string;
+  content?: unknown;
+}
+
+export function microcompactMessages<T extends MicrocompactMessage>(
+  messages: T[],
+  options?: { thresholdBytes?: number; keepLastEntries?: number; keepHead?: number; keepTail?: number },
+): T[] {
   const threshold = options?.thresholdBytes ?? MICROCOMPACT_THRESHOLD_BYTES;
-  const keepLast = options?.keepLastEntries ?? 6;
+  const keepLast = options?.keepLastEntries ?? MICROCOMPACT_KEEP_LAST_ENTRIES;
+  const keepHead = options?.keepHead ?? MICROCOMPACT_KEEP_HEAD;
+  const keepTail = options?.keepTail ?? MICROCOMPACT_KEEP_TAIL;
   const cutFrom = Math.max(0, messages.length - keepLast);
   let changed = false;
   const out = messages.map((entry, index) => {
-    if (index >= cutFrom) return entry;
-    if (entry.role !== "tool" || !entry.resultText || entry.resultText.length <= threshold) {
-      return entry;
-    }
+    if (index >= cutFrom || !entry || entry.role !== "toolResult") return entry;
+    const content = entry.content;
+    if (!Array.isArray(content)) return entry;
+    let entryChanged = false;
+    const nextContent = content.map((block) => {
+      if (!block || typeof block !== "object") return block;
+      const typed = block as { type?: unknown; text?: unknown };
+      if (
+        typed.type !== "text" ||
+        typeof typed.text !== "string" ||
+        typed.text.length <= threshold ||
+        typed.text.includes(MICROCOMPACT_MARKER)
+      ) {
+        return block;
+      }
+      const omitted = typed.text.length - keepHead - keepTail;
+      entryChanged = true;
+      return {
+        ...(block as object),
+        text: `${typed.text.slice(0, keepHead)}\n${MICROCOMPACT_MARKER} ${omitted} chars omitted for context budget; full result remains in the UI]…\n${typed.text.slice(-keepTail)}`,
+      };
+    });
+    if (!entryChanged) return entry;
     changed = true;
-    const head = entry.resultText.slice(0, MICROCOMPACT_KEEP_HEAD);
-    const tail = entry.resultText.slice(-MICROCOMPACT_KEEP_TAIL);
-    const omitted = entry.resultText.length - MICROCOMPACT_KEEP_HEAD - MICROCOMPACT_KEEP_TAIL;
-    return {
-      ...entry,
-      resultText: `${head}\n…[microcompacted: ${omitted} chars omitted for context budget; full result remains in the UI]…\n${tail}`,
-    };
+    return { ...entry, content: nextContent } as T;
   });
   return changed ? out : messages;
 }
