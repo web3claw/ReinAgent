@@ -80,11 +80,12 @@ export function normalizeBaseUrl(raw: string | undefined): string | undefined {
  * UI 不展示）。取值 32000：与 LiveAgent MAX_OUTPUT_TOKEN_CAP / OpenCode
  * OUTPUT_TOKEN_MAX 同值，足以容纳长回答。
  *
- * ⚠ 为什么 openai-completions 未知时也必须发送（不能省略）：实测（2026-10-05，
- * 用户反馈 GonkaRouter 流式经常半途无声截断）——不发 max_tokens 时上游套用自家
- * 默认输出上限（GonkaRouter GLM-5.3-Flash 实测 3072 tokens 即 finish=length，
- * 回复半途被掐且无错误行），由服务端按模型真实上限钳制（实测发 200000 服务端
- * 接受并按需 stop）。
+ * ⚠ 为什么未知时也必须有值并发送（不能省略）：实测（2026-10-05，用户反馈
+ * GonkaRouter 流式经常半途无声截断）——不发 max_tokens 时上游套用自家默认输出
+ * 上限（GonkaRouter 实测 3072 tokens 即 finish=length，回复半途被掐且无错误行）。
+ * 该值的实际发送由 `runAgentTurn.ts` 的 `resolveMaxTokens` 在流式调用时注入
+ * （openai/responses 适配器只认 options.maxTokens；anthropic 适配器自身兜底，
+ * 见 D1 定稿 2026-10-05：照 LiveAgent「未知也发」设计）。
  */
 export const ANTHROPIC_REQUIRED_MAX_TOKENS = 32_000;
 
@@ -123,13 +124,11 @@ export function buildModel(config: ProviderConfig): Model<any> {
     config.contextWindow > 0
       ? config.contextWindow
       : 0;
-  // 最大输出：真实值必须为正有限数。未知时的处理按协议区分——
-  // - openai-completions / google：传 0（pi-ai 适配器 `if (options?.maxTokens)` 才写
-  //   max_tokens 字段，0 即不发送），由服务端按模型原生上限执行；
-  // - anthropic-messages：`max_tokens` 是协议**必填**字段，pi-ai 会
-  //   `Math.max(1, …)` 兜底成 1（会把回复截成 1 token），因此未知时发送一个
-  //   明确的「请求级上限」常量。它**不是模型元数据**：UI（模型设置/容量面板）
-  //   仍按未提供显示「未知」，绝不伪装成真实值。
+  // 最大输出：真实值必须为正有限数。未知时发 32000 请求级兜底常量——
+  // anthropic-messages 协议 max_tokens 必填（0 会被 pi-ai 兜成 1 token 截成 1）；
+  // openai / responses 协议由 runAgentTurn 的 resolveMaxTokens 注入后真实发送
+  //（不发则网关套用自家过小默认导致半途截断，见 ANTHROPIC_REQUIRED_MAX_TOKENS 注释）。
+  // 它**不是模型元数据**：UI（模型设置/容量面板）仍按未提供显示「未知」，绝不伪装成真实值。
   const knownMaxTokens =
     typeof config.maxOutputTokens === "number" &&
     Number.isFinite(config.maxOutputTokens) &&

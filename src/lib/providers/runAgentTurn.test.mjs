@@ -473,3 +473,136 @@ test("6c · 端到端：faux 转录首条 user 携带 <system-reminder> 注入�
   );
 });
 
+
+// ---------------------------------------------------------------------------
+// F1 · max_tokens 请求级注入（2026-10-05 D1 定稿：未知也发，照 LiveAgent
+// resolveMaxTokens 语义）。两层验证：纯函数单测 + 真实 pi-ai 适配器集成
+// （mock fetch 捕获请求体，证明 model.maxTokens 真的进了 HTTP 请求）。
+// ---------------------------------------------------------------------------
+
+const { resolveMaxTokens, getStreamFnForApi } = await import("./runAgentTurn.ts");
+const { normalizeContext } = await import("@earendil-works/pi-ai/utils/transcript");
+
+test("F1-1 · resolveMaxTokens：未知发模型兜底 / 已知取小者 / 模型上限非法透传", () => {
+  // 未指定 → 发模型 maxTokens（真实元数据值或 32000 请求级兜底）
+  assert.equal(resolveMaxTokens(undefined, 32000), 32000);
+  assert.equal(resolveMaxTokens(undefined, 64_000), 64_000);
+  // 显式指定 → 取 min（钳到模型上限）
+  assert.equal(resolveMaxTokens(100, 32000), 100);
+  assert.equal(resolveMaxTokens(50_000, 32_000), 32_000);
+  // 模型上限非法（≤0/NaN/undefined）→ 原样透传 requested，不注入
+  assert.equal(resolveMaxTokens(undefined, 0), undefined);
+  assert.equal(resolveMaxTokens(undefined, Number.NaN), undefined);
+  assert.equal(resolveMaxTokens(undefined, undefined), undefined);
+  assert.equal(resolveMaxTokens(128, 0), 128);
+  // 0/负值 requested 视同未指定
+  assert.equal(resolveMaxTokens(0, 32000), 32000);
+});
+
+/** 经真实 pi-ai 适配器发起流式调用，用 mock fetch 捕获请求体。 */
+async function captureStreamRequest(api, model, extraOptions = {}) {
+  const stream = await getStreamFnForApi(api);
+  const captured = [];
+  const mockFetch = async (url, init) => {
+    let body = undefined;
+    try {
+      body = JSON.parse(typeof init?.body === "string" ? init.body : "{}");
+    } catch {
+      body = {};
+    }
+    captured.push({ url: String(url), body });
+    // 极简 SSE：只剩 DONE 帧——适配器对空流如何收尾与本测试无关，请求体已捕获。
+    return new Response("data: [DONE]\n\n", {
+      status: 200,
+      headers: { "content-type": "text/event-stream" },
+    });
+  };
+  const context = normalizeContext({
+    systemPrompt: "",
+    messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
+  });
+  const events = stream(model, context, { apiKey: "test-key", fetch: mockFetch, ...extraOptions });
+  try {
+    for await (const _event of events) {
+      void _event; // 消费到流结束/出错为止；请求体在 fetch 时已捕获
+    }
+  } catch {
+    // 空流的收尾行为（错误事件/异常）不属于本测试断言范围
+  }
+  return captured;
+}
+
+const BASE_MODEL = {
+  id: "test-model",
+  name: "test-model",
+  provider: "deepseek",
+  reasoning: false,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 0,
+};
+
+test("F1-2 · openai-completions：model.maxTokens 经注入真实进入请求体（修复前不发）", async () => {
+  const captured = await captureStreamRequest("openai-completions", {
+    ...BASE_MODEL,
+    api: "openai-completions",
+    baseUrl: "https://api.example.com/v1",
+    maxTokens: 32000,
+  });
+  assert.ok(captured.length > 0, "mock fetch 应被真实适配器调用");
+  assert.ok(
+    captured[0].url.includes("/chat/completions"),
+    `应请求 chat/completions 端点，实际 ${captured[0].url}`,
+  );
+  assert.equal(
+    captured[0].body.max_tokens,
+    32000,
+    "修复前 options.maxTokens 为 undefined → max_tokens 不进请求体；注入后必须是 32000",
+  );
+});
+
+test("F1-3 · openai-responses：注入后 max_output_tokens 真实进入请求体", async () => {
+  const captured = await captureStreamRequest("openai-responses", {
+    ...BASE_MODEL,
+    api: "openai-responses",
+    provider: "custom",
+    baseUrl: "https://api.example.com/v1",
+    maxTokens: 32000,
+  });
+  assert.ok(captured.length > 0, "mock fetch 应被真实适配器调用");
+  assert.ok(
+    captured[0].url.includes("/responses"),
+    `应请求 responses 端点，实际 ${captured[0].url}`,
+  );
+  assert.equal(captured[0].body.max_output_tokens, 32000);
+});
+
+test("F1-4 · anthropic-messages：行为不变（适配器本就兜底 model.maxTokens）", async () => {
+  const captured = await captureStreamRequest("anthropic-messages", {
+    ...BASE_MODEL,
+    api: "anthropic-messages",
+    provider: "anthropic",
+    baseUrl: "https://api.example.com",
+    maxTokens: 32000,
+  });
+  assert.ok(captured.length > 0, "mock fetch 应被真实适配器调用");
+  assert.ok(
+    captured[0].url.includes("/v1/messages"),
+    `Anthropic SDK 应追加 /v1/messages，实际 ${captured[0].url}`,
+  );
+  assert.equal(captured[0].body.max_tokens, 32000);
+});
+
+test("F1-5 · 调用方显式 maxTokens 被钳到模型上限（取小者）", async () => {
+  const captured = await captureStreamRequest(
+    "openai-completions",
+    {
+      ...BASE_MODEL,
+      api: "openai-completions",
+      baseUrl: "https://api.example.com/v1",
+      maxTokens: 32000,
+    },
+    { maxTokens: 100 },
+  );
+  assert.equal(captured[0].body.max_tokens, 100, "显式指定 100 < 模型 32000 → 发 100");
+});

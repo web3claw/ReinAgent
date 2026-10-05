@@ -239,7 +239,32 @@ export async function getStreamFnForApi(api: string) {
 }
 
 /**
- * 给 provider 级 stream 函数包一层：调用时往 options 注入 `fetch: llmProxyFetch`。
+ * 请求级 max_tokens 解析（照抄 LiveAgent `agent-gui/src/lib/providers/runtime/common.ts`
+ * `resolveMaxTokens` 语义，2026-10-05 D1 定稿：未知也发）：
+ * - 调用方显式指定 → 取 min(指定值, 模型上限)；
+ * - 未指定 → 发 model.maxTokens（真实元数据值或 modelFactory 的 32000 请求级兜底）——
+ *   不发时 GonkaRouter 等网关套用自家过小默认输出上限，流式回复半途无声截断；
+ * - 模型上限非法/未知（≤0/NaN）→ 原样透传 requested，不注入。
+ *
+ * pi-ai 适配器差异（为什么必须在这里注入）：anthropic 适配器自身
+ * `options?.maxTokens ?? model.maxTokens` 已兜底；openai/responses 适配器
+ * **只读 options.maxTokens**（model.maxTokens 不进请求体）。
+ */
+export function resolveMaxTokens(
+  requestedMaxTokens: number | undefined,
+  modelMaxTokens: number | undefined,
+): number | undefined {
+  if (!Number.isFinite(modelMaxTokens) || (modelMaxTokens as number) <= 0) {
+    return requestedMaxTokens;
+  }
+  if (!requestedMaxTokens || requestedMaxTokens <= 0) return modelMaxTokens;
+  return Math.min(requestedMaxTokens, modelMaxTokens as number);
+}
+
+/**
+ * 给 provider 级 stream 函数包一层：调用时往 options 注入 `fetch: llmProxyFetch`
+ * 与 `maxTokens: resolveMaxTokens(...)`（见上，openai/responses 适配器只认
+ * options.maxTokens，不注入则 model.maxTokens 永不进请求体）。
  * 适配器签名是 `(model, context, options?)`，options 里已有的 fetch 不覆盖（测试替身场景）。
  * 返回类型对齐 ProviderStreamFn（AssistantMessageEventStream，pi-ai 适配器的真实返回）。
  */
@@ -260,6 +285,10 @@ function wrapStreamWithProxiedFetch<TModel extends { api: string }>(
   | Promise<import("@earendil-works/pi-ai").AssistantMessageEventStream> {
   return (model, context, options) => {
     const nextOptions: Record<string, unknown> = { ...(options ?? {}) };
+    nextOptions.maxTokens = resolveMaxTokens(
+      nextOptions.maxTokens as number | undefined,
+      (model as { maxTokens?: number }).maxTokens,
+    );
     if (nextOptions.fetch === undefined) {
       nextOptions.fetch = llmProxyFetch;
     }
