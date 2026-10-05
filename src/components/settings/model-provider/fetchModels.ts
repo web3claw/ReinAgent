@@ -196,6 +196,17 @@ export function mergeFetchedModels(
   return { merged, newCount };
 }
 
+/**
+ * 模型列表请求的鉴权头（需求 2026-10-05）：API Key 非空时统一附带
+ * `Authorization: Bearer <api_key>`，所有协议分支共用（含 Ollama / Anthropic /
+ * Google / OpenAI 兼容）。各家协议自身的鉴权头（x-api-key、?key=）另行叠加，
+ * 不在此处——因为部分自建网关只认 Bearer。
+ */
+export function buildModelListAuthHeaders(apiKey: string | null | undefined): Record<string, string> {
+  const key = (apiKey || "").trim();
+  return key ? { Authorization: `Bearer ${key}` } : {};
+}
+
 export async function fetchProviderModels(
   provider: ProviderItem
 ): Promise<FetchModelsResult> {
@@ -217,10 +228,19 @@ export async function fetchProviderModels(
   try {
     let res: Response | null = null;
 
+    // 需求（2026-10-05）：API Key 非空时，**所有分支**的请求头统一带上
+    // `Authorization: Bearer <api_key>`。各家协议自身的鉴权头（anthropic 的
+    // x-api-key、google 的 ?key=）保留不动，Bearer 只是额外附带——部分自建网关
+    // （如 GonkaRouter 类）只认 Bearer，协议分支判断不出却是同一套鉴权。
+    const authHeaders = buildModelListAuthHeaders(apiKey);
+
     // 1. Ollama 服务商
     if (provider.id === "ollama") {
       try {
-        const tagsRes = await proxiedFetch(`${cleanedBase}/api/tags`, { signal: controller.signal });
+        const tagsRes = await proxiedFetch(`${cleanedBase}/api/tags`, {
+          headers: { ...authHeaders },
+          signal: controller.signal,
+        });
         if (tagsRes.ok) {
           res = tagsRes;
         }
@@ -228,7 +248,10 @@ export async function fetchProviderModels(
         // 请求失败，尝试 /v1/models
       }
       if (!res || !res.ok) {
-        res = await proxiedFetch(`${ensureV1BaseUrl(cleanedBase)}/models`, { signal: controller.signal });
+        res = await proxiedFetch(`${ensureV1BaseUrl(cleanedBase)}/models`, {
+          headers: { ...authHeaders },
+          signal: controller.signal,
+        });
       }
     }
     // 2. Anthropic Messages 协议（标准请求 /v1/models）
@@ -237,6 +260,7 @@ export async function fetchProviderModels(
       res = await proxiedFetch(endpoint, {
         method: "GET",
         headers: {
+          ...authHeaders,
           "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
         },
@@ -249,6 +273,7 @@ export async function fetchProviderModels(
       res = await proxiedFetch(endpoint, {
         method: "GET",
         headers: {
+          ...authHeaders,
           "Content-Type": "application/json",
         },
         signal: controller.signal,
@@ -259,9 +284,7 @@ export async function fetchProviderModels(
       const targetUrl = `${ensureV1BaseUrl(cleanedBase)}/models`;
       res = await proxiedFetch(targetUrl, {
         method: "GET",
-        headers: {
-          ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),
-        },
+        headers: { ...authHeaders },
         signal: controller.signal,
       });
     }

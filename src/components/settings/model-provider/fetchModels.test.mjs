@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mergeFetchedModels } from "./fetchModels.ts";
+import { mergeFetchedModels, buildModelListAuthHeaders } from "./fetchModels.ts";
 
 test("mergeFetchedModels: retains existing models state and appends new ones", () => {
   const existing = [
@@ -212,3 +212,47 @@ test("parseProviderRawModels: accurately parses supports_images and supports_ima
   assert.equal(parsed[2].supportsImage, true);
 });
 
+
+// ---- 需求 2026-10-05：模型列表请求头统一附带 Authorization: Bearer ----
+
+test("buildModelListAuthHeaders: API Key 非空 → Authorization: Bearer <key>", () => {
+  assert.deepEqual(buildModelListAuthHeaders("sk-abc123"), {
+    Authorization: "Bearer sk-abc123",
+  });
+});
+
+test("buildModelListAuthHeaders: 去除首尾空白后再拼 Bearer", () => {
+  assert.deepEqual(buildModelListAuthHeaders("  sk-padded  "), {
+    Authorization: "Bearer sk-padded",
+  });
+});
+
+test("buildModelListAuthHeaders: Key 为空/空白/undefined/null → 不带 Authorization", () => {
+  assert.deepEqual(buildModelListAuthHeaders(""), {});
+  assert.deepEqual(buildModelListAuthHeaders("   "), {});
+  assert.deepEqual(buildModelListAuthHeaders(undefined), {});
+  assert.deepEqual(buildModelListAuthHeaders(null), {});
+});
+
+test("buildModelListAuthHeaders: 返回对象可直接展开进任意协议分支的 headers", () => {
+  // 与 anthropic 分支的实际用法一致：Bearer 与协议原生头共存
+  const merged = { ...buildModelListAuthHeaders("k1"), "x-api-key": "k1", "anthropic-version": "2023-06-01" };
+  assert.equal(merged.Authorization, "Bearer k1");
+  assert.equal(merged["x-api-key"], "k1");
+  assert.equal(merged["anthropic-version"], "2023-06-01");
+});
+
+test("fetchProviderModels 源码：四个协议分支均使用 authHeaders（防回归）", async () => {
+  const { readFileSync } = await import("node:fs");
+  const src = readFileSync(new URL("./fetchModels.ts", import.meta.url), "utf8");
+  const fn = src.slice(src.indexOf("export async function fetchProviderModels"));
+  // 每个分支的 headers 都必须展开 authHeaders
+  const uses = (fn.match(/\.\.\.authHeaders/g) || []).length;
+  assert.ok(uses >= 4, `期望至少 4 处 ...authHeaders（Ollama/Anthropic/Google/OpenAI），实际 ${uses}`);
+  // 不允许再出现散落的内联 Bearer 拼接（统一走 helper）
+  assert.equal(
+    /Authorization:\s*`Bearer/.test(fn),
+    false,
+    "不应再内联拼 Bearer，统一用 buildModelListAuthHeaders",
+  );
+});
