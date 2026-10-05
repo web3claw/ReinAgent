@@ -1,5 +1,6 @@
 import type { ProviderItem } from "./types";
 import { cleanBaseUrl, ensureV1BaseUrl } from "../../../lib/providers/modelFactory";
+import { proxiedFetch } from "../../../lib/web/proxiedFetch";
 
 export interface ConnectivityResult {
   success: boolean;
@@ -32,7 +33,7 @@ export async function testModelConnectivity(
 
     if (provider.apiFormat === "anthropic-messages") {
       const endpoint = `${ensureV1BaseUrl(cleanedBase)}/messages`;
-      res = await fetch(endpoint, {
+      res = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -48,7 +49,7 @@ export async function testModelConnectivity(
       });
     } else if (provider.apiFormat === "google-generative-ai") {
       const endpoint = `${cleanedBase}/models/${modelId}:generateContent?key=${apiKey}`;
-      res = await fetch(endpoint, {
+      res = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -61,7 +62,7 @@ export async function testModelConnectivity(
       });
     } else if (provider.apiFormat === "openai-responses") {
       const endpoint = `${ensureV1BaseUrl(cleanedBase)}/responses`;
-      res = await fetch(endpoint, {
+      res = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -77,7 +78,7 @@ export async function testModelConnectivity(
     } else {
       // 默认 openai-chat-completions / openai-completions 兼容接口：标准 /v1/chat/completions
       const endpoint = `${ensureV1BaseUrl(cleanedBase)}/chat/completions`;
-      res = await fetch(endpoint, {
+      res = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",

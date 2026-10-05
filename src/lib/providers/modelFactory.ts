@@ -51,9 +51,15 @@ export function normalizeBaseUrl(raw: string | undefined): string | undefined {
 }
 
 /**
- * Anthropic Messages 协议的 `max_tokens` 是必填字段；当模型元数据未声明最大输出时，
- * 用它作为**请求级上限**（文档语义：非元数据，UI 不展示）。
- * 取值 32000：足以容纳长回答，同时避免某些服务端对「无上限」的畸形处理。
+ * 模型元数据未声明最大输出时的**请求级 max_tokens 兜底**（文档语义：非元数据，
+ * UI 不展示）。取值 32000：与 LiveAgent MAX_OUTPUT_TOKEN_CAP / OpenCode
+ * OUTPUT_TOKEN_MAX 同值，足以容纳长回答。
+ *
+ * ⚠ 为什么 openai-completions 未知时也必须发送（不能省略）：实测（2026-10-05，
+ * 用户反馈 GonkaRouter 流式经常半途无声截断）——不发 max_tokens 时上游套用自家
+ * 默认输出上限（GonkaRouter GLM-5.3-Flash 实测 3072 tokens 即 finish=length，
+ * 回复半途被掐且无错误行），由服务端按模型真实上限钳制（实测发 200000 服务端
+ * 接受并按需 stop）。
  */
 export const ANTHROPIC_REQUIRED_MAX_TOKENS = 32_000;
 
@@ -97,8 +103,7 @@ export function buildModel(config: ProviderConfig): Model<any> {
     config.maxOutputTokens > 0
       ? config.maxOutputTokens
       : undefined;
-  const maxTokens =
-    knownMaxTokens ?? (meta.api === "anthropic-messages" ? ANTHROPIC_REQUIRED_MAX_TOKENS : 0);
+  const maxTokens = knownMaxTokens ?? ANTHROPIC_REQUIRED_MAX_TOKENS;
   // 多模态：只有明确 true 才声明 image（未声明/未知一律纯文本，不臆测）。
   const input: ("text" | "image")[] = config.supportsImage === true ? ["text", "image"] : ["text"];
 

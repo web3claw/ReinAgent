@@ -16,6 +16,10 @@
     },
     "store:default",
     "window-state:default",
-    "notification:default"
+    "notification:default",
+    {
+      "identifier": "http:default",
+      "allow": [{ "url": "https://**" }, { "url": "http://*:*" }]
+    }
   ]
 }

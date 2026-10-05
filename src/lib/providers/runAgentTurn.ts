@@ -5,6 +5,7 @@ import type { RunTurnResult } from "../agent/agentRuntime";
 import { DEFAULT_MAX_STEPS, getTools, resolveToolPermissionKind } from "../agent/tools";
 import { buildModel } from "./modelFactory";
 import type { ProviderConfig } from "./modelFactory";
+import { llmProxyFetch } from "../web/llmProxyFetch";
 import { getFauxAgentSource } from "./fauxSource";
 import type { ProviderType } from "./catalog";
 import { runWorkspaceHooks, fireLifecycleHook } from "../hooks/hooksRuntime";
@@ -212,18 +213,54 @@ const APPROVAL_HINT_PROMPT =
  * 裸 `stream` 只认已变换好的 `reasoningEffort` —— 传 `reasoning` 会被无视，
  * 且对 DeepSeek 等协议会落入「显式禁用思考」分支（thinking: disabled），
  * 导致模型永远不输出思考过程。
+ *
+ * 出站 HTTP 统一走 llmProxyFetch（Rust 本地流式反代：webview 只发 localhost 同源
+ * 请求，Rust reqwest 直连上游流式回传——绕开 webview CORS 与 tauri-plugin-http
+ * 的 IPC 逐块中继，后者高吞吐长流会无声截断；应用内代理设置在 Rust 侧生效）：
+ * openai / anthropic 适配器把 `options.fetch` 接进其 HTTP client，注入即生效。
+ * google-generative-ai 适配器明确拒绝自定义 fetch（其底层 @google/genai 经
+ * `httpOptions` 不暴露 fetcher），保持原生 fetch——Google 端点本身支持 CORS。
  */
 export async function getStreamFnForApi(api: string) {
   if (api === "anthropic-messages") {
     const mod = await import("@earendil-works/pi-ai/api/anthropic-messages");
-    return mod.streamSimple ?? mod.stream;
+    return wrapStreamWithProxiedFetch(mod.streamSimple ?? mod.stream);
   }
   if (api === "google-generative-ai") {
     const mod = await import("@earendil-works/pi-ai/api/google-generative-ai");
     return mod.streamSimple ?? mod.stream;
   }
   const mod = await import("@earendil-works/pi-ai/api/openai-completions");
-  return mod.streamSimple ?? mod.stream;
+  return wrapStreamWithProxiedFetch(mod.streamSimple ?? mod.stream);
+}
+
+/**
+ * 给 provider 级 stream 函数包一层：调用时往 options 注入 `fetch: llmProxyFetch`。
+ * 适配器签名是 `(model, context, options?)`，options 里已有的 fetch 不覆盖（测试替身场景）。
+ * 返回类型对齐 ProviderStreamFn（AssistantMessageEventStream，pi-ai 适配器的真实返回）。
+ */
+function wrapStreamWithProxiedFetch<TModel extends { api: string }>(
+  stream: (
+    model: TModel,
+    context: import("@earendil-works/pi-ai").TranscriptContext,
+    options?: Record<string, unknown>,
+  ) =>
+    | import("@earendil-works/pi-ai").AssistantMessageEventStream
+    | Promise<import("@earendil-works/pi-ai").AssistantMessageEventStream>,
+): (
+  model: TModel,
+  context: import("@earendil-works/pi-ai").TranscriptContext,
+  options?: Record<string, unknown>,
+) =>
+  | import("@earendil-works/pi-ai").AssistantMessageEventStream
+  | Promise<import("@earendil-works/pi-ai").AssistantMessageEventStream> {
+  return (model, context, options) => {
+    const nextOptions: Record<string, unknown> = { ...(options ?? {}) };
+    if (nextOptions.fetch === undefined) {
+      nextOptions.fetch = llmProxyFetch;
+    }
+    return stream(model, context, nextOptions);
+  };
 }
 
 /**

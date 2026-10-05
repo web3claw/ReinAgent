@@ -28,6 +28,7 @@ mod browser;
 mod system_info;
 mod app_tray;
 mod app_proxy;
+mod llm_proxy;
 mod hide_to_tray;
 mod updater;
 #[cfg(test)]
@@ -95,6 +96,7 @@ pub fn run() {
             .manage(TerminalState::default())
             .manage(std::sync::Arc::new(stt::SttManager::default()))
             .plugin(tauri_plugin_opener::init())
+            .plugin(tauri_plugin_http::init())
             .plugin(tauri_plugin_store::Builder::new().build())
             .plugin(tauri_plugin_notification::init())
             .plugin(tauri_plugin_process::init())
@@ -107,6 +109,11 @@ pub fn run() {
         let _ = SINGLE_APP_HANDLE.set(app.handle().clone());
         // 恢复「关闭时隐藏到托盘」设置（缺省开启）
         hide_to_tray::restore_hide_to_tray();
+        // LLM 流式本地反代：SDK 出站走 127.0.0.1 反代直连上游（绕开 webview 网络栈
+        // 的 CORS 与 tauri-plugin-http 的 IPC 逐块中继——后者高吞吐下会无声截断流）
+        if let Err(error) = llm_proxy::start() {
+            eprintln!("failed to start llm local proxy: {error}");
+        }
         // 系统托盘（P2-G2）：菜单 + 左键切换主窗口显隐；失败如实打日志不阻断启动
         if let Err(error) = app_tray::setup_tray(app) {
             eprintln!("failed to setup system tray: {error}");
@@ -149,6 +156,7 @@ pub fn run() {
             fs_cmd::fs_path_exists,
             fs_cmd::open_in_file_manager,
             hide_to_tray::get_hide_to_tray,
+            llm_proxy::llm_proxy_info,
             hide_to_tray::set_hide_to_tray,
             fs_cmd::shell_detect,
             fs_cmd::fs_write_file,

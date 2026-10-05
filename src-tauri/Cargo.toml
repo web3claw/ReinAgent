@@ -26,6 +26,12 @@ tauri-plugin-opener = "2"
 tauri-plugin-store = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-notification = "2"
+# 出站 HTTP（无 CORS 概念）：模型列表/对话流/标题生成统一经插件 fetch 走 Rust reqwest，
+# 顺带让「联网代理」设置对所有出站请求生效（前端原生 fetch 不吃代理且受 CORS 约束）
+tauri-plugin-http = "2"
+# LLM 本地流式反代（llm_proxy.rs）：bytes_stream 流式回传 + 按kv代理出网。
+# 版本与 tauri-plugin-http 的 reqwest 对齐（0.13），feature 并集共享同一编译单元
+reqwest = { version = "0.13", default-features = false, features = ["stream", "json"] }
 serde = { version = "1", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde_json = { version = "1", features = ["raw_value"] }
@@ -38,6 +44,7 @@ chrono = "0.4"
 ureq = { version = "3", features = ["json"] }
 html2text = "0.14"
 uuid = { version = "1", features = ["v4"] }
+bytes = "1"
 regex = "1"
 tokio-tungstenite = { version = "0.29.0", features = ["rustls-tls-webpki-roots"] }
 futures-util = "0.3.32"

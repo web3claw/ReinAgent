@@ -1,5 +1,6 @@
 import type { ProviderItem, ModelItem } from "./types";
 import { cleanBaseUrl, ensureV1BaseUrl } from "../../../lib/providers/modelFactory";
+import { proxiedFetch } from "../../../lib/web/proxiedFetch";
 
 export interface FetchModelsResult {
   success: boolean;
@@ -217,7 +218,7 @@ export async function fetchProviderModels(
     // 1. Ollama 服务商
     if (provider.id === "ollama") {
       try {
-        const tagsRes = await fetch(`${cleanedBase}/api/tags`, { signal: controller.signal });
+        const tagsRes = await proxiedFetch(`${cleanedBase}/api/tags`, { signal: controller.signal });
         if (tagsRes.ok) {
           res = tagsRes;
         }
@@ -225,13 +226,13 @@ export async function fetchProviderModels(
         // 请求失败，尝试 /v1/models
       }
       if (!res || !res.ok) {
-        res = await fetch(`${ensureV1BaseUrl(cleanedBase)}/models`, { signal: controller.signal });
+        res = await proxiedFetch(`${ensureV1BaseUrl(cleanedBase)}/models`, { signal: controller.signal });
       }
     }
     // 2. Anthropic Messages 协议（标准请求 /v1/models）
     else if (provider.apiFormat === "anthropic-messages") {
       const endpoint = `${ensureV1BaseUrl(cleanedBase)}/models`;
-      res = await fetch(endpoint, {
+      res = await proxiedFetch(endpoint, {
         method: "GET",
         headers: {
           "x-api-key": apiKey,
@@ -243,7 +244,7 @@ export async function fetchProviderModels(
     // 3. Google Generative AI 协议
     else if (provider.apiFormat === "google-generative-ai") {
       const endpoint = `${cleanedBase}/models?key=${apiKey}`;
-      res = await fetch(endpoint, {
+      res = await proxiedFetch(endpoint, {
         method: "GET",
         headers: {
           "Content-Type": "application/json",
@@ -254,7 +255,7 @@ export async function fetchProviderModels(
     // 4. OpenAI 兼容协议（openai-chat-completions / openai-responses 等）：直接请求 /v1/models，不搞智能容错
     else {
       const targetUrl = `${ensureV1BaseUrl(cleanedBase)}/models`;
-      res = await fetch(targetUrl, {
+      res = await proxiedFetch(targetUrl, {
         method: "GET",
         headers: {
           ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}),

@@ -1,5 +1,6 @@
 import type { ProviderConfig } from "../providers/modelFactory";
 import { ensureV1BaseUrl } from "../providers/modelFactory";
+import { proxiedFetch } from "../web/proxiedFetch";
 import { getProviderMeta } from "../providers/catalog";
 
 const SESSION_TITLE_SYSTEM_PROMPT = `Generate a concise title for this coding session.
@@ -101,7 +102,7 @@ export async function generateSessionTitle(
 
     if (provider === "anthropic" || meta.api === "anthropic-messages") {
       const endpoint = `${rawBaseUrl}/v1/messages`;
-      response = await fetch(endpoint, {
+      response = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -129,7 +130,7 @@ export async function generateSessionTitle(
       }
     } else if (provider === "gemini" || meta.api === "google-generative-ai") {
       const endpoint = `${rawBaseUrl}/models/${modelId}:generateContent?key=${apiKey}`;
-      response = await fetch(endpoint, {
+      response = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -161,7 +162,7 @@ export async function generateSessionTitle(
       // 默认走 OpenAI 兼容协议 (DeepSeek, OpenAI, Ollama, Custom 等)：统一补全 /v1/chat/completions
       const endpoint = `${ensureV1BaseUrl(rawBaseUrl)}/chat/completions`;
 
-      response = await fetch(endpoint, {
+      response = await proxiedFetch(endpoint, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
