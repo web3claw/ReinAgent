@@ -938,6 +938,9 @@ ReinAgent 架构全景
   - **设置「终端配置」tab 落地**（原 coming soon）：shell 预设下拉（PowerShell/CMD/Git Bash 路径/自定义）+ 字号/回滚缓冲数字 + 字体族 + 保存；`TerminalSettingsSection.tsx`。
   - **TerminalPane 消费**：xterm options（fontSize/fontFamily/scrollback）+ createTerminalSession 传 shell；**effect 依赖加 settings 字段**（改配置重开面板即生效——重建实例+PTY）。
   - **E2E**：设置 shell=CMD + 字号 18 → 保存 → 开终端面板 → cmd.exe 被拉起 + 字号非默认 ✓。测试配置已重置默认。
+  - **Linux 终端两处修复（2026-10-05，用户实测「fish 打开全空白无提示符」「图标显示方框」）**：
+    - ① **TERM 继承陷阱**：`terminal.rs` 从不设置 `TERM`，PTY 子进程继承启动链的父环境——GUI / `nohup tauri dev` 链路下常为 `TERM=dumb`，starship 等提示符框架遇 dumb 终端直接拒绝渲染（实测报 `Under a 'dumb' terminal`）→ 面板空白。修复 = 启动时若 `TERM` 为空/`dumb`/`unknown` 则显式设 `xterm-256color`，并补 `COLORTERM=truecolor`（保留用户有效值不覆盖）。
+    - ② **Nerd Font 字形缺失**：`TerminalPane.tsx` 字体写死 `Consolas, Menlo, Monaco, 'Courier New', monospace`（全无私有区字形），starship 图标显示方框。修复 = 字体栈改为 Nerd Font 优先（`FiraCode Nerd Font Mono`/`FiraCode Nerd Font`/JetBrainsMono/Hack/Symbols/MesloLGS）+ 平台默认等宽回退（本机 `~/.fonts/` 已装 FiraCode Nerd Font）。
 - **P2 尾巴批 14：终端 Shell 自动检测 + 精简 ✅（2026-09-30，用户多轮反馈收敛）**：
   - **用户要求**：终端配置只保留 Shell（字号/回滚/字体族 UI 与代码全删，xterm 恢复 13px 默认）；迁入「基础配置」tab；**去掉「平台默认」抽象选项**——必须有确定选中值，默认即选中平台默认的实际指向。
   - **实现**：`TerminalShellSetting.tsx` 重写——预设候选（pwsh MSI/商店双路径、powershell 系统路径、cmd、gitbash 双路径）挂载时经 **fs_path_exists 逐路径探测**，不存在的预设不进下拉；未配置 → **自动选中首个可用**（本机=PowerShell 7）；列表尾加「自定义路径」兜底入口（选中显示路径输入）。新增 Rust `fs_path_exists`。TerminalSettings 精简为 {shell}。

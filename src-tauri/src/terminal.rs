@@ -53,6 +53,19 @@ pub fn terminal_create(
     if let Some(dir) = cwd {
         cmd.cwd(dir);
     }
+    // 终端能力环境（2026-10-05 修复「fish 打开全空白、无提示符」）：
+    // PTY 子进程默认继承启动它的父进程环境，而 GUI / tauri-dev 链路上 TERM 常为
+    // "dumb"（或缺失）——starship / oh-my-* 等提示符框架遇到 dumb 终端会直接拒绝
+    // 渲染（实测 starship 报 "Under a 'dumb' terminal (TERM=dumb)"，面板空白）。
+    // 显式声明为一个真实终端：TERM=xterm-256color + COLORTERM=truecolor。
+    // 仅在当前值为空/dumb/unknown 时才覆盖，保留用户/调用方自定义的终端能力。
+    let term = std::env::var("TERM").unwrap_or_default();
+    if term.is_empty() || term == "dumb" || term == "unknown" {
+        cmd.env("TERM", "xterm-256color");
+    }
+    if std::env::var_os("COLORTERM").is_none() {
+        cmd.env("COLORTERM", "truecolor");
+    }
     // 代理环境注入（P2-G2 代理贯通）：PTY 终端子进程也走设置的代理，
     // 与 exec_command 的 env 注入同源（kv reinagent-web-proxy / no-proxy）。
     {

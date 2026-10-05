@@ -41,7 +41,14 @@ export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
     const term = new Terminal({
       cursorBlink: true,
       fontSize: 16,
-      fontFamily: "Consolas, Menlo, Monaco, 'Courier New', monospace",
+      // 终端字体（2026-10-05 修复「Nerd Font 图标显示为方框」）：starship / oh-my-*
+      // 等提示符用 Nerd Font 私有区码点渲染图标，普通等宽字体（Consolas/Menlo/
+      // Monaco）无这些字形 → 方框。这里按优先级给出 Nerd Font 字体栈，并保留
+      // 各平台默认等宽回退（未安装 Nerd Font 时退化为纯文本，不再出现方框乱码行）。
+      fontFamily:
+        "'FiraCode Nerd Font Mono', 'FiraCode Nerd Font', 'JetBrainsMono Nerd Font', " +
+        "'Hack Nerd Font', 'Symbols Nerd Font Mono', 'MesloLGS NF', " +
+        "Consolas, Menlo, Monaco, 'DejaVu Sans Mono', 'Courier New', monospace",
       theme:
         theme === "dark"
           ? {
