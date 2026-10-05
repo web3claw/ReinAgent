@@ -16,6 +16,7 @@
 
 use axum::{
     body::{Body, Bytes},
+    extract::DefaultBodyLimit,
     http::{HeaderMap, HeaderValue, Method, StatusCode},
     response::Response,
     routing::any,
@@ -33,6 +34,11 @@ use tokio::net::TcpListener as TokioTcpListener;
 const TOKEN_HEADER: &str = "x-reinagent-token";
 const UPSTREAM_URL_HEADER: &str = "x-reinagent-upstream-url";
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// 请求体上限 32MB：axum `Bytes` 提取器默认继承 2MB 全局上限，长会话完整历史
+/// （实测 46 万 tokens ≈ 2.3MB）超限时提取器在 handler 之前拒绝、返回不带 CORS
+/// 头的 413 → 浏览器 fetch 直接失败，SDK 只报 `Connection error.`（2026-10-05 实锤）。
+const MAX_BODY_BYTES: usize = 32 * 1024 * 1024;
 
 static PROXY_INFO: OnceLock<LlmProxyInfo> = OnceLock::new();
 
@@ -71,7 +77,9 @@ pub fn start() -> Result<(), String> {
         token: uuid::Uuid::new_v4().to_string(),
     };
 
-    let app = Router::new().route("/proxy", any(handle_proxy));
+    let app = Router::new()
+        .route("/proxy", any(handle_proxy))
+        .layer(DefaultBodyLimit::max(MAX_BODY_BYTES));
 
     // ⚠ from_std/axum::serve 必须在 tokio 运行时上下文内执行：setup 钩子跑在主线程
     // （无 tokio 上下文，直接 from_std 会 panic）。整体放进 async_runtime 的异步块——
