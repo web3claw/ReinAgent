@@ -743,7 +743,7 @@ ReinAgent 架构全景
   - 单测 `bg_process_tests.rs` 5 例全过；其中「长驻强杀」由假阳性（旧实现只要注册表有条目就返回 true，杀不掉也算过、还要白等 30s）升级为**真验证**：停止后断言进程组确已消失 + 3s 内返回，另有「孙进程随进程组一并终止」用例。
 - **前端 `src/lib/agent/tools.js`**：`background_bash` / `task_output` / `task_stop` 三工具（权限=exec；cwd 经 `resolveWorkspacePath`），回合内 turnActivity 标签「后台命令/任务输出/停止任务」。
 - **⚠️ camelCase 铁律（Tauri 实测抓出的真 bug）**：`BgOutput`/`BgSpawnResult`/`BgStopResult` 均为 `serde(rename_all = "camelCase")` → JS 侧必须读 `taskId/exitCode/newOutput/totalBytes/droppedBytes`；首版写成 snake_case 导致模型看到 `output bytes: undefined`。**新增 Tauri 命令后，前端取值字段名必须对照 Rust 结构体的 serde 改名核对一遍。**
-- **Tauri 实测记录**（CDP 驱动，模型真实调用）：`ping -n 60` 驻留 → taskId 秒回；自然退出后 `status: exited / exit: 0 / output bytes: 3149` 三字段真实填充；`task_stop` 返回 stopped；裸调验证 13,990 字节/301 行明文完整、**全链路无 base64 封装**（模型自称「输出带 base64 标记」系误读）。环境观察：本机 PATH 下 `timeout` 解析到 GNU coreutils（非 Windows timeout.exe），`sleep 6` 可用；全项目输出解码统一 `from_utf8_lossy`（exec/terminal/bg_process 一致，本机系统代码页为 UTF-8）。
+- **Tauri 实测记录**（CDP 驱动，模型真实调用）：`ping -n 60` 驻留 → taskId 秒回；自然退出后 `status: exited / exit: 0 / output bytes: 3149` 三字段真实填充；`task_stop` 返回 stopped；裸调验证 13,990 字节/301 行明文完整、**全链路无 base64 封装**（模型自称「输出带 base64 标记」系误读）。环境观察：本机 PATH 下 `timeout` 解析到 GNU coreutils（非 Windows timeout.exe），`sleep 6` 可用；~~全项目输出解码统一 `from_utf8_lossy`（exec/terminal/bg_process 一致，本机系统代码页为 UTF-8）~~（**2026-10-06 订正：本机活动代码页实为 936/GBK，此处「代码页为 UTF-8」系误记；UTF-8 硬解 GBK 输出导致工具卡花屏，已修复——见下方「Windows 控制台输出 GBK 乱码修复」条目**）。
 - **同批附带修复（全量回归发现，均非 P1-4 引入）**：
   - `markdownBlocks.js` ReDoS 真回归：`DEFINITION_LINE_RE` 的 label 体贪婪吞尾+逐字回溯撞 V8 大字符串悬崖（64KB 敌意行 17.5ms，n 翻倍耗时 62×）→ 新增 `hasLinkDefinitionLine`：`]:` indexOf 快筛候选行、逐行跑完整正则（语义等价：能匹配的行必含 `]:`；12 语义用例 + 18 个仓库 md 对拍 0 mismatch）。
   - `taskModelIsolation.test.mjs` 过期断言（断言已废弃的 localStorage 键 `reinagent-tasks`，任务持久化已迁 SQLite）→ 删除旧键断言保留状态级隔离断言；同文件 `globalThis.window` mock 泄漏污染后续测试文件 → `after()` 还原现场。
@@ -1247,3 +1247,9 @@ ReinAgent 架构全景
 - **E2E 备忘**：测试期间用户操作应用切走视图会干扰脚本——脚本须显式重激活目标任务再断言；带 `JSON.stringify` 的 evalp 返回**字符串**，断言前必须 parse（本轮 verdict 笔误一次，功能实为全过）。
 - **追加（同日用户反馈）**：缩小胶囊不再显示「提问」二字，改为**显示当前 Tab 正在回答的问题文本**（悬浮 title=全文，题数徽标保留）——`activeIndex` 相应提升到 App 受控（AskQuestionCard 加 `activeIndex/onActiveIndexChange` props），缩小恢复后**停留在原 Tab**；胶囊 `max-w-64` 截断长题目。CDP E2E：Tab1/Tab2 缩小胶囊文本各自跟随、恢复停留原 Tab ✓。⚠️ 注意：reload 会丢挂起中的提问卡（审批挂起为内存态不落库，既有行为）。
 - **追加（同日用户反馈②）**：**选中选项即自动跳下一题**（最后一题不跳、绝不自动提交——手动点「提交回答」）；「其他」自由输入不触发跳题（打字过程跳题会打断输入）。「下个问题」按钮与 Tab 点击保留（自由输入用户与回改路径仍用）。CDP E2E：选米饭自动落 Tab2+绿勾、最后一题选完弹窗保持打开、手动提交收敛 ✓。
+
+### Windows 控制台输出 GBK 乱码修复（2026-10-06，用户报「工具卡乱码」；CDP 实测通过）
+
+- **根因（实锤）**：中文版 Windows 的控制台程序（ping/ipconfig 等）往**管道**写输出用系统 OEM 代码页（本机 chcp=936/GBK，实测字节转储 `c0b4 d7d4`=来自）；而 `fs_execute`/`bg_process`/`terminal.rs` 统一 `from_utf8_lossy` 硬解 UTF-8 → 每个汉字变 U+FFFD（工具卡花块、ASCII 幸存）。此前 8.9 记录「本机代码页为 UTF-8」系误记（已订正）。LiveAgent 同样裸 lossy 未处理；终端 PTY 面板不受影响（ConPTY 层转 UTF-8）。
+- **修复**：新模块 `console_decode.rs`——`decode_console_bytes` **严格 UTF-8 校验优先**（pwsh7/git 等本就 UTF-8，零影响），失败按 `GetOEMCP` + `MultiByteToWideChar` 解（windows 依赖加 `Win32_Globalization` feature，零新依赖；任何一步失败回退 lossy 不 panic）；`decode_with_codepage` 单独导出供固定代码页测试。应用四处：`fs_execute` stdout/stderr（工具卡）、`bg_output`/`bg_list` 尾部（后台任务）、kill/taskkill stderr 诊断。**terminal.rs PTY 分块读不改**——多字节字符可能被切块劈开，套助手会把合法 UTF-8 残片按 GBK 乱解（ConPTY 本就 UTF-8，劈字符是既有小概率问题，另案）。
+- **验证**：`cargo check` 0 警告；`cargo test --lib` 192/193（新增 3 例解码测试全过：GBK 936→中文/UTF-8 直通/非法字节 lossy 兜底；唯一失败仍是已记录的 bg_stop Windows 回归）；CDP 裸调 `ping -n 2 www.baidu.com`——`fs_execute` 与 `bg_output` 中文全部正常（来自…的回复/字节/平均）。
