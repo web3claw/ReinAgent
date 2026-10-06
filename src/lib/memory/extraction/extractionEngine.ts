@@ -29,6 +29,7 @@ import {
   deriveWorkspaceMutations,
   extractLatestUserText,
 } from "./context.js";
+import { toExtractionMessages } from "./chatMessageAdapter.js";
 import {
   buildPlanReceiptText,
   createSubmitMemoryPlanTool,
@@ -106,6 +107,10 @@ export async function runMemoryExtraction(
   }
 
   const localDate = resolveLocalDate(now);
+  // 入口归一：时间线 ChatMessage（.text / 独立 tool 条目）→ pi-ai Message
+  // （content 块）。context.ts 全家按 pi-ai 形状读取，直接混用会让
+  // extractLatestUserText 永远读到空串 → 每轮抽取被静默 skip（2026-10-06 修复）。
+  const extractionMessages = toExtractionMessages(params.messages);
   let candidates: { slug: string; memoryType?: string; scope?: string; description?: string; unreviewed?: boolean; confidence?: string; updatedAt?: number }[] = [];
   let rejections: { slug: string; rejectedAt?: number; reason?: string | null }[] = [];
   try {
@@ -145,12 +150,12 @@ export async function runMemoryExtraction(
     }
   }
 
-  const latestUserText = extractLatestUserText(params.messages as any);
+  const latestUserText = extractLatestUserText(extractionMessages);
   if (!latestUserText.trim()) {
     return { ok: true, skipped: "empty-user-message", ...EMPTY };
   }
 
-  const workspaceMutations = deriveWorkspaceMutations(params.messages as any, workdir || undefined);
+  const workspaceMutations = deriveWorkspaceMutations(extractionMessages, workdir || undefined);
   const summaryBlock = buildConversationSummaryBlock(params.conversationSummary);
   // 块序「稳定 → 易变」：指令打头、对话窗口垫底（前缀缓存字节级匹配，见 LA 注释）
   const hiddenPromptText = [
@@ -165,7 +170,7 @@ export async function runMemoryExtraction(
     buildExistingCandidatesBlock(candidates),
     buildAlreadyWrittenBlock(params.alreadyWrittenSlugs ?? []),
     buildWorkspaceMutationsBlock(workspaceMutations),
-    buildConversationWindowBlock(params.messages as any),
+    buildConversationWindowBlock(extractionMessages),
   ].join("\n\n");
 
   const planContext = {
@@ -181,9 +186,14 @@ export async function runMemoryExtraction(
     ...submitTool,
     execute: async (_toolCallId: string, args: unknown) => {
       const parsed = parsePlanSubmission(args);
+      // 捕获提交供收尾裁决：漏掉这步会让引擎永远误报
+      // "model never called SubmitMemoryPlan"，且控制器的节流状态永不更新。
+      submission = parsed;
       const result = validateSubmittedPlan(parsed, planContext);
       const applyArgs = planToApplyBatchArgs(result.accepted);
-      if (applyArgs.decisions.length > 0) {
+      // append_daily 只进 dailyAppend、不进 decisions——只判 decisions 会把
+      // 纯日志计划（无持久记忆、仅记当日进展的最常见形态）整单静默丢弃。
+      if (applyArgs.decisions.length > 0 || applyArgs.dailyAppend) {
         await memoryApplyBatch({
           workdir: workdir || undefined,
           conversationId: params.taskId,

@@ -21,7 +21,7 @@
     "test:git": "node --test src/lib/git/branchSwitcherLogic.test.mjs",
     "test:agent": "node --test src/lib/agent/streamFnAdapter.test.mjs src/lib/agent/agentRuntime.test.mjs src/lib/agent/askUserTool.test.mjs src/lib/agent/tools.test.mjs src/lib/agent/workspace.test.mjs",
     "test:providers": "bun test src/lib/providers/runAgentTurn.test.mjs src/lib/providers/approvalGate.test.mjs src/lib/providers/modelFactory.test.mjs src/lib/providers/toolPolicy.test.mjs",
-    "test:hub": "bun test src/lib/skills/clawHubCategories.test.mjs src/lib/skills/clawHub.test.mjs src/lib/skills/installedSort.test.mjs src/lib/mcpRegistry/index.test.mjs src/lib/memory/schema.test.mjs src/lib/memory/organizer/quota.test.mjs src/lib/memory/organizer/runRecord.test.mjs src/lib/memory/modelResolution.test.mjs"
+    "test:hub": "bun test src/lib/skills/clawHubCategories.test.mjs src/lib/skills/clawHub.test.mjs src/lib/skills/installedSort.test.mjs src/lib/mcpRegistry/index.test.mjs src/lib/memory/schema.test.mjs src/lib/memory/extraction/gating.test.mjs src/lib/memory/extraction/chatMessageAdapter.test.mjs src/lib/memory/organizer/quota.test.mjs src/lib/memory/organizer/runRecord.test.mjs src/lib/memory/modelResolution.test.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "0.86.0",
