@@ -26,7 +26,7 @@ if (typeof registerHooks === "function") registerHooks({
   },
 });
 
-const { extractLatestTodos, todoProgress } = await import("./todoProgress.ts");
+const { extractLatestTodos, extractTodoLists, todoProgress } = await import("./todoProgress.ts");
 
 const todoEntry = (id, todos) => ({
   id,
@@ -94,4 +94,62 @@ test("todoProgress：done/total/current/percent 口径", () => {
 
   const p3 = todoProgress([]);
   assert.equal(p3.percent, 0, "空清单 0%（不除零）");
+});
+
+// ---- extractTodoLists（多胶囊并排，用户定稿「按内容新增」口径，2026-10-06）----
+
+test("extractTodoLists：内容不同 → 按时间正序各成一份快照", () => {
+  const messages = [
+    todoEntry("t1", [{ content: "清单一", status: "pending" }]),
+    { id: "a1", role: "assistant", text: "x", thinking: "", status: "done" },
+    todoEntry("t2", [
+      { content: "清单二A", status: "pending" },
+      { content: "清单二B", status: "in_progress" },
+    ]),
+  ];
+  const lists = extractTodoLists(messages);
+  assert.equal(lists.length, 2, "两份不同内容的清单各成一个快照");
+  assert.equal(lists[0].todos[0].content, "清单一");
+  assert.equal(lists[1].todos[1].content, "清单二B");
+  assert.notEqual(lists[0].key, lists[1].key, "内容不同 key 必不同");
+  assert.equal(JSON.parse(lists[1].key)[0].content, "清单二A", "key = 规范化内容的 JSON 签名");
+});
+
+test("extractTodoLists：内容相同的重复写入 → 不新增（同一份清单）", () => {
+  const same = [
+    { content: "步骤一", status: "completed" },
+    { content: "步骤二", status: "in_progress" },
+  ];
+  const messages = [todoEntry("t1", same), todoEntry("t2", same)];
+  assert.equal(extractTodoLists(messages).length, 1, "相同内容重复写入只保留一份");
+  // 同轮进度推进（内容变化）→ 新增而非合并
+  const progress = [
+    todoEntry("t1", [{ content: "步骤一", status: "in_progress" }]),
+    todoEntry("t2", [{ content: "步骤一", status: "completed" }]),
+  ];
+  assert.equal(extractTodoLists(progress).length, 2, "内容不同即新增（按内容新增口径）");
+});
+
+test("extractTodoLists：显式空数组 = 清空全部；缺字段 = 跳过不清空", () => {
+  const base = [todoEntry("t1", [{ content: "甲", status: "pending" }])];
+  assert.deepEqual(extractTodoLists([...base, todoEntry("t2", [])]), [], "显式空数组清空所有快照");
+  const kept = extractTodoLists([
+    ...base,
+    { id: "t2", role: "tool", toolName: "todo_write", args: {}, status: "done", text: "", thinking: "", resultText: "", isError: false, toolCallId: "c" },
+  ]);
+  assert.equal(kept.length, 1, "缺 todos 字段跳过，既有快照保留");
+  const dropped = extractTodoLists([...base, todoEntry("t2", [{ status: "pending" }])]);
+  assert.equal(dropped.length, 1, "条目缺 content 的非法清单跳过，不清空");
+});
+
+test("extractLatestTodos：与 extractTodoLists 末条快照一致", () => {
+  const messages = [
+    todoEntry("t1", [{ content: "旧", status: "pending" }]),
+    todoEntry("t2", [{ content: "新", status: "in_progress" }]),
+  ];
+  const lists = extractTodoLists(messages);
+  const latest = extractLatestTodos(messages);
+  assert.equal(latest.length, 1);
+  assert.equal(latest[0].content, lists[lists.length - 1].todos[0].content);
+  assert.equal(extractLatestTodos([todoEntry("t", [])]), null, "仅空清单 → null");
 });
