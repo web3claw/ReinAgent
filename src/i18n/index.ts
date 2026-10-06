@@ -4,6 +4,8 @@ import { hubEn } from "./hub/en";
 import { hubExtraSkills, hubExtraSkillsEn } from "./hub/extra-skills";
 import { hubExtraMcp, hubExtraMcpEn } from "./hub/extra-mcp";
 import { hubExtraMemory, hubExtraMemoryEn } from "./hub/extra-memory";
+import { trajectoryZh } from "./trajectory/zh";
+import { trajectoryEn } from "./trajectory/en";
 
 export const translations = {
   "zh-CN": {
@@ -756,6 +758,7 @@ export const translations = {
     ...hubExtraSkills,
     ...hubExtraMcp,
     ...hubExtraMemory,
+    ...trajectoryZh,
   },
   "en-US": {
     appName: "ReinAgent",
@@ -1527,6 +1530,7 @@ export const translations = {
     ...hubExtraSkillsEn,
     ...hubExtraMcpEn,
     ...hubExtraMemoryEn,
+    ...trajectoryEn,
   },
 } as const;
 

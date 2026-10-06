@@ -1802,3 +1802,87 @@ select option {
   white-space: nowrap;
   color: var(--text);
 }
+
+/* ---------- 轨迹页色板（LiveAgent trajectory tokens 语义化；明暗两套跟随 data-theme） ---------- */
+/* 默认（:root 与 dark）= LA dark 档；[data-theme="light"] 覆盖为 LA light 档。 */
+@utility max-w-trajectory-details {
+  max-width: 100%;
+}
+
+:root,
+[data-theme="dark"] {
+  /* 时间轴泳道块（LA 原值 slate/emerald/amber/violet/orange 带透明度） */
+  --trajectory-span-system: color-mix(in oklab, #64748b 80%, transparent);
+  --trajectory-span-user: #cbd5e1;
+  --trajectory-span-context: color-mix(in oklab, #10b981 80%, transparent);
+  --trajectory-span-compacted: color-mix(in oklab, #f59e0b 80%, transparent);
+  --trajectory-span-message: color-mix(in oklab, #8b5cf6 80%, transparent);
+  --trajectory-span-tool: color-mix(in oklab, #f97316 85%, transparent);
+  --trajectory-span-subtool: color-mix(in oklab, #fb923c 70%, transparent);
+  --trajectory-span-error: color-mix(in oklab, #ef4444 85%, transparent);
+  /* 行内类别徽标（底 15% 混色 + 前景色；LA dark 档 300 系） */
+  --trajectory-badge-system-fg: #cbd5e1;
+  --trajectory-badge-system-bg: color-mix(in oklab, #cbd5e1 15%, transparent);
+  --trajectory-badge-user-fg: #93c5fd;
+  --trajectory-badge-user-bg: color-mix(in oklab, #93c5fd 15%, transparent);
+  --trajectory-badge-context-fg: #6ee7b7;
+  --trajectory-badge-context-bg: color-mix(in oklab, #6ee7b7 15%, transparent);
+  --trajectory-badge-compacted-fg: #fcd34d;
+  --trajectory-badge-compacted-bg: color-mix(in oklab, #fcd34d 15%, transparent);
+  --trajectory-badge-message-fg: #c4b5fd;
+  --trajectory-badge-message-bg: color-mix(in oklab, #c4b5fd 15%, transparent);
+  --trajectory-badge-tool-fg: #fdba74;
+  --trajectory-badge-tool-bg: color-mix(in oklab, #fdba74 15%, transparent);
+  --trajectory-badge-subtool-fg: #fdba74;
+  --trajectory-badge-subtool-bg: color-mix(in oklab, #fdba74 10%, transparent);
+  --trajectory-badge-error-fg: #fca5a5;
+  --trajectory-badge-error-bg: color-mix(in oklab, #fca5a5 15%, transparent);
+  /* 空闲间隙斜纹与中断斜纹（LA 45° repeating-linear-gradient） */
+  --trajectory-idle-pattern: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, #94a3b8 22%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+  --trajectory-aborted-pattern: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, #ef4444 40%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+[data-theme="light"] {
+  --trajectory-span-system: color-mix(in oklab, #64748b 80%, transparent);
+  --trajectory-span-user: #334155;
+  --trajectory-span-context: color-mix(in oklab, #10b981 80%, transparent);
+  --trajectory-span-compacted: color-mix(in oklab, #f59e0b 80%, transparent);
+  --trajectory-span-message: color-mix(in oklab, #8b5cf6 80%, transparent);
+  --trajectory-span-tool: color-mix(in oklab, #f97316 85%, transparent);
+  --trajectory-span-subtool: color-mix(in oklab, #fb923c 70%, transparent);
+  --trajectory-span-error: color-mix(in oklab, #ef4444 85%, transparent);
+  --trajectory-badge-system-fg: #475569;
+  --trajectory-badge-system-bg: color-mix(in oklab, #475569 15%, transparent);
+  --trajectory-badge-user-fg: #2563eb;
+  --trajectory-badge-user-bg: color-mix(in oklab, #2563eb 15%, transparent);
+  --trajectory-badge-context-fg: #059669;
+  --trajectory-badge-context-bg: color-mix(in oklab, #059669 15%, transparent);
+  --trajectory-badge-compacted-fg: #d97706;
+  --trajectory-badge-compacted-bg: color-mix(in oklab, #d97706 15%, transparent);
+  --trajectory-badge-message-fg: #7c3aed;
+  --trajectory-badge-message-bg: color-mix(in oklab, #7c3aed 15%, transparent);
+  --trajectory-badge-tool-fg: #ea580c;
+  --trajectory-badge-tool-bg: color-mix(in oklab, #ea580c 15%, transparent);
+  --trajectory-badge-subtool-fg: #ea580c;
+  --trajectory-badge-subtool-bg: color-mix(in oklab, #ea580c 10%, transparent);
+  --trajectory-badge-error-fg: #dc2626;
+  --trajectory-badge-error-bg: color-mix(in oklab, #dc2626 15%, transparent);
+  --trajectory-idle-pattern: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, #64748b 25%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+  --trajectory-aborted-pattern: repeating-linear-gradient(
+    45deg,
+    color-mix(in oklab, #ef4444 35%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+}

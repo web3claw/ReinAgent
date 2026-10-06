@@ -65,6 +65,9 @@ import { DEFAULT_SYSTEM_PROMPT, buildEnvironmentSection } from "./lib/providers/
 import type { ApprovalDecision } from "./lib/providers/runAgentTurn";
 import { ApprovalCard } from "./components/chat/ApprovalCard";
 import { AskQuestionCard, AskQuestionMinimizedPill } from "./components/chat/AskQuestionCard";
+import { ConversationViewTabs } from "./components/chat/ConversationViewTabs";
+import { TrajectoryView } from "./components/trajectory/TrajectoryView";
+import { useConversationViewState } from "./lib/trajectory/useConversationViewState";
 import { PlanModeCard } from "./components/chat/PlanModeCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { kvGet } from "./lib/storage/db";
@@ -491,6 +494,11 @@ export default function App() {
     setQuestionMinimized(false);
     setQuestionActiveIndex(0);
   }, [state.pendingApproval]);
+
+  // 会话内「对话/轨迹」视图状态（LiveAgent conversationViewState 移植：按任务记忆）
+  const { activeConversationView, setActiveConversationView } = useConversationViewState(
+    activeTaskId ?? "",
+  );
 
   // Keep ref of current messages and activeTaskId to prevent closure races and empty overrides
   // 上下文容量：真实 usage（最后一条 assistant apiMessage）+ 模型声明 contextWindow + 字符估算分类
@@ -1526,6 +1534,108 @@ export default function App() {
     }
   };
 
+  // 「加载更早」状态快照（轨迹页复用会话分页）
+  const historyLoad = getHistoryLoadState(activeTaskId);
+
+  // 输入区 dock 内容：消息分支用 sticky 包装、轨迹分支用普通包装复用（自原内联块原样抽出）
+  const composerDock = (
+    <>
+                {/* 任务清单进度条（对齐 LiveAgent TaskProgressBar）：有清单时显示在输入框上方 */}
+                {state.steerQueue && state.steerQueue.length > 0 && activeTaskId ? (
+                  <SteerQueuePanel
+                    queue={state.steerQueue}
+                    onRemove={(index) =>
+                      poolRemoveSteerMessage(activeTaskId, index)
+                    }
+                  />
+                ) : null}
+                <TaskProgressBar messages={state.messages} />
+                {/* 实施计划批准卡（exit_plan_mode 工具挂起）：批准 = 切出计划模式并继续执行 */}
+                {state.pendingApproval &&
+                (state.pendingApproval as { args?: { kind?: string } })?.args?.kind === "plan" ? (
+                  <PlanModeCard
+                    plan={
+                      ((state.pendingApproval as { args?: { plan?: string } }).args?.plan ?? "")
+                    }
+                    allowedPrompts={
+                      (state.pendingApproval as { args?: { allowedPrompts?: never[] } }).args
+                        ?.allowedPrompts
+                    }
+                    onApprove={() => {
+                      // 先切任务审批模式（plan → ask 变更前确认），再 resolve；顺序保证
+                      // 工具收敛后模型后续的写/执行调用走新模式的门。
+                      if (activeTaskId) {
+                        useAppStore.getState().updateTaskApprovalMode(activeTaskId, "ask");
+                        poolResolveApproval(activeTaskId, { approved: true });
+                      }
+                    }}
+                    onReject={(feedback) => {
+                      if (activeTaskId)
+                        poolResolveApproval(activeTaskId, { approved: false, feedback });
+                    }}
+                  />
+                ) : null}
+                {/* 提问卡（ask_user_question 工具挂起）：模型等待用户作答；缩小态 = 输入框右上方胶囊（显示当前题），点击恢复 */}
+                {state.pendingApproval &&
+                (state.pendingApproval as { args?: { kind?: string } })?.args?.kind === "question" ? (
+                  questionMinimized ? (
+                    <AskQuestionMinimizedPill
+                      question={
+                        ((state.pendingApproval as { args?: { questions?: { question?: string }[] } })
+                          .args?.questions?.[questionActiveIndex]?.question) ?? ""
+                      }
+                      count={((state.pendingApproval as { args?: { questions?: unknown[] } }).args?.questions ?? []).length}
+                      onRestore={() => setQuestionMinimized(false)}
+                    />
+                  ) : (
+                    <AskQuestionCard
+                      questions={((state.pendingApproval as { args?: { questions?: never[] } }).args?.questions ?? []) as never}
+                      onAnswer={(answers) => {
+                        if (activeTaskId)
+                          poolResolveApproval(activeTaskId, { answers });
+                      }}
+                      onSkip={() => {
+                        if (activeTaskId) poolResolveApproval(activeTaskId, "reject");
+                      }}
+                      onMinimize={() => setQuestionMinimized(true)}
+                      activeIndex={questionActiveIndex}
+                      onActiveIndexChange={setQuestionActiveIndex}
+                    />
+                  )
+                ) : null}
+                {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
+                {state.pendingApproval &&
+                (state.pendingApproval as { args?: { kind?: string } })?.args?.kind !== "question" &&
+                (state.pendingApproval as { args?: { kind?: string } })?.args?.kind !== "plan" && (
+                  <ApprovalCard
+                    request={state.pendingApproval}
+                    onDecide={(decision: ApprovalDecision) => {
+                      if (activeTaskId) poolResolveApproval(activeTaskId, decision);
+                    }}
+                  />
+                )}
+                <LexicalComposer
+                  isStreaming={isStreaming}
+                  taskId={activeTaskId ?? undefined}
+                  onSend={handleSend}
+                  onStop={stop}
+                  providerId={activeProviderId}
+                  providerName={currentProvider?.name || activeProviderId}
+                  modelId={activeModelId}
+                  currentModel={currentModel}
+                  providers={providers}
+                  onSelectModel={handleSelectModel}
+                  onOpenSttSettings={() => { setSettingsInitialTab('stt'); setCurrentView('settings'); }}
+                  hasMessages={true}
+                  contextUsage={contextUsage}
+                  // 工作区根：@提及候选、附件默认目录都依赖它（此前漏传 ⇒ 提示「root 不能为空」）
+                  workspaceRoot={effectiveWorkspaceRoot}
+                  onClearConversation={() => void handleClearConversation()}
+                  onCompactRequest={handleCompactRequest}
+                />
+    </>
+  );
+
   const hasMessages = state.messages.length > 0;
 
   return (
@@ -1588,6 +1698,10 @@ export default function App() {
                 {activeTask?.title || t("newTask")}
               </span>
             </div>
+            {/* 对话/轨迹 分段切换（LiveAgent ConversationViewTabs 移植）：仅工作台且有会话消息时显示 */}
+            {currentView === "workbench" && activeTaskId && state.messages.length > 0 ? (
+              <ConversationViewTabs active={activeConversationView} onChange={setActiveConversationView} />
+            ) : null}
             {/* 当前助手 chip：显示「实际生效」的助手——任务绑定优先，未绑定任务/草稿态都回退全局默认
                 （与 buildTurnOptions 的运行时解析严格一致，禁止硬编码 GENERAL 造成显示与行为脱节） */}
             <AssistantChip
@@ -1774,6 +1888,19 @@ export default function App() {
               resolveAuthorizedRoots={async () => (effectiveWorkspaceRoot ? [effectiveWorkspaceRoot] : [])}
               onRewound={showRewindToast}
             >
+              {activeConversationView === "trajectory" ? (
+                /* 轨迹页贴边铺满（用户定稿：与 LiveAgent 一致、无左右留白；输入框隐藏） */
+                <TrajectoryView
+                  conversationId={activeTaskId ?? ""}
+                  messages={state.messages}
+                  onOpenFileLink={(path: string) => openCodeViewer({ type: "file", title: path, path })}
+                  hasMoreMessages={historyLoad.loadedCount > 0 && historyLoad.total > historyLoad.loadedCount}
+                  loadingEarlier={historyLoad.loading}
+                  onLoadEarlier={() => {
+                    if (activeTaskId) void loadOlderMessages(activeTaskId);
+                  }}
+                />
+              ) : (
               <div className="relative flex-1 min-h-0 flex">
                 <div
                   ref={(el) => {
@@ -1862,99 +1989,7 @@ export default function App() {
                     className="sticky bottom-0 w-full bg-[var(--bg)] px-6 sm:px-8 md:px-12 pb-2.5 pt-1 z-10 shrink-0"
                     data-dock-away={chatAwayFromBottom ? "true" : undefined}
                   >
-                    {/* 任务清单进度条（对齐 LiveAgent TaskProgressBar）：有清单时显示在输入框上方 */}
-                    {state.steerQueue && state.steerQueue.length > 0 && activeTaskId ? (
-                      <SteerQueuePanel
-                        queue={state.steerQueue}
-                        onRemove={(index) =>
-                          poolRemoveSteerMessage(activeTaskId, index)
-                        }
-                      />
-                    ) : null}
-                    <TaskProgressBar messages={state.messages} />
-                    {/* 实施计划批准卡（exit_plan_mode 工具挂起）：批准 = 切出计划模式并继续执行 */}
-                    {state.pendingApproval &&
-                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind === "plan" ? (
-                      <PlanModeCard
-                        plan={
-                          ((state.pendingApproval as { args?: { plan?: string } }).args?.plan ?? "")
-                        }
-                        allowedPrompts={
-                          (state.pendingApproval as { args?: { allowedPrompts?: never[] } }).args
-                            ?.allowedPrompts
-                        }
-                        onApprove={() => {
-                          // 先切任务审批模式（plan → ask 变更前确认），再 resolve；顺序保证
-                          // 工具收敛后模型后续的写/执行调用走新模式的门。
-                          if (activeTaskId) {
-                            useAppStore.getState().updateTaskApprovalMode(activeTaskId, "ask");
-                            poolResolveApproval(activeTaskId, { approved: true });
-                          }
-                        }}
-                        onReject={(feedback) => {
-                          if (activeTaskId)
-                            poolResolveApproval(activeTaskId, { approved: false, feedback });
-                        }}
-                      />
-                    ) : null}
-                    {/* 提问卡（ask_user_question 工具挂起）：模型等待用户作答；缩小态 = 输入框右上方胶囊（显示当前题），点击恢复 */}
-                    {state.pendingApproval &&
-                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind === "question" ? (
-                      questionMinimized ? (
-                        <AskQuestionMinimizedPill
-                          question={
-                            ((state.pendingApproval as { args?: { questions?: { question?: string }[] } })
-                              .args?.questions?.[questionActiveIndex]?.question) ?? ""
-                          }
-                          count={((state.pendingApproval as { args?: { questions?: unknown[] } }).args?.questions ?? []).length}
-                          onRestore={() => setQuestionMinimized(false)}
-                        />
-                      ) : (
-                        <AskQuestionCard
-                          questions={((state.pendingApproval as { args?: { questions?: never[] } }).args?.questions ?? []) as never}
-                          onAnswer={(answers) => {
-                            if (activeTaskId)
-                              poolResolveApproval(activeTaskId, { answers });
-                          }}
-                          onSkip={() => {
-                            if (activeTaskId) poolResolveApproval(activeTaskId, "reject");
-                          }}
-                          onMinimize={() => setQuestionMinimized(true)}
-                          activeIndex={questionActiveIndex}
-                          onActiveIndexChange={setQuestionActiveIndex}
-                        />
-                      )
-                    ) : null}
-                    {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
-                    {state.pendingApproval &&
-                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind !== "question" &&
-                    (state.pendingApproval as { args?: { kind?: string } })?.args?.kind !== "plan" && (
-                      <ApprovalCard
-                        request={state.pendingApproval}
-                        onDecide={(decision: ApprovalDecision) => {
-                          if (activeTaskId) poolResolveApproval(activeTaskId, decision);
-                        }}
-                      />
-                    )}
-                    <LexicalComposer
-                      isStreaming={isStreaming}
-                      taskId={activeTaskId ?? undefined}
-                      onSend={handleSend}
-                      onStop={stop}
-                      providerId={activeProviderId}
-                      providerName={currentProvider?.name || activeProviderId}
-                      modelId={activeModelId}
-                      currentModel={currentModel}
-                      providers={providers}
-                      onSelectModel={handleSelectModel}
-                      onOpenSttSettings={() => { setSettingsInitialTab('stt'); setCurrentView('settings'); }}
-                      hasMessages={true}
-                      contextUsage={contextUsage}
-                      // 工作区根：@提及候选、附件默认目录都依赖它（此前漏传 ⇒ 提示「root 不能为空」）
-                      workspaceRoot={effectiveWorkspaceRoot}
-                      onClearConversation={() => void handleClearConversation()}
-                      onCompactRequest={handleCompactRequest}
-                    />
+                    {composerDock}
                   </div>
                 </div>
                 </div>
@@ -1964,6 +1999,7 @@ export default function App() {
                         measureFallback={getRegisteredTurnOffset}
                       />
               </div>
+              )}
             </CheckpointRewindProvider>
           )}
         </div>
@@ -1971,7 +2007,7 @@ export default function App() {
         {/* 会话统计行（对齐 LiveAgent 底部统计条）：仅聊天工作台显示。
             本行在滚动视口之外，需自带 data-message-theme 才能让底色与上方会话画布一致
             （antigravity 无覆盖块 ⇒ 行为不变）。 */}
-        {currentView === "workbench" && hasMessages && (
+        {currentView === "workbench" && hasMessages && activeConversationView !== "trajectory" && (
           <div data-message-theme={messageTheme}>
             <SessionStatsBar stats={sessionStats} />
           </div>
