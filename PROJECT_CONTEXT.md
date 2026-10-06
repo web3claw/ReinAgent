@@ -56,7 +56,7 @@ ReinAgent 架构全景
 │   │   │   ├── ApprovalCard.tsx        # 工具审批卡（允许/总是允许/拒绝）
 │   │   │   ├── RetryDetailsBlock.tsx   # 重试详情折叠块（每次尝试错误原文卡片）
 │   │   │   ├── ConversationNavigator.tsx # 对话问题导航条
-│   │   │   ├── SessionStatsBar.tsx     # 会话统计行（轮/步/上下文/耗时/token）
+│   │   │   ├── SessionStatsBar.tsx     # 会话统计行（轮/步/上下文/耗时/token；步=LLM 回合数，对齐 LA step 与 maxSteps 硬闸语义，工具执行不计步——2026-10-06 订正，旧口径误数工具条目）
 │   │   │   ├── ContextUsageIndicator.tsx # 上下文容量圆环触发器 + HoverCard 面板
 │   │   │   ├── ImageLightbox.tsx       # 图片放大浮层（附件缩略图与气泡共用）
 │   │   │   ├── MarkdownText.tsx / MarkdownBlockRenderer.tsx / CodeBlock.tsx # Markdown 渲染链
