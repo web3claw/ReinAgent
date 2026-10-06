@@ -1271,3 +1271,20 @@ ReinAgent 架构全景
 - **追加（同日用户反馈）**：轨迹页**贴边铺满**（去掉外层 px-6/8/12 包装，与 LiveAgent 一致——其内部组件自带 px-3 保留）；**隐藏输入框与 dock**（轨迹分支不再渲染 composerDock，切回「对话」恢复）。CDP 实测：左右间隙 0（toolbar 与主列左右缘逐边框对齐）、轨迹态 DOM 无 textarea、切回对话 textarea 恢复。
 - **追加②（同日用户反馈）**：轨迹页同时**隐藏底部会话统计行**（SessionStatsBar 渲染条件加 `activeConversationView !== "trajectory"`）。CDP 实测：轨迹态 `[data-testid=session-stats-bar]` 不存在、对话态恢复。
 - **追加③（同日用户反馈「原始块显示无内容」）**：适配器补全原始块映射（当时只给了附件块，纯文本消息没造块）——对齐 LA contentIndex 语义：**user = text 块 + attachment:<kind> 块**（JSON 含 fileName/path/kind、imageAlt、filePath）；**assistant = thinking/text 块 + 其后工具的 tool-call 块**（工具挂接时追加）；**tool = tool-call 块（sourceBlocks）+ 输出块（outputBlocks：优先取 apiMessage 原件 content 的 text/image 块——图片转 data URL，无原件退回 resultText 文本块）**。适配器测试 6→**7**（新增三类块断言）；CDP 实测 USER#1 原始块显示「TEXT 你好」（原为「无内容」）。
+
+### 下一次请求预览（轨迹页工具栏入口，2026-10-06；用户定稿：居中弹窗分类导航 + 可读文档与原始 JSON）
+
+- **入口**：轨迹工具栏搜索框前的「下次请求预览」按钮（FileJson2 图标）→ 居中大弹窗（lw Dialog；左分类导航：请求参数/系统提示词/工具/用户上下文/消息安排/原始 JSON；底部构建注记 + 复制全文）。
+- **同源铁律（本次核心重构）**：把 `runAgentTurn` 的上下文装配段抽出为 **`assembleTurnContext`**（系统提示词拼接：人设→基座→Environment→模式段→SessionStart hooks；工具收集：注册表+MCP+询问/计划+记忆管理器；meta_user 合并入首条 user），**发送与预览调同一函数**——预览传 `runSessionStartHooks:false` 回避外部 hook 副作用；消息段用 `toApiMessages + microcompactMessages`（与 controller 发送前同管道）；压缩水位线用 `computeCompactionWatermark + lastUsedTokens（新导出）+ readPromptCeiling`（与 autoCompact 同判据，越线如实提示）；子代理工具对同工厂构建（失败降级并如实标注）。
+- **如实性注记**（弹窗底部恒定）：预览是装配到 pi-ai 流式调用前的视图，协议适配器还会做最后一层转换，不必然等于最终 HTTP 字节；SessionStart hooks 追加内容仅真实发送时执行；演示模式（faux）如实提示「真实发送不会发生」。
+- **体积护栏**：单消息条目 4000 字符、原始 JSON 整档 400k 字符截断并标注（防 Shiki 渲染巨文卡死）。
+- **验证**：`tsc` 0；providers 30 / agent 49 / chat 151 / trajectory 7 全绿（重构后回归）；CDP 真机 E2E——按钮在搜索框前（x 1270 < 1419）、弹窗六节导航、五节内容实测（系统提示词 4911 字符含 # Communication/# Environment、工具 27664 字符含 read_file/todo_write/agent、用户上下文 8605 含 currentDate、消息 4486 含 system-reminder、原始 JSON 39048 可读）、复制全文经 PowerShell `Get-Clipboard` 实证（完整文档落剪贴板；webview 内 `clipboard.readText` 因 WebView2 读权限悬挂——写正常读受限，测试脚本勿在 webview 里读剪贴板）。
+- **追加（同日用户反馈）**：「复制全文」精简为**仅「原始 JSON + 构建注记」**（拆解/合并等分节视图仅弹窗内查阅；用户查看时发现同一内容被三视图展示三遍，落档/喂外部工具以原始形态为准）。CDP 实测：剪贴板从 86.4K 字符降至 39.9K，`# currentDate`/`# Memory Index` 各 1 次、单个 json 代码块、尾部注记在列。
+- **⚠️ 严重回归修复（2026-10-06 用户报「进入设置页一片空白」）**：请求预览接线时把 `requestPreviewState` 的 `useState` + `openRequestPreview` 的 `useCallback` 声明在了**设置页早退 return 之后**——切设置页时这两个 hook 不执行，React 抛「Rendered fewer hooks than expected」整树卸载 → 白屏（重载因 currentView 持久化为 settings 而持续白屏）。修复=两个 hook 上移到早退之前（并注释铁律）；CDP 实测重载/设置/工作台双向切换零异常、设置导航与工作台消息均正常渲染。**教训：任何新增 hook 必须位于组件所有条件早退之前；E2E 验收应覆盖设置页视图（此前测试均在工作台/轨迹内，漏网）。**
+
+### 内置技能启用语义改造（2026-10-06，用户定稿：可启用/禁用、默认禁用）
+
+- **背景**：`skills-creator` / `skills-installer` 原为「恒启用」（LA 的 ALWAYS_ENABLED 语义：注入强制并入、UI 无开关）。用户要求改为普通技能——可启用/禁用、**默认禁用**；并确认禁用技能不进上下文（browser-use 禁用实证不在注入的 Skills 清单中）。
+- **改动面**：`lib/skills/builtin.ts` 重构（删除 `mergeAlwaysEnabledSkillNames`/`isUserSelectable*`；`isAlwaysEnabledSkillName` → **`isBuiltinSkillName`**，只保留两处用途：列表排序置前 + **删除保护**——Rust `ensure_not_builtin_skill_management_target` 同样拒绝删除内置，UI 对内置隐藏删除按钮、批量删除排除内置）；`hubSettingsStore` 默认 `{enabled:true, selected:[]}` + **旧污染迁移**（加载时剔除 selected 中遗留的两枚内置名并写回一次——旧版加载器会把它们强制并入，历史上任何一次设置写盘都可能把污染写进 kv；实测用户 kv 正是如此，迁移后两枚默认关）；`SkillsHubPage` 的全部启用守卫/合并/计数口径放开（选中集合、toggle、批量启停、全选、安装后自动启用、分类归属）；`InstalledSkillCard/View/Drawer` 去掉 Lock 分支与恒启用徽标，开关按普通技能渲染（内置仍隐藏删除按钮）。
+- **验证**：`tsc` 0；hub 67 / chat 151 绿；CDP 真机 E2E——迁移后两枚开关均 `aria-checked=false`（默认禁用）→ 启用 skills-creator 后 kv 持久化 `["skills-creator"]` 且**请求预览的用户上下文 Skills 清单出现 creator、不含 installer**（禁用不进上下文）→ 关闭后 kv 回到 `[]`。
+- **追加（同日用户反馈②）**：「复制全文」再精简为**纯 JSON 数据**（标题行/代码围栏/注记全部不带，`writeText(data.rawJson)`）；CDP 实测剪贴板以 `{` 起 `}` 止、无标题/围栏/注记行。
