@@ -280,12 +280,15 @@ fn signal_process_group(pid: u32, force: bool) -> Result<(), String> {
 fn signal_process_group(pid: u32, force: bool) -> Result<(), String> {
     use std::os::windows::process::CommandExt;
     const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-    let mut args = vec!["/PID".to_string(), pid.to_string(), "/T".to_string()];
-    if force {
-        args.push("/F".to_string());
-    }
+    // ⚠️ Windows 对控制台进程树没有有效的「软终止」语义：taskkill 不带 /F 只发
+    // WM_CLOSE，仅对有窗口消息循环的 GUI 程序有效——ping/cmd/node 等控制台程序一律
+    // 拒绝（"can only be terminated forcefully"）。若按 force=false 发软杀，bg_stop 的
+    // TERM 宽限（2s）必然白等、叠加 tasklist 探活开销实测 ~3.5s（2026-10-06 修复，
+    // 曾超测试 3s 断言）。因此 Windows 分支不区分 force，恒用 /T /F 直接强杀整树。
+    let _ = force;
+    let pid_arg = pid.to_string();
     let output = Command::new("taskkill")
-        .args(&args)
+        .args(["/PID", pid_arg.as_str(), "/T", "/F"])
         .creation_flags(CREATE_NO_WINDOW)
         .output()
         .map_err(|e| format!("taskkill 启动失败: {e}"))?;
@@ -397,6 +400,8 @@ pub(crate) fn bg_stop_sync(task_id: String) -> Result<BgStopResult, String> {
     };
 
     // 2) 锁外终止进程组：TERM → 有界等待 → KILL → 有界等待。
+    //    ⚠️ Windows 分支的 signal_process_group 不区分 TERM/KILL、恒为 taskkill /T /F
+    //    （控制台进程无软终止语义，见该函数注释）——本流程在 Windows 上即「强杀 → 等待」。
     //    已自然退出则不发信号——避免 pid 已被回收后被误当进程组 id 而伤及无关进程。
     let mut forced = false;
     let mut error = None;
