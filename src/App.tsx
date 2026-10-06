@@ -64,7 +64,7 @@ import { SettingsPage } from "./components/settings/SettingsPage";
 import { DEFAULT_SYSTEM_PROMPT, buildEnvironmentSection } from "./lib/providers/runAgentTurn";
 import type { ApprovalDecision } from "./lib/providers/runAgentTurn";
 import { ApprovalCard } from "./components/chat/ApprovalCard";
-import { AskQuestionCard } from "./components/chat/AskQuestionCard";
+import { AskQuestionCard, AskQuestionMinimizedPill } from "./components/chat/AskQuestionCard";
 import { PlanModeCard } from "./components/chat/PlanModeCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { kvGet } from "./lib/storage/db";
@@ -482,6 +482,15 @@ export default function App() {
 
   // 会话池：每个任务一个独立 controller；切任务只换订阅目标，后台任务照常流式。
   const { state, stop, isStreaming } = useConversationPool(activeTaskId);
+
+  // 提问卡缩小态（2026-10-06 用户定稿）：挂起变化（新问题到达/解决/切任务）即复位展开；
+  // activeIndex 一并提升到 App——缩小胶囊要显示当前 Tab 的题文本，恢复后停留在原 Tab。
+  const [questionMinimized, setQuestionMinimized] = useState(false);
+  const [questionActiveIndex, setQuestionActiveIndex] = useState(0);
+  useEffect(() => {
+    setQuestionMinimized(false);
+    setQuestionActiveIndex(0);
+  }, [state.pendingApproval]);
 
   // Keep ref of current messages and activeTaskId to prevent closure races and empty overrides
   // 上下文容量：真实 usage（最后一条 assistant apiMessage）+ 模型声明 contextWindow + 字符估算分类
@@ -1888,19 +1897,33 @@ export default function App() {
                         }}
                       />
                     ) : null}
-                    {/* 提问卡（ask_user_question 工具挂起）：模型等待用户作答 */}
+                    {/* 提问卡（ask_user_question 工具挂起）：模型等待用户作答；缩小态 = 输入框右上方胶囊（显示当前题），点击恢复 */}
                     {state.pendingApproval &&
                     (state.pendingApproval as { args?: { kind?: string } })?.args?.kind === "question" ? (
-                      <AskQuestionCard
-                        questions={((state.pendingApproval as { args?: { questions?: never[] } }).args?.questions ?? []) as never}
-                        onAnswer={(answers) => {
-                          if (activeTaskId)
-                            poolResolveApproval(activeTaskId, { answers });
-                        }}
-                        onSkip={() => {
-                          if (activeTaskId) poolResolveApproval(activeTaskId, "reject");
-                        }}
-                      />
+                      questionMinimized ? (
+                        <AskQuestionMinimizedPill
+                          question={
+                            ((state.pendingApproval as { args?: { questions?: { question?: string }[] } })
+                              .args?.questions?.[questionActiveIndex]?.question) ?? ""
+                          }
+                          count={((state.pendingApproval as { args?: { questions?: unknown[] } }).args?.questions ?? []).length}
+                          onRestore={() => setQuestionMinimized(false)}
+                        />
+                      ) : (
+                        <AskQuestionCard
+                          questions={((state.pendingApproval as { args?: { questions?: never[] } }).args?.questions ?? []) as never}
+                          onAnswer={(answers) => {
+                            if (activeTaskId)
+                              poolResolveApproval(activeTaskId, { answers });
+                          }}
+                          onSkip={() => {
+                            if (activeTaskId) poolResolveApproval(activeTaskId, "reject");
+                          }}
+                          onMinimize={() => setQuestionMinimized(true)}
+                          activeIndex={questionActiveIndex}
+                          onActiveIndexChange={setQuestionActiveIndex}
+                        />
+                      )
                     ) : null}
                     {/* 审批卡（对齐 ZCode PermissionDialog）：工具执行前挂起时浮在输入框上方 */}
                     {state.pendingApproval &&
