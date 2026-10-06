@@ -438,6 +438,257 @@ export function createApprovalGate(
   };
 }
 
+/**
+ * 回合上下文装配（发送与预览的单一真相源）：工具收集（注册表+MCP+询问/计划+记忆管理器）、
+ * 系统提示词拼接（人设→基座→Environment→模式段→SessionStart hooks）、meta_user 块
+ * （currentDate/AGENTS.md/记忆/技能）并入首条 user 消息。
+ *
+ * - `runAgentTurn` 以 `runSessionStartHooks: true` 调用（真实发送路径）；
+ * - 请求预览以 `false` 调用（hook 是外部命令，预览不产生副作用），其余逐字同源；
+ * - 子代理工具对（agent/subagent_output）依赖 model/stream，由调用方各自追加。
+ */
+export interface TurnAssemblyParams {
+  config?: ProviderConfig;
+  messages: Message[];
+  systemPrompt?: string;
+  workspaceRoot?: string;
+  assistantId?: string;
+  approvalMode?: ApprovalMode;
+  approval?: ApprovalCoordinator;
+  checkpoint?: { conversationId: string; turnId: string; root?: string };
+  /** 是否执行 SessionStart hooks（缺省 true；预览传 false） */
+  runSessionStartHooks?: boolean;
+}
+
+export interface TurnAssembly {
+  /** 完整系统提示词（人设 + 基座 + Environment + 模式段 + hooks 追加） */
+  systemPrompt: string;
+  /** 发送用消息数组（meta_user 已并入首条 user 消息头部） */
+  messages: Message[];
+  /** 工具集（注册表 + MCP + 询问/计划 + 记忆管理器；不含子代理对） */
+  tools: unknown[];
+  /** 仅注册表工具（子代理工具集过滤的输入） */
+  registryTools: unknown[];
+  /** 分段原文（供预览逐段展示与标注） */
+  parts: {
+    personaText: string | null;
+    memorySection: string;
+    skillsSection: string;
+    agentsMdSection: string;
+    currentDateLine: string;
+    modePrompt: string;
+    sessionStartContext: string;
+  };
+}
+
+export async function assembleTurnContext(params: TurnAssemblyParams): Promise<TurnAssembly> {
+  const {
+    config,
+    messages,
+    systemPrompt,
+    workspaceRoot,
+    assistantId,
+    approvalMode = "full",
+    approval,
+    checkpoint,
+    runSessionStartHooks,
+  } = params;
+
+    const tools = getTools({
+      ...(workspaceRoot ? { workspaceRoot } : {}),
+      ...(checkpoint ? { checkpoint } : {}),
+    });
+    // MCP 工具接入（对齐 LiveAgent：发送时枚举启用服务器的工具并注入工具循环；
+    // 枚举失败的服务器如实跳过。整轮发送增加一次串行枚举，与 ZCode/LiveAgent 同语义）。
+    let mcpTools: unknown[] = [];
+    try {
+      mcpTools = (await createMcpTools()) as unknown[];
+    } catch (err) {
+      console.warn("[mcp] tool enumeration failed (continuing without MCP):", err);
+    }
+    const allTools: unknown[] = [...tools, ...mcpTools];
+    // AskUserQuestion 工具（P1-3）：模型向用户提问，挂起等待提问卡作答。
+    // 仅在有审批协调器时挂（协调器由池注入——Web 无后端场景不挂，工具不存在即不误调）。
+    if (approval) {
+      allTools.push(createAskUserQuestionTool({
+        request: (req) => approval.request(req),
+      }));
+      // ExitPlanMode（P2 尾巴 #8）：计划模式提交实施计划挂起等批准；非计划模式由
+      // 审批门直接拦截（mode.plan.exitOnly）。模式门优先于工具级策略（见 gate 顶部）。
+      allTools.push(createExitPlanModeTool({
+        request: (req) => approval.request(req),
+      }));
+    }
+
+    // 记忆注入（对齐 LiveAgent）：`# Memory Index` 分桶索引 + `## Memory` 工具规则段，
+    // 并挂载 MemoryManager 工具（list/read/search/write/update/delete/accept）。
+    // 后端不可达（Web 模式）时注入为空段、工具调用如实报错（No-Fallback）。
+    let memorySection = "";
+    let memoryManagerTool: unknown = null;
+    try {
+      const [{ buildMemoryOverviewSection, buildMemoryToolsSuffixSection }, { createMemoryManagerTool }] =
+        await Promise.all([
+          import("../memory/prompts/injection"),
+          import("../memory/memoryManagerTool"),
+        ]);
+      const overview = await buildMemoryOverviewSection(workspaceRoot || undefined);
+      memorySection = overview ? `${overview}\n\n${buildMemoryToolsSuffixSection()}` : "";
+      memoryManagerTool = createMemoryManagerTool({
+        workdir: workspaceRoot || "",
+        mode: "rw",
+        actor: "tool",
+      });
+    } catch (err) {
+      console.warn("[memory] index overview unavailable (continuing without memory):", err);
+    }
+
+    // 技能注入（对齐 LiveAgent）：`skill://` 路径协议 + 用户启用列表的渐进披露清单；
+    // 总开关关闭或未选技能时为空段（与 LA skillsEnabled=false 清空同语义）。
+    let skillsSection = "";
+    try {
+      const { useHubSettings } = await import("../../store/hubSettingsStore");
+      const { enabled, selected } = useHubSettings.getState().settings.skills;
+      if (enabled && selected.length > 0) {
+        const skillsLib = await import("../skills/index");
+        const discovery = await skillsLib.discoverSkills();
+        // buildSkillsSystemPrompt 需要 SkillSummary 元数据（对齐 LA useSendChatTurn）：
+        // 由选中名称解析为已发现技能对象，未命中的名称忽略。
+        const selectedSkills = discovery.skills.filter((skill) => selected.includes(skill.name));
+        skillsSection = skillsLib.buildSkillsSystemPrompt({
+          rootDir: discovery.rootDir,
+          selected: selectedSkills,
+        });
+      }
+    } catch (err) {
+      console.warn("[skills] discovery unavailable (continuing without skills):", err);
+    }
+    if (memoryManagerTool) {
+      allTools.push(memoryManagerTool);
+    }
+    const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
+    let personaText: string | null = null;
+    // 工作区根声明移入 Environment 段（- Working directory 行；避免重复出现两次）
+    let effectiveSystemPrompt = prompt;
+    // 助手人设注入（用户定稿：只注入人设正文，名称/描述不进提示词）：
+    // 未设置/查不到/正文为空 = 无注入（不中断回合）。
+    if (assistantId) {
+      try {
+        const { loadAssistantCatalog } = await import("../assistants/assistantDefs");
+        const catalog = await loadAssistantCatalog();
+        const def = catalog.assistants.find((d) => d.id === assistantId);
+        if (def && def.prompt.trim()) {
+          personaText = def.prompt.trim();
+          effectiveSystemPrompt = `${def.prompt.trim()}\n\n---\n\n` + effectiveSystemPrompt;
+        }
+      } catch (err) {
+        console.warn("[assistant] persona load failed (continuing without):", err);
+      }
+    }
+    const modelLabel =
+      config && typeof config === "object" && config.provider && config.modelId
+        ? `${config.provider}/${config.modelId}`
+        : undefined;
+    // 系统 OS 徽章 + 终端配置所选 shell 进 Environment 段（P2-G2 尾巴）
+    let osBadge: string | undefined;
+    let terminalShell: string | undefined;
+    try {
+      const [{ getOsInfo, formatOsBadge }, { getTerminalSettings }] = await Promise.all([
+        import("../system/systemInfo"),
+        import("../terminal/terminalSettings"),
+      ]);
+      osBadge = formatOsBadge(await getOsInfo()) || undefined;
+      terminalShell = getTerminalSettings().shell || undefined;
+    } catch (err) {
+      console.warn("[env] system info unavailable (omitting from Environment):", err);
+    }
+    effectiveSystemPrompt += `\n\n${buildEnvironmentSection({
+      modelLabel,
+      osBadge,
+      terminalShell,
+      workspaceRoot,
+    })}`;
+    let modePrompt = "";
+    if (approvalMode === "plan") {
+      modePrompt = PLAN_MODE_PROMPT;
+      effectiveSystemPrompt += PLAN_MODE_PROMPT;
+    } else if (approvalMode !== "full") {
+      modePrompt = APPROVAL_HINT_PROMPT;
+      effectiveSystemPrompt += APPROVAL_HINT_PROMPT;
+    }
+    // 记忆/技能不进系统提示词（ZCode 同款 meta_user 通道）：系统提示词保持静态，
+    // 三者随 currentDate 包 <system-reminder> 并入首条 user 消息（见 base.messages）。
+    // 工作区指令文件（AGENTS.md / CLAUDE.md，ZCode request-user-context 语义）：
+    // 内容同样挂 meta_user；读取失败/不存在时如实跳过。
+    let agentsMdSection = "";
+    if (workspaceRoot) {
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const files = await invoke<
+          { source: string; path: string; content: string; truncated: boolean }[]
+        >("agents_md_read", { workspaceRoot });
+        for (const file of files) {
+          const truncMark = file.truncated
+            ? "\n…[truncated: 指令文件超过 64KB，仅注入前 64KB]"
+            : "";
+          agentsMdSection += `<instruction-file source="${file.source}" path="${file.path}">\n${file.content}${truncMark}\n</instruction-file>\n\n`;
+        }
+        if (agentsMdSection.trim().length > 0) {
+          agentsMdSection = `# Project instructions (from workspace instruction files — authoritative for this workspace)\n\n${agentsMdSection.trim()}`;
+        }
+      } catch (err) {
+        console.warn("[agents-md] read failed (continuing without):", err);
+      }
+    }
+    const currentDateLine = `# currentDate\nToday's date is ${new Date().toDateString()}.`;
+    const metaUserBlock = buildMetaUserBlock({
+      currentDate: currentDateLine,
+      agentsMdSection,
+      memorySection,
+      skillsSection,
+    });
+    const requestMessages = prependMetaUserBlock(messages, metaUserBlock);
+
+    // SessionStart hooks（P2-G2）：回合启动时触发；additionalContext 追加进系统
+    // 提示词尾部；blocked = 本轮拒绝启动（真实错误上抛，绝不静默放行）。
+    // 预览场景（runSessionStartHooks=false）不执行——hook 是外部命令，预览不该有副作用。
+    let sessionStartContext = "";
+    if (runSessionStartHooks !== false && workspaceRoot) {
+      try {
+        const outcome = await runWorkspaceHooks(
+          "SessionStart",
+          { payload: { workspaceRoot } },
+          workspaceRoot,
+        );
+        if (outcome.blocked) {
+          throw new Error(`[Hook:SessionStart] ${outcome.reason ?? "blocked by hook"}`);
+        }
+        if (outcome.additionalContexts.length > 0) {
+          sessionStartContext = outcome.additionalContexts.join("\n");
+          effectiveSystemPrompt += `\n\n[Hook:SessionStart]\n${sessionStartContext}`;
+        }
+      } catch (err) {
+        if (err instanceof Error && err.message.includes("[Hook:SessionStart]")) throw err;
+        console.warn("[hooks] SessionStart runner failed (continuing):", err);
+      }
+    }
+
+  return {
+    systemPrompt: effectiveSystemPrompt,
+    messages: requestMessages,
+    tools: allTools,
+    registryTools: tools,
+    parts: {
+      personaText,
+      memorySection,
+      skillsSection,
+      agentsMdSection,
+      currentDateLine,
+      modePrompt,
+      sessionStartContext,
+    },
+  };
+}
+
 export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnResult> {
   const {
     source,
@@ -456,174 +707,20 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     checkpoint,
   } = params;
 
-  const tools = getTools({
-    ...(workspaceRoot ? { workspaceRoot } : {}),
-    ...(checkpoint ? { checkpoint } : {}),
+  const assembly = await assembleTurnContext({
+    config,
+    messages,
+    ...(systemPrompt === undefined ? {} : { systemPrompt }),
+    ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
+    ...(assistantId === undefined ? {} : { assistantId }),
+    approvalMode,
+    ...(approval === undefined ? {} : { approval }),
+    ...(checkpoint === undefined ? {} : { checkpoint }),
+    runSessionStartHooks: true,
   });
-  // MCP 工具接入（对齐 LiveAgent：发送时枚举启用服务器的工具并注入工具循环；
-  // 枚举失败的服务器如实跳过。整轮发送增加一次串行枚举，与 ZCode/LiveAgent 同语义）。
-  let mcpTools: unknown[] = [];
-  try {
-    mcpTools = (await createMcpTools()) as unknown[];
-  } catch (err) {
-    console.warn("[mcp] tool enumeration failed (continuing without MCP):", err);
-  }
-  const allTools = [...tools, ...mcpTools] as typeof tools;
-  // AskUserQuestion 工具（P1-3）：模型向用户提问，挂起等待提问卡作答。
-  // 仅在有审批协调器时挂（协调器由池注入——Web 无后端场景不挂，工具不存在即不误调）。
-  if (approval) {
-    allTools.push(createAskUserQuestionTool({
-      request: (req) => approval.request(req),
-    }) as (typeof tools)[number]);
-    // ExitPlanMode（P2 尾巴 #8）：计划模式提交实施计划挂起等批准；非计划模式由
-    // 审批门直接拦截（mode.plan.exitOnly）。模式门优先于工具级策略（见 gate 顶部）。
-    allTools.push(createExitPlanModeTool({
-      request: (req) => approval.request(req),
-    }) as (typeof tools)[number]);
-  }
-
-  // 记忆注入（对齐 LiveAgent）：`# Memory Index` 分桶索引 + `## Memory` 工具规则段，
-  // 并挂载 MemoryManager 工具（list/read/search/write/update/delete/accept）。
-  // 后端不可达（Web 模式）时注入为空段、工具调用如实报错（No-Fallback）。
-  let memorySection = "";
-  let memoryManagerTool: unknown = null;
-  try {
-    const [{ buildMemoryOverviewSection, buildMemoryToolsSuffixSection }, { createMemoryManagerTool }] =
-      await Promise.all([
-        import("../memory/prompts/injection"),
-        import("../memory/memoryManagerTool"),
-      ]);
-    const overview = await buildMemoryOverviewSection(workspaceRoot || undefined);
-    memorySection = overview ? `${overview}\n\n${buildMemoryToolsSuffixSection()}` : "";
-    memoryManagerTool = createMemoryManagerTool({
-      workdir: workspaceRoot || "",
-      mode: "rw",
-      actor: "tool",
-    });
-  } catch (err) {
-    console.warn("[memory] index overview unavailable (continuing without memory):", err);
-  }
-
-  // 技能注入（对齐 LiveAgent）：`skill://` 路径协议 + 用户启用列表的渐进披露清单；
-  // 总开关关闭或未选技能时为空段（与 LA skillsEnabled=false 清空同语义）。
-  let skillsSection = "";
-  try {
-    const { useHubSettings } = await import("../../store/hubSettingsStore");
-    const { enabled, selected } = useHubSettings.getState().settings.skills;
-    if (enabled && selected.length > 0) {
-      const skillsLib = await import("../skills/index");
-      const discovery = await skillsLib.discoverSkills();
-      // buildSkillsSystemPrompt 需要 SkillSummary 元数据（对齐 LA useSendChatTurn）：
-      // 由选中名称解析为已发现技能对象，未命中的名称忽略。
-      const selectedSkills = discovery.skills.filter((skill) => selected.includes(skill.name));
-      skillsSection = skillsLib.buildSkillsSystemPrompt({
-        rootDir: discovery.rootDir,
-        selected: selectedSkills,
-      });
-    }
-  } catch (err) {
-    console.warn("[skills] discovery unavailable (continuing without skills):", err);
-  }
-  if (memoryManagerTool) {
-    allTools.push(memoryManagerTool as (typeof tools)[number]);
-  }
-  const prompt = systemPrompt || DEFAULT_SYSTEM_PROMPT;
-  // 工作区根声明移入 Environment 段（- Working directory 行；避免重复出现两次）
-  let effectiveSystemPrompt = prompt;
-  // 助手人设注入（用户定稿：只注入人设正文，名称/描述不进提示词）：
-  // 未设置/查不到/正文为空 = 无注入（不中断回合）。
-  if (assistantId) {
-    try {
-      const { loadAssistantCatalog } = await import("../assistants/assistantDefs");
-      const catalog = await loadAssistantCatalog();
-      const def = catalog.assistants.find((d) => d.id === assistantId);
-      if (def && def.prompt.trim()) {
-        effectiveSystemPrompt = `${def.prompt.trim()}\n\n---\n\n` + effectiveSystemPrompt;
-      }
-    } catch (err) {
-      console.warn("[assistant] persona load failed (continuing without):", err);
-    }
-  }
-  const modelLabel =
-    config && typeof config === "object" && config.provider && config.modelId
-      ? `${config.provider}/${config.modelId}`
-      : undefined;
-  // 系统 OS 徽章 + 终端配置所选 shell 进 Environment 段（P2-G2 尾巴）
-  let osBadge: string | undefined;
-  let terminalShell: string | undefined;
-  try {
-    const [{ getOsInfo, formatOsBadge }, { getTerminalSettings }] = await Promise.all([
-      import("../system/systemInfo"),
-      import("../terminal/terminalSettings"),
-    ]);
-    osBadge = formatOsBadge(await getOsInfo()) || undefined;
-    terminalShell = getTerminalSettings().shell || undefined;
-  } catch (err) {
-    console.warn("[env] system info unavailable (omitting from Environment):", err);
-  }
-  effectiveSystemPrompt += `\n\n${buildEnvironmentSection({
-    modelLabel,
-    osBadge,
-    terminalShell,
-    workspaceRoot,
-  })}`;
-  if (approvalMode === "plan") {
-    effectiveSystemPrompt += PLAN_MODE_PROMPT;
-  } else if (approvalMode !== "full") {
-    effectiveSystemPrompt += APPROVAL_HINT_PROMPT;
-  }
-  // 记忆/技能不进系统提示词（ZCode 同款 meta_user 通道）：系统提示词保持静态，
-  // 三者随 currentDate 包 <system-reminder> 并入首条 user 消息（见 base.messages）。
-  // 工作区指令文件（AGENTS.md / CLAUDE.md，ZCode request-user-context 语义）：
-  // 内容同样挂 meta_user；读取失败/不存在时如实跳过。
-  let agentsMdSection = "";
-  if (workspaceRoot) {
-    try {
-      const { invoke } = await import("@tauri-apps/api/core");
-      const files = await invoke<
-        { source: string; path: string; content: string; truncated: boolean }[]
-      >("agents_md_read", { workspaceRoot });
-      for (const file of files) {
-        const truncMark = file.truncated
-          ? "\n…[truncated: 指令文件超过 64KB，仅注入前 64KB]"
-          : "";
-        agentsMdSection += `<instruction-file source="${file.source}" path="${file.path}">\n${file.content}${truncMark}\n</instruction-file>\n\n`;
-      }
-      if (agentsMdSection.trim().length > 0) {
-        agentsMdSection = `# Project instructions (from workspace instruction files — authoritative for this workspace)\n\n${agentsMdSection.trim()}`;
-      }
-    } catch (err) {
-      console.warn("[agents-md] read failed (continuing without):", err);
-    }
-  }
-  const metaUserBlock = buildMetaUserBlock({
-    currentDate: `# currentDate\nToday's date is ${new Date().toDateString()}.`,
-    agentsMdSection,
-    memorySection,
-    skillsSection,
-  });
-  const requestMessages = prependMetaUserBlock(messages, metaUserBlock);
-
-  // SessionStart hooks（P2-G2）：回合启动时触发；additionalContext 追加进系统
-  // 提示词尾部；blocked = 本轮拒绝启动（真实错误上抛，绝不静默放行）。
-  if (workspaceRoot) {
-    try {
-      const outcome = await runWorkspaceHooks(
-        "SessionStart",
-        { payload: { workspaceRoot } },
-        workspaceRoot,
-      );
-      if (outcome.blocked) {
-        throw new Error(`[Hook:SessionStart] ${outcome.reason ?? "blocked by hook"}`);
-      }
-      if (outcome.additionalContexts.length > 0) {
-        effectiveSystemPrompt += `\n\n[Hook:SessionStart]\n${outcome.additionalContexts.join("\n")}`;
-      }
-    } catch (err) {
-      if (err instanceof Error && err.message.includes("[Hook:SessionStart]")) throw err;
-      console.warn("[hooks] SessionStart runner failed (continuing):", err);
-    }
-  }
+  const effectiveSystemPrompt = assembly.systemPrompt;
+  const requestMessages = assembly.messages;
+  const allTools = assembly.tools as ReturnType<typeof getTools>;
 
   // ---- 生命周期 hooks（对齐 LiveAgent Hooks：8 个生命周期事件）----
   // pi-agent-core 原生事件名与 hook 事件同名（agent_start/turn_start/message_*/
@@ -738,7 +835,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
       workspaceRoot,
       signal,
       thinkingLevel,
-      registryTools: tools as unknown[],
+      registryTools: assembly.registryTools,
       beforeToolCall: base.beforeToolCall,
     });
     const toolsWithAgent = [
@@ -769,7 +866,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     workspaceRoot,
     signal,
     thinkingLevel,
-    registryTools: tools as unknown[],
+    registryTools: assembly.registryTools,
     beforeToolCall: base.beforeToolCall,
   });
   const toolsWithAgent = [

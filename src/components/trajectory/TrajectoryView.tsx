@@ -47,6 +47,8 @@ export function TrajectoryView(props: {
   hasMoreMessages?: boolean;
   loadingEarlier?: boolean;
   onLoadEarlier?: () => void | Promise<void>;
+  /** 打开「下一次请求预览」弹窗（App 层构建与挂载） */
+  onRequestPreview?: () => void;
 }) {
   const { t } = useTranslation();
   const [collapsedTurns, setCollapsedTurns] = useState<ReadonlySet<number>>(EMPTY_TURNS);
@@ -151,6 +153,7 @@ export function TrajectoryView(props: {
         }
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
+        {...(props.onRequestPreview === undefined ? {} : { onRequestPreview: props.onRequestPreview })}
       />
 
       {props.hasMoreMessages === true && (

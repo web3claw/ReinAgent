@@ -98,4 +98,18 @@ export const trajectoryEn = {
   "trajectory.status.complete": "Complete",
   "trajectory.status.error": "Failed",
   "trajectory.status.aborted": "Aborted",
+  // ---- 本仓增量（请求预览，2026-10-06，非 LA 原文键） ----
+  "trajectory.preview.button": "Request preview",
+  "trajectory.preview.title": "Next request preview",
+  "trajectory.preview.navParams": "Request params",
+  "trajectory.preview.navSystem": "System prompt",
+  "trajectory.preview.navTools": "Tools",
+  "trajectory.preview.navContext": "User context",
+  "trajectory.preview.navMessages": "Messages",
+  "trajectory.preview.navRaw": "Raw JSON",
+  "trajectory.preview.copy": "Copy all",
+  "trajectory.preview.copied": "Copied",
+  "trajectory.preview.loading": "Building…",
+  "trajectory.preview.empty": "(none)",
+  "trajectory.preview.clipped": "clipped",
 } as const;

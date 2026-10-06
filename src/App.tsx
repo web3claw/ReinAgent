@@ -68,6 +68,8 @@ import { AskQuestionCard, AskQuestionMinimizedPill } from "./components/chat/Ask
 import { ConversationViewTabs } from "./components/chat/ConversationViewTabs";
 import { TrajectoryView } from "./components/trajectory/TrajectoryView";
 import { useConversationViewState } from "./lib/trajectory/useConversationViewState";
+import { RequestPreviewDialog } from "./components/trajectory/RequestPreviewDialog";
+import { buildRequestPreview, type RequestPreview } from "./lib/chat/requestPreview";
 import { PlanModeCard } from "./components/chat/PlanModeCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
 import { kvGet } from "./lib/storage/db";
@@ -1497,6 +1499,36 @@ export default function App() {
   );
   paletteCommandsRef.current = paletteCommands;
 
+  // 下次请求预览（轨迹页工具栏入口）：弹窗三态由 App 持有，内容构建交给同源的 buildRequestPreview。
+  // ⚠️ 必须位于设置页早退 return 之前（hooks 顺序铁律：早退后声明会触发
+  // 「Rendered fewer hooks than expected」整树崩溃——2026-10-06 实测踩坑）。
+  const [requestPreviewState, setRequestPreviewState] = useState<{
+    open: boolean;
+    loading: boolean;
+    error: string | null;
+    data: RequestPreview | null;
+  }>({ open: false, loading: false, error: null, data: null });
+  const openRequestPreview = useCallback(() => {
+    const taskId = activeTaskId;
+    setRequestPreviewState((prev) => ({ open: true, loading: true, error: null, data: prev.data }));
+    void (async () => {
+      try {
+        const data = await buildRequestPreview({
+          options: buildTurnOptions(undefined, undefined, taskId),
+          state: getEntrySnapshot(taskId),
+        });
+        setRequestPreviewState({ open: true, loading: false, error: null, data });
+      } catch (err) {
+        setRequestPreviewState({
+          open: true,
+          loading: false,
+          error: err instanceof Error ? err.message : String(err),
+          data: null,
+        });
+      }
+    })();
+  }, [buildTurnOptions, activeTaskId]);
+
   if (currentView === "settings") {
     return (
       <div className="contents">
@@ -1899,6 +1931,7 @@ export default function App() {
                   onLoadEarlier={() => {
                     if (activeTaskId) void loadOlderMessages(activeTaskId);
                   }}
+                  onRequestPreview={openRequestPreview}
                 />
               ) : (
               <div className="relative flex-1 min-h-0 flex">
@@ -2036,6 +2069,15 @@ export default function App() {
 
       {/* /clear 二次确认弹窗 */}
       {confirmDialogNode}
+
+      {/* 下一次请求预览弹窗（轨迹页工具栏入口；内容与发送链路同源构建） */}
+      <RequestPreviewDialog
+        open={requestPreviewState.open}
+        onClose={() => setRequestPreviewState((prev) => ({ ...prev, open: false }))}
+        loading={requestPreviewState.loading}
+        error={requestPreviewState.error}
+        data={requestPreviewState.data}
+      />
 
       {/* 回退结果 toast（对齐 LiveAgent addNotify：成功/问题分级，底部右侧悬浮） */}
       {rewindToast && (

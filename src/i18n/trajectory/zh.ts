@@ -98,4 +98,18 @@ export const trajectoryZh = {
   "trajectory.status.complete": "完成",
   "trajectory.status.error": "失败",
   "trajectory.status.aborted": "已中断",
+  // ---- 本仓增量（请求预览，2026-10-06，非 LA 原文键） ----
+  "trajectory.preview.button": "下次请求预览",
+  "trajectory.preview.title": "下一次请求预览",
+  "trajectory.preview.navParams": "请求参数",
+  "trajectory.preview.navSystem": "系统提示词",
+  "trajectory.preview.navTools": "工具",
+  "trajectory.preview.navContext": "用户上下文",
+  "trajectory.preview.navMessages": "消息安排",
+  "trajectory.preview.navRaw": "原始 JSON",
+  "trajectory.preview.copy": "复制全文",
+  "trajectory.preview.copied": "已复制",
+  "trajectory.preview.loading": "构建中…",
+  "trajectory.preview.empty": "（无）",
+  "trajectory.preview.clipped": "已截断",
 } as const;

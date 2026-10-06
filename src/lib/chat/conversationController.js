@@ -87,7 +87,7 @@ function describeErrorChain(err) {
  * @param {import("./conversationModel").TimelineEntry[]} messages
  * @returns {number} 0 = 没有可用用量
  */
-function lastUsedTokens(messages) {
+export function lastUsedTokens(messages) {
   for (let i = messages.length - 1; i >= 0; i -= 1) {
     const message = messages[i];
     if (!message || message.role !== "assistant") continue;

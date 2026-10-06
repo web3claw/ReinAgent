@@ -4,7 +4,7 @@
  * 轨迹工具栏：投影切换、整表折叠、实时搜索。
  */
 
-import { Search } from "lucide-react";
+import { FileJson2, Search } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { cn } from "../lw/lib/utils";
 
@@ -20,6 +20,8 @@ export function TrajectoryToolbar(props: {
   onToggleAllCalls: () => void;
   searchQuery: string;
   onSearchQueryChange: (query: string) => void;
+  /** 打开「下一次请求预览」弹窗（本仓增量；缺省不渲染按钮） */
+  onRequestPreview?: () => void;
 }) {
   const { t } = useTranslation();
   const durationTitle = !props.hasTiming
@@ -73,11 +75,22 @@ export function TrajectoryToolbar(props: {
         {t("trajectory.toolbar.calls")}
       </ToolbarButton>
 
+      <div className={cn("ml-auto flex min-w-0 items-center gap-1", "@max-[520px]:order-last @max-[520px]:ml-0 @max-[520px]:w-full")}>
+        {props.onRequestPreview ? (
+          <ToolbarButton
+            pressed={false}
+            title={t("trajectory.preview.button")}
+            onClick={props.onRequestPreview}
+          >
+            <FileJson2 className="size-3.5" />
+            {t("trajectory.preview.button")}
+          </ToolbarButton>
+        ) : null}
       <div
         className={cn(
-          "ml-auto flex min-w-0 items-center gap-1.5",
+          "flex min-w-0 items-center gap-1.5",
           "rounded-md border border-border/60 px-2 py-1",
-          "focus-within:border-primary/60 @max-[520px]:order-last @max-[520px]:ml-0 @max-[520px]:w-full",
+          "focus-within:border-primary/60 @max-[520px]:w-full",
         )}
       >
         <Search className="size-3 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -89,6 +102,7 @@ export function TrajectoryToolbar(props: {
           onChange={(event) => props.onSearchQueryChange(event.currentTarget.value)}
           className="w-40 min-w-0 bg-transparent text-xs outline-none placeholder:text-muted-foreground @max-[520px]:w-full"
         />
+      </div>
       </div>
     </div>
   );

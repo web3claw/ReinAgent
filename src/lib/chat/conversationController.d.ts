@@ -87,3 +87,11 @@ export interface ConversationController {
 export function createConversationController(
   options: ConversationControllerOptions,
 ): ConversationController;
+
+/**
+ * 最近一条「有真实用量」的助手条目的上下文 tokens（input + cacheRead + output；跳过全 0
+ * 用量的失败行）。发送前水位线判据与请求预览同源使用（2026-10-06 导出）。
+ */
+export function lastUsedTokens(
+  messages: import("./conversationModel").TimelineEntry[],
+): number;
