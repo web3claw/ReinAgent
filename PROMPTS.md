@@ -271,4 +271,4 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 | system-reminder 防伪造包装 | meta_user 块（currentDate/记忆/技能）已采用 <system-reminder> 包装（见 2.1） | ✅（部分） |
 | 附件 "data not instructions" 免责 | 待实现（附件功能已上线：路径引用 + 图片内联，但发送时尚未附加免责包装） | ⏳ |
 | Todo 描述与提醒 | 暂不适用（无 todo 工具） | — |
-| 子代理/工作流/压缩/计划模式全量提示 | 暂不适用 | — |
+| 子代理 Agent 工具描述（When to use 委派触发器 + 防重复闸 + 并行派发） | `subagentRunner.ts renderSubagentCatalogDescription`（对齐 ZCode agent.ts；缺省 explorer、后台报告走 subagent_output 两处诚实差异） | ✅ 2026-10-06（工作流/压缩/计划模式提示仍暂不适用） |

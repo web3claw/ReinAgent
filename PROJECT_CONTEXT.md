@@ -787,6 +787,7 @@ ReinAgent 架构全景
 - **Tauri 实测**：模型真实派发 Explore 子代理（嵌套循环跑 glob/list_dir 调研）→ 报告回传主循环转述；第二轮验证派发不再弹审批；步数触顶 ⚠ 事实链生效（子代理如实报告不完整，主模型如实转告并自己补验证）。
 - **本批未做（后续增量）**：子代理目录侧栏（Running/Ended，需内存 registry 或持久化）、后台子代理（run_in_background + 完成通知）、「在右侧打开」完整回放（依赖子会话持久化）、用户自定义 agents/*.md profile、MCP/记忆工具带入子代理。
 - 验证：前端 306/306 + `tsc` 0。
+- **⚠️ 2026-10-06 工具描述引导升级（对齐 ZCode agent.ts "When to use"）**：旧描述仅一句时机引导，模型（尤其中低档）从不主动派发子代理；ZCode 的委派引导全部集中在工具描述（系统提示词不承担）。`renderSubagentCatalogDescription` 重写为结构化描述：三个委派触发器（任务匹配 agent 类型 / 可并行独立工作 / **回答需跨多文件读——delegate it and you keep the conclusion, not the file dumps**）+ 反向边界（单点已知信息直接查）+ 防重复闸（Once you've delegated, don't also run it yourself）+ 并行派发（同消息多次调用）+ 转述义务（final message 仅返回给主代理）。与 ZCode 的两处诚实差异：缺省句柄 explorer（非 general-purpose）；后台完成仅 OS 系统通知（给人），模型查报告走 subagent_output。
 
 ### 8.10.1 P1-6 增量：后台子代理 + 运行登记表 + 目录面板（2026-09-28）
 - **`src/lib/subagents/subagentRegistry.ts`**（内存登记表，对齐并行池的并发纪律）：
@@ -1282,6 +1283,8 @@ ReinAgent 架构全景
 - **验证**：`tsc` 0；providers 30 / agent 49 / chat 151 / trajectory 7 全绿（重构后回归）；CDP 真机 E2E——按钮在搜索框前（x 1270 < 1419）、弹窗六节导航、五节内容实测（系统提示词 4911 字符含 # Communication/# Environment、工具 27664 字符含 read_file/todo_write/agent、用户上下文 8605 含 currentDate、消息 4486 含 system-reminder、原始 JSON 39048 可读）、复制全文经 PowerShell `Get-Clipboard` 实证（完整文档落剪贴板；webview 内 `clipboard.readText` 因 WebView2 读权限悬挂——写正常读受限，测试脚本勿在 webview 里读剪贴板）。
 - **追加（同日用户反馈）**：「复制全文」精简为**仅「原始 JSON + 构建注记」**（拆解/合并等分节视图仅弹窗内查阅；用户查看时发现同一内容被三视图展示三遍，落档/喂外部工具以原始形态为准）。CDP 实测：剪贴板从 86.4K 字符降至 39.9K，`# currentDate`/`# Memory Index` 各 1 次、单个 json 代码块、尾部注记在列。
 - **⚠️ 严重回归修复（2026-10-06 用户报「进入设置页一片空白」）**：请求预览接线时把 `requestPreviewState` 的 `useState` + `openRequestPreview` 的 `useCallback` 声明在了**设置页早退 return 之后**——切设置页时这两个 hook 不执行，React 抛「Rendered fewer hooks than expected」整树卸载 → 白屏（重载因 currentView 持久化为 settings 而持续白屏）。修复=两个 hook 上移到早退之前（并注释铁律）；CDP 实测重载/设置/工作台双向切换零异常、设置导航与工作台消息均正常渲染。**教训：任何新增 hook 必须位于组件所有条件早退之前；E2E 验收应覆盖设置页视图（此前测试均在工作台/轨迹内，漏网）。**
+- **⚠️ rawJson 缺工具描述修复（2026-10-06 用户报「agent 里没有 When to use」）**：`buildRequestPreview` 的原始 JSON 视图把 tools 序列化成 `{name, schema}`，漏掉 description——用户据此误判模型收不到工具描述。事实链：真实请求完整（pi-ai `openai-completions.js:1150` 原样映射 `function.description`；结构化「工具」分栏也一直显示 description），仅 rawJson 展示丢字段。修复 = tools 映射改为 `{name, description, schema}` 与装配视图 Tool 形状同构。教训：raw 视图是用户落档/喂外部工具的形态，字段保真必须与真实装配一致。
+- **复制全文改用未截断 JSON（2026-10-06 用户定稿「复制完整的全部」）**：`RequestPreview` 新增 `rawJsonFull`（未截断完整原始 JSON）；`rawJson` 的 400k 上限**仅是弹窗 Shiki 渲染护栏**，「复制全文」改写 `rawJsonFull`——落档/喂外部工具不允许静默缺尾；截断注记同步改为「仅影响本弹窗展示，复制全文仍为完整 JSON」。
 
 ### 内置技能启用语义改造（2026-10-06，用户定稿：可启用/禁用、默认禁用）
 
