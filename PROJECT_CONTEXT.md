@@ -876,7 +876,7 @@ ReinAgent 架构全景
   - **F1 steering 运行中引导消息 ✅**：controller.send 流式中不再拒绝——入队 `ChatState.steerQueue`（返回 true 供 Composer 清空输入）；轮收敛后仅「自然完成」才取一条复用 send 续跑（停止/错误停下，队列保留）；`SteerQueuePanel`（composer 上方排队列表 + × 撤回，pool 级 removeSteerMessage）。⚠️ 语义变更：3 个旧断言（流式 send 返回 false）按新语义更新。
   - **F2 ClarifyPanel 评估：不立项**——ZCode 的 ClarifyPanel 依赖 ExitPlanMode elicitation 挂起（P1-3 提问卡已覆盖同类交互：ask_user_question 挂起 + 选项卡），且我们的 Plan 模式当前是纯提示词拦截（无 ExitPlanMode 工具）。待 Plan 模式工具化（P1-3 尾巴）后随批评估。
 - **批次 G 进行中（2026-09-29）**：
-  - **G1 快捷键集中管理 ✅（部分）**：App 全局 keydown 集中 handler——Ctrl/Cmd+F 会话内查找、Ctrl/Cmd+T 新任务（编辑框聚焦放行）、Ctrl/Cmd+Shift+A 聚焦 composer；handleNewTask 经 ref 转发（effect 依赖 [] 而函数后声明）。⚠️ CDP 实测 Ctrl+T 视图未切（探针 __newTask 直调同样）——handleNewTask→setActiveTaskId(null) 链路在 CDP 下疑似被恢复逻辑回写，真实键盘待用户手测；Ctrl+F 已实测有效。
+  - **G1 快捷键集中管理 ✅（部分）**：App 全局 keydown 集中 handler——Ctrl/Cmd+F 会话内查找、Ctrl/Cmd+T 新任务、Ctrl/Cmd+K 命令面板、Ctrl/Cmd+Shift+A 聚焦 composer；handleNewTask 经 ref 转发（effect 依赖 [] 而函数后声明）。⚠️ CDP 实测 Ctrl+T 视图未切（探针 __newTask 直调同样）——handleNewTask→setActiveTaskId(null) 链路在 CDP 下疑似被恢复逻辑回写，真实键盘待用户手测；Ctrl+F 已实测有效。（**2026-10-06 悬案告破**：真凶是 `App.tsx` 的 `handleNewTaskRef.current = () => handleNewTask`——箭头只**返回**函数未调用，致 Ctrl+T / 命令面板「新建任务」/ `__newTask` 三处全部 no-op；已修为 `() => handleNewTask()` 并 CDP 双路径验证。另订正：当前代码 allowInEditable = find/palette **true**、newTask/focusComposer **false**——编辑框聚焦时 Ctrl+T 按设计不触发（先点外部失焦再按），本段早前「放行」及「Ctrl+F 不劫持」的记载与代码相反，以代码为准。）
   - **G2 Hooks/插件系统、G1 命令面板、托盘/自动更新：未开始**（大基建，单独批次）。
 - **P2 追加：输入框 ↑ 历史召回 ✅（2026-09-29，CDP 全链路实测）**：对齐 ZCode promptHistory 体系（纯逻辑直移 + textarea 化改造）。
   - **`lib/chat/promptHistory.ts`**：`appendPromptHistoryEntry`（trim 空不入库；**仅连续重复去重**——A/B/A 保留；30 条限额）+ `navigatePromptHistory`（↑ 从末条往前、到顶 clamp 停住；↓ 走回末条后再按一次 → **回空输入退出浏览态**；未浏览时 ↓/↑ 都从末条进入）。
@@ -1223,3 +1223,17 @@ ReinAgent 架构全景
 - **根因两条**：① `LexicalComposer` 的菜单 Enter/Tab/点击直接 `runBuiltinCommand`，对 `clear`/`compact` 是「立即执行 + 清空输入框」，命令文本从不进输入框（与预期相反）；② 草稿态（无活动任务）App 的两个 handler 是 `if (!activeTaskId) return` 静默返回，叠加清空 → 表现为「选了没反应、命令也没了」。另有 ③：`submit()` 无斜杠分支，手打 `/compact` 回车会被当普通提问发给模型。
 - **改动**：`slashCommands.ts` 新增纯函数 `matchBuiltinCommand(text)`——整串精确匹配 `/name` 或 `/name 参数` 且 name ∈ `BUILTIN_COMMANDS` 才命中；`/foo`（未注册）、`/home/user/file`（路径）、非整串一律返回 null 交回普通发送（绝不因「以 / 开头」吞内容）。`LexicalComposer.tsx` 新增 `selectSlashCommand`（菜单选中只填词：内置填 `/name ` 并把光标移到末尾、自定义展开模板），菜单键盘与点击两条路径统一走它；`submit()` 开头用 `matchBuiltinCommand` 拦截并执行内置命令（`runBuiltinCommand`）；`runBuiltinCommand` 加草稿态如实 toast（`/clear`、`/compact` 无会话时提示，不再静默清空输入框）。
 - **验证**：`tsc` 0；`test:chat` 147/147（新增 `matchBuiltinCommand` 用例：trim 命中 / 带参 / 未注册放行 / 路径放行 / 非整串放行）。
+
+### 任务胶囊点击开合 + 新建任务 no-op 修复（2026-10-06，CDP 真模型 E2E 验证）
+
+- **任务胶囊交互改造（用户需求「点击展开，再点击收缩」）**：`TaskProgressBar.tsx` 从 Radix Tooltip（悬停 200ms 弹出）改为 **lw Popover 点击开合**——Trigger 点击原生 toggle（点胶囊弹出清单、再点收起；点外部 / Esc 亦收，Popover 标准语义）；浮层内容/位置（上方、左对齐、`max-w-md`）不变，`className` 加 `w-auto` 抵消 lw PopoverContent 默认 `w-72` 定宽保持随内容自适应；文件头旧「TooltipProvider 教训」注释换为通用「浮层一律用 lw 组件」。
+- **顺带抓出并修复「新建任务」三入口 no-op（G1 悬案真凶）**：`App.tsx` `handleNewTaskRef.current = () => handleNewTask` 箭头**返回函数未调用** → Ctrl+T 快捷键 / 命令面板「新建任务」/ `__newTask` E2E 钩子全部无效；CDP 发送因此落进恢复的旧任务（测试污染已就地修复：测试轮截断 + `conversation_sync` 回写 + reload 验证）。修复 = `() => handleNewTask()`（保留延迟绑定绕 const TDZ 的本意）。
+- **验证**：`tsc` 0；`test:chat` 147/147；CDP 真实模型两轮 E2E——模型真实调 `todo_write` 产 0/4 清单 → `Input.dispatchMouseEvent` 真实点击：开（`aria-expanded=true` + `[data-slot=popover-content]` 四项清单）→ 合（面板移除）；修复后真实键盘 Ctrl+T（失焦态）与 `__newTask` 直调均切草稿态（activeTaskId → null）。
+- **⚠️ 行为注记**：`shortcuts.ts` 中 newTask `allowInEditable: false`——输入框聚焦时按 Ctrl+T 按设计不触发（需先失焦）；G1 早前「编辑框聚焦放行」「Ctrl+F 不劫持」的记载与代码相反（实际 find/palette=true、newTask/focusComposer=false），已在上文 G1 段订正。
+
+### 任务胶囊多清单并排（2026-10-06，用户定稿「按内容新增 + 只显示最近 N 个」；CDP 真模型 E2E）
+
+- **需求**：新一轮对话里模型建立的新清单以新胶囊出现在第一个胶囊的**右边**，以此类推。原实现只渲染末条 `todo_write`（新清单原地替换旧胶囊），不存在并排。
+- **纯逻辑（`todoProgress.ts`）**：新增 `extractTodoLists(messages): {key, todos}[]`——按时间正序提取全部清单快照；**按内容新增口径（用户拍板）**：内容与上一份不同的 `todo_write` 新开一份快照（同轮进度推进 0/4→2/4 也成列），内容相同的重复写入跳过；**显式空数组 = 清空**（全部快照消失，覆盖语义），缺字段/非法条目跳过不清空。`key` = 规范化内容的 JSON 签名（React key 与关闭持久化共用）。`extractLatestTodos` 变为末条快照薄包装（行为兼容，原 4 测试不动）。
+- **组件（`TaskProgressBar.tsx`）**：胶囊行渲染——每份快照一个独立胶囊（圆环进度 + 点击开合 Popover + 行内 × 逐胶囊关闭）；**只显示最近 `MAX_VISIBLE_TODO_LISTS=5` 个**（用户拍板；更老快照隐藏，数据仍在时间线）；关闭签名集合持久化 kv `reinagent-todo-dismissed-keys`（JSON 数组、上限 50 截断，取代旧单签名键 `reinagent-todo-dismissed-key`）；行容器 `overflow-x-auto` 兜底极端宽度；胶囊 `max-w-64` 限宽截断「当前项」长文案。
+- **验证**：`tsc` 0；`test:chat` 147→**151**（新增 4 例：内容不同各成快照/相同内容去重/空数组清空与缺字段保留/包装一致性）；CDP 真模型 E2E——测试任务里发「另建全新 3 步清单」→ 第二个胶囊出现在第一个右侧（同行 x 308→476，0/4 与 0/3）→ 各自点击展开内容互对应（新=数据备份 3 项、旧=登录模块 4 项原样）→ 再点收起。
