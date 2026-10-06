@@ -16,6 +16,27 @@ export interface ImportFs {
   ): Promise<{ head: string; tail: string; totalBytes: number; mtimeMs: number | null } | null>;
   /** 按字节偏移读片段（≤256KB/次）；失败返回 null。 */
   readRange(path: string, offset: number, length: number): Promise<string | null>;
+  /**
+   * 透明解压读文本（dsh 的 zstd 多帧日志；无后缀按普通文本）。
+   * 可选能力：内存测试实现可不提供（dsh 的 .zstd 条目在这些测试里会被跳过）。
+   */
+  readTextAuto?(path: string): Promise<string | null>;
+}
+
+/**
+ * 只读 SQLite 访问（SQLite 型来源：zcode/cursor/copilot/hermes/openclaw/devin）。
+ * Rust 端 import_sqlite_query 照 Wake sqlite_ro 约定：READ_ONLY 直开 → copy 降级，
+ * 仅放行 SELECT/PRAGMA/WITH。查询失败（库不存在/锁死/语句错）返回 null——外部
+ * 工具数据缺失是常态，与 ImportFs 同一宽容语义。
+ */
+export interface ImportSqliteResult {
+  columns: string[];
+  /** 每行按 columns 顺序对齐的值数组。 */
+  rows: unknown[][];
+}
+
+export interface ImportDb {
+  query(path: string, sql: string, params?: unknown[]): Promise<ImportSqliteResult | null>;
 }
 
 export function joinPath(...parts: string[]): string {

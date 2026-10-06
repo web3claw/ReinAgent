@@ -4,7 +4,28 @@
  * 确定性会话 id：重复导入同一来源会话 = 幂等 no-op（任务 id 即去重键）。
  */
 
-export type ExternalSource = "claude-code" | "opencode" | "codex" | "pi";
+/** 外部来源 id（对齐 Wake 支持面；antigravity 转录加密无正文，2026-10-06 用户拍板不导）。 */
+export type ExternalSource =
+  | "claude-code"
+  | "opencode"
+  | "codex"
+  | "pi"
+  | "omp"
+  | "kiro"
+  | "qoder"
+  | "kimi"
+  | "codebuddy"
+  | "workbuddy"
+  | "gemini"
+  | "grok"
+  | "craft"
+  | "dsh"
+  | "zcode"
+  | "cursor"
+  | "copilot"
+  | "hermes"
+  | "openclaw"
+  | "devin";
 
 export interface ExternalSessionSummary {
   source: ExternalSource;
@@ -54,6 +75,12 @@ export interface SessionImporter {
   source: ExternalSource;
   scan(): Promise<ExternalSessionSummary[]>;
   convert(summary: ExternalSessionSummary): Promise<ImportedSession>;
+  /**
+   * 本来源「认领」的其他来源会话（Wake claimed_sessions 同款）：craft 用
+   * Claude Agent SDK 跑会话时，引擎会在 ~/.claude 里另落一份转录——craft 会话
+   * 存在期间那份引擎副本不重复导入（craft 会话删除后自然浮现）。
+   */
+  claimed?: () => { source: ExternalSource; externalId: string }[];
 }
 
 /** 确定性会话 id：重复导入同一来源会话是 no-op。 */

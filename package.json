@@ -16,7 +16,7 @@
     "test:settings": "node --test src/lib/settings/settingsStore.test.mjs",
     "test:markdown": "node --test src/lib/markdown/markdownBlocks.test.mjs",
     "test:assistants": "node --test src/lib/assistants/assistantDefs.test.mjs",
-    "test:import": "node --test src/lib/import/import.test.mjs",
+    "test:import": "node --test src/lib/import/import.test.mjs src/lib/import/importFixtures.test.mjs",
     "test:promptEnhancement": "node --test src/lib/promptEnhancement/promptEnhancement.test.mjs",
     "test:git": "node --test src/lib/git/branchSwitcherLogic.test.mjs",
     "test:agent": "node --test src/lib/agent/streamFnAdapter.test.mjs src/lib/agent/agentRuntime.test.mjs src/lib/agent/askUserTool.test.mjs src/lib/agent/tools.test.mjs src/lib/agent/workspace.test.mjs",

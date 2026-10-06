@@ -19,6 +19,8 @@ tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = ["tray-icon", "unstable"] }
+# 导入管线：dsh 会话日志的 zstd 多帧解码（对齐 Wake 的 zstd 用法）
+zstd = "0.13"
 tauri-plugin-updater = "2"
 tauri-plugin-single-instance = "2"
 tauri-plugin-process = "2"

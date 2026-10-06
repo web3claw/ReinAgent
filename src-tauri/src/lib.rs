@@ -21,6 +21,7 @@ mod usage_stats;
 mod stt;
 mod remote_server;
 mod fs_base64;
+mod import_sqlite;
 mod fs_tree;
 mod git_panel;
 mod hooks;
@@ -191,6 +192,8 @@ pub fn run() {
             fs_cmd::shell_detect,
             fs_cmd::fs_write_file,
             fs_cmd::fs_list_dir,
+            import_sqlite::import_sqlite_query,
+            import_sqlite::import_read_text_auto,
             fs_cmd::fs_execute,
             fs_cmd::fs_pick_folder,
             fs_cmd::fs_pick_files,

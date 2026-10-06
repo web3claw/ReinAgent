@@ -431,6 +431,22 @@ function SessionImportPanel() {
     opencode: t("importSourceOpenCode"),
     codex: t("importSourceCodex"),
     pi: t("importSourcePi"),
+    omp: t("importSourceOmp"),
+    kiro: t("importSourceKiro"),
+    qoder: t("importSourceQoder"),
+    kimi: t("importSourceKimi"),
+    codebuddy: t("importSourceCodebuddy"),
+    workbuddy: t("importSourceWorkbuddy"),
+    gemini: t("importSourceGemini"),
+    grok: t("importSourceGrok"),
+    craft: t("importSourceCraft"),
+    dsh: t("importSourceDsh"),
+    zcode: t("importSourceZcode"),
+    cursor: t("importSourceCursor"),
+    copilot: t("importSourceCopilot"),
+    hermes: t("importSourceHermes"),
+    openclaw: t("importSourceOpenclaw"),
+    devin: t("importSourceDevin"),
   };
 
   const groups = useMemo(
