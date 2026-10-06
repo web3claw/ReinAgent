@@ -212,6 +212,24 @@ test("6 · 工具描述渲染目录；系统提示词含定义正文与工作区
   assert.ok(tool.description.includes("- explorer (tools:"), "目录行：explorer");
   assert.ok(tool.description.includes("- fixer (tools:"), "目录行：fixer");
   assert.ok(tool.description.includes("run_in_background"), "保留后台用法说明");
+  // When-to-use 引导段（2026-10-06 对齐 ZCode agent.ts）：委派触发器 + 防重复闸 + 并行派发
+  assert.ok(tool.description.includes("## When to use"), "结构化引导段标题");
+  assert.ok(
+    tool.description.includes("reading across several files — delegate it"),
+    "跨多文件读触发器",
+  );
+  assert.ok(
+    tool.description.includes("don't also run it yourself — wait for the result"),
+    "防重复劳动闸",
+  );
+  assert.ok(
+    tool.description.includes("single message with multiple tool uses"),
+    "并行派发提示",
+  );
+  assert.ok(
+    tool.description.includes("If omitted, the explorer agent is used"),
+    "缺省句柄诚实标注为 explorer",
+  );
 
   const fixer = builtinSubagentDefinitions().definitions.find((d) => d.name === "fixer");
   const prompt = composeSubagentSystemPrompt(fixer, "C:/ws");

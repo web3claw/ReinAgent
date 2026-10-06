@@ -220,7 +220,12 @@ export interface SubagentToolResult {
   isError?: boolean;
 }
 
-/** 渲染目录到工具描述（对齐 PI：- name (tools: …): 描述）。 */
+/** 渲染目录到工具描述（对齐 PI：- name (tools: …): 描述）。
+ *  引导段对齐 ZCode agent.ts 的 "## When to use"：三个委派触发器（匹配类型 /
+ *  可并行独立工作 / 跨多文件读）+ 反向边界 + 防重复闸——模型对弱描述工具不会
+ *  主动派发，引导强度必须留在工具描述里（ZCode 系统提示词也不承担此职责）。
+ *  与 ZCode 的两处诚实差异：缺省句柄是 explorer（非 general-purpose）；后台
+ *  完成只发 OS 系统通知（给人），模型侧查询报告走 subagent_output。 */
 export function renderSubagentCatalogDescription(catalog: SubagentCatalog): string {
   const items = catalog.definitions.length
     ? catalog.definitions
@@ -230,17 +235,22 @@ export function renderSubagentCatalogDescription(catalog: SubagentCatalog): stri
         })
         .join("\n")
     : "(no subagent definitions configured)";
-  return (
-    "Launch a subagent to handle a complex, multi-step task autonomously.\n" +
-    "Available subagents:\n" +
-    items +
-    "\nThe subagent runs with its own context and its final message is returned as the tool result — " +
-    "so the prompt must be self-contained (goal, constraints, expected output). " +
-    "Set run_in_background=true to return immediately and let the subagent keep running " +
-    "(read its report later with subagent_output). " +
-    "Use this for broad codebase searches, multi-file investigations, or independent subtasks; " +
-    "for simple lookups use the direct tools instead."
-  );
+  return [
+    "Launch a new agent to handle complex, multi-step tasks. Each agent type has specific capabilities and tools available to it.",
+    "",
+    items,
+    "",
+    "When using the agent tool, specify subagent_type to select which agent type to use. If omitted, the explorer agent is used.",
+    "",
+    "## When to use",
+    "",
+    "Reach for this when the task matches an available agent type, when you have independent work to run in parallel, or when answering would mean reading across several files — delegate it and you keep the conclusion, not the file dumps. For a single-fact lookup where you already know the file, symbol, or value, search directly. Once you've delegated a search, don't also run it yourself — wait for the result.",
+    "",
+    "- The agent's final message is returned to you as the tool result; it is not shown to the user — relay what matters.",
+    "- A new agent call starts fresh, so the prompt must be self-contained (goal, constraints, expected output).",
+    "- run_in_background: true returns immediately while the agent keeps running; read its status and final report later with subagent_output.",
+    "- When you launch multiple agents for independent work, send them in a single message with multiple tool uses so they run concurrently.",
+  ].join("\n");
 }
 
 /** 按定义工具白名单过滤注册表（未知名字自然落空；注册表无 agent，天然禁递归）。 */
