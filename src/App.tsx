@@ -772,8 +772,10 @@ export default function App() {
       }
     }
   }, [activeTaskId]);
-  // 快捷键转发句柄：handleNewTask 在 effect 之后声明，ref 保证快捷键读到最新闭包
-  handleNewTaskRef.current = () => handleNewTask;
+  // 快捷键转发句柄：handleNewTask 在 effect 之后声明（直接赋值会撞 const TDZ），
+  // 故包一层箭头延迟绑定——⚠️ 必须在此处调用（写 `() => handleNewTask` 只返回
+  // 函数不执行，会让 Ctrl+T / 命令面板 / __newTask 三处全部 no-op，2026-10-06 实测踩坑）
+  handleNewTaskRef.current = () => handleNewTask();
 
   (window as any).__newTask = () => handleNewTaskRef.current();
   // E2E 测试钩子：显式设置草稿态工作区（__newTask 不收参数，路径版本由此承担）
