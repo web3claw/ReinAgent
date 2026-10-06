@@ -644,9 +644,12 @@ export default function App() {
       const running = m.status === "streaming" || m.status === "running";
       const end = m.endedAt ?? (running ? now : undefined);
       const duration = started !== undefined ? Math.max(0, (end ?? now) - started) : 0;
-      if (m.role === "assistant") llmMs += duration;
-      if (m.role === "tool") {
+      // 步 = LLM 调用轮数（每条 assistant 条目一轮，对齐 LA step 与 maxSteps 硬闸语义）；工具执行不计步。
+      if (m.role === "assistant") {
         steps += 1;
+        llmMs += duration;
+      }
+      if (m.role === "tool") {
         toolMs += duration;
       }
       if (m.role === "assistant" && m.apiMessage) {
