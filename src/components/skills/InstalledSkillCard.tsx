@@ -48,7 +48,6 @@ import { Button } from "../lw/ui/button";
 import { Checkbox } from "../lw/ui/checkbox";
 import { ConfirmDeletePopover } from "../lw/ui/confirm-action-popover";
 import { SearchHighlight } from "../lw/ui/search-highlight";
-import { SkillIcon } from "../lw/icons/brand-icons";
 import { cn } from "../lw/lib/utils";
 import type { ClawHubCategorySlug } from "../../lib/skills/clawHubCategories";
 import type { SkillSummary } from "../../lib/skills/index";
@@ -146,7 +145,7 @@ function formatInstalledSkillMetadata(skill: SkillSummary, t: (key: string) => s
 type InstalledSkillCardProps = {
   skill: SkillSummary;
   primaryCategory: ClawHubCategorySlug;
-  alwaysEnabled: boolean;
+  builtIn: boolean;
   checked: boolean;
   skillsEnabled: boolean;
   bulkMode: boolean;
@@ -171,7 +170,7 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
   const {
     skill,
     primaryCategory,
-    alwaysEnabled,
+    builtIn,
     checked,
     skillsEnabled,
     bulkMode,
@@ -190,12 +189,11 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
   const { t } = useLocale();
   const effectivelyEnabled = skillsEnabled && checked;
   const cardIdentity = useMemo(
-    () => (alwaysEnabled ? null : getInstalledSkillCardIdentity(skill.name, primaryCategory)),
-    [alwaysEnabled, primaryCategory, skill.name],
+    () => getInstalledSkillCardIdentity(skill.name, primaryCategory),
+    [primaryCategory, skill.name],
   );
-  const CardIcon: CardIconComponent = alwaysEnabled
-    ? SkillIcon
-    : INSTALLED_SKILL_CARD_ICONS[cardIdentity?.iconName ?? "circleHelp"];
+  const CardIcon: CardIconComponent =
+    INSTALLED_SKILL_CARD_ICONS[cardIdentity?.iconName ?? "circleHelp"];
   const metadataSource = getInstalledSkillCardSource(skill);
   const MetadataIcon: CardIconComponent =
     metadataSource === "built-in" ? Lock : metadataSource === "clawhub" ? Cloud : Folder;
@@ -206,7 +204,7 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
         className={cn(
           "flex size-8 shrink-0 items-center justify-center rounded-lg",
           "text-muted-foreground transition-colors group-hover:text-foreground/70",
-          !effectivelyEnabled && !alwaysEnabled && "opacity-70",
+          !effectivelyEnabled && "opacity-70",
         )}
       >
         <CardIcon className="size-4" />
@@ -215,7 +213,7 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
       <div
         className={cn(
           "min-w-0 flex-1 transition-opacity",
-          !effectivelyEnabled && !alwaysEnabled && "opacity-75",
+          !effectivelyEnabled && "opacity-75",
         )}
       >
         <div className="flex min-w-0 flex-wrap items-center gap-1.5">
@@ -224,12 +222,7 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
             query={searchQuery}
             className="truncate text-sm font-semibold text-foreground"
           />
-          {alwaysEnabled ? (
-            <Badge variant="muted" className="h-5 gap-1 px-1.5 text-tiny">
-              <Lock className="size-2.5" />
-              {t("settings.skillsAlwaysOn")}
-            </Badge>
-          ) : effectivelyEnabled ? (
+          {effectivelyEnabled ? (
             <Badge variant="success" className="h-5 px-1.5 text-tiny">
               {t("settings.skillsHubEnabledBadge")}
             </Badge>
@@ -260,37 +253,28 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
         onKeyDown={(event) => event.stopPropagation()}
       >
         {bulkMode ? (
-          alwaysEnabled ? (
-            <Lock
-              className="size-4 text-muted-foreground"
-              aria-label={t("settings.skillsBulkAlwaysOnDisabled")}
-            />
-          ) : (
-            <Checkbox
-              checked={bulkSelected}
-              aria-label={`${t("settings.skillsHubBulkSelectLabel")}: ${skill.name}`}
-              onCheckedChange={() => onToggleBulkSelection(skill.name)}
-            />
-          )
+          <Checkbox
+            checked={bulkSelected}
+            aria-label={`${t("settings.skillsHubBulkSelectLabel")}: ${skill.name}`}
+            onCheckedChange={() => onToggleBulkSelection(skill.name)}
+          />
         ) : (
           <>
-            {!alwaysEnabled ? (
-              <Button
-                variant="ghost"
-                size="icon-xs"
-                className={cn(
-                  "text-muted-foreground opacity-0 transition-opacity",
-                  "group-hover:opacity-100 focus-visible:opacity-100",
-                  "[@media(hover:none)]:opacity-100",
-                )}
-                aria-label={`${t("settings.skillsHubBulkSelectLabel")}: ${skill.name}`}
-                title={t("settings.skillsHubBulkSelect")}
-                onClick={() => onEnterBulkMode(skill.name)}
-              >
-                <ListChecks className="size-3.5" />
-              </Button>
-            ) : null}
-            {!alwaysEnabled ? (
+            <Button
+              variant="ghost"
+              size="icon-xs"
+              className={cn(
+                "text-muted-foreground opacity-0 transition-opacity",
+                "group-hover:opacity-100 focus-visible:opacity-100",
+                "[@media(hover:none)]:opacity-100",
+              )}
+              aria-label={`${t("settings.skillsHubBulkSelectLabel")}: ${skill.name}`}
+              title={t("settings.skillsHubBulkSelect")}
+              onClick={() => onEnterBulkMode(skill.name)}
+            >
+              <ListChecks className="size-3.5" />
+            </Button>
+            {!builtIn ? (
               <ConfirmDeletePopover
                 name={skill.name}
                 title={t("settings.deleteConfirm")}
@@ -329,16 +313,14 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
                 )}
               </ConfirmDeletePopover>
             ) : null}
-            {!alwaysEnabled ? (
-              <ResourceActivationSwitch
-                checked={effectivelyEnabled}
-                disabled={!skillsEnabled}
-                compact
-                stopPropagation
-                label={`${t("skills.select")}: ${skill.name}`}
-                onCheckedChange={(nextChecked) => onToggle(skill.name, nextChecked)}
-              />
-            ) : null}
+            <ResourceActivationSwitch
+              checked={effectivelyEnabled}
+              disabled={!skillsEnabled}
+              compact
+              stopPropagation
+              label={`${t("skills.select")}: ${skill.name}`}
+              onCheckedChange={(nextChecked) => onToggle(skill.name, nextChecked)}
+            />
           </>
         )}
       </div>
@@ -350,21 +332,6 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
     "[content-visibility:auto] [contain-intrinsic-size:auto_4.5rem]",
     bulkSelected && "bg-settings-active",
   );
-
-  if (alwaysEnabled) {
-    return (
-      <Button
-        variant="ghost"
-        aria-label={`${t("settings.skillsInstalledPreviewOpen")}: ${skill.name}`}
-        onClick={() => {
-          if (!bulkMode) onOpenPreview(skill);
-        }}
-        className={cn(cardClassName, "h-full items-stretch justify-start whitespace-normal")}
-      >
-        {cardContent}
-      </Button>
-    );
-  }
 
   return (
     // biome-ignore lint/a11y/useSemanticElements: The card contains nested controls and cannot be a native button.

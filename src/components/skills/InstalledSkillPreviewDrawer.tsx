@@ -2,7 +2,7 @@
 // 适配：lw Sheet 为 Radix 实现，无 onOpenChangeComplete（useDrawerPresence 自管理）；
 // DocumentMarkdown → ReinAgent chat MarkdownText 渲染管线；Portal 弹层追加 hub-scope。
 import { MarkdownText } from "../chat/MarkdownText";
-import { AlertTriangle, BookOpen, Lock } from "lucide-react";
+import { AlertTriangle, BookOpen } from "lucide-react";
 import { SkillIcon } from "../lw/icons/brand-icons";
 import { Badge } from "../lw/ui/badge";
 import { CopyButton } from "../lw/ui/copy-button";
@@ -15,7 +15,7 @@ import {
 } from "../lw/ui/sheet";
 import { Skeleton } from "../lw/ui/skeleton";
 import { cn } from "../lw/lib/utils";
-import { isAlwaysEnabledSkillName, type SkillSummary } from "../../lib/skills/index";
+import type { SkillSummary } from "../../lib/skills/index";
 import { useMemo } from "react";
 import { useDrawerPresence } from "./useDrawerPresence";
 import { useLocale } from "./useLocale";
@@ -251,15 +251,12 @@ function InstalledSkillPreviewPopup(props: {
 }) {
   const { skill, preview, previewContent, checked, skillsEnabled, contentReady } = props;
   const { t } = useLocale();
-  const alwaysEnabled = isAlwaysEnabledSkillName(skill.name);
   const source = skill.source;
   const description = skill.description.trim();
   const previewIsMarkdown = /\.(md|mdx|markdown)$/i.test(skill.skillFile);
-  const statusLabel = alwaysEnabled
-    ? t("settings.skillsInstalledPreviewBuiltIn")
-    : checked
-      ? t("settings.skillsInstalledPreviewSelected")
-      : t("settings.skillsInstalledPreviewUnselected");
+  const statusLabel = checked
+    ? t("settings.skillsInstalledPreviewSelected")
+    : t("settings.skillsInstalledPreviewUnselected");
 
   return (
     <SheetPopup
@@ -275,14 +272,14 @@ function InstalledSkillPreviewPopup(props: {
             "rounded-xl border border-border bg-muted text-foreground",
           )}
         >
-          {alwaysEnabled ? <Lock className="size-5" /> : <SkillIcon className="size-7" />}
+          <SkillIcon className="size-7" />
         </div>
         <div className="min-w-0 flex-1">
           <SheetTitle className="truncate">{skill.name}</SheetTitle>
           <div className="mt-1.5 flex min-w-0 flex-wrap items-center gap-2 text-xs text-muted-foreground">
             <span className="flex items-center gap-1.5">
               <span>{t("settings.skillsInstalledPreviewStatusLabel")}</span>
-              <Badge variant={alwaysEnabled ? "muted" : checked ? "success" : "outline"}>
+              <Badge variant={checked ? "success" : "outline"}>
                 {statusLabel}
               </Badge>
             </span>

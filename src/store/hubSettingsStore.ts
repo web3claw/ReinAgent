@@ -50,8 +50,11 @@ export interface HubAppSettings {
 const SKILLS_KEY = "reinagent-skills-settings";
 const MEMORY_KEY = "reinagent-memory-settings";
 
-/** LA settings 默认值：skills 恒启用 + 内置技能常在 selected（builtin.ts 同值） */
-const ALWAYS_ENABLED_SKILL_NAMES = ["skills-creator", "skills-installer"];
+/**
+ * 旧版「恒启用」内置技能名（迁移用）：2026-10-06 之前这两枚会被强制并入 selected；
+ * 现改为普通启用语义、默认禁用——加载时剔除遗留污染并写回一次，尊重用户显式选择。
+ */
+const LEGACY_ALWAYS_ENABLED_SKILL_NAMES = ["skills-creator", "skills-installer"];
 
 function defaultSkillsSettings(): SkillsSettings {
   const saved = kvGet(SKILLS_KEY);
@@ -59,18 +62,27 @@ function defaultSkillsSettings(): SkillsSettings {
     try {
       const parsed = JSON.parse(saved) as SkillsSettings;
       if (typeof parsed.enabled === "boolean" && Array.isArray(parsed.selected)) {
-        // always-enabled 恒在列（对齐 LA mergeAlwaysEnabledSkillNames）
-        return {
-          enabled: parsed.enabled,
-          selected: Array.from(new Set([...ALWAYS_ENABLED_SKILL_NAMES, ...parsed.selected])),
-        };
+        const cleaned = Array.from(
+          new Set(
+            parsed.selected
+              .map((name) => String(name).trim())
+              .filter(
+                (name) => name.length > 0 && !LEGACY_ALWAYS_ENABLED_SKILL_NAMES.includes(name),
+              ),
+          ),
+        );
+        if (cleaned.length !== parsed.selected.length) {
+          kvSetJSON(SKILLS_KEY, { enabled: parsed.enabled, selected: cleaned });
+        }
+        return { enabled: parsed.enabled, selected: cleaned };
       }
     } catch {
       // 损坏则落到默认（如实 console，不静默装作没事）
       console.error("[hubSettings] skills settings parse failed");
     }
   }
-  return { enabled: true, selected: [...ALWAYS_ENABLED_SKILL_NAMES] };
+  // 全局开关缺省开；选中列表缺省为空 ⇒ 内置技能默认禁用（用户定稿 2026-10-06）
+  return { enabled: true, selected: [] };
 }
 
 function defaultMemorySettings(): MemorySettings {

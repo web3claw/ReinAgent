@@ -4,7 +4,7 @@ import { AlertTriangle, BookOpen, RefreshCw } from "lucide-react";
 import { RefreshButton } from "../lw/ui/button";
 import { cn } from "../lw/lib/utils";
 import type { ClawHubCategorySlug } from "../../lib/skills/clawHubCategories";
-import { isAlwaysEnabledSkillName, type SkillSummary } from "../../lib/skills/index";
+import { isBuiltinSkillName, type SkillSummary } from "../../lib/skills/index";
 import { InstalledSkillCard } from "./InstalledSkillCard";
 import { StoreCategoryChips, type StoreCategoryValue } from "./SkillCategoryControls";
 import { SkillsContentLoadingState } from "./SkillsLoading";
@@ -148,14 +148,14 @@ export function InstalledSkillsView({
         {items.length > 0 ? (
           <div className={SKILL_LIST_GRID_CLASS}>
             {items.map(({ skill, categories }) => {
-              const alwaysEnabled = isAlwaysEnabledSkillName(skill.name);
+              const builtIn = skill.builtIn === true || isBuiltinSkillName(skill.name);
               return (
                 <div key={`${skill.name}-${rootDir}`} className="min-w-0">
                   <InstalledSkillCard
                     skill={skill}
                     primaryCategory={categories[0] ?? "other"}
-                    alwaysEnabled={alwaysEnabled}
-                    checked={alwaysEnabled || selected.has(skill.name)}
+                    builtIn={builtIn}
+                    checked={selected.has(skill.name)}
                     skillsEnabled={skillsEnabled}
                     bulkMode={bulkMode}
                     bulkSelected={bulkSelection.has(skill.name)}

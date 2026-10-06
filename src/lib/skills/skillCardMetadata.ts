@@ -1,5 +1,5 @@
 // LiveAgent 移植：crates/agent-ui/src/lib/skills/skillCardMetadata.ts
-import { isAlwaysEnabledSkillName } from "./builtin";
+import { isBuiltinSkillName } from "./builtin";
 import type { SkillSummary } from "./index";
 
 export type InstalledSkillCardSource = "built-in" | "clawhub" | "local";
@@ -27,7 +27,7 @@ export function truncateLocalSkillCardDescription(description: string): string {
 export function getInstalledSkillCardSource(
   skill: Pick<SkillSummary, "name" | "source" | "builtIn">,
 ): InstalledSkillCardSource {
-  if (skill.builtIn === true || isAlwaysEnabledSkillName(skill.name)) return "built-in";
+  if (skill.builtIn === true || isBuiltinSkillName(skill.name)) return "built-in";
   return skill.source?.registry.trim().toLowerCase() === "clawhub" ? "clawhub" : "local";
 }
 

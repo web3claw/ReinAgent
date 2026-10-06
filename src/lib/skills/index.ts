@@ -7,13 +7,7 @@ import type { ClawHubSkillCard } from "./clawHub";
 
 const SKILLS_DISCOVERY_UPDATED_EVENT = "liveagent:skills-discovery-updated";
 
-export {
-  isAlwaysEnabledSkillName,
-  isUserSelectableSkill,
-  isUserSelectableSkillName,
-  mergeAlwaysEnabledSkillNames,
-  sortSkillsForDisplay,
-} from "./builtin";
+export { isBuiltinSkillName, sortSkillsForDisplay } from "./builtin";
 
 export type SkillSummary = {
   /** skill metadata name */

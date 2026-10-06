@@ -11,8 +11,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   discoverSkills,
-  isAlwaysEnabledSkillName,
-  mergeAlwaysEnabledSkillNames,
   type SkillSummary,
   subscribeSkillsDiscoveryUpdated,
 } from "./index";
@@ -33,9 +31,7 @@ function reconcileSelectedSkills(params: {
   if (!onSelectedChange) return;
 
   const names = new Set(skills.map((skill) => skill.name));
-  const filtered = mergeAlwaysEnabledSkillNames(selectedSkillNames).filter(
-    (name) => isAlwaysEnabledSkillName(name) || names.has(name),
-  );
+  const filtered = selectedSkillNames.filter((name) => names.has(name));
   if (filtered.join("\n") === selectedSkillNames.join("\n")) return;
 
   onSelectedChange(filtered);

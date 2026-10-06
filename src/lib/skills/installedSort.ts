@@ -1,5 +1,5 @@
 // LiveAgent 移植：crates/agent-ui/src/lib/skills/installedSort.ts
-import { isAlwaysEnabledSkillName } from "./builtin";
+import { isBuiltinSkillName } from "./builtin";
 import type { SkillSummary } from "./index";
 
 export type InstalledSkillSort = "name-asc" | "name-desc" | "installed-desc";
@@ -36,12 +36,12 @@ export function sortInstalledSkillItems<T>(
   return [...items].sort((left, right) => {
     const leftSkill = getSkill(left);
     const rightSkill = getSkill(right);
-    const leftRank = isAlwaysEnabledSkillName(leftSkill.name)
+    const leftRank = isBuiltinSkillName(leftSkill.name)
       ? 0
       : selectedNames.has(leftSkill.name)
         ? 1
         : 2;
-    const rightRank = isAlwaysEnabledSkillName(rightSkill.name)
+    const rightRank = isBuiltinSkillName(rightSkill.name)
       ? 0
       : selectedNames.has(rightSkill.name)
         ? 1

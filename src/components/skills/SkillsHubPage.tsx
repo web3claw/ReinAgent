@@ -44,17 +44,14 @@ import {
   type ClawHubSort,
   resolveClawHubSkillOwner,
 } from "../../lib/skills/clawHub";
-import type { ClawHubCategorySlug } from "../../lib/skills/clawHubCategories";
 import {
   discoverSkills,
   type ExternalSkillEntry,
   type ExternalToolScan,
   getCachedSkillsDiscovery,
   getSkillInstallJobStatus,
-  isAlwaysEnabledSkillName,
-  isUserSelectableSkill,
+  isBuiltinSkillName,
   manageSkill,
-  mergeAlwaysEnabledSkillNames,
   notifySkillsDiscoveryUpdated,
   readSkillText,
   type SkillInstallJobSnapshot,
@@ -366,7 +363,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   }, [initialSkills?.length, initialDiscovery, refresh]);
 
   const selected = useMemo(
-    () => new Set(mergeAlwaysEnabledSkillNames(settings.skills.selected)),
+    () => new Set(settings.skills.selected),
     [settings.skills.selected],
   );
   // 首次渲染保留缓存列表；后续数据更新仍可延迟渲染，避免阻塞输入。
@@ -377,7 +374,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
       setHasPresentedInstalledSkills(true);
     }
   }, [deferredSkills, installedContentPending]);
-  const selectableSkills = useMemo(() => skills.filter(isUserSelectableSkill), [skills]);
+  const selectableSkills = useMemo(() => skills, [skills]);
   const selectedCount = selectableSkills.filter((skill) => selected.has(skill.name)).length;
   useEffect(() => {
     try {
@@ -402,15 +399,12 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
     ]);
   }, [deferredFilter, deferredSkills]);
 
-  // 已安装技能同样按 ClawHub 分区分类，让两个页签体验一致。始终启用（内置）
-  // 技能没有真正的用途归属，统一归到 other 一栏而不参与语义分类。
+  // 已安装技能按 ClawHub 分区分类（内置技能同样参与语义分类，2026-10-06 起）。
   const categorizedInstalled = useMemo(
     () =>
       textFilteredInstalled.map((skill) => ({
         skill,
-        categories: isAlwaysEnabledSkillName(skill.name)
-          ? (["other"] as ClawHubCategorySlug[])
-          : classifyInstalledSkill(skill),
+        categories: classifyInstalledSkill(skill),
       })),
     [textFilteredInstalled],
   );
@@ -439,9 +433,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   );
   const filteredSelectableInstalledNames = useMemo(
     () =>
-      sortedFiltered
-        .map(({ skill }) => skill.name)
-        .filter((name) => !isAlwaysEnabledSkillName(name)),
+      sortedFiltered.map(({ skill }) => skill.name),
     [sortedFiltered],
   );
   useEffect(() => {
@@ -798,7 +790,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
     (job: SkillInstallJobSnapshot) => {
       const installedNames = (job.installed ?? [])
         .map((item) => item.name?.trim())
-        .filter((name): name is string => Boolean(name) && !isAlwaysEnabledSkillName(name));
+        .filter((name): name is string => Boolean(name));
       if (installedNames.length === 0) return;
 
       setSettings((prev) => {
@@ -951,7 +943,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   }
 
   async function deleteSkill(skill: SkillSummary) {
-    if (lockedByChatMode || isAlwaysEnabledSkillName(skill.name) || deletingSkillName) return;
+    if (lockedByChatMode || isBuiltinSkillName(skill.name) || deletingSkillName) return;
     const skillName = skill.name;
     const sourceSlug = skill.source?.registry === "clawhub" ? skill.source.slug?.trim() || "" : "";
     const sourceOwnerHandle =
@@ -1007,7 +999,6 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   }
 
   function toggleSkill(name: string, on: boolean) {
-    if (isAlwaysEnabledSkillName(name)) return;
     const next = new Set(settings.skills.selected);
     if (on) next.add(name);
     else next.delete(name);
@@ -1028,7 +1019,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
       setBulkMode(true);
       setPreviewInstalledSkill(null);
       dismissBulkUndo();
-      if (initialName && !isAlwaysEnabledSkillName(initialName)) {
+      if (initialName) {
         const next = new Set([initialName]);
         bulkSelectionRef.current = next;
         setBulkSelection(next);
@@ -1045,7 +1036,6 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
 
   const toggleBulkSelectionName = useCallback(
     (name: string) => {
-      if (isAlwaysEnabledSkillName(name)) return;
       dismissBulkUndo();
       const next = toggleBulkSelection(bulkSelectionRef.current, name);
       if (next.size === 0) {
@@ -1061,7 +1051,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
 
   const setBulkSelectionRange = useCallback(
     (names: readonly string[], select: boolean) => {
-      const selectable = names.filter((name) => !isAlwaysEnabledSkillName(name));
+      const selectable = [...names];
       if (selectable.length === 0) return;
       dismissBulkUndo();
       const next = updateBulkSelection(bulkSelectionRef.current, selectable, select);
@@ -1077,7 +1067,6 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
 
   // 批量选择模式下点击卡片：只改 bulkSelection，不改启用状态、不打开预览。
   function handleBulkInstalledCardClick(name: string, orderedNames: string[], shiftKey: boolean) {
-    if (isAlwaysEnabledSkillName(name)) return;
     const currentlySelected = bulkSelection.has(name);
     const target = !currentlySelected;
 
@@ -1100,7 +1089,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   // 传给 setSettings 的 updater 必须是纯函数（StrictMode 会双调用）。
   const applyBulkEnableState = useCallback(
     (target: boolean) => {
-      const names = [...bulkSelection].filter((name) => !isAlwaysEnabledSkillName(name));
+      const names = [...bulkSelection];
       if (names.length === 0) return;
 
       const before = settings.skills.selected;
@@ -1151,7 +1140,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   async function deleteBulkSelectedInstalledSkills() {
     if (lockedByChatMode || deletingSkillName || !bulkMode) return;
     const targets = skills.filter(
-      (skill) => bulkSelection.has(skill.name) && !isAlwaysEnabledSkillName(skill.name),
+      (skill) => bulkSelection.has(skill.name) && !isBuiltinSkillName(skill.name),
     );
     if (targets.length === 0) return;
 
@@ -1278,7 +1267,6 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   const bulkEnableChangeCount = useMemo(() => {
     let count = 0;
     for (const name of bulkSelection) {
-      if (isAlwaysEnabledSkillName(name)) continue;
       if (!selected.has(name)) count += 1;
     }
     return count;
@@ -1286,13 +1274,12 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   const bulkDisableChangeCount = useMemo(() => {
     let count = 0;
     for (const name of bulkSelection) {
-      if (isAlwaysEnabledSkillName(name)) continue;
       if (selected.has(name)) count += 1;
     }
     return count;
   }, [bulkSelection, selected]);
   const bulkDeleteNames = useMemo(
-    () => [...bulkSelection].filter((name) => !isAlwaysEnabledSkillName(name)),
+    () => [...bulkSelection].filter((name) => !isBuiltinSkillName(name)),
     [bulkSelection],
   );
   const bulkDeletePreview = useMemo(() => {
@@ -1679,11 +1666,7 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
       <InstalledSkillPreviewDrawer
         skill={previewInstalledSkill}
         preview={installedPreviewState}
-        checked={
-          previewInstalledSkill !== null &&
-          (isAlwaysEnabledSkillName(previewInstalledSkill.name) ||
-            selected.has(previewInstalledSkill.name))
-        }
+        checked={previewInstalledSkill !== null && selected.has(previewInstalledSkill.name)}
         skillsEnabled={skillsEnabled}
         onClose={() => setPreviewInstalledSkill(null)}
       />
