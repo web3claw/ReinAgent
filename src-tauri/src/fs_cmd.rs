@@ -577,8 +577,9 @@ pub async fn fs_execute(
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
         };
-        let stdout = String::from_utf8_lossy(&cap_output(drain(stdout_reader))).to_string();
-        let stderr = String::from_utf8_lossy(&cap_output(drain(stderr_reader))).to_string();
+        // 控制台代码页兜底解码（zh-CN 的 ping 等往管道写 GBK；UTF-8 严格校验优先）
+        let stdout = crate::console_decode::decode_console_bytes(&cap_output(drain(stdout_reader)));
+        let stderr = crate::console_decode::decode_console_bytes(&cap_output(drain(stderr_reader)));
 
         match status {
             Some(status) if status.success() => Ok(stdout),

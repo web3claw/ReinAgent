@@ -1,5 +1,6 @@
 mod terminal;
 mod fs_cmd;
+mod console_decode;
 mod fs_search;
 mod commands;
 mod agents_md;

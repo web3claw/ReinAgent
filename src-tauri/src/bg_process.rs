@@ -240,7 +240,8 @@ pub(crate) fn bg_output_sync(task_id: String, offset: Option<usize>) -> Result<B
         let buf = process.output.lock().map_err(|e| e.to_string())?;
         let total = buf.len();
         let offset = offset.unwrap_or(0).min(total);
-        let new_output = String::from_utf8_lossy(&buf[offset..]).to_string();
+        // 控制台代码页兜底解码（zh-CN 控制台程序往管道写 GBK；UTF-8 严格校验优先）
+        let new_output = crate::console_decode::decode_console_bytes(&buf[offset..]);
         Ok(BgOutput {
             task_id,
             status: status.to_string(),
@@ -270,7 +271,7 @@ fn signal_process_group(pid: u32, force: bool) -> Result<(), String> {
     } else {
         Err(format!(
             "kill {signal} -{pid} 失败: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            crate::console_decode::decode_console_bytes(output.stderr.trim_ascii()).trim().to_string()
         ))
     }
 }
@@ -293,7 +294,7 @@ fn signal_process_group(pid: u32, force: bool) -> Result<(), String> {
     } else {
         Err(format!(
             "taskkill 失败: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
+            crate::console_decode::decode_console_bytes(output.stderr.trim_ascii()).trim().to_string()
         ))
     }
 }
@@ -460,7 +461,7 @@ pub(crate) fn bg_list_sync() -> Result<Vec<BgOutput>, String> {
             let total = buf.len();
             // bg_list 只给尾部 2KB（全量走 bg_output 增量）
             let tail_start = total.saturating_sub(2048);
-            let new_output = String::from_utf8_lossy(&buf[tail_start..]).to_string();
+            let new_output = crate::console_decode::decode_console_bytes(&buf[tail_start..]);
             out.push(BgOutput {
                 task_id,
                 status: status.to_string(),
