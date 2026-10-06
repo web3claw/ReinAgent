@@ -47,8 +47,10 @@ export function RequestPreviewDialog({ open, onClose, loading, error, data }: Re
   const copyFull = async () => {
     if (!data) return;
     // 复制全文 = 纯 JSON 数据（用户定稿 2026-10-06：标题/围栏/注记一律不带）。
+    // 用未截断的 rawJsonFull：rawJson 的 400k 上限只是弹窗渲染护栏（用户定稿
+    // 2026-10-06：复制要拿到完整的全部，落档/喂外部工具不允许静默缺尾）。
     try {
-      await navigator.clipboard.writeText(data.rawJson);
+      await navigator.clipboard.writeText(data.rawJsonFull);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 1500);
     } catch (err) {

@@ -72,6 +72,9 @@ export interface RequestPreview {
   messages: PreviewMessageEntry[];
   messageMergedNote: string | null;
   rawJson: string;
+  /** 未截断的完整原始 JSON：rawJson 仅为弹窗渲染护栏（400k 截断防 Shiki 卡死），
+   *  「复制全文」必须用本字段——落档/喂外部工具要的是完整形态。 */
+  rawJsonFull: string;
   rawClipped: boolean;
   notes: string[];
 }
@@ -267,7 +270,13 @@ export async function buildRequestPreview(input: RequestPreviewInput): Promise<R
       return JSON.stringify(
         {
           systemPrompt: assembly.systemPrompt,
-          tools: toolEntries.map((tool) => ({ name: tool.name, schema: JSON.parse(tool.schemaJson) })),
+          // 与装配视图的 Tool 形状同构：{name, description, parameters}——
+          // 漏 description 会让「工具描述引导」（如 agent 的 When to use）在预览里不可见。
+          tools: toolEntries.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            schema: JSON.parse(tool.schemaJson),
+          })),
           messages: assembly.messages,
         },
         null,
@@ -279,7 +288,9 @@ export async function buildRequestPreview(input: RequestPreviewInput): Promise<R
   })();
   const raw = clip(rawFull, PREVIEW_TOTAL_MAX_CHARS);
   if (raw.clipped) {
-    notes.push(`原始 JSON 已截断（原 ${rawFull.length} 字符，上限 ${PREVIEW_TOTAL_MAX_CHARS}）。`);
+    notes.push(
+      `原始 JSON 已截断（原 ${rawFull.length} 字符，上限 ${PREVIEW_TOTAL_MAX_CHARS}）——仅影响本弹窗展示，复制全文仍为完整 JSON。`,
+    );
   }
 
   return {
@@ -305,6 +316,7 @@ export async function buildRequestPreview(input: RequestPreviewInput): Promise<R
     messages: entries,
     messageMergedNote: mergedNote,
     rawJson: raw.text,
+    rawJsonFull: rawFull,
     rawClipped: raw.clipped,
     notes,
   };
