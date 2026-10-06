@@ -1253,3 +1253,10 @@ ReinAgent 架构全景
 - **根因（实锤）**：中文版 Windows 的控制台程序（ping/ipconfig 等）往**管道**写输出用系统 OEM 代码页（本机 chcp=936/GBK，实测字节转储 `c0b4 d7d4`=来自）；而 `fs_execute`/`bg_process`/`terminal.rs` 统一 `from_utf8_lossy` 硬解 UTF-8 → 每个汉字变 U+FFFD（工具卡花块、ASCII 幸存）。此前 8.9 记录「本机代码页为 UTF-8」系误记（已订正）。LiveAgent 同样裸 lossy 未处理；终端 PTY 面板不受影响（ConPTY 层转 UTF-8）。
 - **修复**：新模块 `console_decode.rs`——`decode_console_bytes` **严格 UTF-8 校验优先**（pwsh7/git 等本就 UTF-8，零影响），失败按 `GetOEMCP` + `MultiByteToWideChar` 解（windows 依赖加 `Win32_Globalization` feature，零新依赖；任何一步失败回退 lossy 不 panic）；`decode_with_codepage` 单独导出供固定代码页测试。应用四处：`fs_execute` stdout/stderr（工具卡）、`bg_output`/`bg_list` 尾部（后台任务）、kill/taskkill stderr 诊断。**terminal.rs PTY 分块读不改**——多字节字符可能被切块劈开，套助手会把合法 UTF-8 残片按 GBK 乱解（ConPTY 本就 UTF-8，劈字符是既有小概率问题，另案）。
 - **验证**：`cargo check` 0 警告；`cargo test --lib` 192/193（新增 3 例解码测试全过：GBK 936→中文/UTF-8 直通/非法字节 lossy 兜底；唯一失败仍是已记录的 bg_stop Windows 回归）；CDP 裸调 `ping -n 2 www.baidu.com`——`fs_execute` 与 `bg_output` 中文全部正常（来自…的回复/字节/平均）。
+
+### bg_stop Windows 回归修复（2026-10-06，修复 9d41cdd 引入的软杀白等）
+
+- **症状**：`bg_process_tests::long_running_process_can_be_stopped` 稳定失败（实测 ~3.5s，超 3s 断言）——9d41cdd 的「TERM→2s 宽限→KILL」重写在 Linux 验证 0.1s 通过，Windows 侧未复跑。
+- **根因**：Windows 对控制台进程树**没有有效软终止语义**——`taskkill /PID /T` 不带 `/F` 只发 WM_CLOSE（仅对有消息循环的 GUI 程序有效），ping/cmd/node 等控制台程序一律拒绝（"can only be terminated forcefully"）；软杀失败后 TERM 宽限 2s 必然白等，叠加 `tasklist` 探活开销（每次 spawn ~150ms+）→ 总耗时 ~3.5s。
+- **修复**：`signal_process_group` 的 Windows 分支不区分 force，**恒用 `/T /F` 强杀整树**（Linux 分支 TERM→KILL 语义不变）；`bg_stop_sync` 流程注释同步标注 Windows 偏差。
+- **验证**：`cargo test --lib bg_process_tests` 5/5（含真实进程 spawn/强杀/进程组消失断言，套件 4s→1.5s）；全量 **193/193 全绿**（本会话首次全绿）；`cargo check` 0 警告。
