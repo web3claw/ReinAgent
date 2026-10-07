@@ -56,7 +56,7 @@ ReinAgent 架构全景
 │   │   │   ├── ApprovalCard.tsx        # 工具审批卡（允许/总是允许/拒绝）
 │   │   │   ├── RetryDetailsBlock.tsx   # 重试详情折叠块（每次尝试错误原文卡片）
 │   │   │   ├── ConversationNavigator.tsx # 对话问题导航条
-│   │   │   ├── SessionStatsBar.tsx     # 会话统计行（轮/步/上下文/耗时/token；步=LLM 回合数，对齐 LA step 与 maxSteps 硬闸语义，工具执行不计步——2026-10-06 订正，旧口径误数工具条目）
+│   │   │   ├── SessionStatsBar.tsx     # 会话统计行（轮/步/上下文/耗时/token）
 │   │   │   ├── ContextUsageIndicator.tsx # 上下文容量圆环触发器 + HoverCard 面板
 │   │   │   ├── ImageLightbox.tsx       # 图片放大浮层（附件缩略图与气泡共用）
 │   │   │   ├── MarkdownText.tsx / MarkdownBlockRenderer.tsx / CodeBlock.tsx # Markdown 渲染链
@@ -787,7 +787,6 @@ ReinAgent 架构全景
 - **Tauri 实测**：模型真实派发 Explore 子代理（嵌套循环跑 glob/list_dir 调研）→ 报告回传主循环转述；第二轮验证派发不再弹审批；步数触顶 ⚠ 事实链生效（子代理如实报告不完整，主模型如实转告并自己补验证）。
 - **本批未做（后续增量）**：子代理目录侧栏（Running/Ended，需内存 registry 或持久化）、后台子代理（run_in_background + 完成通知）、「在右侧打开」完整回放（依赖子会话持久化）、用户自定义 agents/*.md profile、MCP/记忆工具带入子代理。
 - 验证：前端 306/306 + `tsc` 0。
-- **⚠️ 2026-10-06 工具描述引导升级（对齐 ZCode agent.ts "When to use"）**：旧描述仅一句时机引导，模型（尤其中低档）从不主动派发子代理；ZCode 的委派引导全部集中在工具描述（系统提示词不承担）。`renderSubagentCatalogDescription` 重写为结构化描述：三个委派触发器（任务匹配 agent 类型 / 可并行独立工作 / **回答需跨多文件读——delegate it and you keep the conclusion, not the file dumps**）+ 反向边界（单点已知信息直接查）+ 防重复闸（Once you've delegated, don't also run it yourself）+ 并行派发（同消息多次调用）+ 转述义务（final message 仅返回给主代理）。与 ZCode 的两处诚实差异：缺省句柄 explorer（非 general-purpose）；后台完成仅 OS 系统通知（给人），模型查报告走 subagent_output。
 
 ### 8.10.1 P1-6 增量：后台子代理 + 运行登记表 + 目录面板（2026-09-28）
 - **`src/lib/subagents/subagentRegistry.ts`**（内存登记表，对齐并行池的并发纪律）：
@@ -834,7 +833,6 @@ ReinAgent 架构全景
   - **钩子**：pool.refreshStreamingSet 终态 done（非 awaitingDecision）→ maybeExtractMemory——复用当轮 sendOptions 的 provider 配置构建模型（faux 跳过），runAgentTurn 导出 getStreamFnForApi。
 - **⚠️ 坑**：validateSubmittedPlan 签名收整个 submission（非 items 数组）；记忆的 greeting/ack 门控在长度门控**之后**（2 字素「你好」报 too-short 而非 greeting——skip 等价）；⚠️ cat >> PROJECT_CONTEXT.md 时 cwd 漂移会把文件写到 src-tauri/ 下（已修正并 amend）。
 - **Tauri 实测**：发「commit message 用英文祈使句」→ 回合完成自动抽取 → memory_list 出现 `commit-message-style`（type=user/conf=high）。
-- **⚠️ 2026-10-06 实锤修复——抽取引擎自落地即静默失效（8 天 0 记忆根因）**：extractionEngine 按 pi-ai Message（`content` 块）读取对话，而 pool 钩子传入时间线 ChatMessage（`.text`、工具为独立 role:"tool" 条目），`as any` 掩盖形状差异 → `extractLatestUserText` 永远读到空串 → 每轮抽取在调模型前即被 `skipped:"empty-user-message"` 静默跳过（`ok:true`，无日志无告警）。上方「Tauri 实测」的 `commit-message-style` 记忆**归因订正**：实为主回合 MemoryManager 工具直写（runAgentTurn 挂载），并非本引擎产出。修复：① 新增 `extraction/chatMessageAdapter.ts` 引擎入户口归一（user→content 文本、assistant→text 块、tool→前置 assistant 的 toolCall 块 + toolResult 消息、孤儿 tool 补合成锚点、空 assistant 过滤；AssistantMessage 库必填的 usage/api 等与窗口无关不造假数据，最小占位断言）；② 连带修 extractionEngine `submission` 捕获缺失（execute 覆盖时漏赋值，曾致 apply 成功仍误报 "model never called SubmitMemoryPlan"、controller 30s 节流与同消息去重状态永不更新）；③ 修纯 append_daily 计划被整单丢弃——`planToApplyBatchArgs` 把 append_daily 映射进 `dailyAppend` 而非 `decisions`，引擎守卫只判 `decisions.length > 0`，导致「无持久记忆、仅记当日进展」的最常见计划形态永不落库（每日日志唯一写入方就是抽取引擎的 append_daily，MemoryManager 不可直写 daily 类型，故引擎死 = 一天日志都没有）。验证：bun 探针 ChatMessage 形状直达 `memory_apply_batch`（decisions=1，global/project 双场景）+ 回归测试 `extraction/chatMessageAdapter.test.mjs`（适配器 3 例 + 引擎 E2E faux 提交计划直达落库）+ `test:hub` 76 绿（含纯 daily 计划落库回归；gating 测试补接线）+ `tsc` 0。
 - **待做（Organizer 编排批）**：organizer service（scan→cluster→plan→gate→apply）+ prompts/organizer + useMemoryOrganizer 调度挂载 + Run Now 接线；MemorySettingsDrawer 的 organizer 模型选择。
 - 验证：前端 314/314（+4 门控）+ `tsc` 0。
 
@@ -1065,16 +1063,6 @@ ReinAgent 架构全景
   - **UI**：SettingsPage 新 tab「导入」（navImport，Download 图标，plugins 之后），ImportSection 四个常驻面板（切换不丢扫描结果），每面板 = 显式扫描 → 全选/分组/勾选工具条 → 导入所选 → toast（成功/跳过/失败计数）。i18n import* 38 键 zh/en（计数在组件内 replace，不用 t 插值）。
   - **E2E（真实桌面）**：种 Claude Code 固定装置 → 扫描出 1 会话 → 导入 → task=import-claude-code-e2e-session + conversation_load 4 行（user/assistant/tool+tool_args+tool_result/assistant，合成行过滤、工具配对 ✓）→ 重复导入任务仍 1 条消息仍 4 行（幂等 ✓）→ 模型/技能/MCP 面板扫描只读正常（技能发现真实 288 个）→ 固定装置与导入任务全部清理。
   - **测试**：import.test.mjs 13 用例（内存 ImportFs 固定装置：四家 scan+convert、新旧 Codex 格式、采样扫描、JSONC/TOML 解析、CC Switch、去重键、apiFormat 别名、分组）接 test:import；serializeEntry 从 conversationPool 导出供导入复用。tsc 0 + 217 测试全绿 + cargo 绿。
-  - **会话导入扩展至 Wake 全量（2026-10-06/07，用户拍板：SQLite 基建做、dsh 仅未压缩代、antigravity 不导、子代理跟随 Wake 白名单、craft 引擎副本跟随 Wake 认领）**：
-    - **基线校准（批次 1）**：Wake（Rust/GPUI 的 21 家会话聚合器，MIT）源码为格式权威；其 tests/fixtures 原样拷入 `src/lib/import/fixtures/home/`（home 布局）+ `importFixtures.test.mjs` 22 用例回归。顺带修 claude 两处缺口：isMeta 行过滤（"Caveat:" 命令转录原会当用户消息导入）、custom-title 最高标题优先级（Wake claude.rs 同款序）。
-    - **基建**：Rust 新命令 `import_sqlite_query`（`src-tauri/src/import_sqlite.rs`；照 Wake sqlite_ro：READ_ONLY 直开→探测→copy 三件套降级；仅放行单条 SELECT/PRAGMA/WITH；spawn_blocking）+ TS `ImportDb` 接口（`lib/import/fsApi.ts`，应用=tauriImportDb、测试=node:sqlite 真实内存库）；跨源认领（`SessionImporter.claimed`，scanAllSessions 收集后过滤引擎副本）+ 同源同 id 去重。
-    - **新增 16 家 importer**：omp（Pi 变体共用核心）、kiro（.jsonl+.json 边车三件套）、qoder（uuid/parentUuid 树 + active-leaf 分支 + message.id 分片收集）、kimi（事件溯源 wire.jsonl，turn.prompt 用户/append_message 仅 assistant）、codebuddy/workbuddy（OpenAI Responses 行形 + 占位标题跳过）、gemini（$set 覆盖式快照重放）、grok（ACP chunk 按角色段合并 + tool_call 配对）、craft（header 驱动 + {{SESSION_PATH}} 展开 + Claude 引擎副本认领）、zcode（SQLite：task_type 白名单/软删/迁移副本隐藏/占位标题回退）、opencode-sqlite（现代 opencode.db + opencode-next.db 双库，v1/v2 两代解析）、copilot（sessions+turns）、hermes（两种 tool_calls 形状 + tool_call_id/名称顺位回填）、devin（main_chain 递归 + hidden/内部消息剔除）、openclaw（SQLite session_windows + legacy jsonl 双代，checkpoint 边车不列）、cursor（CLI 转录 user_query 壳提取 + IDE state.vscdb composer 借 cwd/model）、dsh（文件名代数裁决取最高代；原拍板仅未压缩，2026-10-07 按现实修订——真机 dsh 默认落盘即 zstd 多帧、唯一会话只有 .zstd，改经 Rust 新命令 `import_read_text_auto`（zstd crate 0.13 + 多帧解码到 EOF + 64MB 上限 + 多帧单测）透明读取，`ImportFs.readTextAuto?` 可选能力）。antigravity 按拍板不做（转录加密无正文）。
-    - **验证**：tsc 0；test:import 35 绿（22 fixture + 13 原有）；实弹——真实 ZCode 库（~/.zcode/cli/db/db.sqlite）扫描 19 会话、转换首条 664 消息（角色序列与标题/项目全对）；tauri dev 运行正常（Rust 命令随热编译重启注册）。
-    - **行级三操作 + 永久删除（2026-10-07 用户拍板：每条会话行尾加绿查看/红删除/蓝导入；删除彻底删不进回收站、二次确认、数据库走 SQL）**：Rust 新命令 `import_sqlite_execute`（仅放行单条 DELETE/UPDATE、READ_WRITE 打开、返回 changed）与 `import_delete_path`（文件 unlink/目录递归删、幂等、拒绝根与主目录）。`ImportFs.removePath?` + `ImportDb.execute?` 可选能力；`deleteSessionBySource` 按家分发——文件型删主文件+同名边车（claude/qoder/codebuddy 的 `<id>/` 子代理目录、kiro 的 .json、kimi/grok/craft/dsh/cursor 整目录），数据库型先正文表后会话行（zcode 连带清 tasks-index 标记行；opencode 先探 sqlite_master 只删存在的表；openclaw legacy 连带 checkpoint 残件；cursor 删 composerData+bubbleId 气泡并容忍转录目录缺失）。SQL 一律走 `execute` 通道（`query` 只放行 SELECT）；失败如实上抛防半删。UI：ImportRow 增 actions 槽（label 内 preventDefault+stopPropagation 防勾选联动），查看=convertSession 只读逐条预览（300 条/4000 字符截断），删除=红色确认弹层（显示来源/标题/路径 + Loader busy），完成后自动重扫。
-    - **2026-10-07 删除反馈卡顿修复**：两个叠加因素——① SQLite 型来源每条查询都重新 open+probe 外部库（opencode 一次重扫要开 ~75 次，大库上秒级）；② 删除成功后的自动重扫期间旧列表仍在。修 = Rust 端**只读连接缓存**（`with_read_connection`：按路径缓存连接、查询在锁内执行、stat(mtime+size) 校验文件被替换时自动重开；打开失败仍走 copy 降级）+ UI **乐观移除**（删除成功立即从列表消失、重扫后台跑）。
-    - **2026-10-07 v2 会话枚举补全**：真库的 v2 代会话表是 **session_v2**（39 行/4 顶级，正文在 session_message）——此前只枚举 session 表导致 v2 会话全体不可见。修 = enumerateDb 双表并行（session 走 v1、session_v2 走 v2，同 id 双行以有正文的 v2 为准）。实弹：真库 6 顶级会话（2 v1 + 4 v2），「APKS修复情况核对」954 消息转换成功；回归测试补 v2 原生枚举。
-    - **2026-10-07 查看空内容修复（同 source 双 importer 路由）**：opencode 目录版与 sqlite 版共用 source，`convertSession` 按 source find 命中目录版 → 拿 .db 当目录读返回空。修 = `SessionImporter.owns?(summary)` 归属判定（目录版 !endsWith(.db) / sqlite 版 .db）+ `importerForSummary` 按 owns 路由 convert；删除分发同步补「目录旧版 jsonl 直接删」分支。
-    - **2026-10-07 真机两户零显示修复**：① opencode-sqlite——真库 session 表**没有时间列**（时间在 message/part 上），硬引用 prepare 失败整家消失；且真库 v1（message/part）与 v2（session_message，属子代理/新会话）两代并存。修 = 时间从 message/session_message 聚合 + 逐会话代数裁决（part 有正文走 v1、否则 sm 计数>0 走 v2）。实弹：真库扫出 30 会话、转换 268 消息；新增真库 schema 回归测试。② dsh——见上（zstd 放宽）。实弹：真机唯一会话（zstd 多帧）解出「问候与开场白」2 消息。test:import 40 绿。
 
 - **语音输入（STT）移植（2026-10-02，照抄 LiveAgent 三层架构；用户确认 5 家全抄/前端传参/识别中输入框只读）**：
   - **链路**：getUserMedia（回声消除/降噪/AGC；约束被拒降级）→ AudioContext+ScriptProcessor(4096) 跨块相位连续线性重采样 16kHz 单声道 → 100ms Int16 PCM 分片 + 能量 VAD（RMS 自适应基线）→ Tauri invoke stt_send_audio → Rust SttManager → 云厂商实时识别 WebSocket → partial/final 事件 app.emit("stt:event") → composer 临时文本回填。
@@ -1293,8 +1281,6 @@ ReinAgent 架构全景
 - **验证**：`tsc` 0；providers 30 / agent 49 / chat 151 / trajectory 7 全绿（重构后回归）；CDP 真机 E2E——按钮在搜索框前（x 1270 < 1419）、弹窗六节导航、五节内容实测（系统提示词 4911 字符含 # Communication/# Environment、工具 27664 字符含 read_file/todo_write/agent、用户上下文 8605 含 currentDate、消息 4486 含 system-reminder、原始 JSON 39048 可读）、复制全文经 PowerShell `Get-Clipboard` 实证（完整文档落剪贴板；webview 内 `clipboard.readText` 因 WebView2 读权限悬挂——写正常读受限，测试脚本勿在 webview 里读剪贴板）。
 - **追加（同日用户反馈）**：「复制全文」精简为**仅「原始 JSON + 构建注记」**（拆解/合并等分节视图仅弹窗内查阅；用户查看时发现同一内容被三视图展示三遍，落档/喂外部工具以原始形态为准）。CDP 实测：剪贴板从 86.4K 字符降至 39.9K，`# currentDate`/`# Memory Index` 各 1 次、单个 json 代码块、尾部注记在列。
 - **⚠️ 严重回归修复（2026-10-06 用户报「进入设置页一片空白」）**：请求预览接线时把 `requestPreviewState` 的 `useState` + `openRequestPreview` 的 `useCallback` 声明在了**设置页早退 return 之后**——切设置页时这两个 hook 不执行，React 抛「Rendered fewer hooks than expected」整树卸载 → 白屏（重载因 currentView 持久化为 settings 而持续白屏）。修复=两个 hook 上移到早退之前（并注释铁律）；CDP 实测重载/设置/工作台双向切换零异常、设置导航与工作台消息均正常渲染。**教训：任何新增 hook 必须位于组件所有条件早退之前；E2E 验收应覆盖设置页视图（此前测试均在工作台/轨迹内，漏网）。**
-- **⚠️ rawJson 缺工具描述修复（2026-10-06 用户报「agent 里没有 When to use」）**：`buildRequestPreview` 的原始 JSON 视图把 tools 序列化成 `{name, schema}`，漏掉 description——用户据此误判模型收不到工具描述。事实链：真实请求完整（pi-ai `openai-completions.js:1150` 原样映射 `function.description`；结构化「工具」分栏也一直显示 description），仅 rawJson 展示丢字段。修复 = tools 映射改为 `{name, description, schema}` 与装配视图 Tool 形状同构。教训：raw 视图是用户落档/喂外部工具的形态，字段保真必须与真实装配一致。
-- **复制全文改用未截断 JSON（2026-10-06 用户定稿「复制完整的全部」）**：`RequestPreview` 新增 `rawJsonFull`（未截断完整原始 JSON）；`rawJson` 的 400k 上限**仅是弹窗 Shiki 渲染护栏**，「复制全文」改写 `rawJsonFull`——落档/喂外部工具不允许静默缺尾；截断注记同步改为「仅影响本弹窗展示，复制全文仍为完整 JSON」。
 
 ### 内置技能启用语义改造（2026-10-06，用户定稿：可启用/禁用、默认禁用）
 
@@ -1302,3 +1288,21 @@ ReinAgent 架构全景
 - **改动面**：`lib/skills/builtin.ts` 重构（删除 `mergeAlwaysEnabledSkillNames`/`isUserSelectable*`；`isAlwaysEnabledSkillName` → **`isBuiltinSkillName`**，只保留两处用途：列表排序置前 + **删除保护**——Rust `ensure_not_builtin_skill_management_target` 同样拒绝删除内置，UI 对内置隐藏删除按钮、批量删除排除内置）；`hubSettingsStore` 默认 `{enabled:true, selected:[]}` + **旧污染迁移**（加载时剔除 selected 中遗留的两枚内置名并写回一次——旧版加载器会把它们强制并入，历史上任何一次设置写盘都可能把污染写进 kv；实测用户 kv 正是如此，迁移后两枚默认关）；`SkillsHubPage` 的全部启用守卫/合并/计数口径放开（选中集合、toggle、批量启停、全选、安装后自动启用、分类归属）；`InstalledSkillCard/View/Drawer` 去掉 Lock 分支与恒启用徽标，开关按普通技能渲染（内置仍隐藏删除按钮）。
 - **验证**：`tsc` 0；hub 67 / chat 151 绿；CDP 真机 E2E——迁移后两枚开关均 `aria-checked=false`（默认禁用）→ 启用 skills-creator 后 kv 持久化 `["skills-creator"]` 且**请求预览的用户上下文 Skills 清单出现 creator、不含 installer**（禁用不进上下文）→ 关闭后 kv 回到 `[]`。
 - **追加（同日用户反馈②）**：「复制全文」再精简为**纯 JSON 数据**（标题行/代码围栏/注记全部不带，`writeText(data.rawJson)`）；CDP 实测剪贴板以 `{` 起 `}` 止、无标题/围栏/注记行。
+
+### README.md 开源规范化全景重构（2026-10-07）
+
+- **背景与目标**：根据项目全景架构分析，原 `README.md` 仅包含 72 行极简说明，严重滞后于当前已落地的核心特性。
+- **改动面**：
+  - **核心理念**：显式确立 **Local-First** 数据自治、**No-Fallback & Fail-Fast** 真实交互铁律，以及 Linux/Windows 跨平台差异化适配说明；
+  - **功能全景**：完整增补轨迹分析视图（TrajectoryView）、下次请求同源预览、代码改动检查点与原子回退（checkpoint/rewind）、多协议真实请求（Chat / Messages / Responses / Google）、对话问题导航条、任务清单多胶囊并排、STT 语音实时识别、Git 集成工作台与双消息配色主题；
+  - **架构与目录**：补全 React 19 + Tauri 2 (Rust) 分层架构图与源码目录映射；
+  - **测试与验证**：补齐所有分域测试套件（`test:chat`, `test:providers`, `test:agent`, `test:git`, `test:hub` 等）及 Rust 检查命令。
+
+### 会话导入列表展示项目路径（2026-10-07，用户定稿方案 B）
+
+- **需求与设计**：「设置 ▸ 导入」面板的会话（Sessions）列表中，扫描出的各外部工具会话若包含项目路径，在元数据行（第二行）末尾追加展示项目绝对路径（`N 条消息 · 日期 · <projectPath>`）。
+- **改动面**：
+  - `src/components/settings/ImportSection.tsx`：`SessionImportPanel` 会话行元数据追加 `candidate.projectPath ? " · " + candidate.projectPath : ""`；
+  - `ImportRow`：标题与 meta 标签补齐 `title` 属性（`title={title}` 与 `title={typeof meta === "string" ? meta : undefined}`），长路径被单行截断时鼠标悬停可完整查看绝对路径；
+- **验证**：`tsc --noEmit` 0 错误；`test:import` 38/38 单测全绿。
+

@@ -286,8 +286,8 @@ function ImportRow({
         onChange={(event) => onChange(event.target.checked)}
       />
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-xs font-medium text-[var(--text)]">{title}</span>
-        <span className="block truncate text-[11px] text-[var(--text-dim)]">{meta}</span>
+        <span className="block truncate text-xs font-medium text-[var(--text)]" title={title}>{title}</span>
+        <span className="block truncate text-[11px] text-[var(--text-dim)]" title={typeof meta === "string" ? meta : undefined}>{meta}</span>
       </span>
       {badge}
       {actions}
@@ -612,7 +612,9 @@ function SessionImportPanel() {
                             candidate.messageCount === null
                               ? t("importMessagesUnknown")
                               : t("importMessages").replace("{count}", String(candidate.messageCount))
-                          } · ${formatImportDate(candidate.updatedAt)}`}
+                          } · ${formatImportDate(candidate.updatedAt)}${
+                            candidate.projectPath ? ` · ${candidate.projectPath}` : ""
+                          }`}
                           checked={selected.has(key)}
                           onChange={(on) => setSelected((previous) => toggleKey(previous, key, on))}
                           badge={<Badge>{sourceLabels[candidate.source]}</Badge>}
