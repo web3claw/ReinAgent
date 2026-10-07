@@ -97,9 +97,6 @@ export function PluginsSection() {
 
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-xl font-semibold">{t("pluginsTitle")}</h2>
-      </div>
       <p className="text-xs text-[var(--text-dim)]">{t("pluginsHint")}</p>
 
       {/* 安装源：本地目录 / Git 仓库 */}
