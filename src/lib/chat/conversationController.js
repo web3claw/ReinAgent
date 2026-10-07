@@ -303,6 +303,8 @@ export function createConversationController(deps) {
               signal: controller.signal,
               thinkingLevel: options.thinkingLevel,
               approvalMode: options.approvalMode,
+              // 实时模式读取器（审批门按调用取；计划批准等回合中途切换立即生效）
+              getApprovalMode: options.getApprovalMode,
               approval: options.approval,
               // 检查点上下文：本轮写文件前捕获前像（回退本轮代码改动的数据源）
               checkpoint:

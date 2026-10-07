@@ -193,6 +193,11 @@ export interface RunAgentTurnParams {
   thinkingLevel?: import("../agent/agentRuntime").RunTurnDeps["thinkingLevel"];
   /** 本轮审批模式（任务级，发送时冻结）。缺省 "full"（完全访问，零审批开销）。 */
   approvalMode?: ApprovalMode;
+  /**
+   * 实时审批模式读取器（ZCode getMode 语义）：提供时审批门按调用实时取模式
+   * （计划批准等回合中途切换立即生效）；缺省 = 用 approvalMode 冻结值。
+   */
+  getApprovalMode?: () => ApprovalMode;
   /** 工具级审批策略（工具名 → allow/ask/deny）；未配置的工具走审批模式默认。 */
   toolPolicies?: Record<string, "allow" | "ask" | "deny">;
   /** 审批协调器（由会话池注入；缺省时不注入审批门，工具直通）。 */
@@ -309,7 +314,7 @@ function wrapStreamWithProxiedFetch<TModel extends { api: string }>(
  * 导出供无头测试直接驱动（faux 数据源只会调 read 类工具，覆盖不了 write/exec 矩阵）。
  */
 export function createApprovalGate(
-  approvalMode: ApprovalMode,
+  approvalModeInput: ApprovalMode | (() => ApprovalMode),
   approval: ApprovalCoordinator,
   /** 工具级策略（优先于审批模式默认；deny 直接拦、allow 直接放、ask 走既有挂起） */
   toolPolicies?: Record<string, "allow" | "ask" | "deny">,
@@ -317,6 +322,11 @@ export function createApprovalGate(
   hooksWorkspaceRoot?: string,
 ): (ctx: BeforeToolCallContext, signal?: AbortSignal) => Promise<{ block?: boolean; reason?: string } | undefined> {
   return async (ctx, signal) => {
+    // 实时取模式（ZCode getMode 语义）：计划批准等回合中途的模式切换必须对**正在跑**
+    // 的回合立即生效——冻结值会让已批准的计划在后续工具调用上继续被计划门拦截
+    // （2026-10-07 /plan E2E 实锤）。函数形态由调用方提供实时源；字符串=冻结值。
+    const approvalMode =
+      typeof approvalModeInput === "function" ? approvalModeInput() : approvalModeInput;
     const toolName = ctx.toolCall.name;
     const kind = resolveToolPermissionKind(toolName);
 
@@ -702,6 +712,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     assistantId,
     thinkingLevel,
     approvalMode = "full",
+    getApprovalMode,
     approval,
     toolPolicies,
     checkpoint,
@@ -788,7 +799,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     // 门内 read/full 早退保持 full 模式零审批语义。
     beforeToolCall:
       approval
-        ? createApprovalGate(approvalMode, approval, toolPolicies, workspaceRoot)
+        ? createApprovalGate(getApprovalMode ?? approvalMode, approval, toolPolicies, workspaceRoot)
         : undefined,
     // PostToolUse hooks（P2-G2）：工具执行后合并插件的 additionalContext 反馈
     // （append 到结果 content 末尾，模型下一轮能看到；不替换原结果）。

@@ -279,4 +279,5 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 | Todo 描述与提醒 | 暂不适用（无 todo 工具） | — |
 | 子代理 Agent 工具描述（When to use 委派触发器 + 防重复闸 + 并行派发） | `subagentRunner.ts renderSubagentCatalogDescription`（对齐 ZCode agent.ts；缺省 explorer、后台报告走 subagent_output 两处诚实差异） | ✅ 2026-10-06（工作流/压缩/计划模式提示仍暂不适用） |
 | `/init` 命令提示词（builtin-prompt-command.ts） | `src/lib/commands/initPrompt.ts` + `BUILTIN_COMMANDS` + `LexicalComposer.submit`（展开为普通消息） | ✅ 2026-10-07（真模型两轮 E2E：创建 + 编辑不覆盖） |
-| `/plan`、`/goal`、`/workflow` 命令 | 待移植（可行性已分析：plan/goal 中低成本、workflow 需 v1 精简范围拍板） | ⏳ |
+| `/plan` 命令（切计划模式+可选首任务） | `BUILTIN_COMMANDS` + `LexicalComposer.submit`；配套 `exit_plan_mode` 工具与 PLAN_MODE_PROMPT 此前已落地（P2 尾巴 #8） | ✅ 2026-10-07（E2E 全流程；同批修复审批门冻结模式 bug→实时 getMode 语义） |
+| `/goal`、`/workflow` 命令 | 待移植（可行性已分析：goal 中低成本可砍高级状态机；workflow 需 v1 精简范围拍板） | ⏳ |

@@ -38,6 +38,33 @@ test("门：plan 模式放行 exit_plan_mode（去工具处理器挂起）且不
   assert.equal(result, undefined, "plan 模式应放行（模式门优先于工具级策略）");
 });
 
+test("门：函数形态实时读取模式——回合中途切换立即生效（/plan 批准后执行立即放行的回归）", async () => {
+  // 2026-10-07 /plan E2E 实锤：冻结的 approvalMode 让已批准的计划在后续工具调用上
+  // 继续被计划门拦截（模型收到「已批准、开始实施」后 exec 仍被 block）。修复 = 门按
+  // 调用实时取模式（ZCode getMode 语义）。
+  let mode = "plan";
+  const requests = [];
+  const gate = createApprovalGate(() => mode, {
+    request: async (req) => {
+      requests.push(req.toolName);
+      return "allow";
+    },
+    isAlwaysAllowed: () => false,
+    allowAlways: () => {},
+  });
+  const writeCtx = (id) => ({ toolCall: { name: "write_file", id, args: { path: "a.ts" } } });
+
+  // plan 阶段：exit_plan_mode 放行、write 拦截
+  assert.equal(await gate(ctx("live-1")), undefined, "plan 应放行 exit_plan_mode");
+  assert.ok((await gate(writeCtx("live-2")))?.block, "plan 应拦截 write_file");
+
+  // 中途切换（等价于计划卡批准：先 updateTaskApprovalMode("ask") 再 resolve）
+  mode = "ask";
+  assert.ok((await gate(ctx("live-3")))?.block, "切到 ask 后同一门的 exit_plan_mode 应改为拦截");
+  assert.equal(await gate(writeCtx("live-4")), undefined, "切到 ask 后 write 改走审批（allow → 放行）");
+  assert.deepEqual(requests, ["write_file"], "切换后 write 恰好发一次审批请求；plan 阶段零请求");
+});
+
 test("工具：批准 → approved:true 成功收敛", async () => {
   let capturedArgs = null;
   const tool = createExitPlanModeTool({

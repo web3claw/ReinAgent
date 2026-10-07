@@ -877,6 +877,14 @@ export default function App() {
         assistantId: turnAssistantId,
         thinkingLevel: effectiveThinkingLevel,
         approvalMode: turnApprovalMode,
+        // 实时审批模式读取器（审批门按调用取，ZCode getMode 语义）：计划批准后
+        // onApprove 先 updateTaskApprovalMode 再 resolve，本读取器让**正在跑**的
+        // 回合下一次工具调用立刻按新模式裁决（冻结值会让已批准计划继续被计划门拦截）。
+        getApprovalMode: () => {
+          const s = useAppStore.getState();
+          const t = taskId ? s.tasks.find((item) => item.id === taskId) ?? null : null;
+          return t?.approvalMode ?? s.approvalMode;
+        },
         toolPolicies: activeTask?.toolPolicies,
         images,
         userAttachments,

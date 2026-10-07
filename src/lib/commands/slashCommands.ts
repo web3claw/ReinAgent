@@ -44,6 +44,12 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
     kind: "builtin",
   },
   {
+    name: "plan",
+    label: "plan",
+    description: "切换到计划模式：只读调研，提交计划获批后再执行（可附带首个任务）",
+    kind: "builtin",
+  },
+  {
     name: "help",
     label: "help",
     description: "显示可用命令与用法",

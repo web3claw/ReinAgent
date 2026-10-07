@@ -1224,6 +1224,13 @@ ReinAgent 架构全景
 - **改动**：`slashCommands.ts` 新增纯函数 `matchBuiltinCommand(text)`——整串精确匹配 `/name` 或 `/name 参数` 且 name ∈ `BUILTIN_COMMANDS` 才命中；`/foo`（未注册）、`/home/user/file`（路径）、非整串一律返回 null 交回普通发送（绝不因「以 / 开头」吞内容）。`LexicalComposer.tsx` 新增 `selectSlashCommand`（菜单选中只填词：内置填 `/name ` 并把光标移到末尾、自定义展开模板），菜单键盘与点击两条路径统一走它；`submit()` 开头用 `matchBuiltinCommand` 拦截并执行内置命令（`runBuiltinCommand`）；`runBuiltinCommand` 加草稿态如实 toast（`/clear`、`/compact` 无会话时提示，不再静默清空输入框）。
 - **验证**：`tsc` 0；`test:chat` 147/147（新增 `matchBuiltinCommand` 用例：trim 命中 / 带参 / 未注册放行 / 路径放行 / 非整串放行）。
 
+### /plan 内置命令移植 + 审批门实时模式修复（2026-10-07，ZCode 对齐；CDP 真模型全流程 E2E）
+
+- **语义（ZCode 同款）**：`/plan [task]` 切任务审批模式到 plan（草稿态切全局默认，同模式 chip 路径）；带参数时余下文本作为首个任务照常发出，无参数仅切模式并清空输入。配套链路此前已随 P2 尾巴 #8 落地（`exit_plan_mode` 工具 + PlanModeCard 批准卡 + PLAN_MODE_PROMPT 指示模型必须经工具提交计划），本次只补命令入口。
+- **改动**：`BUILTIN_COMMANDS` 加 `plan`（clear/compact/init/plan/help）；`LexicalComposer.submit()` 特判——`handleSelectApprovalMode("plan")` 后按 args 空/非空决定仅切模式或继续发送。
+- **⚠️ E2E 抓出并修复的真 bug（审批门冻结模式）**：批准计划后，**正在跑**的回合后续工具调用仍被计划门拦截（模型收到「已批准、开始实施」后 exec/write 全被 block，自述「still plan mode gate?」）。根因 = `createApprovalGate(approvalMode)` 在回合开始冻结模式值，`onApprove` 只切了任务级模式、跑着的门不跟随。**修复（ZCode getMode 语义）**：`createApprovalGate` 首参改 `ApprovalMode | (() => ApprovalMode)` 按调用实时解析；`RunAgentTurnParams` 加 `getApprovalMode?: () => ApprovalMode`；App `buildTurnOptions` 注入实时读取器（从 store 现读任务模式，缺省回退全局——不引池→store 模块环）；controller `.js`/`.d.ts` 透传。系统提示词仍按轮冻结（by design），工具结果消息告知模型模式已切换。
+- **验证**：`test:providers` 38/38（新增门实时切换回归例：同一门 plan 放行 exit_plan_mode/write 拦截 → 切 ask 后 exit_plan_mode 拦截/write 走审批；exitPlanMode.test.mjs 8 例本轮接入 test:providers 脚本）；`test:chat` 156/156；tsc 0。CDP 真模型全流程两轮 E2E——①修复前：/plan 切模式 ✓、计划卡 ✓、批准 ✓，但批准后 exec 被计划门拦截（bug 实锤）；②修复后：/plan → 计划卡 → 批准（模式 plan→ask）→ **写操作改为弹审批卡**（允许×3）→ 模型完整实现（index.ts 加 add 函数 + 新建 test/index.test.ts）→ npm test 2 例全过；时间线无计划门拦截文案。
+
 ### /init 内置命令移植（2026-10-07，ZCode builtin-prompt-command.ts 对齐；CDP 真模型两轮 E2E）
 
 - **语义（ZCode 同款，用户确认「先移植 init」）**：`/init [notes]` 是**提示词模板型**命令——不执行宿主逻辑，而是把输入展开为一段普通提示词**照常发送**，让模型跑一个正常回合：检查工作区 → 创建或更新根目录 `AGENTS.md`；已存在则 `edit_file` 编辑补充而非整体覆盖；只动当前工作区；已有替代指令文件（`.agents/AGENTS.md` / `CLAUDE.md` / `.claude/CLAUDE.md`，即 `agents_md.rs` CANDIDATES）时如实告知并停止不创建。

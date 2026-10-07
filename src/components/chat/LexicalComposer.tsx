@@ -528,6 +528,15 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           args: builtin.args,
           workingDirectory: workspaceRoot,
         });
+      } else if (builtin.command.name === "plan") {
+        // /plan（ZCode 语义）：切到计划模式（任务级/草稿级同模式 chip 路径）；
+        // 带参数时余下文本作为首个任务照常发出，无参数仅切模式并清空输入。
+        handleSelectApprovalMode("plan");
+        if (builtin.args.trim().length === 0) {
+          setText("");
+          return;
+        }
+        outgoingText = builtin.args.trim();
       } else {
         runBuiltinCommand(builtin.command, builtin.args);
         return;
