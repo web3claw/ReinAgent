@@ -81,8 +81,8 @@ test("toCustomCommands：防御性解析（脏数据不崩、非法名丢弃）"
   assert.equal(out[2].body, "", "非字符串 body 归一为空串");
 });
 
-test("BUILTIN_COMMANDS：内置命令清单稳定（clear/compact/help）", () => {
-  assert.deepEqual(BUILTIN_COMMANDS.map((c) => c.name).sort(), ["clear", "compact", "help"]);
+test("BUILTIN_COMMANDS：内置命令清单稳定（clear/compact/init/help）", () => {
+  assert.deepEqual(BUILTIN_COMMANDS.map((c) => c.name).sort(), ["clear", "compact", "help", "init"]);
   assert.ok(BUILTIN_COMMANDS.every((c) => c.kind === "builtin"));
 });
 
@@ -94,6 +94,10 @@ test("matchBuiltinCommand：整串精确命中内置命令才执行；路径/未
     args: "额外参数",
   });
   assert.equal(matchBuiltinCommand("/help")?.command.name, "help");
+  assert.deepEqual(matchBuiltinCommand("/init 重点写构建命令"), {
+    command: BUILTIN_COMMANDS.find((c) => c.name === "init"),
+    args: "重点写构建命令",
+  });
   assert.equal(matchBuiltinCommand("/unknown"), null, "未注册命令绝不吞掉（交回普通发送）");
   assert.equal(matchBuiltinCommand("/home/user/file"), null, "路径不误判");
   assert.equal(matchBuiltinCommand("请执行 /compact"), null, "非整串不触发");

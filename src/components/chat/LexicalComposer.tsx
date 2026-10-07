@@ -9,6 +9,7 @@ import {
   toCustomCommands,
   type SlashCommand,
 } from "../../lib/commands/slashCommands";
+import { buildInitAgentsPrompt } from "../../lib/commands/initPrompt";
 import { parseMentionQuery } from "../../lib/chat/mentions";
 import {
   classifyPaste,
@@ -512,19 +513,33 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const submit = async () => {
     const trimmed = text.trim();
     // 斜杠内置命令：回车提交时执行（`/` 菜单选中只负责把 `/name ` 填进输入框，不直接执行）。
-    // 精确匹配 `/clear|/compact|/help`；`/foo`、路径等一律不命中，走下面的普通发送。
+    // 精确匹配 `/clear|/compact|/init|/help`；`/foo`、路径等一律不命中，走下面的普通发送。
     const builtin = matchBuiltinCommand(trimmed);
+    // /init 是「提示词模板型」命令（ZCode 语义）：展开成一段普通提示词后**继续走发送**，
+    // 不是宿主逻辑。无工作区时无从生成 AGENTS.md，如实报错不静默。
+    let outgoingText = trimmed;
     if (builtin) {
-      runBuiltinCommand(builtin.command, builtin.args);
-      return;
+      if (builtin.command.name === "init") {
+        if (!workspaceRoot) {
+          toast.error("当前任务没有工作区，无法执行 /init");
+          return;
+        }
+        outgoingText = buildInitAgentsPrompt({
+          args: builtin.args,
+          workingDirectory: workspaceRoot,
+        });
+      } else {
+        runBuiltinCommand(builtin.command, builtin.args);
+        return;
+      }
     }
-    if ((trimmed.length === 0 && attachments.length === 0) || isStreaming) return;
+    if ((outgoingText.length === 0 && attachments.length === 0) || isStreaming) return;
     if (stt.active) return; // 语音识别中禁止发送（对齐 LiveAgent controlsDisabled）
     enhanceTokenRef.current += 1; // 提交使增强撤销/迟到结果失效（对齐 PI invalidatePromptEnhancement）
     setEnhancementUndo(null);
 
     const supportsImage = currentModel?.supportsImage === true;
-    const { payload, imageInputs } = await buildOutgoingPayload(trimmed, attachments, supportsImage);
+    const { payload, imageInputs } = await buildOutgoingPayload(outgoingText, attachments, supportsImage);
 
     const userAttachments = attachments.map((a) => ({
       path: a.path,

@@ -1224,6 +1224,12 @@ ReinAgent 架构全景
 - **改动**：`slashCommands.ts` 新增纯函数 `matchBuiltinCommand(text)`——整串精确匹配 `/name` 或 `/name 参数` 且 name ∈ `BUILTIN_COMMANDS` 才命中；`/foo`（未注册）、`/home/user/file`（路径）、非整串一律返回 null 交回普通发送（绝不因「以 / 开头」吞内容）。`LexicalComposer.tsx` 新增 `selectSlashCommand`（菜单选中只填词：内置填 `/name ` 并把光标移到末尾、自定义展开模板），菜单键盘与点击两条路径统一走它；`submit()` 开头用 `matchBuiltinCommand` 拦截并执行内置命令（`runBuiltinCommand`）；`runBuiltinCommand` 加草稿态如实 toast（`/clear`、`/compact` 无会话时提示，不再静默清空输入框）。
 - **验证**：`tsc` 0；`test:chat` 147/147（新增 `matchBuiltinCommand` 用例：trim 命中 / 带参 / 未注册放行 / 路径放行 / 非整串放行）。
 
+### /init 内置命令移植（2026-10-07，ZCode builtin-prompt-command.ts 对齐；CDP 真模型两轮 E2E）
+
+- **语义（ZCode 同款，用户确认「先移植 init」）**：`/init [notes]` 是**提示词模板型**命令——不执行宿主逻辑，而是把输入展开为一段普通提示词**照常发送**，让模型跑一个正常回合：检查工作区 → 创建或更新根目录 `AGENTS.md`；已存在则 `edit_file` 编辑补充而非整体覆盖；只动当前工作区；已有替代指令文件（`.agents/AGENTS.md` / `CLAUDE.md` / `.claude/CLAUDE.md`，即 `agents_md.rs` CANDIDATES）时如实告知并停止不创建。
+- **改动**：新纯模块 `src/lib/commands/initPrompt.ts`（`buildInitAgentsPrompt({args, workingDirectory})`，ZCode 原文逐句移植，适配点=身份改 ReinAgent、工具名改 read_file/list_dir/glob/grep/exec_command、候选指令文件按本仓库 CANDIDATES、去掉 ~/.zcode/AGENTS.md 说明；带参数按 ZCode 格式追加「Additional user instructions」text 代码块；路径拼接待 Windows 反斜杠/POSIX 斜杠）；`slashCommands.ts` `BUILTIN_COMMANDS` 加 `init`（clear/compact/init/help）；`LexicalComposer.tsx` `submit()` 特判——`/init` 展开为 `outgoingText` 后**继续走普通发送链路**（其余内置命令照旧 `runBuiltinCommand` 直执行），无工作区如实 toast 拒绝；输入历史记用户原文（`/init notes`）而非展开后的长提示词。
+- **验证**：`tsc` 0；`test:chat` 156/156（新增 `initPrompt.test.mjs` 5 例 + `matchBuiltinCommand` init 带参例 + 清单断言改四命令）；CDP 真模型两轮 E2E（临时 git 工作区）——①敲 `/init` 菜单出现 → Enter 选中填词 → Enter 提交，用户气泡显示展开提示词，模型真实读文件后在根目录**创建** AGENTS.md（Purpose/Layout/Commands/Notes 四节，构建/测试命令从 package.json 正确发现）；②`/init 补充备注` 对已存在文件为 **edit 而非覆盖**（diff 恰好 +1/−0，原文全保留，模型自述「这次是对已有文件的编辑」）。
+
 ### 任务胶囊点击开合 + 新建任务 no-op 修复（2026-10-06，CDP 真模型 E2E 验证）
 
 - **任务胶囊交互改造（用户需求「点击展开，再点击收缩」）**：`TaskProgressBar.tsx` 从 Radix Tooltip（悬停 200ms 弹出）改为 **lw Popover 点击开合**——Trigger 点击原生 toggle（点胶囊弹出清单、再点收起；点外部 / Esc 亦收，Popover 标准语义）；浮层内容/位置（上方、左对齐、`max-w-md`）不变，`className` 加 `w-auto` 抵消 lw PopoverContent 默认 `w-72` 定宽保持随内容自适应；文件头旧「TooltipProvider 教训」注释换为通用「浮层一律用 lw 组件」。

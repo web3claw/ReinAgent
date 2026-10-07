@@ -248,6 +248,12 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 - `write`（write_file / edit_file；**未知工具保守视为 write**）：ask 需批准 / plan 拦截 / edit 放行
 - `exec`（exec_command）：ask / edit 需批准 / plan 拦截
 
+### 6. `/init` 命令提示词（2026-10-07，ZCode `builtin-prompt-command.ts` 移植）
+
+- 位置 `src/lib/commands/initPrompt.ts` → `buildInitAgentsPrompt({args, workingDirectory})`；入口 = `/init [notes]` 内置命令（回车提交时展开，走普通发送链路）。
+- ZCode 原文逐句移植（"You are running ... built-in /init command" 全段），**适配点**：身份改 ReinAgent；工具名改本仓库（read_file/list_dir/glob/grep/exec_command·仅供安全探查）；候选替代指令文件按 `agents_md.rs` CANDIDATES（`.agents/AGENTS.md`/`CLAUDE.md`/`.claude/CLAUDE.md`，存在即告知并停止）；去掉用户级 `~/.zcode/AGENTS.md` 说明（本应用无用户级注入）；带参数按 ZCode 格式追加「Additional user instructions supplied with /init:」text 代码块。
+- 语义约束：只动当前工作区（"Do not write files outside the workspace"）；已存在 AGENTS.md 用 edit_file 补充而非覆盖；保持精简（"short enough for future agents to read quickly"）；内容建议 = 仓库用途/目录、构建与测试命令、架构边界、约定与坑、先读文档。
+
 ---
 
 ## 三、采纳映射与待办
@@ -272,3 +278,5 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 | 附件 "data not instructions" 免责 | 待实现（附件功能已上线：路径引用 + 图片内联，但发送时尚未附加免责包装） | ⏳ |
 | Todo 描述与提醒 | 暂不适用（无 todo 工具） | — |
 | 子代理 Agent 工具描述（When to use 委派触发器 + 防重复闸 + 并行派发） | `subagentRunner.ts renderSubagentCatalogDescription`（对齐 ZCode agent.ts；缺省 explorer、后台报告走 subagent_output 两处诚实差异） | ✅ 2026-10-06（工作流/压缩/计划模式提示仍暂不适用） |
+| `/init` 命令提示词（builtin-prompt-command.ts） | `src/lib/commands/initPrompt.ts` + `BUILTIN_COMMANDS` + `LexicalComposer.submit`（展开为普通消息） | ✅ 2026-10-07（真模型两轮 E2E：创建 + 编辑不覆盖） |
+| `/plan`、`/goal`、`/workflow` 命令 | 待移植（可行性已分析：plan/goal 中低成本、workflow 需 v1 精简范围拍板） | ⏳ |
