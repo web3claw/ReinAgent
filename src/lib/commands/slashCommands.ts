@@ -50,6 +50,12 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
     kind: "builtin",
   },
   {
+    name: "goal",
+    label: "goal",
+    description: "查看或管理会话目标：/goal <目标> 设定，pause/resume/clear 管理",
+    kind: "builtin",
+  },
+  {
     name: "help",
     label: "help",
     description: "显示可用命令与用法",

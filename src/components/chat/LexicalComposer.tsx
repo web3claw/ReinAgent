@@ -10,6 +10,7 @@ import {
   type SlashCommand,
 } from "../../lib/commands/slashCommands";
 import { buildInitAgentsPrompt } from "../../lib/commands/initPrompt";
+import { parseGoalCommand } from "../../lib/goals/goalState";
 import { parseMentionQuery } from "../../lib/chat/mentions";
 import {
   classifyPaste,
@@ -180,6 +181,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     tasks,
     updateTaskThinkingLevel,
     updateTaskApprovalMode,
+    updateTaskGoal,
     selectedProject,
     setSelectedProject,
     projects,
@@ -537,6 +539,13 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           return;
         }
         outgoingText = builtin.args.trim();
+      } else if (builtin.command.name === "goal") {
+        // /goal（ZCode 语义）：任务级会话目标管理（show/set/replace/pause/resume/clear）；
+        // 变更即时落库，下一轮发送注入 meta_user 权威状态块。
+        // show 会把状态贴回输入框（与 /help 同款），此时**不可**再清空输入。
+        const pasted = runGoalCommand(builtin.args);
+        if (!pasted) setText("");
+        return;
       } else {
         runBuiltinCommand(builtin.command, builtin.args);
         return;
@@ -785,6 +794,68 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       el.focus();
       el.setSelectionRange(inserted.length, inserted.length);
     });
+  };
+
+  /**
+   * 执行 /goal 子命令（ZCode session goal 语义 v1：show/set/replace/pause/resume/clear）。
+   * 目标存任务字段（随任务同步持久化）；运行中的回合不受影响，下一轮发送即注入新状态。
+   * @returns true = show 已把状态贴回输入框（调用方不要清空输入）；false = 其余（可清空）。
+   */
+  const runGoalCommand = (args: string): boolean => {
+    if (!taskId) {
+      toast.error("当前还没有会话，无法执行 /goal");
+      return false;
+    }
+    const current = tasks.find((task) => task.id === taskId)?.goal ?? null;
+    const parsed = parseGoalCommand(args);
+
+    if (parsed.action === "show") {
+      // 与 /help 同款：贴回输入框（非破坏性，用户可编辑或清空）
+      setText(
+        current
+          ? `当前目标（${current.status === "paused" ? "已暂停" : "进行中"}）：\n${current.objective}`
+          : "当前没有设定目标。用 /goal <目标描述> 设定一个长期目标；支持 pause / resume / clear。",
+      );
+      textareaRef.current?.focus();
+      return true;
+    }
+
+    if (parsed.action === "pause" || parsed.action === "resume") {
+      if (!current) {
+        toast.error(parsed.action === "pause" ? "当前没有目标可暂停" : "当前没有目标可恢复");
+        return false;
+      }
+      const want: "active" | "paused" = parsed.action === "pause" ? "paused" : "active";
+      if (current.status === want) {
+        toast.success(want === "paused" ? "目标已是暂停状态" : "目标已在推进中");
+        return false;
+      }
+      updateTaskGoal(taskId, { ...current, status: want, updatedAt: Date.now() });
+      toast.success(
+        want === "paused" ? "目标已暂停（后续轮次不再推进）" : "目标已恢复推进",
+      );
+      return false;
+    }
+
+    if (parsed.action === "clear") {
+      if (!current) {
+        toast.error("当前没有目标可清除");
+        return false;
+      }
+      updateTaskGoal(taskId, null);
+      toast.success("目标已清除");
+      return false;
+    }
+
+    // set（含 replace 别名）：设定新目标即覆盖旧目标（ZCode 语义）
+    const objective = parsed.objective.trim();
+    if (objective.length === 0) {
+      toast.error("目标内容不能为空：/goal <目标描述>");
+      return false;
+    }
+    updateTaskGoal(taskId, { objective, status: "active", updatedAt: Date.now() });
+    toast.success(current ? "目标已更新（覆盖旧目标）" : "目标已设定");
+    return false;
   };
 
   /** 执行内置命令（由回车提交触发；清空/压缩/帮助）。 */

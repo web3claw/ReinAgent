@@ -81,10 +81,11 @@ test("toCustomCommands：防御性解析（脏数据不崩、非法名丢弃）"
   assert.equal(out[2].body, "", "非字符串 body 归一为空串");
 });
 
-test("BUILTIN_COMMANDS：内置命令清单稳定（clear/compact/init/plan/help）", () => {
+test("BUILTIN_COMMANDS：内置命令清单稳定（clear/compact/init/plan/goal/help）", () => {
   assert.deepEqual(BUILTIN_COMMANDS.map((c) => c.name).sort(), [
     "clear",
     "compact",
+    "goal",
     "help",
     "init",
     "plan",
@@ -111,6 +112,14 @@ test("matchBuiltinCommand：整串精确命中内置命令才执行；路径/未
   assert.deepEqual(matchBuiltinCommand("/plan 重构登录流程"), {
     command: BUILTIN_COMMANDS.find((c) => c.name === "plan"),
     args: "重构登录流程",
+  });
+  assert.deepEqual(matchBuiltinCommand("/goal"), {
+    command: BUILTIN_COMMANDS.find((c) => c.name === "goal"),
+    args: "",
+  });
+  assert.deepEqual(matchBuiltinCommand("/goal pause"), {
+    command: BUILTIN_COMMANDS.find((c) => c.name === "goal"),
+    args: "pause",
   });
   assert.equal(matchBuiltinCommand("/unknown"), null, "未注册命令绝不吞掉（交回普通发送）");
   assert.equal(matchBuiltinCommand("/home/user/file"), null, "路径不误判");

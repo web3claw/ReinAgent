@@ -254,6 +254,12 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 - ZCode 原文逐句移植（"You are running ... built-in /init command" 全段），**适配点**：身份改 ReinAgent；工具名改本仓库（read_file/list_dir/glob/grep/exec_command·仅供安全探查）；候选替代指令文件按 `agents_md.rs` CANDIDATES（`.agents/AGENTS.md`/`CLAUDE.md`/`.claude/CLAUDE.md`，存在即告知并停止）；去掉用户级 `~/.zcode/AGENTS.md` 说明（本应用无用户级注入）；带参数按 ZCode 格式追加「Additional user instructions supplied with /init:」text 代码块。
 - 语义约束：只动当前工作区（"Do not write files outside the workspace"）；已存在 AGENTS.md 用 edit_file 补充而非覆盖；保持精简（"short enough for future agents to read quickly"）；内容建议 = 仓库用途/目录、构建与测试命令、架构边界、约定与坑、先读文档。
 
+### 7. `/goal` 会话目标注入（2026-10-07，ZCode session goal 语义 v1）
+
+- 位置 `src/lib/goals/goalState.ts` → `formatGoalStateForModel`；`runAgentTurn` 每轮经 `buildMetaUserBlock.goalSection` 并入 meta_user（currentDate 之后），无目标为空串不入块。
+- ZCode `formatGoalStateForModel` 结构对齐：`Current session goal state (authoritative):` + `Status:` + `<untrusted_objective>` 包装（`escapeGoalPromptText` 转义 & < >）；paused 附 ZCode 提醒原文语义句 "The goal is paused. Do not continue pursuing it unless the user resumes or replaces the goal."。
+- **v1 省略**（本应用不跟踪，绝不捏造）：Tokens used / Token budget / Time used 三行；状态变更 model-only 提醒消息（meta 块每轮重算，新状态下一轮自动可见）；goal 自动续跑/验证器。
+
 ---
 
 ## 三、采纳映射与待办
@@ -280,4 +286,5 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 | 子代理 Agent 工具描述（When to use 委派触发器 + 防重复闸 + 并行派发） | `subagentRunner.ts renderSubagentCatalogDescription`（对齐 ZCode agent.ts；缺省 explorer、后台报告走 subagent_output 两处诚实差异） | ✅ 2026-10-06（工作流/压缩/计划模式提示仍暂不适用） |
 | `/init` 命令提示词（builtin-prompt-command.ts） | `src/lib/commands/initPrompt.ts` + `BUILTIN_COMMANDS` + `LexicalComposer.submit`（展开为普通消息） | ✅ 2026-10-07（真模型两轮 E2E：创建 + 编辑不覆盖） |
 | `/plan` 命令（切计划模式+可选首任务） | `BUILTIN_COMMANDS` + `LexicalComposer.submit`；配套 `exit_plan_mode` 工具与 PLAN_MODE_PROMPT 此前已落地（P2 尾巴 #8） | ✅ 2026-10-07（E2E 全流程；同批修复审批门冻结模式 bug→实时 getMode 语义） |
-| `/goal`、`/workflow` 命令 | 待移植（可行性已分析：goal 中低成本可砍高级状态机；workflow 需 v1 精简范围拍板） | ⏳ |
+| `/goal` 命令与目标注入（session goal / target.ts / goal-state-reminder） | `src/lib/goals/goalState.ts` + `BUILTIN_COMMANDS` + `AppTask.goal` + `buildMetaUserBlock.goalSection` | ✅ 2026-10-07（v1 语义；真模型 E2E：注入/暂停语义全过） |
+| `/workflow` 命令 | 暂缓（用户 2026-10-07 决定暂不移植；可行性分析在案：ZCode 引擎约 30500 行/139 文件，v1 精简方案未拍板） | ⏸ |

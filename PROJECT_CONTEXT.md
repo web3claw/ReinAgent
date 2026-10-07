@@ -1224,6 +1224,14 @@ ReinAgent 架构全景
 - **改动**：`slashCommands.ts` 新增纯函数 `matchBuiltinCommand(text)`——整串精确匹配 `/name` 或 `/name 参数` 且 name ∈ `BUILTIN_COMMANDS` 才命中；`/foo`（未注册）、`/home/user/file`（路径）、非整串一律返回 null 交回普通发送（绝不因「以 / 开头」吞内容）。`LexicalComposer.tsx` 新增 `selectSlashCommand`（菜单选中只填词：内置填 `/name ` 并把光标移到末尾、自定义展开模板），菜单键盘与点击两条路径统一走它；`submit()` 开头用 `matchBuiltinCommand` 拦截并执行内置命令（`runBuiltinCommand`）；`runBuiltinCommand` 加草稿态如实 toast（`/clear`、`/compact` 无会话时提示，不再静默清空输入框）。
 - **验证**：`tsc` 0；`test:chat` 147/147（新增 `matchBuiltinCommand` 用例：trim 命中 / 带参 / 未注册放行 / 路径放行 / 非整串放行）。
 
+### /goal 内置命令移植（2026-10-07，ZCode session goal 语义 v1；CDP 真模型 E2E 全过）
+
+- **语义（ZCode 同款，v1 简化已确认）**：`/goal` 无参显示当前目标；`/goal <目标>` 设定（覆盖旧目标，`replace` 为显式别名）；`/goal pause|resume|clear` 管理状态。目标**每轮注入 meta_user 权威状态块**（`<untrusted_objective>` 包装 + 转义，ZCode formatGoalStateForModel 结构；paused 附「不要继续推进」语义句）。
+- **改动**：新纯模块 `src/lib/goals/goalState.ts`（`parseGoalCommand`——pause/resume/clear 要求**整串精确匹配**（避免「clear the build cache」被误吞，适配 ZCode 首-token 解析；`replace` 别名剥前缀）+ `escapeGoalPromptText` + `formatGoalStateForModel`）；`AppTask.goal` 字段 + `updateTaskGoal` action（随任务同步持久化，镜像 updateTaskApprovalMode）；`buildMetaUserBlock` 加 `goalSection`（currentDate 之后）；`RunAgentTurnParams.goal` + `TurnAssemblyParams.goal`（parts 增 `goalSection` 供请求预览）；App `buildTurnOptions` 注入 `goal: task?.goal ?? null`；controller js/d.ts 透传；Composer `/goal` 分支（**show 贴回输入框**——runGoalCommand 返回 boolean 标记贴回，submit 分支据此决定是否清空输入）。
+- **v1 明确不做（ZCode 高级状态机，避免捏造数据与重量级子系统）**：token 预算/用量/时长三行（本应用未跟踪，绝不假数据——单测断言这几行不出现）；状态变更 model-only 提醒消息（本应用 meta 块每轮重算，新状态下一轮请求自动可见）；goal 自动续跑/target 验证器（另评估）。
+- **验证**：`test:chat` 165/165（新增 goalState 10 例：解析矩阵/show/子命令词开头文本不误吞/replace 别名/转义/无目标空串/active 无暂停句/paused 附语义句/无 token 三行）；`test:providers` 38/38；tsc 0。CDP 真模型 E2E（**SQLite 会话库为权威证据**——视图区 tail 断言不可靠，探针已证）：`/goal <目标>` 落库 → 问「目标是什么」模型正确复述（注入 ✓）→ `/goal pause` 落库 → 问「处于什么状态」模型答「**暂停**状态…暂停期间我不会继续推进它，除非您恢复或替换该目标」（暂停语义 ✓）→ `/goal` show 贴回「当前目标（已暂停）：…」（✓，修复了 show 被 setText 清空的问题）→ `/goal clear` → 目标 null + show 提示未设定 ✓。
+- **⚠️ E2E 环境坑（复现记录）**：① Vite watcher 会漏事件——`slashCommands.ts` 转译产物滞留旧版致 /goal 被当普通消息发出；判定法 = `curl localhost:1420/src/...` grep 新符号，修复 = touch 文件后重查；② 恢复横幅按钮文案是「忽略」不是「跳过」，未消失的挂起恢复态会干扰发送断言；③ 视图区 innerText tail 在虚拟化+滚动下不可作消息断言依据。
+
 ### /plan 内置命令移植 + 审批门实时模式修复（2026-10-07，ZCode 对齐；CDP 真模型全流程 E2E）
 
 - **语义（ZCode 同款）**：`/plan [task]` 切任务审批模式到 plan（草稿态切全局默认，同模式 chip 路径）；带参数时余下文本作为首个任务照常发出，无参数仅切模式并清空输入。配套链路此前已随 P2 尾巴 #8 落地（`exit_plan_mode` 工具 + PlanModeCard 批准卡 + PLAN_MODE_PROMPT 指示模型必须经工具提交计划），本次只补命令入口。

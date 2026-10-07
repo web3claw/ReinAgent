@@ -12,6 +12,7 @@ import { runWorkspaceHooks, fireLifecycleHook } from "../hooks/hooksRuntime";
 import { createMcpTools } from "../mcp/mcpTools";
 import { createAskUserQuestionTool } from "../agent/askUserTool";
 import { EXIT_PLAN_MODE_TOOL_NAME, createExitPlanModeTool } from "../agent/exitPlanModeTool";
+import { formatGoalStateForModel, type TaskGoal } from "../goals/goalState";
 export { EXIT_PLAN_MODE_TOOL_NAME };
 import { createSubagentOutputTool, createSubagentTool } from "./subagentRunner";
 
@@ -141,12 +142,14 @@ export function buildEnvironmentSection(input: EnvironmentSectionInput): string 
  */
 export function buildMetaUserBlock(parts: {
   currentDate?: string;
+  goalSection?: string;
   agentsMdSection?: string;
   memorySection?: string;
   skillsSection?: string;
 }): string | undefined {
   const sections = [
     parts.currentDate,
+    parts.goalSection,
     parts.agentsMdSection,
     parts.memorySection,
     parts.skillsSection,
@@ -198,6 +201,8 @@ export interface RunAgentTurnParams {
    * （计划批准等回合中途切换立即生效）；缺省 = 用 approvalMode 冻结值。
    */
   getApprovalMode?: () => ApprovalMode;
+  /** 会话目标（/goal）：非空时注入 meta_user 权威状态块（发送时从任务解析）。 */
+  goal?: TaskGoal | null;
   /** 工具级审批策略（工具名 → allow/ask/deny）；未配置的工具走审批模式默认。 */
   toolPolicies?: Record<string, "allow" | "ask" | "deny">;
   /** 审批协调器（由会话池注入；缺省时不注入审批门，工具直通）。 */
@@ -466,6 +471,8 @@ export interface TurnAssemblyParams {
   approvalMode?: ApprovalMode;
   approval?: ApprovalCoordinator;
   checkpoint?: { conversationId: string; turnId: string; root?: string };
+  /** 会话目标（/goal）：非空时按权威状态块注入 meta_user（见 goalState.formatGoalStateForModel）。 */
+  goal?: TaskGoal | null;
   /** 是否执行 SessionStart hooks（缺省 true；预览传 false） */
   runSessionStartHooks?: boolean;
 }
@@ -486,6 +493,7 @@ export interface TurnAssembly {
     skillsSection: string;
     agentsMdSection: string;
     currentDateLine: string;
+    goalSection: string;
     modePrompt: string;
     sessionStartContext: string;
   };
@@ -501,6 +509,7 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
     approvalMode = "full",
     approval,
     checkpoint,
+    goal,
     runSessionStartHooks,
   } = params;
 
@@ -650,8 +659,11 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
       }
     }
     const currentDateLine = `# currentDate\nToday's date is ${new Date().toDateString()}.`;
+    // 会话目标（/goal）：权威状态块注入 meta_user（无目标为空串，不进块）
+    const goalSection = formatGoalStateForModel(goal ?? null);
     const metaUserBlock = buildMetaUserBlock({
       currentDate: currentDateLine,
+      goalSection,
       agentsMdSection,
       memorySection,
       skillsSection,
@@ -693,6 +705,7 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
       skillsSection,
       agentsMdSection,
       currentDateLine,
+      goalSection,
       modePrompt,
       sessionStartContext,
     },
@@ -713,6 +726,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     thinkingLevel,
     approvalMode = "full",
     getApprovalMode,
+    goal,
     approval,
     toolPolicies,
     checkpoint,
@@ -725,6 +739,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     ...(workspaceRoot === undefined ? {} : { workspaceRoot }),
     ...(assistantId === undefined ? {} : { assistantId }),
     approvalMode,
+    ...(goal === undefined ? {} : { goal }),
     ...(approval === undefined ? {} : { approval }),
     ...(checkpoint === undefined ? {} : { checkpoint }),
     runSessionStartHooks: true,

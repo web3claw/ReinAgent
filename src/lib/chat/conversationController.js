@@ -305,6 +305,8 @@ export function createConversationController(deps) {
               approvalMode: options.approvalMode,
               // 实时模式读取器（审批门按调用取；计划批准等回合中途切换立即生效）
               getApprovalMode: options.getApprovalMode,
+              // 会话目标（/goal）：非空时注入 meta_user 权威状态块
+              goal: options.goal,
               approval: options.approval,
               // 检查点上下文：本轮写文件前捕获前像（回退本轮代码改动的数据源）
               checkpoint:

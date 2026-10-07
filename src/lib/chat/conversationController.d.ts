@@ -32,6 +32,8 @@ export interface ConversationControllerOptions {
     /** 实时审批模式读取器（由会话池注入；审批门按调用实时取模式——计划批准等
      *  回合中途切换立即生效）。缺省 = 用发送时冻结的 approvalMode。 */
     getApprovalMode?: () => import("../providers/runAgentTurn").ApprovalMode;
+    /** 会话目标（/goal）；非空时注入 meta_user 权威状态块。 */
+    goal?: import("../goals/goalState").TaskGoal | null;
     /** 审批协调器（由会话池注入；缺省=不启用审批门）。 */
     approval?: import("../providers/runAgentTurn").ApprovalCoordinator;
     /** 本轮用户消息附带的图片（原生 image content block 内联）。 */

@@ -885,6 +885,8 @@ export default function App() {
           const t = taskId ? s.tasks.find((item) => item.id === taskId) ?? null : null;
           return t?.approvalMode ?? s.approvalMode;
         },
+        // 会话目标（/goal）：发送时从任务解析，非空时注入 meta_user 权威状态块
+        goal: task?.goal ?? null,
         toolPolicies: activeTask?.toolPolicies,
         images,
         userAttachments,

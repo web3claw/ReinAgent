@@ -29,6 +29,8 @@ export interface AppTask {
   toolPolicies?: Record<string, "allow" | "ask" | "deny">;
   /** 当前助手（人设预设）；缺省/缺省值 general = 无定制。切助手时已采用其模型/思考/审批预设。 */
   assistantId?: string;
+  /** 会话目标（/goal）：每轮注入 meta_user 权威状态块；缺省 = 无目标。 */
+  goal?: import("../lib/goals/goalState").TaskGoal;
 }
 
 interface AppState {
@@ -79,6 +81,8 @@ interface AppState {
   updateTaskAssistant: (id: string, assistantId: string) => void;
   updateTaskThinkingLevel: (id: string, level: ThinkingLevel) => void;
   updateTaskApprovalMode: (id: string, mode: ApprovalMode) => void;
+  /** 会话目标（/goal）：null = 清除目标。 */
+  updateTaskGoal: (id: string, goal: import("../lib/goals/goalState").TaskGoal | null) => void;
   updateTaskToolPolicy: (id: string, toolName: string, policy: "allow" | "ask" | "deny" | null) => void;
   deleteTask: (id: string) => void;
   toggleTaskPin: (id: string) => void;
@@ -478,6 +482,22 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const nextTasks = state.tasks.map((t) =>
         t.id === id ? { ...t, approvalMode: mode, updatedAt: Date.now() } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  updateTaskGoal: (id, goal) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id ? { ...t, goal: goal ?? undefined, updatedAt: Date.now() } : t
       );
       if (typeof window !== "undefined") {
         try {
