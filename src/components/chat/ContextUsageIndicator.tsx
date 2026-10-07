@@ -126,8 +126,8 @@ export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
                         },
                       }
                     : {})}
-                  className={`flex items-center justify-between gap-2 text-[15px] w-full text-left ${
-                    clickable ? "cursor-pointer rounded-md px-1 -mx-1 hover:bg-[var(--surface-hover)]" : ""
+                  className={`flex items-center justify-between gap-2 text-[15px] w-full text-left px-1 -mx-1 ${
+                    clickable ? "cursor-pointer rounded-md hover:bg-[var(--surface-hover)]" : ""
                   }`}
                 >
                   <span className="flex items-center gap-1.5 min-w-0">
@@ -141,7 +141,7 @@ export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
                       {t(cat.labelKey as TranslationKey)}
                     </span>
                   </span>
-                  <span className="font-mono tabular-nums text-[var(--text-secondary)]">
+                  <span className="w-16 shrink-0 text-right font-mono tabular-nums text-[var(--text-secondary)]">
                     {cat.percent.toFixed(1)}%
                   </span>
                 </RowTag>
