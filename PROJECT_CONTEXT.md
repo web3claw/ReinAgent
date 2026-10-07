@@ -960,6 +960,12 @@ ReinAgent 架构全景
   - **Linux 终端两处修复（2026-10-05，用户实测「fish 打开全空白无提示符」「图标显示方框」）**：
     - ① **TERM 继承陷阱**：`terminal.rs` 从不设置 `TERM`，PTY 子进程继承启动链的父环境——GUI / `nohup tauri dev` 链路下常为 `TERM=dumb`，starship 等提示符框架遇 dumb 终端直接拒绝渲染（实测报 `Under a 'dumb' terminal`）→ 面板空白。修复 = 启动时若 `TERM` 为空/`dumb`/`unknown` 则显式设 `xterm-256color`，并补 `COLORTERM=truecolor`（保留用户有效值不覆盖）。
     - ② **Nerd Font 字形缺失**：`TerminalPane.tsx` 字体写死 `Consolas, Menlo, Monaco, 'Courier New', monospace`（全无私有区字形），starship 图标显示方框。修复 = 字体栈改为 Nerd Font 优先（`FiraCode Nerd Font Mono`/`FiraCode Nerd Font`/JetBrainsMono/Hack/Symbols/MesloLGS）+ 平台默认等宽回退（本机 `~/.fonts/` 已装 FiraCode Nerd Font）。
+- **终端面板 LiveAgent 化（2026-10-07，用户定稿：前把手可拖/后关闭钮/字体绿/关闭二次确认；CDP 真机 E2E + 双主题截图验证）**：
+  - **配色**：`global.css` 移植 LiveAgent `tokens.css` 的 `--terminal-{dark,light}-*` 全套色板（背景/前景/光标/选区/滚动条/16 色 ANSI，两套都定义在 `:root`）。**深色 = 前景绿字 `#4ade80`**（LiveAgent 原样）；**浅色 = 前景纯黑**（用户定稿，LiveAgent 原值 `#1f2933` 被覆盖）。`TerminalPane` 弃用硬编码 4 键主题，改 `lib/terminal/terminalTheme.ts readTerminalTheme`（`--terminal-{theme}-{kebab}` 解析，缺 token 回退空串不猜色——LiveAgent 同款做法）。
+  - **tab 胶囊**：每个 tab = 「GripVertical 拖动把手 → 终端图标 → 名字 → 活动态状态点（绿/红）→ × 关闭钮」（LiveAgent RightDockTabStrip 形态）。状态点只在**活动 tab** 显示（会话只挂活动 tab，切换即重建——原实现所有 tab 都点绿的失真已除）。tab id 改单调序号（关闭/重排后新建不复用）。
+  - **拖动重排**：仅把手可拖（pointer 事件 + window 监听），拖动中实时按槽位换位（`lib/terminal/tabStrip.ts moveTabToIndex/tabIndexAtX` 纯逻辑）；pointerup 后抑制一次幽灵 click（拖动不触发 tab 切换）。跨面板拖出/拖出到工作台属 LiveAgent 宿主体系，不做。
+  - **关闭二次确认**：`decideTabClose` 决策——关闭**活动且存活**的会话 → 内联红条「关闭正在运行的终端「{name}」？ 取消/关闭」（`border/bg/text-[var(--danger)]` + `terminalCloseRunning` i18n 键）；非活动 tab（无存活会话）直接关；关闭最后一个 tab = 关整个面板（确认后，tab 条复位为全新单 tab）；右侧面板 X 同样走确认（存活时）。
+  - **验证**：`test:terminal` 新脚本 7/7（重排数学/越界/原地引用/槽位命中/关闭决策/主题键名映射与 trim）；tsc 0。CDP 真机 E2E：加 tab→把手拖动 [term-1,term-2]→[term-2,term-1] ✓；关非活动 tab 直接关无确认 ✓；关活动 tab 弹确认条（文案/取消/关闭三态）✓；确认后关面板 ✓；**双主题截图目视**——深色全绿字（提示符/输入/输出 #4ade80）、浅色黑字 ✓。⚠️ **canvas 渲染器把前景色画进画布，`getComputedStyle(.xterm)` 探不到主题色**（继承应用正文色），颜色断言改用截图目视。
 - **P2 尾巴批 14：终端 Shell 自动检测 + 精简 ✅（2026-09-30，用户多轮反馈收敛）**：
   - **用户要求**：终端配置只保留 Shell（字号/回滚/字体族 UI 与代码全删，xterm 恢复 13px 默认）；迁入「基础配置」tab；**去掉「平台默认」抽象选项**——必须有确定选中值，默认即选中平台默认的实际指向。
   - **实现**：`TerminalShellSetting.tsx` 重写——预设候选（pwsh MSI/商店双路径、powershell 系统路径、cmd、gitbash 双路径）挂载时经 **fs_path_exists 逐路径探测**，不存在的预设不进下拉；未配置 → **自动选中首个可用**（本机=PowerShell 7）；列表尾加「自定义路径」兜底入口（选中显示路径输入）。新增 Rust `fs_path_exists`。TerminalSettings 精简为 {shell}。
