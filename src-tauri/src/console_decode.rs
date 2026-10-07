@@ -9,6 +9,87 @@
 //! 非 Windows 终端恒 UTF-8，维持 lossy。ConPTY（terminal.rs PTY）输出本就是 UTF-8，
 //! 走同一入口时 UTF-8-first 直通无损。
 
+/// 有状态增量解码器：跨 read 分块拼接多字节字符，只在完整字符边界切割。
+///
+/// ConPTY/管道按 OS 缓冲节奏交付字节，read 的块边界可能停在一个多字节字符中间；
+/// 逐块独立解码会把残缺前半截与孤立后半截各变一个 U+FFFD（劈字符）。本解码器把
+/// 末尾不完整序列扣留到下一次 push 拼接；流结束时用 flush() lossy 清空残余。
+pub(crate) struct Utf8StreamDecoder {
+    carry: Vec<u8>,
+}
+
+impl Utf8StreamDecoder {
+    pub(crate) fn new() -> Self {
+        Self { carry: Vec::new() }
+    }
+
+    /// 喂入新字节，返回本次可安全输出的完整字符文本（末尾不完整序列扣留时可能为空）。
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> String {
+        self.carry.extend_from_slice(bytes);
+        let mut out = String::new();
+        loop {
+            match std::str::from_utf8(&self.carry) {
+                Ok(s) => {
+                    out.push_str(s);
+                    self.carry.clear();
+                    break;
+                }
+                Err(e) => {
+                    let valid = e.valid_up_to();
+                    if valid > 0 {
+                        out.push_str(std::str::from_utf8(&self.carry[..valid]).unwrap_or_default());
+                    }
+                    match e.error_len() {
+                        // 末尾序列不完整：扣留残缺尾巴，等下一块拼接
+                        None => {
+                            self.carry.drain(..valid);
+                            break;
+                        }
+                        // 真非法字节：lossy 输出后丢弃，继续校验余下部分
+                        Some(bad_len) => {
+                            out.push_str(&String::from_utf8_lossy(
+                                &self.carry[valid..valid + bad_len],
+                            ));
+                            self.carry.drain(..valid + bad_len);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// 流结束：清空残余，残缺尾巴按 lossy 输出（截断的序列记一个 U+FFFD）。
+    pub(crate) fn flush(&mut self) -> String {
+        let out = String::from_utf8_lossy(&self.carry).into_owned();
+        self.carry.clear();
+        out
+    }
+}
+
+/// 返回 bytes 中可安全解码的前缀长度（完整字符边界）：末尾悬挂的 UTF-8 不完整序列
+/// 被扣留。UTF-8 截断尾巴与 GBK 双字节首字节在字节层面不可区分、处理方式一致——
+/// GBK 管道输出末尾悬挂首字节时，UTF-8 严格校验同样报 error_len()==None，扣留到
+/// 下一批拼接后自然落入 decode_console_bytes 的 GBK 兜底，两套编码边界互不干扰。
+pub(crate) fn complete_boundary_len(bytes: &[u8]) -> usize {
+    match std::str::from_utf8(bytes) {
+        Ok(_) => bytes.len(),
+        Err(e) => match e.error_len() {
+            None => e.valid_up_to(),
+            // 中途真非法字节（UTF-8 边界语义失效，走 GBK 兜底路径）：
+            // 仅当末字节落在 GBK 首字节区段（0x81-0xFE）时扣留 1 字节
+            Some(_) => {
+                let last = *bytes.last().unwrap_or(&0);
+                if (0x81..=0xFE).contains(&last) {
+                    bytes.len() - 1
+                } else {
+                    bytes.len()
+                }
+            }
+        },
+    }
+}
+
 /// 控制台输出字节 → 字符串：UTF-8 严格校验优先，失败按系统代码页兜底。
 pub(crate) fn decode_console_bytes(bytes: &[u8]) -> String {
     if let Ok(s) = std::str::from_utf8(bytes) {
@@ -44,6 +125,66 @@ pub(crate) fn decode_with_codepage(bytes: &[u8], codepage: u32) -> String {
         return String::from_utf8_lossy(bytes).into_owned();
     }
     String::from_utf16_lossy(&wide[..written as usize])
+}
+
+#[cfg(test)]
+mod stream_decoder_tests {
+    use super::*;
+
+    /// 「你」= E4 BD A0、「😀」= F0 9F 98 80，从中间劈开跨两次 push 必须无损拼回。
+    #[test]
+    fn splits_multibyte_chars_across_pushes() {
+        let mut d = Utf8StreamDecoder::new();
+        assert_eq!(d.push(b"\xe4\xbd"), "");
+        assert_eq!(d.push(b"\xa0"), "你");
+        let mut d = Utf8StreamDecoder::new();
+        assert_eq!(d.push(&[0xF0, 0x9F]), "");
+        assert_eq!(d.push(&[0x98]), "");
+        assert_eq!(d.push(&[0x80]), "😀");
+    }
+
+    #[test]
+    fn ascii_and_mixed_content_pass_through() {
+        let mut d = Utf8StreamDecoder::new();
+        assert_eq!(d.push(b"bytes="), "bytes=");
+        assert_eq!(d.push("=32 来自".as_bytes()), "=32 来自");
+    }
+
+    #[test]
+    fn invalid_bytes_lossy_without_holding() {
+        let mut d = Utf8StreamDecoder::new();
+        // 0xFF 是立即非法字节，0xE4 0xB8 为截断尾巴扣留，下一块拼出「中」
+        assert_eq!(d.push(&[0xFF, 0xE4, 0xB8]), "\u{FFFD}");
+        assert_eq!(d.push(b"\xad"), "中");
+    }
+
+    #[test]
+    fn flush_emits_truncated_tail_lossy() {
+        let mut d = Utf8StreamDecoder::new();
+        assert_eq!(d.push(b"\xe4\xbd"), "");
+        assert_eq!(d.flush(), "\u{FFFD}");
+        assert_eq!(d.flush(), "");
+    }
+
+    /// 完整边界扣留：UTF-8 截断尾巴按 valid_up_to 扣留。
+    #[test]
+    fn complete_boundary_len_holds_truncated_utf8() {
+        let full = "你好".as_bytes();
+        assert_eq!(complete_boundary_len(full), full.len());
+        assert_eq!(complete_boundary_len(&full[..5]), 3);
+        assert_eq!(complete_boundary_len(&full[..1]), 0);
+        assert_eq!(complete_boundary_len(b"plain ascii"), 11);
+    }
+
+    /// GBK 管道输出（UTF-8 校验中途真失败）末尾悬挂首字节 0x81-0xFE 时扣留 1 字节。
+    #[test]
+    fn complete_boundary_len_holds_gbk_lead_byte() {
+        // 来自 = C0 B4 D7 D4（GBK）；末尾悬挂一个首字节
+        let gbk: &[u8] = &[0xC0, 0xB4, 0xD7, 0xD4, 0xC4];
+        assert_eq!(complete_boundary_len(gbk), 4);
+        // 末字节是 ASCII（GBK 单字节区段）不扣留
+        assert_eq!(complete_boundary_len(&[0xC0, 0xB4, b'a']), 3);
+    }
 }
 
 #[cfg(all(test, windows))]

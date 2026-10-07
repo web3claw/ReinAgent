@@ -92,15 +92,23 @@ pub fn terminal_create(
 
     std::thread::spawn(move || {
         let mut buf = [0u8; 4096];
+        // ConPTY 输出恒为 UTF-8；增量解码跨块拼接多字节字符，杜绝劈字符（�）
+        let mut decoder = crate::console_decode::Utf8StreamDecoder::new();
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => break,
                 Ok(n) => {
-                    let s = String::from_utf8_lossy(&buf[..n]).to_string();
-                    let _ = app_clone.emit(&event_name, s);
+                    let s = decoder.push(&buf[..n]);
+                    if !s.is_empty() {
+                        let _ = app_clone.emit(&event_name, s);
+                    }
                 }
                 Err(_) => break,
             }
+        }
+        let rest = decoder.flush();
+        if !rest.is_empty() {
+            let _ = app_clone.emit(&event_name, rest);
         }
     });
 

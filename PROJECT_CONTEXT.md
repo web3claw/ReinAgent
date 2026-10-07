@@ -736,7 +736,7 @@ ReinAgent 架构全景
 ### 8.8 P1-4 后台 Bash 三件套（2026-09-28，Tauri 实测闭环）
 - **Rust `src-tauri/src/bg_process.rs`**（4 命令，均为 `spawn_blocking` + `*_sync` 内部函数供测试）：
   - `bg_spawn(command, cwd)`：`spawn_shell` 启动（Windows `cmd /C` + `CREATE_NO_WINDOW` + `raw_arg`；Unix `sh -c`），stdout/stderr 各一读线程 `pump_stream` 追加进共享 `Arc<Mutex<Vec<u8>>>` 缓冲（**256KB 上限，丢头部保尾部**并累计 dropped），立即返回 `taskId`（`bg-<ms>-<seq>`：毫秒 + 进程内单调序号，防并发 spawn 撞 id 互相覆盖）；**Unix 侧 spawn 时建独立进程组（`process_group(0)`，同 `mcp.rs`）**——这是进程组终止能生效的前提；进程驻留不阻塞回合。
-  - `bg_output(taskId, offset)`：`try_wait` 收割退出状态 → status（running/exited）+ exitCode + 增量 `newOutput` + `totalBytes` + `droppedBytes`。**offset 推进口径：totalBytes**。
+  - `bg_output(taskId, offset)`：`try_wait` 收割退出状态 → status（running/exited）+ exitCode + 增量 `newOutput` + `totalBytes`（原始缓冲长度，展示用）+ `consumedBytes`（本次实际解码到的完整字符边界）+ `droppedBytes`。**offset 推进口径：consumedBytes（2026-10-07 起；旧 totalBytes 口径会把跨轮询劈开的多字节字符在两轮各变一个 U+FFFD）**。`complete_boundary_len` 把末尾不完整序列扣留到下一轮——UTF-8 截断尾巴与 GBK 双字节首字节在字节层面不可区分、处理一致（UTF-8 严格校验下都是 error_len()==None 扣留；GBK 文本中途真非法走代码页兜底路径时按末字节 0x81-0xFE 扣 1 字节）。`task_output` 工具（tools.js）offset 参数描述与结果行已同步改为让模型传 `consumedBytes`。
   - `bg_stop(taskId)`：Windows `taskkill /PID <pid> /T /F` 杀进程树；Unix `kill -TERM -- -<pid>`（整组）→ 有界等待 2s → `kill -KILL -- -<pid>` → 再等 0.5s。仅**确认整组已终止**才返回 `stopped=true` 并移除注册表项，失败则保留并如实回传 `forced`/`error`（No-Fallback）；**等待全程在 registry 锁之外**（最坏 ~2.5s 返回，绝不阻塞），且每轮 `try_wait` 收割僵尸 leader（僵尸会让 `kill -0 -- -<pgid>` 恒为真）。任务不存在 → `stopped=false`（幂等）；停止后历史不可读（与 ZCode 语义一致）。
   - **⚠️ Linux 修复（2026-10-05，用户实测「点后台工作浮层的停止没反应」）**：`spawn_shell` 原先未建独立进程组，`kill -TERM -<pid>` 打向一个不存在的进程组（ESRCH）且错误被 `let _ =` 吞掉；紧接着 `child.wait()` 在**持有 registry 锁**时无限阻塞 → `invoke` 永不返回、徽标不消、无任何 toast，并连累 `bg_list`/`bg_output`/`bg_spawn` 一起卡住。修法：① `spawn_shell` 加 `process_group(0)`；② 停止改「有界 TERM→KILL + 锁外等待 + try_wait 收割」；③ 所有 `kill` 调用补 `--`（缺 `--` 时 `-<pid>` 被 coreutils 当选项解析，`kill -0` 返回值不可信、实测反着报）；④ taskId 加单调序号防并发撞 id。
   - `bg_list()`：全部任务（刷新用）。
@@ -1251,7 +1251,13 @@ ReinAgent 架构全景
 ### Windows 控制台输出 GBK 乱码修复（2026-10-06，用户报「工具卡乱码」；CDP 实测通过）
 
 - **根因（实锤）**：中文版 Windows 的控制台程序（ping/ipconfig 等）往**管道**写输出用系统 OEM 代码页（本机 chcp=936/GBK，实测字节转储 `c0b4 d7d4`=来自）；而 `fs_execute`/`bg_process`/`terminal.rs` 统一 `from_utf8_lossy` 硬解 UTF-8 → 每个汉字变 U+FFFD（工具卡花块、ASCII 幸存）。此前 8.9 记录「本机代码页为 UTF-8」系误记（已订正）。LiveAgent 同样裸 lossy 未处理；终端 PTY 面板不受影响（ConPTY 层转 UTF-8）。
-- **修复**：新模块 `console_decode.rs`——`decode_console_bytes` **严格 UTF-8 校验优先**（pwsh7/git 等本就 UTF-8，零影响），失败按 `GetOEMCP` + `MultiByteToWideChar` 解（windows 依赖加 `Win32_Globalization` feature，零新依赖；任何一步失败回退 lossy 不 panic）；`decode_with_codepage` 单独导出供固定代码页测试。应用四处：`fs_execute` stdout/stderr（工具卡）、`bg_output`/`bg_list` 尾部（后台任务）、kill/taskkill stderr 诊断。**terminal.rs PTY 分块读不改**——多字节字符可能被切块劈开，套助手会把合法 UTF-8 残片按 GBK 乱解（ConPTY 本就 UTF-8，劈字符是既有小概率问题，另案）。
+- **修复**：新模块 `console_decode.rs`——`decode_console_bytes` **严格 UTF-8 校验优先**（pwsh7/git 等本就 UTF-8，零影响），失败按 `GetOEMCP` + `MultiByteToWideChar` 解（windows 依赖加 `Win32_Globalization` feature，零新依赖；任何一步失败回退 lossy 不 panic）；`decode_with_codepage` 单独导出供固定代码页测试。应用四处：`fs_execute` stdout/stderr（工具卡）、`bg_output`/`bg_list` 尾部（后台任务）、kill/taskkill stderr 诊断。~~terminal.rs PTY 分块读不改~~（**2026-10-07 劈字符已修复，见下条**）。
+
+### PTY 劈字符修复（2026-10-07，终端面板中文偶发 � 根治；cargo test 201 全绿 + CDP 双 E2E 通过）
+
+- **根因**：`terminal.rs` 读取线程 `read(&mut buf)` 的块边界由 ConPTY 决定，可能停在一个多字节字符中间，而每块各自独立 `from_utf8_lossy` → 残缺前半截与孤立后半截各变一个 U+FFFD；输出越猛（进度条/npm install）ConPTY 越容易小块交付，劈中概率越高。`bg_output` 增量轮询同族：`pump_stream` 存原始字节没错，但每轮按 offset 独立解码 `buf[offset..]`，上一轮结尾劈开的字符下一轮仍劈开。**正确修法必须是跨块/跨轮的有状态解码，任何「套一层解码函数」都治不了**（这也是 GBK 修复时刻意不动 PTY 分块读的原因）。
+- **修复**：`console_decode.rs` 新增 `Utf8StreamDecoder`（carry 缓冲 + `from_utf8` 错误信息精确切分——`error_len()==None` 末尾截断扣留、`Some(n)` 真非法 lossy 丢弃、`flush()` 流结束清空）与 `complete_boundary_len`（无状态边界扣留，供 bg_output）。`terminal.rs` 读取线程换用（ConPTY 输出恒 UTF-8，无需 GBK 兜底；EOF flush）；`bg_process.rs` `BgOutput` 新增 `consumedBytes`，`bg_output` 按 `complete_boundary_len` 扣留尾部、`bg_list` 尾部视图每秒全量重取无 offset 语义故 consumed==total；`tools.js` `task_output` offset 契约同步改传 `consumedBytes`。
+- **验证**：新增 6 例单测（「你」/😀 劈开拼回、截断 flush、GBK 首字节扣留等）；`cargo test` 201/201 全绿、tsc 0；CDP 实测（dev 热重建后）——①终端会话 `cmd /c for /l` 连发 300 行中文+emoji（276 个 chunk 交付）uFFFD=0 且 301 处标记完整（含命令回显 1 次）；②`bg_spawn ping -n 6` 模型式增量轮询 9 轮 offset 跟随 consumedBytes，6 条 GBK「来自…的回复」无丢失无重复 uFFFD=0。
 - **验证**：`cargo check` 0 警告；`cargo test --lib` 192/193（新增 3 例解码测试全过：GBK 936→中文/UTF-8 直通/非法字节 lossy 兜底；唯一失败仍是已记录的 bg_stop Windows 回归）；CDP 裸调 `ping -n 2 www.baidu.com`——`fs_execute` 与 `bg_output` 中文全部正常（来自…的回复/字节/平均）。
 
 ### bg_stop Windows 回归修复（2026-10-06，修复 9d41cdd 引入的软杀白等）
@@ -1370,3 +1376,13 @@ ReinAgent 架构全景
 
 
 
+
+### 挂起审批/提问的持久化与重载恢复（2026-10-07，用户定稿完整版；CDP E2E 双变体全过）
+
+- **背景**：审批/提问挂起是内存态（agent 循环停在等待用户决策），刷新即丢——且刷新后时间线末条是「带 toolCall 的 assistant」，模型上下文里这次中断的尝试会被 B-2/R13 消毒剔除（发送不受阻，但操作本身蒸发）。
+- **修复**：① controller 挂起时经新钩子 `onPendingApprovalChange`（d.ts 同步）持久化到 kv `reinagent-pending-approval:<taskId>`（解决/停止/清空的任何解决路径自动清除）；② 重载后任务激活时读 kv → **恢复横幅**（PendingRecoveryBanner，工作区横幅样式）：「检测到未完成的{提问|审批：工具名}（应用重启时中断）」；③ 恢复 = 组合一条**续接用户消息**走正常发送（重载后原 agent 循环已不存在、B-2/R13 也会把中断链剔除——所以不续跑旧循环，而是把操作结果以用户消息形式完整告知模型，语义等价且如实标注「（续接：…）」前缀）：
+  - **提问**：[继续处理] 重放 AskQuestionCard（题目来自持久化 args）→ 回答组合「问题+回答」清单续接；
+  - **审批允许**：[允许并继续] = 用户批准后**当场真实执行该工具**（`executeRecoveryTool`：注册表查找 execute；MCP 工具路由 mcp_call_tool；找不到/失败如实写入消息）→ 结果组合续接；
+  - **审批拒绝 / 忽略**：拒绝组合「已拒绝请调整」续接；忽略仅清除横幅与 kv。
+- **实现**：`pendingRecovery.ts`（组装+执行纯逻辑）、`PendingRecoveryBanner.tsx`（横幅+重放提问卡；props onAnswer/onReject/onAllow 由 App 组合消息后走 handleSend——含 UserPromptSubmit hooks/提及解析全链路）；App 三态（banner/recoveryBusy）挂任务激活 effect。
+- **验证**：`tsc` 0；chat 151 / providers 30 / hub 76 绿；CDP 真机双变体——**提问**：挂起→重载→横幅出现→重放卡片带原题→答「选项甲」→续接消息发出→模型复述「已恢复上下文…你的回答『选项甲』已记录」；**审批**：write_file 审批挂起→重载→横幅带工具名→允许→**真实创建文件**（磁盘 11 字节 recovery-ok）→续接消息带执行结果→模型确认完成；两变体 kv 均正确清除。

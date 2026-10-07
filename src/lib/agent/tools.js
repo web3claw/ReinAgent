@@ -672,12 +672,15 @@ export function createTools(options) {
     label: "任务输出",
     description:
       "Read the output of a background task started with background_bash. " +
-      "Pass offset from the previous call to get only new output. status=running means the process is still alive.",
+      "Pass consumedBytes from the previous call as offset to get only new output. status=running means the process is still alive.",
     parameters: Type.Object(
       {
         task_id: Type.String({ description: "后台任务 ID（background_bash 返回的 taskId）" }),
         offset: Type.Optional(
-          Type.Integer({ minimum: 0, description: "上次读到的总字节数（增量读取）" }),
+          Type.Integer({
+            minimum: 0,
+            description: "上次响应的 consumedBytes（完整字符边界，保证多字节字符不被截断）；首次调用不传",
+          }),
         ),
       },
       { required: ["task_id"] },
@@ -685,11 +688,12 @@ export function createTools(options) {
     execute: async (_toolCallId, params) => {
       const { invoke } = await import("@tauri-apps/api/core");
       const result = await invoke("bg_output", { taskId: params.task_id, offset: params.offset });
-      // Rust 侧 BgOutput 为 serde camelCase（exitCode/newOutput/totalBytes/droppedBytes）
+      // Rust 侧 BgOutput 为 serde camelCase（exitCode/newOutput/totalBytes/consumedBytes/droppedBytes）
       const lines = [
         `task: ${result.taskId} · status: ${result.status}`,
         result.exitCode !== null && result.exitCode !== undefined ? `exit: ${result.exitCode}` : null,
         `output bytes: ${result.totalBytes}${result.droppedBytes > 0 ? ` (dropped ${result.droppedBytes} head bytes over cap)` : ""}`,
+        `consumed: ${result.consumedBytes} (pass as offset next call)`,
         "",
         result.newOutput || "(no new output)",
       ];
@@ -697,6 +701,7 @@ export function createTools(options) {
         taskId: result.taskId,
         status: result.status,
         totalBytes: result.totalBytes,
+        consumedBytes: result.consumedBytes,
       }, TOOL_LIMITS.execBytes);
     },
   };

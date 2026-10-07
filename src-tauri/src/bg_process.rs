@@ -56,8 +56,10 @@ pub struct BgOutput {
     pub exit_code: Option<i32>,
     /// 从 offset 起的增量输出
     pub new_output: String,
-    /// 累计输出总字节数（调用方推进 offset 用）
+    /// 累计输出总字节数（原始缓冲长度，展示用）
     pub total_bytes: usize,
+    /// 本次实际解码推进到的字节位置（完整字符边界；调用方下次 offset 用）
+    pub consumed_bytes: usize,
     /// 超过 256KB 上限后丢弃的头部字节数
     pub dropped_bytes: usize,
     pub started_at_ms: u64,
@@ -240,14 +242,19 @@ pub(crate) fn bg_output_sync(task_id: String, offset: Option<usize>) -> Result<B
         let buf = process.output.lock().map_err(|e| e.to_string())?;
         let total = buf.len();
         let offset = offset.unwrap_or(0).min(total);
-        // 控制台代码页兜底解码（zh-CN 控制台程序往管道写 GBK；UTF-8 严格校验优先）
-        let new_output = crate::console_decode::decode_console_bytes(&buf[offset..]);
+        // 控制台代码页兜底解码（zh-CN 控制台程序往管道写 GBK；UTF-8 严格校验优先）。
+        // 末尾不完整序列扣留到下一轮拼接（consumed_bytes 只推进到完整字符边界），
+        // 否则跨轮询劈开的多字节字符在两轮各变一个 U+FFFD。
+        let raw = &buf[offset..];
+        let decodable = crate::console_decode::complete_boundary_len(raw);
+        let new_output = crate::console_decode::decode_console_bytes(&raw[..decodable]);
         Ok(BgOutput {
             task_id,
             status: status.to_string(),
             exit_code,
             new_output,
             total_bytes: total,
+            consumed_bytes: offset + decodable,
             dropped_bytes: process.dropped.load(Ordering::Relaxed),
             started_at_ms: process.started_at_ms,
         })
@@ -464,7 +471,8 @@ pub(crate) fn bg_list_sync() -> Result<Vec<BgOutput>, String> {
             let exit_code = process.child.try_wait().ok().flatten().and_then(|s| s.code());
             let buf = process.output.lock().map_err(|e| e.to_string())?;
             let total = buf.len();
-            // bg_list 只给尾部 2KB（全量走 bg_output 增量）
+            // bg_list 只给尾部 2KB（全量走 bg_output 增量）；尾部视图每秒全量重取，
+            // 无增量 offset 语义，consumed_bytes 恒等于 total_bytes
             let tail_start = total.saturating_sub(2048);
             let new_output = crate::console_decode::decode_console_bytes(&buf[tail_start..]);
             out.push(BgOutput {
@@ -473,6 +481,7 @@ pub(crate) fn bg_list_sync() -> Result<Vec<BgOutput>, String> {
                 exit_code,
                 new_output,
                 total_bytes: total,
+                consumed_bytes: total,
                 dropped_bytes: process.dropped.load(Ordering::Relaxed),
                 started_at_ms: process.started_at_ms,
             });
