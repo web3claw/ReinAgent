@@ -22,6 +22,7 @@ import type { ApprovalCoordinator, ApprovalDecision } from "../providers/runAgen
 import { invoke } from "@tauri-apps/api/core";
 import { loadProvidersConfigFromDisk } from "../../components/settings/model-provider/types";
 import { readPromptCeiling, recordPromptCeiling } from "./promptCeiling";
+import { kvGetJSON, kvSetJSON } from "../storage/db";
 
 /** 发送选项形状 = controller deps 的 getOptions 返回类型（单一真源，避免漂移） */
 type ControllerDeps = Parameters<typeof createConversationController>[0];
@@ -283,6 +284,14 @@ function createEntry(taskId: string): PoolEntry {
       invoke("checkpoint_begin_turn", { conversationId: taskId, turnId }).catch((err) =>
         console.warn("[pool] checkpoint_begin_turn failed:", err),
       );
+    },
+    // 挂起审批/提问持久化（重载恢复横幅的数据源；解决/停止/清空时由 controller 通知清除）
+    onPendingApprovalChange: (pending) => {
+      try {
+        kvSetJSON(`reinagent-pending-approval:${taskId}`, pending);
+      } catch (err) {
+        console.warn(`[pool] pending approval persist failed for ${taskId}:`, err);
+      }
     },
     onCompactionEvent: (event: { type: string; manual?: boolean; error?: string; turnCount?: number }) => {
       entry.compactionHandlers?.forEach((handler) => {
@@ -695,6 +704,37 @@ async function maybeExtractMemory(taskId: string, entry: PoolEntry): Promise<voi
     });
   } catch (err) {
     console.warn("[pool] memory extraction dispatch failed (non-blocking):", err);
+  }
+}
+
+/** 挂起审批/提问的持久化键（重载恢复用）。 */
+const PENDING_APPROVAL_KEY = (taskId: string) => `reinagent-pending-approval:${taskId}`;
+
+/** 读取某任务持久化的挂起审批/提问（无则 null；重载恢复横幅数据源）。 */
+export function getPendingRecovery(taskId: string | null): {
+  toolName: string;
+  toolCallId: string;
+  args: { kind?: string; questions?: unknown; plan?: string };
+} | null {
+  if (!taskId) return null;
+  try {
+    const v = kvGetJSON<{ toolName?: unknown; toolCallId?: unknown; args?: unknown }>(PENDING_APPROVAL_KEY(taskId));
+    if (v !== null && typeof v === 'object' && typeof v.toolName === 'string' && typeof v.toolCallId === 'string') {
+      return { toolName: v.toolName, toolCallId: v.toolCallId, args: v.args ?? {} };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** 清除某任务持久化的挂起审批/提问（横幅忽略/恢复完成后调用）。 */
+export function clearPendingRecovery(taskId: string | null): void {
+  if (!taskId) return;
+  try {
+    kvSetJSON(PENDING_APPROVAL_KEY(taskId), null);
+  } catch (err) {
+    console.warn('[pool] pending recovery clear failed:', err);
   }
 }
 

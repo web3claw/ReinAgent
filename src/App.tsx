@@ -9,6 +9,8 @@ import {
   send as poolSend,
   editResend as poolEditResend,
   resolveApproval as poolResolveApproval,
+  getPendingRecovery,
+  clearPendingRecovery,
 } from "./lib/chat/conversationPool";
 import { AutomationsPage } from "./components/automations/AutomationsPage";
 import { useAutomationStore } from "./lib/automations/store";
@@ -65,6 +67,7 @@ import { DEFAULT_SYSTEM_PROMPT, buildEnvironmentSection } from "./lib/providers/
 import type { ApprovalDecision } from "./lib/providers/runAgentTurn";
 import { ApprovalCard } from "./components/chat/ApprovalCard";
 import { AskQuestionCard, AskQuestionMinimizedPill } from "./components/chat/AskQuestionCard";
+import { PendingRecoveryBanner } from "./components/chat/PendingRecoveryBanner";
 import { ConversationViewTabs } from "./components/chat/ConversationViewTabs";
 import { TrajectoryView } from "./components/trajectory/TrajectoryView";
 import { useConversationViewState } from "./lib/trajectory/useConversationViewState";
@@ -89,7 +92,15 @@ import { getTerminalSettings } from "./lib/terminal/terminalSettings";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import { buildContextUsageData } from "./lib/chat/contextUsage";
 import { getTools } from "./lib/agent/tools";
+import type { PendingApproval } from "./lib/chat/conversationModel";
 import { CheckpointRewindProvider, formatCheckpointRewoundNotification } from "./lib/chat/checkpointRewind";
+import {
+  composeApprovalAllowMessage,
+  composeApprovalRejectMessage,
+  composeQuestionRecoveryMessage,
+  executeRecoveryTool,
+  questionsOf,
+} from "./lib/chat/pendingRecovery";
 import { buildOutgoingPayload } from "./lib/chat/attachments";
 import { appendMentionBlock, resolveMentions } from "./lib/chat/mentionResolver";
 import {
@@ -1444,6 +1455,57 @@ export default function App() {
     return dispatch();
   };
 
+  // ---- 重载恢复：挂起审批/提问的横幅（数据源 = controller 持久化钩子写入的 kv） ----
+  // ⚠️ hook 声明必须位于设置页早退之前（hooks 顺序铁律，2026-10-06 白屏教训）。
+  const [pendingRecovery, setPendingRecovery] = useState<PendingApproval | null>(null);
+  const [recoveryBusy, setRecoveryBusy] = useState(false);
+  useEffect(() => {
+    setPendingRecovery(getPendingRecovery(activeTaskId));
+  }, [activeTaskId]);
+  const dismissPendingRecovery = useCallback(() => {
+    clearPendingRecovery(activeTaskId);
+    setPendingRecovery(null);
+  }, [activeTaskId]);
+  // 恢复的唯一出口 = 组合续接用户消息走正常发送（handleSend 含 UserPromptSubmit hooks/提及解析）
+  const sendRecoveryMessage = useCallback(
+    (userMessage: string) => {
+      clearPendingRecovery(activeTaskId);
+      setPendingRecovery(null);
+      handleSend(userMessage);
+    },
+    [activeTaskId, handleSend],
+  );
+  const allowRecovery = useCallback(() => {
+    if (!pendingRecovery || recoveryBusy) return;
+    setRecoveryBusy(true);
+    void (async () => {
+      // 用户点击「允许并继续」即本次批准；执行失败也如实组合进消息（模型自行调整）
+      const execution = await executeRecoveryTool(
+        pendingRecovery.toolName,
+        pendingRecovery.args,
+        effectiveWorkspaceRoot || undefined,
+      );
+      const userMessage = composeApprovalAllowMessage(
+        pendingRecovery.toolName,
+        pendingRecovery.args,
+        execution,
+      );
+      setRecoveryBusy(false);
+      sendRecoveryMessage(userMessage);
+    })();
+  }, [pendingRecovery, recoveryBusy, effectiveWorkspaceRoot, sendRecoveryMessage]);
+  const rejectRecovery = useCallback(() => {
+    if (!pendingRecovery || recoveryBusy) return;
+    sendRecoveryMessage(composeApprovalRejectMessage(pendingRecovery.toolName, pendingRecovery.args));
+  }, [pendingRecovery, recoveryBusy, sendRecoveryMessage]);
+  const answerRecovery = useCallback(
+    (answers: { question: string; answer: string }[]) => {
+      if (!pendingRecovery) return;
+      sendRecoveryMessage(composeQuestionRecoveryMessage(questionsOf(pendingRecovery), answers));
+    },
+    [pendingRecovery, sendRecoveryMessage],
+  );
+
   /** 实际发送（handleSend 的同步主体；提及解析完成后调用的那段）。 */
   const sendNow = (
     text: string,
@@ -1928,6 +1990,18 @@ export default function App() {
               </button>
             </div>
           </div>
+        ) : null}
+
+        {/* 重载恢复横幅：未完成的审批/提问（持久化于 kv；完整版含真实工具执行与提问重放） */}
+        {currentView === "workbench" && pendingRecovery ? (
+          <PendingRecoveryBanner
+            recovery={pendingRecovery}
+            onDismiss={dismissPendingRecovery}
+            onAnswer={(answers) => answerRecovery(answers)}
+            onReject={rejectRecovery}
+            onAllow={allowRecovery}
+            busy={isStreaming || recoveryBusy}
+          />
         ) : null}
 
         {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}

@@ -44,6 +44,8 @@ export interface ConversationControllerOptions {
   taskId?: string;
   /** 轮边界回调（检查点 begin_turn 打点；缺省=无）。 */
   onTurnBegin?: (turnId: string) => void;
+  /** 挂起审批/提问变化（挂起时带请求、解决时为 null）；宿主据此持久化以支持重载恢复 */
+  onPendingApprovalChange?: (pending: import("./conversationModel").PendingApproval | null) => void;
   /** 压缩生命周期事件（started/done/failed/skipped），供池转发 UI */
   onCompactionEvent?: (event: { type: string; manual?: boolean; error?: string; turnCount?: number; summaryChars?: number }) => void;
   /**

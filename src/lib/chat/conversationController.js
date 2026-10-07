@@ -136,7 +136,7 @@ export function isContextishError(message) {
    * }}
    */
 export function createConversationController(deps) {
-  const { getState, setState, runAgentTurn, getOptions, getPromptCeiling, onPromptCeilingExceeded } = deps;
+  const { getState, setState, runAgentTurn, getOptions, getPromptCeiling, onPromptCeilingExceeded, onPendingApprovalChange } = deps;
   const createAbortController = deps.createAbortController ?? (() => new AbortController());
   const now = deps.now ?? (() => Date.now());
 
@@ -155,6 +155,8 @@ export function createConversationController(deps) {
     return new Promise((resolve) => {
       pendingApprovalRef = { resolve };
       setState((prev) => withPendingApproval(prev, req));
+      // 挂起请求持久化（恢复横幅数据源；重载后可重放，见 onPendingApprovalChange）
+      deps.onPendingApprovalChange?.(req);
     });
   }
 
@@ -165,6 +167,8 @@ export function createConversationController(deps) {
     pendingApprovalRef = null;
     setState((prev) => withPendingApproval(prev, null));
     pending.resolve(decision);
+    // 任何解决路径（允许/拒绝/停止/清空触发的 reject）都清除持久化
+    deps.onPendingApprovalChange?.(null);
   }
 
   /** 用户主动停止：中断当前轮次并立即收敛为「已停止」。 */
