@@ -9,13 +9,15 @@
  */
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Download, Loader2 } from "lucide-react";
+import { Download, Loader2, Trash2 } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { toast } from "../lw/ui/toast";
 import { Button } from "../lw/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "../lw/ui/select";
 import { groupImportCandidates, formatImportDate, DEFAULT_IMPORT_GROUP_BY, type ImportGroupBy } from "../../lib/import/importGroups";
-import { scanAllSessions, CODEX_SCAN_MAX_FILES } from "../../lib/import/scan";
+import { scanAllSessions, convertSession, deleteImportedSession, CODEX_SCAN_MAX_FILES } from "../../lib/import/scan";
+import { Dialog, DialogContent, DialogTitle } from "../lw/ui/dialog";
+import type { ImportedSession } from "../../lib/import/types";
 import { runSessionImport } from "../../lib/import/runSessions";
 import { scanModelConfigs, importModelConfigs, type ModelConfigImportCandidate } from "../../lib/import/modelConfigs";
 import { scanMcpCandidates, runMcpImport, scanSkillCandidates, runSkillImport, type McpImportCandidate, type SkillImportCandidate } from "../../lib/import/mcpSkills";
@@ -265,12 +267,15 @@ function ImportRow({
   checked,
   onChange,
   badge,
+  actions,
 }: {
   title: string;
   meta: ReactNode;
   checked: boolean;
   onChange: (on: boolean) => void;
   badge?: ReactNode;
+  /** 行尾操作按钮（绿查看/红删除/蓝导入）。在 label 内需阻止勾选联动。 */
+  actions?: ReactNode;
 }) {
   return (
     <label className="flex cursor-pointer items-center gap-3 px-3 py-2 transition-colors hover:bg-settings-tile-hover">
@@ -285,6 +290,7 @@ function ImportRow({
         <span className="block truncate text-[11px] text-[var(--text-dim)]">{meta}</span>
       </span>
       {badge}
+      {actions}
     </label>
   );
 }
@@ -393,6 +399,15 @@ function SessionImportPanel() {
   const [scanning, setScanning] = useState(false);
   const [importing, setImporting] = useState(false);
   const [codexCap, setCodexCap] = useState<number | null>(null);
+  // 行级三操作：绿查看 / 红删除（二次确认）/ 蓝导入单条
+  const [viewing, setViewing] = useState<{
+    summary: ExternalSessionSummary;
+    loading: boolean;
+    session: ImportedSession | null;
+    error: string | null;
+  } | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<ExternalSessionSummary | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const keyOf = (candidate: ExternalSessionSummary) => `${candidate.source}:${candidate.externalId}`;
 
@@ -423,6 +438,58 @@ function SessionImportPanel() {
       toast.error(String(e instanceof Error ? e.message : e).slice(0, 200));
     } finally {
       setImporting(false);
+    }
+  };
+
+  const openView = async (candidate: ExternalSessionSummary) => {
+    setViewing({ summary: candidate, loading: true, session: null, error: null });
+    try {
+      const session = await convertSession(candidate);
+      setViewing({ summary: candidate, loading: false, session, error: null });
+    } catch (e) {
+      setViewing({
+        summary: candidate,
+        loading: false,
+        session: null,
+        error: String(e instanceof Error ? e.message : e).slice(0, 200),
+      });
+    }
+  };
+
+  const runImportOne = async (candidate: ExternalSessionSummary) => {
+    setImporting(true);
+    try {
+      const res = await runSessionImport([candidate]);
+      const text = formatImportResult(t, res);
+      if (res.failed > 0) toast.error(text);
+      else toast.success(text);
+    } catch (e) {
+      toast.error(String(e instanceof Error ? e.message : e).slice(0, 200));
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleting(true);
+    try {
+      await deleteImportedSession(deleteTarget);
+      toast.success(t("importDeletedOne"));
+      // 乐观移除：删完立即从列表消失（重扫要跑全量 21 家，不能让它挡反馈）
+      const removedKey = keyOf(deleteTarget);
+      setCandidates((previous) => (previous ?? []).filter((c) => keyOf(c) !== removedKey));
+      setSelected((previous) => {
+        const next = new Set(previous);
+        next.delete(removedKey);
+        return next;
+      });
+      setDeleteTarget(null);
+      await scan();
+    } catch (e) {
+      toast.error(`${t("importDeleteFailed")}: ${String(e instanceof Error ? e.message : e).slice(0, 160)}`);
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -477,7 +544,7 @@ function SessionImportPanel() {
     <div className="flex flex-col gap-3">
       {candidates === null ? (
         <ImportIdle
-          note={[sourceLabels["claude-code"], sourceLabels.opencode, sourceLabels.codex, sourceLabels.pi].join(" · ")}
+          note={Object.values(sourceLabels).join(" · ")}
           onScan={() => void scan()}
           scanning={scanning}
         />
@@ -532,6 +599,11 @@ function SessionImportPanel() {
                   >
                     {group.items.map((candidate) => {
                       const key = keyOf(candidate);
+                      const stop = (fn: () => void) => (event: React.MouseEvent) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        fn();
+                      };
                       return (
                         <ImportRow
                           key={key}
@@ -544,6 +616,32 @@ function SessionImportPanel() {
                           checked={selected.has(key)}
                           onChange={(on) => setSelected((previous) => toggleKey(previous, key, on))}
                           badge={<Badge>{sourceLabels[candidate.source]}</Badge>}
+                          actions={
+                            <span className="flex shrink-0 items-center gap-1">
+                              <button
+                                type="button"
+                                className="rounded-md px-2 py-0.5 text-[11px] font-medium text-emerald-600 transition-colors hover:bg-emerald-500/10 dark:text-emerald-400"
+                                onClick={stop(() => void openView(candidate))}
+                              >
+                                {t("importRowView")}
+                              </button>
+                              <button
+                                type="button"
+                                className="rounded-md px-2 py-0.5 text-[11px] font-medium text-red-500 transition-colors hover:bg-red-500/10"
+                                onClick={stop(() => setDeleteTarget(candidate))}
+                              >
+                                {t("importRowDelete")}
+                              </button>
+                              <button
+                                type="button"
+                                disabled={importing}
+                                className="rounded-md px-2 py-0.5 text-[11px] font-medium text-sky-500 transition-colors hover:bg-sky-500/10 disabled:opacity-40"
+                                onClick={stop(() => void runImportOne(candidate))}
+                              >
+                                {t("importRowImport")}
+                              </button>
+                            </span>
+                          }
                         />
                       );
                     })}
@@ -554,6 +652,91 @@ function SessionImportPanel() {
           </ImportResults>
         </>
       )}
+
+      {/* 行级「查看」：解析后逐条只读预览（文本形态，截断保护） */}
+      <Dialog open={viewing !== null} onOpenChange={(next) => { if (!next) setViewing(null); }}>
+        <DialogContent
+          showCloseButton
+          closeLabel={t("settings.close")}
+          className="flex h-[min(72vh,700px)] w-[min(860px,92vw)] max-w-none flex-col overflow-hidden p-0"
+        >
+          <DialogTitle className="border-b border-border/60 px-4 py-3 text-sm font-medium">
+            {viewing ? `${t("importViewTitle")} · ${sourceLabels[viewing.summary.source]} · ${viewing.summary.title}` : t("importViewTitle")}
+          </DialogTitle>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
+            {viewing?.loading ? (
+              <p className="flex items-center gap-2 text-xs text-[var(--text-dim)]">
+                <Loader2 className="size-3.5 animate-spin" />
+                {t("importViewLoading")}
+              </p>
+            ) : viewing?.error ? (
+              <p className="text-xs text-red-500">{viewing.error}</p>
+            ) : viewing?.session ? (
+              <div className="flex flex-col gap-3">
+                {viewing.session.messages.length === 0 ? (
+                  <p className="text-xs text-[var(--text-dim)]">{t("importViewEmpty")}</p>
+                ) : (
+                  viewing.session.messages.slice(0, 300).map((message) => (
+                    <div key={message.id} className="rounded-lg bg-settings-tile px-3 py-2">
+                      <p className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-dim)]">
+                        {message.role}
+                        {message.toolName ? ` · ${message.toolName}` : ""}
+                      </p>
+                      <p className="whitespace-pre-wrap break-words text-xs text-[var(--text)]">
+                        {(message.content || "").slice(0, 4000) || (message.toolResult ? String(message.toolResult).slice(0, 4000) : "")}
+                      </p>
+                    </div>
+                  ))
+                )}
+                {viewing.session.messages.length > 300 ? (
+                  <p className="text-[11px] text-[var(--text-dim)]">
+                    {t("importViewTruncated").replace("{count}", "300")}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* 行级「删除」二次确认：永久删除、不进回收站 */}
+      <Dialog open={deleteTarget !== null} onOpenChange={(next) => { if (!next && !deleting) setDeleteTarget(null); }}>
+        <DialogContent className="w-[min(480px,92vw)] p-0">
+          <DialogTitle className="border-b border-border/60 px-4 py-3 text-sm font-medium text-red-500">
+            {t("importDeleteTitle")}
+          </DialogTitle>
+          <div className="flex flex-col gap-3 px-4 py-4">
+            <p className="text-xs text-[var(--text)]">
+              {deleteTarget ? `${sourceLabels[deleteTarget.source]} · ${deleteTarget.title}` : ""}
+            </p>
+            <p className="text-xs text-[var(--text-dim)]">{t("importDeleteBody")}</p>
+            {deleteTarget ? (
+              <p className="break-all rounded-lg bg-settings-tile px-3 py-2 font-mono text-[10px] text-[var(--text-dim)]">
+                {deleteTarget.filePath}
+              </p>
+            ) : null}
+            <div className="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={deleting}
+                className="rounded-lg px-3 py-1.5 text-xs text-[var(--text-dim)] transition-colors hover:bg-settings-tile disabled:opacity-40"
+                onClick={() => setDeleteTarget(null)}
+              >
+                {t("importDeleteCancel")}
+              </button>
+              <button
+                type="button"
+                disabled={deleting}
+                className="flex items-center gap-1.5 rounded-lg bg-red-500 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-red-600 disabled:opacity-40"
+                onClick={() => void confirmDelete()}
+              >
+                {deleting ? <Loader2 className="size-3.5 animate-spin" /> : <Trash2 size={13} />}
+                {t("importDeleteConfirm")}
+              </button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

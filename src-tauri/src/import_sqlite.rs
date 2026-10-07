@@ -27,6 +27,48 @@ pub struct ImportSqliteResult {
     pub rows: Vec<Vec<Value>>,
 }
 
+/// 只读连接缓存：导入扫描会对同一库发几十条查询（表探测 + 逐会话正文），
+/// 每条都重新 open+probe 在大库上可感知地慢（OpenCode 实测一次删除后的重扫
+/// 要开 ~75 次）。按路径缓存连接，查询在锁内执行（串行化并发扫描）；命中前
+/// 用 stat（mtime+size）校验库文件没被替换——被外部 app 重建时自动重开。
+fn with_read_connection<T>(
+    path: &Path,
+    f: impl FnOnce(&rusqlite::Connection) -> Result<T, String>,
+) -> Result<T, String> {
+    use std::collections::HashMap;
+    use std::sync::Mutex;
+    static CACHE: std::sync::OnceLock<Mutex<HashMap<PathBuf, (rusqlite::Connection, (i64, u64))>>> =
+        std::sync::OnceLock::new();
+    let meta = fs::metadata(path).map_err(|e| format!("not readable: {e}"))?;
+    let stamp = (
+        meta.modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0),
+        meta.len(),
+    );
+    let cache = CACHE.get_or_init(|| Mutex::new(HashMap::new()));
+    let mut guard = cache.lock().map_err(|_| "connection cache poisoned")?;
+    let needs_open = match guard.get(path) {
+        Some((_, cached)) => *cached != stamp,
+        None => true,
+    };
+    if needs_open {
+        if !path.is_file() {
+            return Err(format!("not a file: {}", path.display()));
+        }
+        let conn = rusqlite::Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|e| format!("open failed: {e}"))?;
+        let probe: rusqlite::Result<i64> =
+            conn.query_row("SELECT count(*) FROM sqlite_master", [], |r| r.get(0));
+        probe.map_err(|e| format!("probe failed: {e}"))?;
+        guard.insert(path.to_path_buf(), (conn, stamp));
+    }
+    let (conn, _) = guard.get(path).expect("just inserted");
+    f(conn)
+}
+
 fn resolve_path(raw_path: &str) -> PathBuf {
     let p = Path::new(raw_path);
     if p.is_absolute() {
@@ -136,31 +178,48 @@ pub async fn import_sqlite_query(
     }
     tauri::async_runtime::spawn_blocking(move || {
         let resolved = resolve_path(&path);
-        let (conn, _guard) = open_read_only(&resolved)?;
-        let bindings: Vec<rusqlite::types::Value> = params
-            .unwrap_or_default()
-            .iter()
-            .map(json_to_sql)
-            .collect();
-        let mut stmt = conn.prepare(&trimmed).map_err(|e| format!("prepare failed: {e}"))?;
-        let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
-        let column_count = columns.len();
-        let mut rows_out: Vec<Vec<Value>> = Vec::new();
-        let mut rows = stmt
-            .query(rusqlite::params_from_iter(bindings.iter()))
-            .map_err(|e| format!("query failed: {e}"))?;
-        while let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
-            let mut out_row = Vec::with_capacity(column_count);
-            for i in 0..column_count {
-                let value: rusqlite::types::Value = row.get(i).map_err(|e| format!("column {i} failed: {e}"))?;
-                out_row.push(sql_value_to_json(value));
-            }
-            rows_out.push(out_row);
+        // 只读连接走缓存（同库几十条查询只开一次）；打开失败（WAL 残缺/独占锁）
+        // 降级为一次性的 copy 只读副本
+        if resolved.is_file()
+            && rusqlite::Connection::open_with_flags(&resolved, OpenFlags::SQLITE_OPEN_READ_ONLY).is_err()
+        {
+            let (conn, guard) = open_read_only(&resolved)?;
+            let result = run_sqlite_query(&conn, &trimmed, params);
+            drop(guard);
+            return result;
         }
-        Ok(ImportSqliteResult { columns, rows: rows_out })
+        with_read_connection(&resolved, |conn| run_sqlite_query(conn, &trimmed, params))
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+fn run_sqlite_query(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    params: Option<Vec<Value>>,
+) -> Result<ImportSqliteResult, String> {
+    let bindings: Vec<rusqlite::types::Value> = params
+        .unwrap_or_default()
+        .iter()
+        .map(json_to_sql)
+        .collect();
+    let mut stmt = conn.prepare(sql).map_err(|e| format!("prepare failed: {e}"))?;
+    let columns: Vec<String> = stmt.column_names().iter().map(|s| s.to_string()).collect();
+    let column_count = columns.len();
+    let mut rows_out: Vec<Vec<Value>> = Vec::new();
+    let mut rows = stmt
+        .query(rusqlite::params_from_iter(bindings.iter()))
+        .map_err(|e| format!("query failed: {e}"))?;
+    while let Some(row) = rows.next().map_err(|e| format!("row failed: {e}"))? {
+        let mut out_row = Vec::with_capacity(column_count);
+        for i in 0..column_count {
+            let value: rusqlite::types::Value = row.get(i).map_err(|e| format!("column {i} failed: {e}"))?;
+            out_row.push(sql_value_to_json(value));
+        }
+        rows_out.push(out_row);
+    }
+    Ok(ImportSqliteResult { columns, rows: rows_out })
 }
 
 /// 同步核心（可单测）：`.zstd` 后缀透明解压（zstd 多帧连接，解到 EOF）；
@@ -233,4 +292,74 @@ mod tests {
         assert_eq!(out, "{\"type\":\"session\"}\n{\"type\":\"user/message\"}\n");
         let _ = fs::remove_dir_all(&dir);
     }
+}
+
+/// 对外部工具的 SQLite 库执行单条 DELETE/UPDATE（导入面板的「删除会话」）。
+/// 用户拍板（2026-10-07）：删除要彻底删、数据库走 SQL——这是全应用唯一允许
+/// 写别家库的命令；仅放行单条 DELETE / UPDATE 语句（拒 DDL/ATTACH/多语句）。
+/// 以 READ_WRITE 打开（缺文件如实报错）；返回受影响行数。
+#[derive(Serialize)]
+pub struct ImportSqliteExecResult {
+    pub changed: u64,
+}
+
+#[tauri::command]
+pub async fn import_sqlite_execute(
+    path: String,
+    sql: String,
+    params: Option<Vec<Value>>,
+) -> Result<ImportSqliteExecResult, String> {
+    let trimmed = sql.trim().to_string();
+    let head = trimmed.split_whitespace().next().unwrap_or("").to_ascii_uppercase();
+    if head != "DELETE" && head != "UPDATE" {
+        return Err(format!("only DELETE/UPDATE statements are allowed, got: {head}"));
+    }
+    if trimmed.contains(';') {
+        return Err("multiple statements are not allowed".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        if !resolved.is_file() {
+            return Err(format!("not a file: {}", resolved.display()));
+        }
+        let conn = rusqlite::Connection::open_with_flags(
+            &resolved,
+            OpenFlags::SQLITE_OPEN_READ_WRITE,
+        )
+        .map_err(|e| format!("open for write failed: {e}"))?;
+        let bindings: Vec<rusqlite::types::Value> =
+            params.unwrap_or_default().iter().map(json_to_sql).collect();
+        let changed = conn
+            .execute(&trimmed, rusqlite::params_from_iter(bindings.iter()))
+            .map_err(|e| format!("execute failed: {e}"))?;
+        Ok(ImportSqliteExecResult { changed: changed as u64 })
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 永久删除外部会话的文件/目录（不进回收站；导入面板「删除」专用）。
+/// 目录递归删除；路径不存在按幂等成功。守卫：拒绝删除文件系统根与用户主目录。
+#[tauri::command]
+pub async fn import_delete_path(path: String) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        let home = std::env::var("HOME")
+            .map(PathBuf::from)
+            .or_else(|_| std::env::var("USERPROFILE").map(PathBuf::from))
+            .unwrap_or_default();
+        if resolved == Path::new("/") || (!home.as_os_str().is_empty() && resolved == home) {
+            return Err(format!("refusing to delete protected path: {}", resolved.display()));
+        }
+        if !resolved.exists() {
+            return Ok(());
+        }
+        if resolved.is_dir() {
+            fs::remove_dir_all(&resolved).map_err(|e| format!("delete dir failed: {e}"))
+        } else {
+            fs::remove_file(&resolved).map_err(|e| format!("delete file failed: {e}"))
+        }
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }

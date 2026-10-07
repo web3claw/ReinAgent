@@ -5,8 +5,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getStoredUserHome } from "../storage/db";
 import { createSessionImporters } from "./importers";
+import type { SessionImporter } from "./types";
 import { scanCodexSessionsResult } from "./importers";
-import type { ImportDb, ImportFs, ImportSqliteResult } from "./fsApi";
+import type { ImportDb, ImportFs, ImportSqliteExecResult, ImportSqliteResult } from "./fsApi";
+import { deleteSessionBySource } from "./importers";
 import type { ExternalSessionSummary, ExternalSource, ImportedSession } from "./types";
 
 export const CODEX_SCAN_MAX_FILES = 250;
@@ -56,6 +58,14 @@ export const tauriImportFs: ImportFs = {
       return null;
     }
   },
+  async removePath(path) {
+    try {
+      await invoke("import_delete_path", { path });
+      return true;
+    } catch {
+      return false;
+    }
+  },
 };
 
 /** 只读 SQLite 访问（SQLite 型来源用；失败如实返回 null，宽容语义同 fs）。 */
@@ -63,6 +73,13 @@ export const tauriImportDb: ImportDb = {
   async query(path, sql, params) {
     try {
       return await invoke<ImportSqliteResult>("import_sqlite_query", { path, sql, params: params ?? [] });
+    } catch {
+      return null;
+    }
+  },
+  async execute(path, sql, params) {
+    try {
+      return await invoke<ImportSqliteExecResult>("import_sqlite_execute", { path, sql, params: params ?? [] });
     } catch {
       return null;
     }
@@ -113,10 +130,30 @@ export async function scanAllSessions(): Promise<{
   return { sessions: [...dedup.values()], truncated };
 }
 
+/**
+ * 永久删除一条外部会话（导入面板「删除」；用户拍板 2026-10-07：不进回收站、
+ * 数据库走 SQL DELETE）。文件型删主文件+边车（子代理目录/同名 meta）；数据库型
+ * 按家发 DELETE（先删正文表再删会话行）。任一环节失败如实上抛（不静默半删）。
+ */
+export async function deleteImportedSession(summary: ExternalSessionSummary): Promise<void> {
+  const home = getStoredUserHome() ?? "";
+  await deleteSessionBySource(summary, { fs: tauriImportFs, db: tauriImportDb, home });
+}
+
+/** 同 source 多 importer（opencode 目录版/sqlite 版）时按 owns 路由。 */
+function importerForSummary(
+  importers: SessionImporter[],
+  summary: ExternalSessionSummary,
+): SessionImporter | undefined {
+  const sameSource = importers.filter((imp) => imp.source === summary.source);
+  return sameSource.find((imp) => imp.owns?.(summary)) ?? sameSource[0];
+}
+
 export async function convertSession(summary: ExternalSessionSummary): Promise<ImportedSession> {
   const home = getStoredUserHome() ?? "";
-  const importer = createSessionImporters(tauriImportFs, home, tauriImportDb).find(
-    (imp) => imp.source === summary.source,
+  const importer = importerForSummary(
+    createSessionImporters(tauriImportFs, home, tauriImportDb),
+    summary,
   );
   if (!importer) throw new Error(`unknown import source: ${summary.source}`);
   return importer.convert(summary);

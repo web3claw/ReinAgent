@@ -76,6 +76,11 @@ export interface SessionImporter {
   scan(): Promise<ExternalSessionSummary[]>;
   convert(summary: ExternalSessionSummary): Promise<ImportedSession>;
   /**
+   * 同一 source 挂多个 importer（如 opencode 的目录旧版 + sqlite 新版）时的
+   * 归属判定：convert/delete 按 summary 路由到正确的实现。
+   */
+  owns?: (summary: ExternalSessionSummary) => boolean;
+  /**
    * 本来源「认领」的其他来源会话（Wake claimed_sessions 同款）：craft 用
    * Claude Agent SDK 跑会话时，引擎会在 ~/.claude 里另落一份转录——craft 会话
    * 存在期间那份引擎副本不重复导入（craft 会话删除后自然浮现）。

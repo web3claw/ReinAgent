@@ -255,6 +255,8 @@ export function createOpencodeImporter(fs: ImportFs, home: string): SessionImpor
   const STORAGE_DIR = homeJoin(home, ".local", "share", "opencode", "storage");
   return {
     source: "opencode",
+    // 目录旧版只认得 storage 形态；.db 文件属 sqlite 新版
+    owns: (s) => !s.filePath.endsWith(".db"),
 
     async scan(): Promise<ExternalSessionSummary[]> {
       const sessionRoot = homeJoin(STORAGE_DIR, "session");
@@ -2487,59 +2489,89 @@ export function createOpencodeSqliteImporter(fs: ImportFs, home: string, db?: Im
 
   async function enumerateDb(dbPath: string): Promise<OcRow[]> {
     const tables = await tableSet(dbPath);
-    if (!tables.has("session")) return [];
     const hasPart = tables.has("part");
-    const hasMessage = tables.has("message");
     const hasSm = tables.has("session_message");
-    // ⚠ 真库（2026-10 实测）session 表没有时间列（时间在 message/part 上），
-    // 硬引用会让 prepare 失败、整家消失——时间从 message/session_message 聚合。
-    const timeExprs: string[] = [];
-    if (hasMessage) {
-      timeExprs.push(
-        "(SELECT MIN(m.time_created) FROM message m WHERE m.session_id = s.id)",
-        "(SELECT MAX(m.time_updated) FROM message m WHERE m.session_id = s.id)",
+    const out: OcRow[] = [];
+
+    // ---- v1：session 表（⚠ 真库没有时间列，时间从 message/session_message 聚合）----
+    if (tables.has("session")) {
+      const hasMessage = tables.has("message");
+      const timeExprs: string[] = [];
+      if (hasMessage) {
+        timeExprs.push(
+          "(SELECT MIN(m.time_created) FROM message m WHERE m.session_id = s.id)",
+          "(SELECT MAX(m.time_updated) FROM message m WHERE m.session_id = s.id)",
+        );
+      } else {
+        timeExprs.push("0", "0");
+      }
+      if (hasSm) {
+        timeExprs.push(
+          "(SELECT MIN(sm.time_created) FROM session_message sm WHERE sm.session_id = s.id)",
+          "(SELECT MAX(sm.time_updated) FROM session_message sm WHERE sm.session_id = s.id)",
+        );
+      } else {
+        timeExprs.push("0", "0");
+      }
+      const partLen = hasPart
+        ? "(SELECT COALESCE(SUM(LENGTH(p.data)), 0) FROM part p WHERE p.session_id = s.id)"
+        : "0";
+      const smCount = hasSm
+        ? "(SELECT COUNT(*) FROM session_message sm WHERE sm.session_id = s.id)"
+        : "0";
+      const result = await db!.query(
+        dbPath,
+        `SELECT s.id, s.directory, s.title, ${timeExprs.join(", ")}, ${partLen}, ${smCount}
+         FROM session s WHERE s.parent_id IS NULL`,
       );
-    } else {
-      timeExprs.push("0", "0");
-    }
-    if (hasSm) {
-      timeExprs.push(
-        "(SELECT MIN(sm.time_created) FROM session_message sm WHERE sm.session_id = s.id)",
-        "(SELECT MAX(sm.time_updated) FROM session_message sm WHERE sm.session_id = s.id)",
-      );
-    } else {
-      timeExprs.push("0", "0");
-    }
-    const partLen = hasPart
-      ? "(SELECT COALESCE(SUM(LENGTH(p.data)), 0) FROM part p WHERE p.session_id = s.id)"
-      : "0";
-    const smCount = hasSm
-      ? "(SELECT COUNT(*) FROM session_message sm WHERE sm.session_id = s.id)"
-      : "0";
-    const result = await db!.query(
-      dbPath,
-      `SELECT s.id, s.directory, s.title, ${timeExprs.join(", ")}, ${partLen}, ${smCount}
-       FROM session s WHERE s.parent_id IS NULL`,
-    );
-    if (!result) return [];
-    return result.rows
-      .map((row) => {
+      for (const row of result?.rows ?? []) {
         // 列序：id, directory, title, msgMin, msgMax, smMin, smMax, partLen, smCount
-        const partLen = Number(row[7] ?? 0);
-        const smCount = Number(row[8] ?? 0);
-        return {
+        const rowPartLen = Number(row[7] ?? 0);
+        const rowSmCount = Number(row[8] ?? 0);
+        if (!String(row[0] ?? "") || rowPartLen + rowSmCount === 0) continue;
+        out.push({
           id: String(row[0] ?? ""),
           directory: typeof row[1] === "string" ? row[1] : "",
           title: typeof row[2] === "string" ? row[2] : "",
-          // v1 会话用 message 时间；v2 会话用 session_message 时间
           createdMs: Number(row[3] ?? 0) || Number(row[5] ?? 0),
           updatedMs: Number(row[4] ?? 0) || Number(row[6] ?? 0),
-          isV2: smCount > 0 && partLen === 0,
-          contentTotal: partLen + smCount,
-        };
-      })
-      .filter((r) => r.id && r.contentTotal > 0)
-      .map(({ contentTotal, ...rest }) => rest);
+          isV2: rowSmCount > 0 && rowPartLen === 0,
+        });
+      }
+    }
+
+    // ---- v2（OpenCode 2）：session_v2 是会话表，正文在 session_message ----
+    if (tables.has("session_v2") && hasSm) {
+      const result = await db!.query(
+        dbPath,
+        `SELECT s.id, s.directory, s.title, s.time_created, s.time_updated,
+                (SELECT COUNT(*) FROM session_message sm WHERE sm.session_id = s.id)
+         FROM session_v2 s WHERE s.parent_id IS NULL`,
+      );
+      for (const row of result?.rows ?? []) {
+        const id = String(row[0] ?? "");
+        const smCount = Number(row[5] ?? 0);
+        if (!id || smCount === 0) continue;
+        // 同 id 两代都有行时：v2 有正文以 v2 为准
+        const existing = out.find((r) => r.id === id);
+        if (existing) {
+          existing.isV2 = true;
+          existing.createdMs = Number(row[3] ?? 0) || existing.createdMs;
+          existing.updatedMs = Number(row[4] ?? 0) || existing.updatedMs;
+          continue;
+        }
+        out.push({
+          id,
+          directory: typeof row[1] === "string" ? row[1] : "",
+          title: typeof row[2] === "string" ? row[2] : "",
+          createdMs: Number(row[3] ?? 0),
+          updatedMs: Number(row[4] ?? 0),
+          isV2: true,
+        });
+      }
+    }
+
+    return out;
   }
 
   async function parseDbSession(dbPath: string, sessionId: string, isV2: boolean): Promise<V1ParseOutcome> {
@@ -2551,6 +2583,7 @@ export function createOpencodeSqliteImporter(fs: ImportFs, home: string, db?: Im
 
   return {
     source: "opencode",
+    owns: (s) => s.filePath.endsWith(".db"),
 
     async scan(): Promise<ExternalSessionSummary[]> {
       if (!db) return [];
@@ -3596,4 +3629,202 @@ export function createSessionImporters(fs: ImportFs, home: string, db?: ImportDb
     createCursorImporter(fs, home, db),
     createDshImporter(fs, home),
   ];
+}
+
+// ==================== 外部会话删除（导入面板「删除」）====================
+// 用户拍板（2026-10-07）：彻底删除、不进回收站；数据库型按家发 SQL DELETE
+// （Rust import_sqlite_execute 仅放行单条 DELETE/UPDATE）。文件型删主文件 +
+// 同名边车（子代理目录 / .meta.json / state.json / checkpoint 残件）；目录型
+// （一目录一会话的家）整目录递归删。任一环节失败上抛，不静默半删。
+
+export interface ImportDeleteIo {
+  fs: ImportFs;
+  db?: ImportDb;
+  home: string;
+}
+
+function parentDirOf(path: string): string {
+  const trimmed = path.replace(/\/+$/, "");
+  const idx = trimmed.lastIndexOf("/");
+  return idx > 0 ? trimmed.slice(0, idx) : trimmed;
+}
+
+async function removePaths(fs: ImportFs, paths: string[]): Promise<void> {
+  for (const path of paths) {
+    if (!(await fs.removePath?.(path))) {
+      throw new Error(`failed to delete: ${path}`);
+    }
+  }
+}
+
+/** 列目录并删除与 `<id>.checkpoint` 前缀匹配的残件（OpenClaw legacy）。 */
+async function removeCheckpointSiblings(fs: ImportFs, filePath: string, sessionId: string): Promise<void> {
+  try {
+    const siblings = await fs.listDir(parentDirOf(filePath));
+    const stale = siblings.filter((name) => name.startsWith(`${sessionId}.checkpoint.`));
+    for (const name of stale) {
+      await fs.removePath?.(homeJoin(parentDirOf(filePath), name));
+    }
+  } catch {
+    // 列不出目录就只删主文件
+  }
+}
+
+async function execDelete(
+  db: ImportDb,
+  dbPath: string,
+  sql: string,
+  params: unknown[],
+): Promise<void> {
+  // 必须走 execute（Rust 端仅放行 DELETE/UPDATE）——query 通道会拒绝写语句
+  if (!db.execute) throw new Error("import db execute unavailable");
+  const result = await db.execute(dbPath, sql, params);
+  if (result === null) {
+    // 命令失败（锁死/表缺失等）→ tauriImportDb 转成 null；这里如实上抛，
+    // 否则半删（正文没了、会话行还在）。
+    throw new Error(`SQL delete failed: ${sql.slice(0, 60)}`);
+  }
+}
+
+export async function deleteSessionBySource(
+  summary: ExternalSessionSummary,
+  io: ImportDeleteIo,
+): Promise<void> {
+  const { source, filePath, externalId } = summary;
+  // openclaw 的 externalId 带 agent 命名空间（<agentId>/<sessionId>），其余即会话 id
+  const sessionId = source === "openclaw" ? externalId.split("/").slice(1).join("/") : externalId;
+  const fs = io.fs;
+
+  switch (source) {
+    // ---- 文件型 ----
+    case "claude-code": {
+      await removePaths(fs, [filePath, `${filePath.replace(/\.jsonl$/, "")}`]);
+      return;
+    }
+    case "pi":
+    case "omp":
+    case "gemini":
+    case "codex": {
+      await removePaths(fs, [filePath]);
+      return;
+    }
+    case "kiro": {
+      await removePaths(fs, [filePath, filePath.replace(/\.jsonl$/, ".json")]);
+      return;
+    }
+    case "qoder": {
+      await removePaths(fs, [filePath, filePath.replace(/\.jsonl$/, "")]);
+      return;
+    }
+    case "codebuddy": {
+      await removePaths(fs, [
+        filePath,
+        `${filePath.replace(/\.jsonl$/, "")}.meta.json`,
+        filePath.replace(/\.jsonl$/, ""),
+      ]);
+      return;
+    }
+    case "kimi":
+    case "grok":
+    case "craft":
+    case "dsh":
+    case "cursor": {
+      // 一目录一会话的家：整目录递归删
+      await removePaths(fs, [parentDirOf(filePath)]);
+      return;
+    }
+    case "openclaw": {
+      if (!filePath.endsWith(".jsonl")) {
+        // SQLite 型：删正文与会话窗口（session_nodes 按 key 关联，指针残行无害）
+        if (!io.db) throw new Error("import db unavailable");
+        await execDelete(io.db, filePath, "DELETE FROM transcript_events WHERE session_id = ?", [sessionId]);
+        await execDelete(io.db, filePath, "DELETE FROM session_windows WHERE session_id = ?", [sessionId]);
+        return;
+      }
+      // legacy jsonl + checkpoint 残件
+      await removePaths(fs, [filePath]);
+      await removeCheckpointSiblings(fs, filePath, sessionId.split("/").pop() ?? "");
+      return;
+    }
+    // ---- 数据库型（SQL DELETE）----
+    case "zcode": {
+      if (!io.db) throw new Error("import db unavailable");
+      const dbPath = filePath;
+      // 桌面层 tasks-index 的软删/迁移标记行一并清（避免任何过滤位残留）
+      const tasksDb = homeJoin(io.home, ".zcode", "v2", "tasks-index.sqlite");
+      try {
+        await execDelete(io.db, tasksDb, "DELETE FROM tasks WHERE task_id = ?", [externalId]);
+      } catch {
+        // tasks-index 缺表/缺文件不阻断主库删除
+      }
+      await execDelete(io.db, dbPath, "DELETE FROM part WHERE session_id = ?", [externalId]);
+      await execDelete(io.db, dbPath, "DELETE FROM message WHERE session_id = ?", [externalId]);
+      await execDelete(io.db, dbPath, "DELETE FROM session WHERE id = ?", [externalId]);
+      return;
+    }
+    case "opencode": {
+      // 目录旧版会话：正文就是 jsonl 文件，直接删
+      if (filePath.endsWith(".jsonl")) {
+        await removePaths(fs, [filePath]);
+        return;
+      }
+      if (!io.db) throw new Error("import db unavailable");
+      // 真库两代表并存，且 session_v2 是「会话表变体」（键是 id，没有 session_id 列
+      // ——2026-10-07 实测 DELETE 报 no such column）。逐表探键列：有 session_id 按
+      // 它删，否则有 id 按它删，两都没有的表跳过。
+      const master = await io.db.query(filePath, "SELECT name FROM sqlite_master WHERE type='table'");
+      const tables = new Set<string>();
+      for (const row of master?.rows ?? []) {
+        if (typeof row[0] === "string") tables.add(row[0]);
+      }
+      const bodyTables = ["part", "message", "session_message", "session_v2"].filter((t) => tables.has(t));
+      for (const table of bodyTables) {
+        const cols = zcProbeColumns(await io.db.query(filePath, `PRAGMA table_info(${table})`));
+        if (cols.has("session_id")) {
+          await execDelete(io.db, filePath, `DELETE FROM ${table} WHERE session_id = ?`, [externalId]);
+        } else if (cols.has("id")) {
+          await execDelete(io.db, filePath, `DELETE FROM ${table} WHERE id = ?`, [externalId]);
+        }
+      }
+      await execDelete(io.db, filePath, "DELETE FROM session WHERE id = ?", [externalId]);
+      return;
+    }
+    case "copilot": {
+      if (!io.db) throw new Error("import db unavailable");
+      await execDelete(io.db, filePath, "DELETE FROM turns WHERE session_id = ?", [externalId]);
+      await execDelete(io.db, filePath, "DELETE FROM sessions WHERE id = ?", [externalId]);
+      return;
+    }
+    case "hermes": {
+      if (!io.db) throw new Error("import db unavailable");
+      await execDelete(io.db, filePath, "DELETE FROM messages WHERE session_id = ?", [externalId]);
+      await execDelete(io.db, filePath, "DELETE FROM sessions WHERE id = ?", [externalId]);
+      return;
+    }
+    case "devin": {
+      if (!io.db) throw new Error("import db unavailable");
+      await execDelete(io.db, filePath, "DELETE FROM message_nodes WHERE session_id = ?", [externalId]);
+      await execDelete(io.db, filePath, "DELETE FROM sessions WHERE id = ?", [externalId]);
+      return;
+    }
+    case "cursor": {
+      if (!io.db) throw new Error("import db unavailable");
+      // IDE 库：composer 元数据 + 全部气泡正文；CLI 转录目录（若存在）一并删
+      await execDelete(
+        io.db,
+        filePath,
+        "DELETE FROM cursorDiskKV WHERE key = ? OR key LIKE ?",
+        [`composerData:${externalId}`, `bubbleId:${externalId}:%`],
+      );
+      try {
+        await removePaths(fs, [parentDirOf(filePath)]);
+      } catch {
+        // 纯 IDE 会话没有转录目录——不视为失败
+      }
+      return;
+    }
+    default: {
+      throw new Error(`delete not supported for source: ${source}`);
+    }
+  }
 }

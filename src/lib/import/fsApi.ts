@@ -21,6 +21,16 @@ export interface ImportFs {
    * 可选能力：内存测试实现可不提供（dsh 的 .zstd 条目在这些测试里会被跳过）。
    */
   readTextAuto?(path: string): Promise<string | null>;
+  /**
+   * 永久删除文件/目录（不进回收站；导入面板「删除」专用，目录递归）。
+   * 可选能力：路径不存在按幂等成功（返回 true）。
+   */
+  removePath?(path: string): Promise<boolean>;
+}
+
+/** import_sqlite_execute 的返回：受影响行数。 */
+export interface ImportSqliteExecResult {
+  changed: number;
 }
 
 /**
@@ -37,6 +47,11 @@ export interface ImportSqliteResult {
 
 export interface ImportDb {
   query(path: string, sql: string, params?: unknown[]): Promise<ImportSqliteResult | null>;
+  /**
+   * 单条 DELETE/UPDATE（导入面板「删除」专用；Rust 端仅放行这两种语句）。
+   * 失败返回 null。可选能力：测试的内存实现按需提供。
+   */
+  execute?(path: string, sql: string, params?: unknown[]): Promise<ImportSqliteExecResult | null>;
 }
 
 export function joinPath(...parts: string[]): string {

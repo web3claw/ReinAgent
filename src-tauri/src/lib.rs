@@ -194,6 +194,8 @@ pub fn run() {
             fs_cmd::fs_list_dir,
             import_sqlite::import_sqlite_query,
             import_sqlite::import_read_text_auto,
+            import_sqlite::import_sqlite_execute,
+            import_sqlite::import_delete_path,
             fs_cmd::fs_execute,
             fs_cmd::fs_pick_folder,
             fs_cmd::fs_pick_files,

@@ -581,7 +581,15 @@ test("OpenCode SQLite：真库 schema（session 无时间列、v1/v2 两代并�
     CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
     CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, time_created INTEGER, time_updated INTEGER, data TEXT);
     CREATE TABLE session_message (id TEXT PRIMARY KEY, session_id TEXT, type TEXT, seq INTEGER, time_created INTEGER, time_updated INTEGER, data TEXT);
+    -- 真库形态：session_v2 是 v2 代会话表（自有时间列，正文在 session_message）
+    CREATE TABLE session_v2 (id TEXT PRIMARY KEY, project_id TEXT, parent_id TEXT, directory TEXT, title TEXT, time_created INTEGER, time_updated INTEGER);
   `);
+  main.exec("INSERT INTO session_v2 VALUES ('other-session', 'p1', NULL, '/x', '无正文不列', 1, 1);");
+  main.exec("INSERT INTO session_v2 VALUES ('ses_v2native', 'p1', NULL, '/Users/tester/proj-c', 'v2 原生会话', 1786000500000, 1786000600000);");
+  const smn1 = JSON.stringify({ text: "v2 原生的第一条", time: { created: 1786000510000 } });
+  const smn2 = JSON.stringify({ role: "assistant", content: [{ type: "text", text: "v2 原生的回复" }], time: { created: 1786000520000 } });
+  main.exec(`INSERT INTO session_message VALUES ('smn1','ses_v2native','user',1,1786000510000,1786000510000,'${smn1.replaceAll("'", "''")}')`);
+  main.exec(`INSERT INTO session_message VALUES ('smn2','ses_v2native','assistant',2,1786000520000,1786000520000,'${smn2.replaceAll("'", "''")}')`);
   // v1 会话：正文在 part
   main.exec("INSERT INTO session VALUES ('ses_v1', 'p1', NULL, '/Users/tester/proj-a', 'v1 会话标题');");
   main.exec("INSERT INTO message VALUES ('mm1','ses_v1',1786000001000,1786000002000,'{\"role\":\"user\",\"time\":{\"created\":1786000001000}}')");
@@ -596,7 +604,7 @@ test("OpenCode SQLite：真库 schema（session 无时间列、v1/v2 两代并�
   const importer = createOpencodeSqliteImporter(fs, HOME, db);
   const summaries = await importer.scan();
   const ids = summaries.map((s) => s.externalId).sort();
-  assert.deepEqual(ids, ["ses_v1", "ses_v2"]);
+  assert.deepEqual(ids, ["ses_v1", "ses_v2", "ses_v2native"]);
   const v1 = summaries.find((s) => s.externalId === "ses_v1");
   assert.equal(v1.title, "v1 会话标题");
   assert.ok(!Number.isNaN(new Date(v1.createdAt).getTime()) && v1.createdAt.startsWith("2026-08-06"), "时间从 message 聚合（session 表没有时间列）");
@@ -606,4 +614,191 @@ test("OpenCode SQLite：真库 schema（session 无时间列、v1/v2 两代并�
   const v2conv = await importer.convert(v2);
   assert.deepEqual(v2conv.messages.map((m) => m.role), ["user", "assistant"]);
   assert.equal(v2conv.messages[1].content, "v2 的回复");
+  // v2 原生（session_v2 + session_message）
+  const native = summaries.find((s) => s.externalId === "ses_v2native");
+  assert.ok(native, "v2 原生会话应被枚举");
+  assert.equal(native.title, "v2 原生会话");
+  const nativeConv = await importer.convert(native);
+  assert.deepEqual(nativeConv.messages.map((m) => m.role), ["user", "assistant"]);
+  assert.equal(nativeConv.messages[0].content, "v2 原生的第一条");
+  // 删除 ses_v1（放最后）：session_v2 键列探测应选 id、不误报 no such column，且不波及他行
+  const { deleteSessionBySource } = await import("./importers.ts");
+  const dbExec = {
+    query: db.query,
+    execute: (path, sql, params = []) => {
+      try {
+        return { changed: main.prepare(sql).run(...params).changes };
+      } catch (e) {
+        console.log("exec fail:", String(e).slice(0, 80));
+        return null;
+      }
+    },
+  };
+  await deleteSessionBySource(
+    { source: "opencode", externalId: "ses_v1", title: "t", projectPath: null, model: null, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), messageCount: 1, filePath: `${HOME}/.local/share/opencode/opencode.db` },
+    { fs, db: dbExec, home: HOME },
+  );
+  assert.equal(main.prepare("SELECT COUNT(*) c FROM session WHERE id='ses_v1'").get().c, 0);
+  assert.equal(main.prepare("SELECT COUNT(*) c FROM session_v2").get().c, 2, "session_v2 他行不波及");
+});
+
+// ==================== 删除所选（永久删除 + SQL）====================
+
+test("删除分发：pi 文件型删主文件；zcode SQL 型三表连删", async () => {
+  const { deleteSessionBySource } = await import("./importers.ts");
+  const { DatabaseSync } = await import("node:sqlite");
+
+  // --- pi：文件型 ---
+  const removed = [];
+  const fsWithRemove = {
+    ...fs,
+    async removePath(path) {
+      removed.push(path);
+      return true;
+    },
+  };
+  await deleteSessionBySource(
+    {
+      source: "pi",
+      externalId: "66666666-aaaa-bbbb-cccc-000000000006",
+      title: "t",
+      projectPath: null,
+      model: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messageCount: 1,
+      filePath: `${HOME}/.pi/agent/sessions/--Users-tester-Github-wakefx--/2026-08-06T10-00-00-000Z_66666666-aaaa-bbbb-cccc-000000000006.jsonl`,
+    },
+    { fs: fsWithRemove, home: HOME },
+  );
+  assert.deepEqual(removed, [
+    `${HOME}/.pi/agent/sessions/--Users-tester-Github-wakefx--/2026-08-06T10-00-00-000Z_66666666-aaaa-bbbb-cccc-000000000006.jsonl`,
+  ]);
+
+  // --- codex：同为单文件型 ---
+  removed.length = 0;
+  await deleteSessionBySource(
+    {
+      source: "codex",
+      externalId: "44444444-aaaa-bbbb-cccc-000000000004",
+      title: "t",
+      projectPath: null,
+      model: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messageCount: 1,
+      filePath: `${HOME}/.codex/sessions/2026/08/09/rollout-2026-08-09T10-30-00-44444444-aaaa-bbbb-cccc-000000000004.jsonl`,
+    },
+    { fs: fsWithRemove, home: HOME },
+  );
+  assert.deepEqual(removed, [
+    `${HOME}/.codex/sessions/2026/08/09/rollout-2026-08-09T10-30-00-44444444-aaaa-bbbb-cccc-000000000004.jsonl`,
+  ]);
+
+  // --- zcode：SQL 型三表连删 + tasks-index 清标记 ---
+  const main = new DatabaseSync(":memory:");
+  const tasks = new DatabaseSync(":memory:");
+  main.exec(`
+    CREATE TABLE session (id TEXT PRIMARY KEY, directory TEXT, title TEXT);
+    CREATE TABLE message (id TEXT PRIMARY KEY, session_id TEXT, data TEXT);
+    CREATE TABLE part (id TEXT PRIMARY KEY, message_id TEXT, session_id TEXT, data TEXT);
+  `);
+  tasks.exec("CREATE TABLE tasks (task_id TEXT, deleted INTEGER);");
+  main.exec("INSERT INTO session VALUES ('s-del', '/p', '待删');");
+  main.exec("INSERT INTO message VALUES ('m1', 's-del', '{}');");
+  main.exec("INSERT INTO part VALUES ('p1', 'm1', 's-del', '{}');");
+  tasks.exec("INSERT INTO tasks VALUES ('s-del', 0);");
+  const query = (path, sql, params = []) => {
+    const target = path.endsWith("tasks-index.sqlite") ? tasks : main;
+    try {
+      const stmt = target.prepare(sql);
+      const columns = stmt.columns().map((c) => c.name);
+      const rows = stmt.all(...params).map((row) => columns.map((c) => (row[c] === undefined ? null : row[c])));
+      return { columns, rows };
+    } catch {
+      return null;
+    }
+  };
+  const execute = (path, sql, params = []) => {
+    const target = path.endsWith("tasks-index.sqlite") ? tasks : main;
+    try {
+      const changed = target.prepare(sql).run(...params).changes;
+      return { changed };
+    } catch {
+      return null;
+    }
+  };
+  const db = { query, execute };
+  await deleteSessionBySource(
+    {
+      source: "zcode",
+      externalId: "s-del",
+      title: "t",
+      projectPath: null,
+      model: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messageCount: 1,
+      filePath: `${HOME}/.zcode/cli/db/db.sqlite`,
+    },
+    { fs: fsWithRemove, db, home: HOME },
+  );
+  assert.equal(main.prepare("SELECT COUNT(*) c FROM session").get().c, 0);
+  assert.equal(main.prepare("SELECT COUNT(*) c FROM message").get().c, 0);
+  assert.equal(main.prepare("SELECT COUNT(*) c FROM part").get().c, 0);
+  assert.equal(tasks.prepare("SELECT COUNT(*) c FROM tasks").get().c, 0);
+});
+
+test("删除分发：devin 走 SQL、文件型缺 removePath 能力时如实报错", async () => {
+  const { deleteSessionBySource } = await import("./importers.ts");
+  const { DatabaseSync } = await import("node:sqlite");
+  const main = new DatabaseSync(":memory:");
+  main.exec(`
+    CREATE TABLE sessions (id TEXT PRIMARY KEY, title TEXT);
+    CREATE TABLE message_nodes (row_id INTEGER PRIMARY KEY, session_id TEXT);
+  `);
+  main.exec("INSERT INTO sessions VALUES ('d1', 'x');");
+  main.exec("INSERT INTO message_nodes VALUES (1, 'd1');");
+  const db = {
+    query: (path, sql, params = []) => {
+      const stmt = main.prepare(sql);
+      const columns = stmt.columns().map((c) => c.name);
+      return { columns, rows: stmt.all(...params).map((row) => columns.map((c) => (row[c] === undefined ? null : row[c]))) };
+    },
+    execute: (path, sql, params = []) => ({ changed: main.prepare(sql).run(...params).changes }),
+  };
+  await deleteSessionBySource(
+    {
+      source: "devin",
+      externalId: "d1",
+      title: "t",
+      projectPath: null,
+      model: null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      messageCount: 1,
+      filePath: `${HOME}/.local/share/devin/cli/sessions.db`,
+    },
+    { fs, db, home: HOME },
+  );
+  assert.equal(main.prepare("SELECT COUNT(*) c FROM sessions").get().c, 0);
+
+  // 文件型但 fs 没有 removePath 能力（理论不发生在应用内）→ 如实报错
+  await assert.rejects(
+    deleteSessionBySource(
+      {
+        source: "pi",
+        externalId: "x",
+        title: "t",
+        projectPath: null,
+        model: null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        messageCount: 1,
+        filePath: `${HOME}/.pi/agent/sessions/x.jsonl`,
+      },
+      { fs, home: HOME },
+    ),
+    /failed to delete/,
+  );
 });
