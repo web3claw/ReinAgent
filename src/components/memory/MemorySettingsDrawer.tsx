@@ -122,7 +122,6 @@ export function MemorySettingsDrawer(props: {
   const [drawerWipeConfirmOpen, setDrawerWipeConfirmOpen] = useState(false);
   const [quotaSummary, setQuotaSummary] = useState<MemoryQuotaSummaryResponse | null>(null);
   const memoryOrganizerModel = memoryModelValue(settings.memory.organizerModel);
-  const conversationSummaryModel = memoryModelValue(settings.memory.summaryModel);
   const committedTimeLocal = settings.memory.organizerSchedule.timeLocal;
   const [timeLocalDraft, setTimeLocalDraft] = useState(committedTimeLocal);
   const committedTimeLocalRef = useRef(committedTimeLocal);
@@ -241,14 +240,6 @@ export function MemorySettingsDrawer(props: {
         }),
       );
     }
-  }
-
-  function handleSummaryModelChange(value: string) {
-    setSettings((prev) =>
-      updateMemorySettings(prev, {
-        summaryModel: parseModelValue(value) ?? null,
-      }),
-    );
   }
 
   function handleOrganizerToggle() {
@@ -374,18 +365,6 @@ export function MemorySettingsDrawer(props: {
                     handleOrganizerModelChange,
                     t("settings.memoryOrganizerModel"),
                     t("settings.memoryModelNone"),
-                  )}
-                </div>
-                <div className="my-3 h-px bg-foreground/[0.05]" />
-                <div className="space-y-1.5">
-                  <span className="text-xs text-muted-foreground/90">
-                    {t("settings.memorySummaryModel")}
-                  </span>
-                  {renderModelSelect(
-                    conversationSummaryModel,
-                    handleSummaryModelChange,
-                    t("settings.memorySummaryModel"),
-                    t("settings.memorySummaryModelFollow"),
                   )}
                 </div>
                 {modelOptions.length === 0 ? (

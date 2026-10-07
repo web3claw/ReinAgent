@@ -17,7 +17,6 @@ import type { HubAppSettings } from "../../store/hubSettingsStore";
 import { rankFuzzySearchResults } from "../lw/lib/fuzzySearch";
 import { cn } from "../lw/lib/utils";
 import { McpServerCard } from "./McpServerCard";
-import { updateMcp } from "./hubSettingsAdapter";
 
 type SetMcpSettingsFn = (updater: (prev: HubAppSettings) => HubAppSettings) => void;
 
@@ -99,17 +98,6 @@ export function McpServersForm(props: McpServersFormProps) {
                 searchQuery={query}
                 setSettings={setSettings}
                 onEdit={() => onEditServer?.(server, idx)}
-                serverPolicy={settings.mcp.serverPolicy?.[server.id]}
-                onServerPolicyChange={(policy) =>
-                  setSettings((prev) =>
-                    updateMcp(prev, {
-                      serverPolicy: {
-                        ...(prev.mcp.serverPolicy ?? {}),
-                        [server.id]: policy,
-                      },
-                    }),
-                  )
-                }
               />
             ))}
           </div>

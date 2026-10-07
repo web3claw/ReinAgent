@@ -2,7 +2,7 @@
 
 > **文档定位**：2026-10-05 全库审计（三路并行扫描 + 人工逐条复核）产出的修复计划。
 > 审计范围：装饰性设置（UI 有、运行时零消费）、写死数据（违反 No-Fallback 铁律）、失效开关（操作后不改变运行时行为）。
-> **状态**：批次 0（F17/F18/F19，1d0e563）、批次 1（F1/F2/F3，f5a47cf / f003127）与批次 2（F4-F7，b1e3b8a）**已完成**（2026-10-06 补勾）；批次 3 待 D2/D3 拍板后开工（D1 已定稿：发）；批次 4 其余（F20-F26、L1-L12）待确认。
+> **状态**：批次 0（F17/F18/F19，1d0e563）、批次 1（F1/F2/F3，f5a47cf / f003127）、批次 2（F4-F7，b1e3b8a）**已完成**；批次 3 中 D2/D3 已定稿并完成清理（F8/F9，2026-10-07）；批次 4 其余（F20-F26、L1-L12）待确认。
 > **维护纪律**：完成任务后勾选 `[x]`、写完成日期与提交号，并同步 `PROJECT_CONTEXT.md`。
 >
 > **⚠️ 复核修订（2026-10-05 晚，逐条对照当前工作区亲验）**：审计初稿成文于修复提交 `f5a47cf`（max_tokens 注入）与 `f003127`（no silent DeepSeek fallback）**之前**，故 F1/F3 的"问题"描述已过时（实际已修）；F18/F24 文件路径写错（`src/lib/providers/types.ts` 不存在，实为 `src/components/settings/model-provider/types.ts`）；F22 判定有误（warn 已存在）；另有若干行号/表述需校准。**已按下文逐条订正，开工请以本版为准。**
@@ -14,8 +14,8 @@
 | # | 决策 | 推荐方案 | 备选方案 | 备注 |
 |---|---|---|---|---|
 | **D1** | max_tokens：模型元数据未知时发不发 32000 请求级兜底 | **发（已按参照源码定稿）**——LiveAgent 同场景实测设计：未知时注入 `model.maxTokens` 兜底值随请求发出（deepseek 兜底就是 32K，生产环境验证过）；ZCode 的 maxOutputTokens 为模型配置一等 option（完整 schema `max` 必填正值），每请求经 option-map 注入，「声明即注入」无静默省略路径。本方 32000 兜底 + 注释意图正是照此模式写的，只差注入最后一步 | 不发（未知不捏造）——但会被 LiveAgent/ZCode 双参照的设计否决 | F1 依赖此项；已定稿：**发** |
-| **D2** | 记忆设置「会话摘要模型」（summaryModel） | **删除 UI 与字段**（本应用无摘要功能消费它，属 LiveAgent 移植残留；kv 旧数据保留兼容读取） | 接线到记忆整理管线 | F8 依赖此项 |
-| **D3** | MCP 服务器策略（allow/ask/deny） | **删除 UI 与字段**（接线需另立「MCP 工具执行审批门」项目，工作量大） | 接线：工具执行前按策略拦截 | F9 依赖此项 |
+| **D2** | 记忆设置「会话摘要模型」（summaryModel） | **删除 UI 与字段**（✅已定稿执行，2026-10-07，本应用无摘要功能消费它，属 LiveAgent 移植残留；统一由 organizerModel 接管） | 接线到记忆整理管线 | F8 依赖此项（✅已完成） |
+| **D3** | MCP 服务器策略（allow/ask/deny） | **删除 UI 与字段**（✅已定稿执行，2026-10-07，消灭失效死开关，保留任务级 activeTask.toolPolicies 独立运行） | 接线：工具执行前按策略拦截 | F9 依赖此项（✅已完成） |
 
 ---
 
@@ -100,8 +100,8 @@
 
 | 编号 | 项 | 位置 | 处置 | 验证 |
 |---|---|---|---|---|
-| F8 | summaryModel 会话摘要选择器 | hubSettingsStore.ts:35,92 / MemorySettingsDrawer.tsx:125,249,384 | 按 D2：删 UI+字段（kv 旧数据兼容读取）。复核：全库无消费方属实 | tsc + 设置页无该项 |
-| F9 | serverPolicy allow/ask/deny | mcpTypes.ts:50 / McpServersForm.tsx:102 | 按 D3：删 UI+字段+normalize 清理。⚠️ 复核校准：**通用 `toolPolicies` 链路是活的**（runAgentTurn.ts:365 消费），死的是 `McpSettings.serverPolicy` 本身——它从未被映射进 `mcp__<id>__<tool>` 工具名，勿与 toolPolicies 混为一谈 | tsc + MCP 页无该项 |
+| **F8** ✅已完成（2026-10-07） | summaryModel 会话摘要选择器 | hubSettingsStore.ts / MemorySettingsDrawer.tsx | 按 D2：已删 UI 标题/分割线/ModelPicker 组件与 MemorySettings 字段；抽取与整理统一由 organizerModel 接管 | tsc + 设置抽屉无该项 + 全量单测通过 |
+| **F9** ✅已完成（2026-10-07） | serverPolicy allow/ask/deny | mcpTypes.ts / McpServerCard.tsx / McpServersForm.tsx / hubSettingsStore.ts | 按 D3：已删 UI 卡片底部的 ToolPolicyToggle 及 McpSettings.serverPolicy 字段。任务级审批策略 toolPolicies 独立运行不受影响 | tsc + MCP 卡片无该项 + 全量单测通过 |
 | F10 | McpSettings.selected 恒空字段 | mcpTypes.ts:48（hydrate 恒置 []，hubSettingsStore.ts:135） | 删字段（normalize/hydrate 同步清理） | tsc |
 | F11 | MemoryScheduleSettings.timezone | hubSettingsStore.ts:30,94 | 删字段 | tsc |
 | F12 | reinagent-update-endpoint 仅回显 | AppUpdaterCard.tsx:15,35,43 | ⚠️ 复核订正：**并非纯回显**——endpoint 值确已传给 `update_check`/`update_install`（真消费）；真正"只写不读"的是**该 KV 键**（仅用于下次预填）。故本项降级为"预填持久化键"语义，是否保留待选 | 手动 |

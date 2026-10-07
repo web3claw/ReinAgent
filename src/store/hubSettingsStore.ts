@@ -32,7 +32,6 @@ export interface MemoryScheduleSettings {
 
 export interface MemorySettings {
   organizerModel?: { customProviderId?: string; model: string } | null;
-  summaryModel?: { customProviderId?: string; model: string } | null;
   organizerEnabled: boolean;
   organizerSchedule: MemoryScheduleSettings;
   organizerScope: "all" | "global" | "projects" | "current-project";
@@ -101,7 +100,6 @@ function defaultMemorySettings(): MemorySettings {
 function defaultMemoryShape(): MemorySettings {
   return {
     organizerModel: null,
-    summaryModel: null,
     organizerEnabled: false,
     organizerSchedule: { frequency: "none", timeLocal: "03:00", weekday: 1, timezone: "local" },
     organizerScope: "all",
@@ -151,8 +149,7 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
         mcpDegradedError: null,
         settings: {
           ...state.settings,
-          // serverPolicy 是纯前端字段，从上一份 mcp 切片保留（hydrate 不覆盖用户配置）
-          mcp: { servers, selected: [], serverPolicy: state.settings.mcp.serverPolicy },
+          mcp: { servers, selected: [] },
         },
       }));
     } catch (err) {

@@ -17,7 +17,6 @@ import { ResourceActivationSwitch } from "../lw/resources/ResourceActivationSwit
 import { Badge } from "../lw/ui/badge";
 import { Button } from "../lw/ui/button";
 import { ConfirmDeletePopover } from "../lw/ui/confirm-action-popover";
-import { ToolPolicyToggle, type ToolPolicy } from "../lw/hub/ToolPolicyToggle";
 import { SearchHighlight } from "../lw/ui/search-highlight";
 import { useHubTranslation } from "./i18n";
 import { resolveMcpDocsHref } from "../../lib/hub/mcpServerMetadata";
@@ -49,9 +48,6 @@ export const McpServerCard = memo(function McpServerCard(props: {
   searchQuery: string;
   setSettings: SetMcpSettingsFn;
   onEdit: () => void;
-  /** 服务器级工具审批策略（undefined=未配置，走审批模式默认） */
-  serverPolicy?: ToolPolicy;
-  onServerPolicyChange?: (policy: ToolPolicy) => void;
 }) {
   const { server, idx, searchQuery, setSettings, onEdit } = props;
   const { t } = useHubTranslation();
@@ -270,23 +266,6 @@ export const McpServerCard = memo(function McpServerCard(props: {
           </ConfirmDeletePopover>
         </div>
       </div>
-
-      {/* 工具审批策略（P1-1）：服务器级 allow/ask/deny——作用于该 server 全部工具
-          （运行时的 mcp__<id>__<tool> 工具名会匹配 server id 前缀）；存任务级 toolPolicies */}
-      {enabled ? (
-        <div className="basis-full">
-          <ToolPolicyToggle
-            value={props.serverPolicy ?? "ask"}
-            ariaLabel={`${displayName}: ${t("toolPolicyTitle")}`}
-            labels={{
-              allow: t("toolPolicyAllow"),
-              ask: t("toolPolicyAsk"),
-              deny: t("toolPolicyDeny"),
-            }}
-            onChange={(next) => props.onServerPolicyChange?.(next as ToolPolicy)}
-          />
-        </div>
-      ) : null}
 
       {/* 连接诊断结果行：成功显示工具数/耗时，失败如实显示错误原文（不吞不猜） */}
       {testState && !testState.loading ? (

@@ -1306,3 +1306,21 @@ ReinAgent 架构全景
   - `ImportRow`：标题与 meta 标签补齐 `title` 属性（`title={title}` 与 `title={typeof meta === "string" ? meta : undefined}`），长路径被单行截断时鼠标悬停可完整查看绝对路径；
 - **验证**：`tsc --noEmit` 0 错误；`test:import` 38/38 单测全绿。
 
+### 清理失效死控件：summaryModel 与 serverPolicy（2026-10-07，用户定稿彻底删除）
+
+- **背景与根因**：
+  - `summaryModel`（会话摘要模型）：系 LiveAgent 遗留项。在 ReinAgent 记忆体系中，会话后的记忆提取与定期整理已完全统一由 `organizerModel`（或回落主模型）驱动，全库对 `summaryModel` 零消费，纯属抽屉中的装饰性选择器。
+  - `serverPolicy`（MCP 服务器全局策略）：原设计在每个 MCP 服务器卡片渲染 `ToolPolicyToggle`（允许/询问/拒绝），但底层审批门 `createApprovalGate` 仅匹配具体工具名（`mcp__<serverId>__<tool>`），从未匹配过 `serverPolicy[serverId]`，该卡片开关对实际审批行为无任何影响，纯属死开关。
+- **改动面**：
+  - `src/lib/hub/mcpTypes.ts`：从 `McpSettings` 接口中彻底移除 `serverPolicy?: Record<string, "allow" | "ask" | "deny">`；
+  - `src/store/hubSettingsStore.ts`：从 `MemorySettings` 接口及 `defaultMemoryShape()` 中移除 `summaryModel`；在 `hydrateMcp()` 中移除 `serverPolicy` 透传；
+  - `src/components/memory/MemorySettingsDrawer.tsx`：移除 `conversationSummaryModel` 状态、`handleSummaryModelChange` 回调及“会话总结模型”UI 标题与 `ModelPicker` 节点，仅保留“记忆整理模型”；
+  - `src/components/mcp/McpServerCard.tsx`：移除 `ToolPolicyToggle` 导入、`serverPolicy` 及 `onServerPolicyChange` props 与卡片底部策略开关渲染；
+  - `src/components/mcp/McpServersForm.tsx`：移除向卡片传递的 `serverPolicy` 属性及未使用的 `updateMcp` 导入。
+  - **保留范畴**：任务级工具审批策略（`activeTask.toolPolicies`）仍活跃且独立运行，不受任何影响。
+- **验证**：
+  - `bunx tsc --noEmit` 0 错误；
+  - `test:hub`、`test:providers`、`test:settings`、`test:chat`、`test:agent` 全量测试套件通过；
+  - `bun run tauri dev` 热重载正常无报错。
+
+

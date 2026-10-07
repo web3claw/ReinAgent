@@ -46,8 +46,6 @@ export type McpServerConfig = {
 export type McpSettings = {
   servers: McpServerConfig[];
   selected: string[];
-  /** 工具审批策略（server id → allow/ask/deny）；纯前端存储（不进 Rust JSON） */
-  serverPolicy?: Record<string, "allow" | "ask" | "deny">;
 };
 
 // ---------------------------------------------------------------------------
