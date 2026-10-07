@@ -182,28 +182,44 @@ fn rule_to_json(rule: &ScheduleRule) -> String {
 
 fn row_to_automation(row: &rusqlite::Row) -> rusqlite::Result<Automation> {
     let rule_json: String = row.get("schedule_rule")?;
+    // F25：解析失败标记 error 状态 + last_error，不猜默认计划；next_run 置 NULL 且不参与 claim
+    let rule_res = serde_json::from_str::<ScheduleRule>(&rule_json);
+    let (schedule_rule, lifecycle_status, next_run_at, last_error) = match rule_res {
+        Ok(rule) => (
+            rule,
+            row.get::<_, String>("lifecycle_status")?,
+            row.get::<_, Option<i64>>("next_run_at")?,
+            row.get::<_, Option<String>>("last_error")?,
+        ),
+        Err(e) => (
+            ScheduleRule {
+                unit: "daily".into(),
+                interval: 1,
+                hour: 9,
+                minute: 0,
+                weekdays: None,
+                month_days: None,
+            },
+            "error".to_string(),
+            None,
+            Some(format!("schedule_rule JSON 损坏: {}", e)),
+        ),
+    };
     Ok(Automation {
         automation_id: row.get("automation_id")?,
         title: row.get("title")?,
         cron_expr: row.get("cron_expr")?,
-        schedule_rule: serde_json::from_str(&rule_json).unwrap_or(ScheduleRule {
-            unit: "daily".into(),
-            interval: 1,
-            hour: 9,
-            minute: 0,
-            weekdays: None,
-            month_days: None,
-        }),
+        schedule_rule,
         prompt: row.get("prompt")?,
         model_provider: row.get("model_provider")?,
         model_id: row.get("model_id")?,
         workspace_path: row.get("workspace_path")?,
         enabled: row.get::<_, i64>("enabled")? != 0,
-        lifecycle_status: row.get("lifecycle_status")?,
+        lifecycle_status,
         run_count: row.get("run_count")?,
-        next_run_at: row.get("next_run_at")?,
+        next_run_at,
         last_run_at: row.get("last_run_at")?,
-        last_error: row.get("last_error")?,
+        last_error,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
     })
@@ -422,7 +438,7 @@ fn claim_due() -> Result<Vec<AutomationDuePayload>, String> {
         let mut stmt = conn
             .prepare(
                 "SELECT automation_id FROM automations
-                 WHERE enabled = 1 AND (next_run_at IS NULL OR next_run_at <= ?1)",
+                 WHERE enabled = 1 AND lifecycle_status != 'error' AND (next_run_at IS NULL OR next_run_at <= ?1)",
             )
             .map_err(|e| e.to_string())?;
         let rows = stmt
@@ -436,7 +452,7 @@ fn claim_due() -> Result<Vec<AutomationDuePayload>, String> {
         let Some(automation) = get_automation(&conn, &id)? else {
             continue;
         };
-        if !automation.enabled {
+        if !automation.enabled || automation.lifecycle_status == "error" {
             continue;
         }
         // 下一次运行时间：从现在起计算；失败则退避 1 小时并记录错误

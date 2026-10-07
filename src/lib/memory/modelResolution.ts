@@ -53,6 +53,7 @@ export async function resolveIndependentMemoryModelDeps(
   const { buildModel } = await import("../providers/modelFactory");
   const { getStreamFnForApi } = await import("../providers/runAgentTurn");
   const model = buildModel({
+    // 未知格式回退 openai 类型，下游 buildModel 会做严格的 apiFormat 校验（fail-fast）
     provider: (API_FORMAT_TO_TYPE[provider.apiFormat] ?? "openai") as never,
     apiKey: provider.apiKey,
     modelId,

@@ -177,7 +177,8 @@ export function CheckpointRewindProvider(props: {
         conversationId,
       });
       if (loadEpochRef.current === epoch) setTurns(list);
-    } catch {
+    } catch (err) {
+      console.warn(`[checkpoint] checkpoint_list failed for conversation ${conversationId}:`, err);
       if (loadEpochRef.current === epoch) setTurns([]);
     } finally {
       if (loadEpochRef.current === epoch) setLoading(false);

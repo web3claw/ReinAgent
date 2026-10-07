@@ -107,6 +107,8 @@ export interface HookOutcome {
   additionalContexts: string[];
   /** 每条 hook 的执行摘要（诊断用） */
   runs: Array<{ command: string; exitCode: number | null; timedOut: boolean; error?: string }>;
+  /** 是否存在执行失败的 hook */
+  hasError?: boolean;
 }
 
 function hooksConfigPath(workspaceRoot: string): string {
@@ -404,6 +406,16 @@ async function runHookEntries(
     const result = await executeSingleHook(entry, payloadInput, input.workspaceRoot ?? fallbackCwd);
     outcome.runs.push(result.summary);
     if (result.context) outcome.additionalContexts.push(result.context);
+    if (result.error) {
+      outcome.hasError = true;
+      if (observational) {
+        // 生命周期 hook 失败不阻断，但留下诊断痕迹（不静默吞）
+        console.warn(`[hooks] lifecycle ${event} hook failed:`, result.error);
+      } else {
+        // 经典 hook（PreToolUse 等）执行异常：输出 warning 并在 outcome 记录，避免隐蔽失败
+        console.warn(`[hooks] classic ${event} hook execution error:`, result.error);
+      }
+    }
     if (!observational) {
       if (result.blocked) {
         outcome.blocked = true;
@@ -411,10 +423,6 @@ async function runHookEntries(
         break;
       }
       if (result.approve) outcome.approve = true;
-    }
-    if (result.error && observational) {
-      // 生命周期 hook 失败不阻断，但留下诊断痕迹（不静默吞）
-      console.warn(`[hooks] lifecycle ${event} hook failed:`, result.error);
     }
   }
   return outcome;

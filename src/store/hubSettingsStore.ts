@@ -27,7 +27,6 @@ export interface MemoryScheduleSettings {
   frequency: "none" | "daily" | "weekly";
   timeLocal: string;
   weekday: number;
-  timezone: string;
 }
 
 export interface MemorySettings {
@@ -101,7 +100,7 @@ function defaultMemoryShape(): MemorySettings {
   return {
     organizerModel: null,
     organizerEnabled: false,
-    organizerSchedule: { frequency: "none", timeLocal: "03:00", weekday: 1, timezone: "local" },
+    organizerSchedule: { frequency: "none", timeLocal: "03:00", weekday: 1 },
     organizerScope: "all",
     organizerMode: "standard",
     organizerLastRunAt: null,
@@ -138,7 +137,7 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
   mcpDegradedError: null,
   settings: {
     skills: defaultSkillsSettings(),
-    mcp: { servers: [], selected: [] },
+    mcp: { servers: [] },
     memory: defaultMemorySettings(),
   },
 
@@ -149,7 +148,7 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
         mcpDegradedError: null,
         settings: {
           ...state.settings,
-          mcp: { servers, selected: [] },
+          mcp: { servers },
         },
       }));
     } catch (err) {

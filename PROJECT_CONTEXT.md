@@ -1323,4 +1323,50 @@ ReinAgent 架构全景
   - `test:hub`、`test:providers`、`test:settings`、`test:chat`、`test:agent` 全量测试套件通过；
   - `bun run tauri dev` 热重载正常无报错。
 
+### 批次 3 其余装饰性清理与批次 4 静默设计/Fail-Fast 全景修复（2026-10-07）
+
+- **背景与目标**：
+  - 全面清理 `FIXPLAN.md` 遗留的死状态、死属性与废弃组件（批次 3），消灭所有无实际消费的装饰性字段。
+  - 彻底贯彻 **No-Fallback & Fail-Fast 铁律**（批次 4）：严禁静默吞错、严禁跨源拼凑配置、严禁使用伪造兜底数据伪装正常；任何存储写入失败、元数据解析异常、配置同源损坏必须第一时间显式暴露给用户。
+  - 跨平台支持：保证 Linux 与 Windows 双端托盘与进程/文件路径一致性保障。
+
+- **改动面明细**：
+  1. **批次 3 装饰性死状态与废弃组件清理**：
+     - `src/lib/hub/mcpTypes.ts` & `src/store/hubSettingsStore.ts`：删除 `McpSettings.selected` 死属性及 `MemoryScheduleSettings.timezone`（时区改为系统本地运行时真实计算，不再保留写死默认 "UTC"）；
+     - `src/components/settings/SettingsPage.tsx`：修复 `hideToTray` 开关只写不读问题，挂载时调用 `invoke<HideToTrayResult>('get_hide_to_tray')` 真实回读 SQLite 配置；
+     - `src/preview/useTheme.ts`：删除未引用的 `useTheme()` 死 hook 与废弃常量 `reinagent-preview-theme`，避免双重主题状态割裂；
+     - `src/components/chat/LexicalComposer.tsx` & `src/App.tsx`：`THINKING_OPTIONS` 增加 `{ level: "off", label: "Off", steps: 0 }` 显式关闭档位；`App.tsx` 对齐逻辑保留 `"off"`，并在向下分发到 `pi-agent-core` 时将 `reasoning` 置为 `undefined`，实现真实的关闭思考，杜绝静默重置为 low；
+     - `src/components/settings/ProviderForm.tsx`：彻底物理删除全库 0 引用的孤儿组件。
+  2. **批次 4 静默设计修复与 Fail-Fast / 告警接入**：
+     - **F20（自动化派发凭证同源校验）**：`src/App.tsx` 中的 `dispatchAutomationRun` 强制实行服务商与模型同源校验（模型必须属于对应供应商自身的 `models` 列表），若缺失仅能取该供应商自身的 `defaultModelId` 或首个模型；若找不到可用模型或供应商，直接通过 `automation_run_finished` 汇报失败，严禁回落或跨源借用全局 settings 的异源模型；
+     - **F21（Classic Hook 错误显式捕获）**：`src/lib/hooks/hooksRuntime.ts` 中 `HookOutcome` 补充 `hasError?: boolean`，classic hook 执行出错时输出 `console.warn` 并在 outcome 标明，杜绝静默掩盖；
+     - **F23（持久化降级显式告警条）**：
+       - `src/store/useAppStore.ts` 增加 `storageDegradedError: string | null` 与 `setStorageDegradedError`；
+       - `src/lib/storage/db.ts`（`flushKv` / `flushTasks`）与 `src/lib/chat/conversationPool.ts`（`schedulePersist`）在 SQLite / KV 持久化捕获异常后，将真实错误写入 store；
+       - `src/App.tsx` 顶栏渲染可手动关闭的存储降级警示横幅（Storage Degraded Warning），显式告知用户持久化失效；
+     - **F24（供应商配置写盘失败报错）**：
+       - `src/components/settings/model-provider/types.ts` 中的 `saveProvidersConfigToDisk` 写盘失败时抛出异常并记录日志；
+       - `src/components/settings/model-provider/ModelProviderSettings.tsx` 捕获异常并通过 `toast.error` 向用户弹出错误提示；
+     - **F25（自动化调度规则损坏 Fail-Fast）**：
+       - `src-tauri/src/automation.rs` 中的 `row_to_automation` 在 `schedule_rule` JSON 损坏时，标记 `lifecycle_status = "error"`、`next_run_at = None`、`last_error = Some("schedule_rule JSON 损坏: ...")`，严禁伪造默认每天 09:00；
+       - `claim_due` 查询增加 `lifecycle_status != 'error'`，循环中过滤 `error` 状态，杜绝认领并执行损坏的规则；
+     - **F26（记忆抽取独立模型解析失败 Fail-Fast）**：`src/lib/chat/conversationPool.ts` 中的 `maybeExtractMemory` 在独立记忆模型配置失效/抛错时，直接终止当轮抽取并打印警告，严禁静默回落主模型消耗用户 Token；
+     - **低危项消灭（L1/L2/L3/L4/L9/L12）**：
+       - L1：`automation_run_finished` 失败补充 `console.warn`；
+       - L2：`getInitialTasks` 解析 task row JSON 出错时记录损坏 task id 与详细错误；
+       - L3：`updateModelEffortDefaultLevel` 找不到 provider/model 时输出警告；
+       - L4：`modelResolution.ts` 补全下游 `buildModel` 严格 fail-fast 校验注释；
+       - L9：`checkpointRewind.tsx` 的 `checkpoint_list` 异常补充错误日志，杜绝空 catch；
+       - L12：`conversationPool.ts` 的 `getOptions` 在缺失 `entry.sendOptions` 时直接抛错，杜绝伪造假 options 对象。
+  3. **文档与计划同步**：`docs/FIXPLAN.md` 批次 3 与批次 4 全部检查项已全量勾选完成。
+
+- **验证情况**：
+  - `cargo check --manifest-path src-tauri/Cargo.toml`：0 错误 0 警告；
+  - `cargo test --manifest-path src-tauri/Cargo.toml --lib automation`：4/4 单测全通过（含损坏 JSON fail-fast 验证）；
+  - `bunx tsc --noEmit`：0 错误通过；
+  - `bun run test:providers && bun run test:chat && bun run test:settings && bun run test:agent && bun run test:hub`：全量单测全部绿灯；
+  - `bun run test:git && bun run test:import`：通过；
+  - `bun run tauri dev`（task-50 / PID 495542）保持常驻运行，代码修改热重载正常，Linux 与 Windows 逻辑一致性保障无误。
+
+
 

@@ -26,18 +26,26 @@ function flushKv() {
   if (kvPending.size === 0) return;
   const pairs = Array.from(kvPending.entries()).map(([key, value]) => ({ key, value }));
   kvPending.clear();
-  invoke("kv_set_many", { pairs }).catch((err) =>
-    console.error("[db] kv_set_many failed:", err),
-  );
+  invoke("kv_set_many", { pairs }).catch((err) => {
+    const msg = `KV 存储持久化失败: ${err instanceof Error ? err.message : String(err)}`;
+    console.error("[db] kv_set_many failed:", err);
+    import("../../store/useAppStore").then(({ useAppStore }) => {
+      useAppStore.getState().setStorageDegradedError(msg);
+    }).catch(() => {});
+  });
 }
 
 function flushTasks() {
   if (!taskSyncPending) return;
   const tasks = taskSyncPending;
   taskSyncPending = null;
-  invoke("task_sync", { tasks }).catch((err) =>
-    console.error("[db] task_sync failed:", err),
-  );
+  invoke("task_sync", { tasks }).catch((err) => {
+    const msg = `任务列表持久化失败: ${err instanceof Error ? err.message : String(err)}`;
+    console.error("[db] task_sync failed:", err);
+    import("../../store/useAppStore").then(({ useAppStore }) => {
+      useAppStore.getState().setStorageDegradedError(msg);
+    }).catch(() => {});
+  });
 }
 
 /** 启动初始化：拉取 kv 全量 + 任务列表 + 用户主目录。main.tsx 在渲染前 await。 */

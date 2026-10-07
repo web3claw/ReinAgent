@@ -294,8 +294,9 @@ export async function loadProvidersConfigFromDisk(currentSettings?: Settings): P
 
 /**
  * 实时保存多服务商配置到 ~/.ReinAgent/provider_config.json
+ * 成功返回 true，失败记录日志并抛错，绝不伪装成功（No-Fallback & Fail-Fast）。
  */
-export async function saveProvidersConfigToDisk(providers: ProviderItem[]): Promise<void> {
+export async function saveProvidersConfigToDisk(providers: ProviderItem[]): Promise<boolean> {
   try {
     const normalizedProviders = providers.map((p) => ({
       ...p,
@@ -305,8 +306,10 @@ export async function saveProvidersConfigToDisk(providers: ProviderItem[]): Prom
     await invoke("provider_config_save", {
       content: JSON.stringify(normalizedProviders, null, 2),
     });
+    return true;
   } catch (e) {
     console.error("[provider_config] Failed to save provider_config.json to disk", e);
+    throw e;
   }
 }
 
@@ -321,9 +324,15 @@ export async function updateModelEffortDefaultLevel(
   try {
     const providers = await loadProvidersConfigFromDisk();
     const provider = providers.find((p) => p.id === providerId);
-    if (!provider) return;
+    if (!provider) {
+      console.warn(`[provider_config] updateModelEffortDefaultLevel: provider "${providerId}" not found`);
+      return;
+    }
     const model = provider.models.find((m) => m.id === modelId);
-    if (!model) return;
+    if (!model) {
+      console.warn(`[provider_config] updateModelEffortDefaultLevel: model "${modelId}" not found in provider "${providerId}"`);
+      return;
+    }
     if (!model.effort) {
       model.effort = { supportedLevels: [defaultLevel], defaultLevel };
     } else {

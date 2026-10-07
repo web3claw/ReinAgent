@@ -45,6 +45,8 @@ interface AppState {
   projects: string[];
   tasks: AppTask[];
   activeTaskId: string | null;
+  storageDegradedError: string | null;
+  setStorageDegradedError: (error: string | null) => void;
   setTheme: (theme: ThemeMode) => void;
   toggleTheme: () => void;
   setLocale: (locale: LocaleMode) => void;
@@ -165,7 +167,8 @@ const getInitialTasks = (): AppTask[] => {
         .map((row) => {
           try {
             return JSON.parse(row.payload) as AppTask;
-          } catch {
+          } catch (e) {
+            console.error(`[db] Failed to parse task row payload (task id: ${row.id}):`, e);
             return null;
           }
         })
@@ -258,6 +261,8 @@ export const useAppStore = create<AppState>((set) => ({
   projects: initialProjects,
   tasks: initialTasks,
   activeTaskId: initialActiveTaskId,
+  storageDegradedError: null,
+  setStorageDegradedError: (storageDegradedError) => set({ storageDegradedError }),
   setSelectedProject: (selectedProject) => set({ selectedProject }),
   addProject: (project: string) => {
     const trimmed = project.trim();

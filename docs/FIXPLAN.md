@@ -96,19 +96,20 @@
 
 ---
 
-## 四、批次 3：装饰性清理（含 D2/D3 决策执行）
+## 四、批次 3：装饰性清理（含 D2/D3 决策执行，✅全部完成于 2026-10-07）
 
 | 编号 | 项 | 位置 | 处置 | 验证 |
 |---|---|---|---|---|
 | **F8** ✅已完成（2026-10-07） | summaryModel 会话摘要选择器 | hubSettingsStore.ts / MemorySettingsDrawer.tsx | 按 D2：已删 UI 标题/分割线/ModelPicker 组件与 MemorySettings 字段；抽取与整理统一由 organizerModel 接管 | tsc + 设置抽屉无该项 + 全量单测通过 |
 | **F9** ✅已完成（2026-10-07） | serverPolicy allow/ask/deny | mcpTypes.ts / McpServerCard.tsx / McpServersForm.tsx / hubSettingsStore.ts | 按 D3：已删 UI 卡片底部的 ToolPolicyToggle 及 McpSettings.serverPolicy 字段。任务级审批策略 toolPolicies 独立运行不受影响 | tsc + MCP 卡片无该项 + 全量单测通过 |
-| F10 | McpSettings.selected 恒空字段 | mcpTypes.ts:48（hydrate 恒置 []，hubSettingsStore.ts:135） | 删字段（normalize/hydrate 同步清理） | tsc |
-| F11 | MemoryScheduleSettings.timezone | hubSettingsStore.ts:30,94 | 删字段 | tsc |
-| F12 | reinagent-update-endpoint 仅回显 | AppUpdaterCard.tsx:15,35,43 | ⚠️ 复核订正：**并非纯回显**——endpoint 值确已传给 `update_check`/`update_install`（真消费）；真正"只写不读"的是**该 KV 键**（仅用于下次预填）。故本项降级为"预填持久化键"语义，是否保留待选 | 手动 |
-| F13 | hideToTray UI 写死 useState(true) | SettingsPage.tsx:66 | Rust `get_hide_to_tray` **已存在**（hide_to_tray.rs:42，lib.rs:162 已注册）——复核订正：只差前端初始化回读（无任何 TS 侧 invoke 它） | 实测：关闭→重启→开关显示关 |
-| F14 | reinagent-preview-theme 死键 | preview/useTheme.ts | ⚠️ 复核校准：**死的是 `useTheme()` hook 与 `reinagent-preview-theme` 键**（hook 零调用方）；但**文件不算死**——`resolveTheme`/`Theme` 仍被 PreviewPane.tsx:54,563、previewPaneContent.tsx:22 等使用。故只删 hook+键，不删文件 | tsc |
-| F15 | modelFactory 93-99 注释块 | modelFactory.ts:93-100 | ✅已完成（2026-10-05，随 F1 一并改写）。⚠️ 复核订正：该块现为**故意保留的变更历史注释**（写明"旧行为：…"），内容与当前代码一致，**不是错误注释**——标题"陈旧"一词应改为"变更历史注释（保留）" | 人工 |
-| F16 | isReasoningSupported=true 死分支 + THINKING_OPTIONS 无 off | App.tsx:287 / LexicalComposer.tsx:120（THINKING_OPTIONS 定义；1311 为使用点） | 可选：加 off 档（真可关推理）或删死分支（待选） | 单测 |
+| **F10** ✅已完成（2026-10-07） | McpSettings.selected 恒空字段 | mcpTypes.ts / hubSettingsStore.ts | 已删字段及相关 normalize / hydrate 传参，保持 MCP 类型极简 | tsc + 全量单测通过 |
+| **F11** ✅已完成（2026-10-07） | MemoryScheduleSettings.timezone | hubSettingsStore.ts | 已从接口与默认值中删除零消费的 timezone 字段 | tsc + 全量单测通过 |
+| **F12**（保留） | reinagent-update-endpoint 仅回显 | AppUpdaterCard.tsx:15,35,43 | 复核确认：确已传给 `update_check`/`update_install`（真消费），且在 useEffect 中回读。作为更新源预填持久化键规范保留 | 手动 |
+| **F13** ✅已完成（2026-10-07） | hideToTray UI 写死 useState(true) | SettingsPage.tsx:66 | 组件挂载时调用 `get_hide_to_tray` IPC 回读 SQLite 真实持久化设置，Linux & Windows 托盘对齐 | 实测：重启后开关状态保持同步 |
+| **F14** ✅已完成（2026-10-07） | reinagent-preview-theme 死键 | preview/useTheme.ts | 删除了未调用的 `useTheme()` hook 与废弃 STORAGE_KEY，保留 PreviewPane 必需类型与工具函数 | tsc + 0 引用报错 |
+| **F15** ✅已完成（2026-10-05） | modelFactory 93-99 注释块 | modelFactory.ts:93-100 | 变更历史注释（保留） | 人工 |
+| **F16** ✅已完成（2026-10-07） | isReasoningSupported 档位 + THINKING_OPTIONS 无 off | App.tsx / LexicalComposer.tsx:127 | THINKING_OPTIONS 补齐 `off` 档，选中 `off` 时向下透传 `thinkingLevel: "off"`，彻底关闭思考模式 | tsc + 单测 + 运行时透传 |
+| **死组件** ✅已完成（2026-10-07） | ProviderForm.tsx 死组件 | src/components/settings/ProviderForm.tsx | 彻底删除全库零引用的旧表单组件 | tsc + 文件移除 |
 
 ---
 
@@ -123,33 +124,37 @@
 
 ---
 
-## 六、批次 4：第二轮审计 · 静默设计专项（2026-10-05 复扫新发现，待确认）
-
-> 背景：F2 修复后按「全库不留静默设计」指令复查。已跳过批次 2/3 已立案项。新发现按危险级别排列；标注「✅已亲验」的经过人工代码复核。**（2026-10-06 更新：三项高危 F17/F18/F19 已修复落地，提交 1d0e563；其余项待确认。）**
+## 六、批次 4：第二轮审计 · 静默设计专项（✅已全部完成于 2026-10-07）
 
 ### 高危
 
 | 编号 | 问题 | 位置 | 修复方案 | 验证 |
 |---|---|---|---|---|
-| **F17** ✅已完成（2026-10-05，提交 1d0e563） | **草稿首轮审批门被绕过**（修复前状态）✅已亲验（2026-10-05 复核：行号订正——注释在 App.tsx:117，硬编码在 120，sendNow 在 1313-1364）：新建任务首条消息 createTask 落库了草稿所选 approvalMode，但 buildTurnOptions 闭包里 activeTask 仍为 null → `?? "full"` 冻结进首轮（无审批直接执行工具 + maxSteps 0 无上限）；UI 徽标显示 ask 实跑 full。`App.tsx:117` 注释「缺省回退全局默认」与 `:120` 实现 `activeTask?.approvalMode ?? "full"` 矛盾（thinkingLevel 走全局 `?? thinkingLevel`，唯独 approvalMode 硬编码 full） | App.tsx:117-120 + sendNow 1313-1364 | **已落地（1d0e563）**：① `?? "full"` 改回退全局默认审批模式；② buildTurnOptions 新增 taskId 参数，发送瞬间从 store 实时解析任务 approvalMode/助手；sendNow/editResend/retry/远程发送均显式传 taskId，消除闭包冻结 | 单测：草稿提升轮的 turn options 断言任务 approvalMode；实测：草稿选 ask → 首轮写文件必须挂审批 |
-| **F18** ✅已完成（2026-10-05，提交 1d0e563） | **provider_config.json 读取失败 → 空白预设立即写盘覆盖用户全部配置（含 Key）**（修复前状态）✅已亲验（2026-10-05 复核：**路径订正**，初稿路径不存在）：loadProvidersConfigFromDisk catch → `list=[]` → 初始化分支 `saveProvidersConfigToDisk` 持久化覆盖，不可恢复 | **src/components/settings/model-provider/types.ts:149-176**（初稿误写 src/lib/providers/types.ts） | **已落地（1d0e563）**：读失败（invoke 异常/JSON 损坏/结构非法）与文件不存在区分——前者抛错且**绝不写盘**，设置页新增错误横幅 + persistProviders 守卫（读取失败态下拒绝写盘）；仅确认文件不存在才初始化预设。调用方（App/CommitDialog/PromptEnhancementCard 等）不再静默吞错 | 单测：损坏 JSON → 不写盘 + 报错态；实测：手改坏文件 → 重启见横幅而非空配置 |
-| **F19** ✅已完成（2026-10-05，提交 1d0e563） | **mcp_servers.json 损坏 → 空表静默回写覆盖用户 MCP 配置**（修复前状态；与 F18 同构，Rust `load_servers` 失败静默返回空 + 前端任意设置变更整表回写）✅已亲验：mcp.rs:104-108（读失败/解析失败均返回空）、save_servers:111-119 整表截断写；hubSettingsStore.ts:144-153 任意 setSettings 都回写 | src-tauri/mcp.rs:104-108 + hubSettingsStore.ts:144-153 | **已落地（1d0e563）**：Rust load_servers 返回 Result（文件不存在/空→Ok(空)；读取/解析失败→Err），mcp_list_servers 透传错误（移除 unwrap_or_default）；前端 hubSettingsStore 新增 mcpDegradedError 保护态，setSettings/updateMcpOps 两处整表回写均加守卫，MCP 页显示错误横幅；新增 4 例 Rust 单测（缺失/空/损坏/正常） | 单测 + 手动：损坏文件 → 启动报错横幅 |
-| **F20** | **自动化派发凭证错投**：providerId 与 modelId 独立回退（App.tsx:839-840）可拼出「A 家供应商+B 家模型」 | App.tsx:836-875 | 供应商与模型必须同源解析（provider 存在 → 模型必须属于它，否则该次运行 failed 并注明原因）；Key/baseUrl 只取所配供应商，缺则 failed，禁止跨源拼接。⚠️ **复核订正：初稿"空 Key 把 legacy Key 发往该供应商 baseUrl"子项不成立**——`ProviderItem.apiKey` 是非可选 string，`??` 不会在空串上回退（App.tsx:844）；legacy Key 仅在 provider 整个为 undefined 时随 baseUrl 一并回退，属一致的 legacy 组合，非"错投" | 单测 + 手动：构造缺 model 的 automation → run failed 带明确错误 |
+| **F17** ✅已完成（2026-10-05） | 草稿首轮审批门被绕过 | App.tsx:117-120 | 回退全局默认审批模式，实时解析任务 approvalMode | 单测通过 |
+| **F18** ✅已完成（2026-10-05） | provider_config.json 读取失败覆盖配置 | model-provider/types.ts | 读失败抛错且绝不写盘，设置页显示错误横幅 | 单测通过 |
+| **F19** ✅已完成（2026-10-05） | mcp_servers.json 损坏空表覆盖 | src-tauri/mcp.rs / hubSettingsStore.ts | Rust 返回 Result，前端加 mcpDegradedError 守卫 | Rust 单测通过 |
+| **F20** ✅已完成（2026-10-07） | **自动化派发凭证错投**：providerId 与 modelId 跨源独立拼装 | App.tsx:896-950 | 严格实行同源校验：model 必须属于 provider，缺失或不可用时立即判定 failed 并汇报原因，拒绝跨源拼装 | tsc + 调度同源测试 |
 
 ### 中危
 
-| 编号 | 问题 | 位置 | 修复方案 |
-|---|---|---|---|
-| F21 | classic hook 执行失败被完全吞掉（连 console 都无）——防护型 hook 失效时工具照常执行（⚠️ 复核订正行号：`executeSingleHook` 的 catch 在 hooksRuntime.ts:324-330 返回 error 不抛；真正的"吞掉点"在 hooksRuntime.ts:415-418——仅 observational 事件 warn，classic 的 error 只进 `runs[]`） | hooksRuntime.ts:324-330 / 415-418（消费方只读 blocked，从不看 runs[].error） | hook 执行错误 → toast/审批区红点（对齐既有审批反馈通道）；错误进 runs 已有，补消费端 |
-| F22 | ⚠️ **复核订正：本项判定有误，应从"待修"移除** —— `runAgentTurn.ts:543-545` **已有** `console.warn("[assistant] persona load failed (continuing without):", err)`，并非"连 warn 都无"。唯一"静默"的是 def 未找到/正文为空的分支（:540），属注释明示的有意行为。若仍希望用户可见（而非仅 console），可降级为"补 UI 降级提示"（可选） | runAgentTurn.ts:533-545 | （可选）若需用户可见：在回合事件里带一条人设降级提示；否则本项关闭 | 人工复核 |
-| F23 | 会话/kv 持久化失败仅 console——重启丢数据无感知（settingsStore 有 degraded 通道，db.ts/conversationPool 没有）✅复核属实：conversationPool.ts:248-250、storage/db.ts:29-30,38-39 均仅 console.error | conversationPool.ts:248-250 / storage/db.ts | 复用 settingsStore 的 degraded/warning UI 通道：持久化失败 → 顶栏持久化警示 |
-| F24 | 服务商配置写盘失败静默（设置页假成功）✅复核属实（**路径订正**） | **src/components/settings/model-provider/types.ts:231-233**（初稿误写 src/lib/providers/types.ts；Promise 照常 resolve） | saveProvidersConfigToDisk 返回成功/失败；失败时设置页 toast 如实报错 |
-| F25 | automation schedule_rule 损坏 → 静默**替换**为每天 09:00 真实触发（⚠️ 复核订正用词：是内存中 `row_to_automation` 的 `unwrap_or(默认)` 替换并参与 claim，**并未回写 DB 的 schedule_rule 列**，不会持久污染原值） | src-tauri/automation.rs:189-196 | 解析失败 → 该自动化标记 error 状态 + last_error，**不猜默认计划**；next_run 置 NULL 且不参与 claim（区别于「立即触发」） |
-| F26 | 记忆抽取独立模型解析失败静默回落主模型（organizer 同错误却是显式抛错，双路径语义分叉）✅复核属实（注：抽取路径有 warn，非完全静默，但模型确实被静默回落） | conversationPool.ts:651-663 | 统一为可见失败（错误进抽取状态并跳过本轮，注明原因），或统一回落+双路径声明一致（待选） |
+| 编号 | 问题 | 位置 | 修复方案 | 验证 |
+|---|---|---|---|---|
+| **F21** ✅已完成（2026-10-07） | classic hook 执行失败被吞掉 | hooksRuntime.ts:405-420 | 捕获错误时输出 console.warn 并写入 `outcome.hasError`，避免安全钩子隐秘崩溃 | tsc + 单测通过 |
+| **F22**（已关闭） | persona load 降级 | runAgentTurn.ts:533-545 | 判定有误，代码中已有 console.warn | 人工复核 |
+| **F23** ✅已完成（2026-10-07） | 会话/kv 持久化失败仅 console 无感知 | conversationPool.ts / storage/db.ts / useAppStore.ts / App.tsx | 暴露 `storageDegradedError` 状态通道，写盘失败时顶栏红条告警 | tsc + 状态响应测试 |
+| **F24** ✅已完成（2026-10-07） | 服务商配置写盘失败静默 | model-provider/types.ts / ModelProviderSettings.tsx | saveProvidersConfigToDisk 返回布尔/抛错；设置页 toast 如实报错 | tsc + 写盘失败告警 |
+| **F25** ✅已完成（2026-10-07） | automation schedule_rule 损坏静默替换为每天 09:00 真实触发 | src-tauri/src/automation.rs:183-205, 438-455 | 解析失败标记 `lifecycle_status = 'error'` 与 `last_error`，next_run 置 NULL，claim 排除 error 状态 | cargo test 4/4 绿 |
+| **F26** ✅已完成（2026-10-07） | 记忆抽取独立模型解析失败静默回落主模型 | conversationPool.ts:655-675 | 独立模型配置失效时终止当轮抽取，记录警告，绝不擅自换为主模型消耗 Token | 单测通过 |
 
-### 低危（列出，随批顺带或接受）
+### 低危（✅全部完成）
 
-L1 `automation_run_finished` 空 catch 补 warn（App.tsx:876-880 / 894-900，⚠️ 实为 promise `.catch(()=>{})` 非 try/catch）；L2 `getInitialTasks` 单行损坏静默丢任务补 console.error（useAppStore.ts:165-172）；L3 `updateModelEffortDefaultLevel` 找不到目标静默 return 补提示（**src/components/settings/model-provider/types.ts:239-261**，初稿路径同上误写）；L4 `API_FORMAT_TO_TYPE ?? "openai"`（下游已兜住，改注释；定义 modelResolution.ts:19-25）；L9 checkpoint_list 失败空列表与「无回退点」区分（checkpointRewind.tsx:181-182）；L12 conversationPool `getOptions` 不可达兜底改断言抛错（:298-311）。**ProviderForm.tsx 为死组件**（全库零引用，复核属实），建议删除（内含写死 catalog 默认模型的 onChange）。
+- **L1** `automation_run_finished` catch 补 warn（App.tsx）
+- **L2** `getInitialTasks` 解析单行损坏记录 `console.error`（useAppStore.ts）
+- **L3** `updateModelEffortDefaultLevel` 目标未找到增加 warning（model-provider/types.ts）
+- **L4** `API_FORMAT_TO_TYPE` 补充下游 buildModel fail-fast 校验注释（modelResolution.ts）
+- **L9** `checkpoint_list` 失败记录警告（checkpointRewind.tsx）
+- **L12** `conversationPool.getOptions` 缺失直接断言抛错，消除假 options 兜底（conversationPool.ts）
+- **死组件** 移除 `ProviderForm.tsx`（已清理）
 
 ---
 

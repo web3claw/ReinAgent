@@ -118,6 +118,7 @@ export default function App() {
     selectedProject, setSelectedProject,
     thinkingLevel,
     approvalMode: globalApprovalMode,
+    storageDegradedError,
   } = useAppStore();
 
   // 任务级隔离：推理等级/审批模式优先读活动任务的覆盖，缺省回退全局默认（新任务/草稿档位）。
@@ -316,7 +317,9 @@ export default function App() {
     if (isReasoningSupported) {
       const supported = resolveSupportedEffortLevels(currentModel) as string[];
       const declared = currentModel?.effort;
+      const isLevelSupported = (level: string) => level === "off" || supported.includes(level);
       const resolveNext = (currentLevel: string) => {
+        if (currentLevel === "off") return null;
         if (isModelChanged || !supported.includes(currentLevel)) {
           return (declared?.defaultLevel && supported.includes(declared.defaultLevel))
             ? declared.defaultLevel
@@ -327,8 +330,8 @@ export default function App() {
       if (activeTask) {
         const taskLevel = activeTask.thinkingLevel;
         if (taskLevel !== undefined) {
-          // 只修正「覆盖不再受支持」的任务，绝不冲掉仍受支持的任务级覆盖。
-          if (!supported.includes(taskLevel)) {
+          // 只修正「覆盖不再受支持」的任务，绝不冲掉仍受支持的任务级覆盖（off 档恒支持）。
+          if (!isLevelSupported(taskLevel)) {
             const next = resolveNext(taskLevel);
             if (next) updateTaskThinkingLevel(activeTask.id, next as never);
           }
@@ -336,14 +339,18 @@ export default function App() {
         }
         // 任务未覆盖：跟随全局默认，但要保证全局默认在该模型下受支持（对齐写全局）。
         const globalLevel = useAppStore.getState().thinkingLevel;
-        const next = resolveNext(globalLevel);
-        if (next) useAppStore.getState().setThinkingLevel(next as never);
+        if (!isLevelSupported(globalLevel)) {
+          const next = resolveNext(globalLevel);
+          if (next) useAppStore.getState().setThinkingLevel(next as never);
+        }
         return;
       }
-      // 草稿态：对齐全局默认（原行为）。
+      // 草稿态：对齐全局默认。
       const globalLevel = useAppStore.getState().thinkingLevel;
-      const next = resolveNext(globalLevel);
-      if (next) useAppStore.getState().setThinkingLevel(next as never);
+      if (!isLevelSupported(globalLevel)) {
+        const next = resolveNext(globalLevel);
+        if (next) useAppStore.getState().setThinkingLevel(next as never);
+      }
     }
   }, [activeModelId, isReasoningSupported, currentModel?.effort?.defaultLevel, currentModel?.effort?.supportedLevels, activeTask?.id, activeTask?.thinkingLevel]);
 
@@ -481,7 +488,7 @@ export default function App() {
   }, [effectiveWorkspaceRoot]);
 
   const effectiveThinkingLevel =
-    !isReasoningSupported || activeThinkingLevel === "off" || activeThinkingLevel === "default"
+    !isReasoningSupported || activeThinkingLevel === "default"
       ? undefined
       : activeThinkingLevel;
 
@@ -890,12 +897,61 @@ export default function App() {
   const dispatchAutomationRun = useCallback(
     (payload: AutomationDuePayload) => {
       const store = useAppStore.getState();
-      const providerId = payload.modelProvider || settings.provider || "deepseek";
-      const modelId = payload.modelId || settings.modelId || "";
-      const provider = providers.find((p) => p.id === providerId);
-      // 自动化所用模型的目录元数据（用于真实 contextWindow/maxTokens/supportsImage 透传）
-      const automationModel = provider?.models?.find((m) => m.id === modelId) ?? null;
-      const apiKey = provider?.apiKey ?? settings.apiKey ?? "";
+
+      // F20：供应商与模型同源解析（严禁跨源拼装，No-Fallback）
+      // 1. 优先按自动化指定的 provider 解析，否则使用全局默认 provider
+      let provider = payload.modelProvider
+        ? providers.find((p) => p.id === payload.modelProvider)
+        : null;
+      if (!provider) {
+        const defaultProviderId = settings.provider || "deepseek";
+        provider = providers.find((p) => p.id === defaultProviderId) ?? null;
+      }
+
+      if (!provider) {
+        console.warn(`[automations] provider not found: ${payload.modelProvider || settings.provider}`);
+        void import("@tauri-apps/api/core").then(({ invoke }) =>
+          invoke("automation_run_finished", {
+            runId: payload.runId,
+            status: "failed",
+            taskId: null,
+            error: `服务商「${payload.modelProvider || settings.provider || "default"}」不存在，无法派发。`,
+          }).catch((err) => console.warn("[automations] automation_run_finished failed:", err)),
+        );
+        return;
+      }
+
+      // 2. 解析模型：必须属于该 provider 的 models；未指定或不在列表中时取该 provider 自身的 defaultModelId 或首个模型
+      let modelId = payload.modelId?.trim() || "";
+      let automationModel = modelId ? provider.models?.find((m) => m.id === modelId) ?? null : null;
+      if (!automationModel) {
+        if (provider.defaultModelId && provider.models?.some((m) => m.id === provider.defaultModelId)) {
+          modelId = provider.defaultModelId;
+          automationModel = provider.models.find((m) => m.id === modelId) ?? null;
+        } else {
+          const firstEnabled = provider.models?.find((m) => m.enabled !== false);
+          if (firstEnabled) {
+            modelId = firstEnabled.id;
+            automationModel = firstEnabled;
+          }
+        }
+      }
+
+      if (!modelId || !automationModel) {
+        console.warn(`[automations] model not found for provider ${provider.id}: ${payload.modelId}`);
+        void import("@tauri-apps/api/core").then(({ invoke }) =>
+          invoke("automation_run_finished", {
+            runId: payload.runId,
+            status: "failed",
+            taskId: null,
+            error: `服务商「${provider.name || provider.id}」下未找到可用模型（请求模型: ${payload.modelId || "未指定"}），派发中止。`,
+          }).catch((err) => console.warn("[automations] automation_run_finished failed:", err)),
+        );
+        return;
+      }
+
+      const providerId = provider.id;
+      const apiKey = provider.apiKey ?? "";
       // F5：免 Key 本地网关同样走真实请求（与主对话同口径），仅需 Key 而未配才演示。
       const isDemo = !apiKey.trim() && !providerAllowsMissingApiKey(provider);
       const taskId = store.createTask(
@@ -912,10 +968,10 @@ export default function App() {
           provider: providerId as never,
           apiKey,
           modelId,
-          baseUrl: provider?.baseUrl ?? settings.baseUrl ?? "",
+          baseUrl: provider.baseUrl ?? "",
           // 设置页所选 API 格式 → 真实线上协议（自动化派发与主对话同口径；
           // 缺失时自定义服务商会在 buildModel 处 fail-fast 而非静默套错协议）
-          apiFormat: provider?.apiFormat,
+          apiFormat: provider.apiFormat,
           hasEffort: true,
           // 真实元数据透传（与 buildTurnOptions 同口径，No-Fallback）
           contextWindow: automationModel?.contextWindow ?? null,
@@ -930,7 +986,8 @@ export default function App() {
       });
       if (!accepted) {
         void import("@tauri-apps/api/core").then(({ invoke }) =>
-          invoke("automation_run_finished", { runId: payload.runId, status: "failed", taskId, error: "dispatch rejected" }).catch(() => {}),
+          invoke("automation_run_finished", { runId: payload.runId, status: "failed", taskId, error: "dispatch rejected" })
+            .catch((err) => console.warn("[automations] automation_run_finished failed:", err)),
         );
         return;
       }
@@ -951,7 +1008,7 @@ export default function App() {
             status: outcome,
             taskId,
             error: last.error ?? null,
-          }).catch(() => {}),
+          }).catch((err) => console.warn("[automations] automation_run_finished failed:", err)),
         );
         // 运行结束（结果/错误可能落在列表卡片上）：静默刷新
         void useAutomationStore.getState().refresh(true);
@@ -1717,6 +1774,21 @@ export default function App() {
 
       {/* Main Content Area */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* 持久化故障横幅（F23）：SQLite 或 KV 写盘失败时醒目提示，避免用户误以为数据已安全保存 */}
+        {storageDegradedError ? (
+          <div className="flex items-center justify-between gap-3 bg-red-500/10 border-b border-red-500/30 px-4 py-2 text-xs text-red-600 dark:text-red-400 z-50">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="size-4 shrink-0" />
+              <span className="font-medium">数据持久化异常：{storageDegradedError}</span>
+            </div>
+            <button
+              onClick={() => useAppStore.getState().setStorageDegradedError(null)}
+              className="opacity-70 hover:opacity-100 text-xs underline cursor-pointer"
+            >
+              关闭提示
+            </button>
+          </div>
+        ) : null}
         {/* Topbar */}
         <div className="h-12 border-b border-[var(--border)] flex items-center justify-between px-4 bg-[var(--bg)] flex-shrink-0">
           <div className="flex items-center gap-2">

@@ -64,6 +64,21 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
   const [proxySavedNote, setProxySavedNote] = useState(false);
   const [noProxySavedNote, setNoProxySavedNote] = useState(false);
   const [hideToTray, setHideToTray] = useState(true);
+  useEffect(() => {
+    let mounted = true;
+    invoke<{ enabled: boolean }>("get_hide_to_tray")
+      .then((res) => {
+        if (mounted && typeof res?.enabled === "boolean") {
+          setHideToTray(res.enabled);
+        }
+      })
+      .catch(() => {
+        // web 回退：无 Tauri IPC，保持默认 true
+      });
+    return () => {
+      mounted = false;
+    };
+  }, []);
   // 应用版本号：从 Tauri 运行时读取（源头 = src-tauri/tauri.conf.json 的 version），
   // 前端不再手写第二份（避免版本漂移）。Web 回退（无 Tauri IPC）显示「未知」。
   const [appVersion, setAppVersion] = useState<string>("");

@@ -45,7 +45,6 @@ export type McpServerConfig = {
 
 export type McpSettings = {
   servers: McpServerConfig[];
-  selected: string[];
 };
 
 // ---------------------------------------------------------------------------
@@ -76,19 +75,6 @@ function normalizeRecordStringString(input: unknown): Record<string, string> | u
 function normalizeMcpTransport(input: unknown): McpTransport {
   if (input === "http" || input === "sse" || input === "stdio") return input;
   return "stdio";
-}
-
-function normalizeMcpSelection(input: unknown, servers: McpServerConfig[]): string[] {
-  const valid = new Set(servers.map((server) => server.id).filter(Boolean));
-  const out: string[] = [];
-
-  for (const item of normalizeStringArray(input)) {
-    if (!valid.has(item)) continue;
-    if (out.includes(item)) continue;
-    out.push(item);
-  }
-
-  return out;
 }
 
 function normalizeTimeoutMs(input: unknown): number {
@@ -146,7 +132,6 @@ export function normalizeMcpSettings(input: unknown): McpSettings {
 
   return {
     servers,
-    selected: normalizeMcpSelection(obj.selected, servers),
   };
 }
 
@@ -220,7 +205,7 @@ export function applyMcpOps(prev: McpSettings, ops: McpSettingsOp[]): McpSetting
     servers = applyOp(servers, op);
   }
   if (servers === prev.servers) return prev;
-  return normalizeMcpSettings({ servers, selected: prev.selected });
+  return normalizeMcpSettings({ servers });
 }
 
 /** Servers eligible for dynamic mcp_* tool loading. */

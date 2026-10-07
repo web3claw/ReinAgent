@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { toast } from "../../lw/ui/toast";
 import type { Settings } from "../../../lib/settings/store";
 import type { SettingsStatus } from "../../../lib/settings/useSettings";
 import { ProviderNavigation } from "./ProviderNavigation";
@@ -105,12 +106,19 @@ export function ModelProviderSettings({
   };
 
   // F18：读取失败（loadError）时禁止任何写盘，避免用内存里的空白预设覆盖用户磁盘配置。
+  // F24：保存失败时如实报错，绝不伪装成功。
   const persistProviders = (next: ProviderItem[]) => {
     if (loadError) {
       console.error("[provider_config] 读取失败态下拒绝写盘（保护用户配置）", loadError);
       return;
     }
-    saveProvidersConfigToDisk(next);
+    saveProvidersConfigToDisk(next).catch((err) => {
+      console.error("[provider_config] 保存多服务商配置失败:", err);
+      toast.error(
+        `保存服务商配置到磁盘失败: ${err instanceof Error ? err.message : String(err)}`,
+        { duration: 5000 },
+      );
+    });
   };
 
   const handleUpdateProvider = (updated: ProviderItem) => {

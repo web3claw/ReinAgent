@@ -1,10 +1,6 @@
-import { useEffect, useState, useCallback } from "react";
-import { kvGet, kvSet } from "../lib/storage/db";
-
 export type Theme = "light" | "dark" | "zai-light" | "zai-dark" | "system";
 export type ResolvedTheme = "light" | "dark";
 
-const STORAGE_KEY = "reinagent-preview-theme";
 const BROWSER_THEME_SURFACE_ATTRIBUTE = "data-zcode-browser-theme-surface";
 
 function getSystemTheme(): ResolvedTheme {
@@ -70,41 +66,4 @@ export function applyTheme(theme: Theme) {
   syncBrowserThemeSurface(resolved);
 }
 
-function isTheme(value: string | null): value is Theme {
-  return (
-    value === "light" ||
-    value === "dark" ||
-    value === "zai-light" ||
-    value === "zai-dark" ||
-    value === "system"
-  );
-}
 
-export function useTheme() {
-  const [theme, setThemeState] = useState<Theme>(() => {
-    const saved = kvGet(STORAGE_KEY);
-    // 默认主题统一收敛到 Zai dark，避免旧 hook 兜底值和 Zustand store 默认值分叉。
-    return isTheme(saved) ? normalizeThemePreference(saved) : "zai-dark";
-  });
-
-  const setTheme = useCallback((t: Theme) => {
-    const normalizedTheme = normalizeThemePreference(t);
-    kvSet(STORAGE_KEY, normalizedTheme);
-    setThemeState(normalizedTheme);
-    applyTheme(normalizedTheme);
-  }, []);
-
-  // 初始化 + system 模式下监听系统偏好变化
-  useEffect(() => {
-    applyTheme(theme);
-
-    if (theme !== "system") return;
-
-    const mq = window.matchMedia("(prefers-color-scheme: dark)");
-    const handler = () => applyTheme("system");
-    mq.addEventListener("change", handler);
-    return () => mq.removeEventListener("change", handler);
-  }, [theme]);
-
-  return { theme, setTheme } as const;
-}

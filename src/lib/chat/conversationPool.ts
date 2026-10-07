@@ -18,7 +18,7 @@ import type { ChatState, TimelineEntry } from "./conversationModel";
 import { initialState, restoreState } from "./conversationModel.js";
 import { diagnoseError } from "./errors.js";
 import { runAgentTurn } from "../providers/runAgentTurn";
-import type { AgentSource, ApprovalCoordinator, ApprovalDecision } from "../providers/runAgentTurn";
+import type { ApprovalCoordinator, ApprovalDecision } from "../providers/runAgentTurn";
 import { invoke } from "@tauri-apps/api/core";
 import { loadProvidersConfigFromDisk } from "../../components/settings/model-provider/types";
 import { readPromptCeiling, recordPromptCeiling } from "./promptCeiling";
@@ -246,9 +246,13 @@ function schedulePersist(entry: PoolEntry) {
     entry.persistTimer = null;
     const messages = entry.state.messages;
     const payload = messages.map((m, seq) => serializeEntry(m, seq));
-    invoke("conversation_sync", { taskId: entry.taskId, messages: payload }).catch((err) =>
-      console.error(`[pool] conversation_sync failed for ${entry.taskId}:`, err),
-    );
+    invoke("conversation_sync", { taskId: entry.taskId, messages: payload }).catch((err) => {
+      const msg = `会话持久化失败 (${entry.taskId}): ${err instanceof Error ? err.message : String(err)}`;
+      console.error(`[pool] conversation_sync failed for ${entry.taskId}:`, err);
+      import("../../store/useAppStore").then(({ useAppStore }) => {
+        useAppStore.getState().setStorageDegradedError(msg);
+      }).catch(() => {});
+    });
   }, PERSIST_DEBOUNCE_MS);
 }
 
@@ -303,17 +307,11 @@ function createEntry(taskId: string): PoolEntry {
     runAgentTurn,
     getOptions: () => {
       // options 由 pool.send 在每次发送时注入（活跃任务发送前更新）。
-      // 兜底形状仅占位（该路径在 App 的 send 前必被注入，实际不可达）。
-      return (
-        entry.sendOptions ?? {
-          source: "faux" as AgentSource,
-          config: { apiKey: "", modelId: "" },
-          systemPrompt: "",
-          maxSteps: undefined,
-          workspaceRoot: undefined,
-          thinkingLevel: undefined,
-        }
-      );
+      // No-Fallback：若缺失直接抛错，严禁伪造假 options 对象。
+      if (!entry.sendOptions) {
+        throw new Error(`[pool] getOptions: entry.sendOptions is undefined for task ${entry.taskId}`);
+      }
+      return entry.sendOptions;
     },
   });
   // 异步水合：从 SQLite 分页载入历史（P2-A1b：默认最新 500 条——超长会话不出
@@ -650,10 +648,11 @@ async function maybeExtractMemory(taskId: string, entry: PoolEntry): Promise<voi
     if (!options || options.source === "faux") return; // 测试模型不产记忆
     const config = options.config;
     const fallbackConfigReady = Boolean(config?.apiKey && config?.modelId);
-    // 独立模型优先（供应商不存在/未配置 → null → 回落主模型）
+    // 独立模型优先（未配置独立模型 → null → 回落主模型；配置了但解析失败 → 抛错 → 终止抽取）
     let independent: Awaited<
       ReturnType<typeof import("../memory/modelResolution").resolveIndependentMemoryModelDeps>
     > | null = null;
+    let independentModelFailed = false;
     try {
       const { useHubSettings } = await import("../../store/hubSettingsStore");
 
@@ -663,10 +662,13 @@ async function maybeExtractMemory(taskId: string, entry: PoolEntry): Promise<voi
         m.resolveIndependentMemoryModelDeps(memory, providers),
       );
     } catch (err) {
-      // 独立模型解析失败（如 API Key 为空）：如实上抛语义太重会打断聊天终态流，
-      // 记错误后回落主模型；App 层 organizer 路径同错误会直接抛（那里的失败必须可见）。
-      console.warn("[pool] independent memory model resolution failed, falling back:", err);
+      // F26：用户显式配置了独立记忆模型但解析失败（如 Key 为空或模型被禁用）：
+      // 严禁静默偷换为主模型消费（No-Fallback，避免消耗昂贵主模型 Token）；
+      // 记录明确警告并终止本轮抽取。
+      independentModelFailed = true;
+      console.warn("[pool] 独立记忆模型配置失效，按 No-Fallback 铁律跳过本轮抽取，不静默回落主模型:", err);
     }
+    if (independentModelFailed) return;
     if (!independent && !fallbackConfigReady) return;
     const { getStreamFnForApi } = await import("../providers/runAgentTurn");
     const { requestMemoryExtraction } = await import("./memory/extractionController");

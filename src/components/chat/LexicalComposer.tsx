@@ -119,12 +119,13 @@ export interface LexicalComposerProps {
 }
 
 interface ThinkingOption {
-  level: "default" | "low" | "medium" | "high" | "xhigh" | "max";
+  level: "off" | "default" | "low" | "medium" | "high" | "xhigh" | "max";
   label: string;
   steps: number;
 }
 
 const THINKING_OPTIONS: ThinkingOption[] = [
+  { level: "off", label: "Off", steps: 0 },
   { level: "default", label: "Default", steps: 100 },
   { level: "low", label: "Low", steps: 200 },
   { level: "medium", label: "Medium", steps: 300 },
@@ -1413,9 +1414,9 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
               const isEffortSupported = true;
               const supportedList = resolveSupportedEffortLevels(currentModel);
 
-              // 声明了 supportedLevels 的模型仍严格按声明过滤（不臆测加档）
+              // 声明了 supportedLevels 的模型仍严格按声明过滤（不臆测加档；off 档恒保留供用户主动关闭）
               const visibleOptions = THINKING_OPTIONS.filter(
-                (opt) => supportedList.includes(opt.level as any)
+                (opt) => opt.level === "off" || supportedList.includes(opt.level as any)
               );
 
               const currentOpt =
