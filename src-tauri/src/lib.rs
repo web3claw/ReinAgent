@@ -33,7 +33,7 @@ mod app_tray;
 mod app_proxy;
 mod llm_proxy;
 mod hide_to_tray;
-mod updater;
+mod self_update;
 #[cfg(test)]
 mod git_panel_tests;
 #[cfg(test)]
@@ -118,7 +118,8 @@ pub fn run() {
             .plugin(tauri_plugin_store::Builder::new().build())
             .plugin(tauri_plugin_notification::init())
             .plugin(tauri_plugin_process::init())
-            .plugin(tauri_plugin_updater::Builder::new().build())
+            // 自更新不走 tauri-plugin-updater（它只会下载安装包再交系统安装器）。
+            // 本项目分发裸二进制 / macOS .app zip，替换逻辑见 self_update.rs。
             // 麦克风权限默认放行：WebKitGTK 对 getUserMedia 请求**默认拒绝**（Linux 取流
             // 直接 NotAllowedError），WebView2 则弹「是否允许录音」询问框。显式 Allow
             // 让两端都静默放行语音输入；其余权限（摄像头/定位/通知等）保持各平台默认。
@@ -147,6 +148,9 @@ pub fn run() {
                 let _ = window.set_title("ReinAgent (dev)");
             }
         }
+        // 自更新遗留清理：上次更新移走的旧 exe（Windows 运行中被占用删不掉）与
+        // 中断的 .new 下载残留——此时新进程已就位，旧 exe 一般已退出。
+        self_update::cleanup_stale();
         // 恢复「关闭时隐藏到托盘」设置（缺省开启）
         hide_to_tray::restore_hide_to_tray();
         // LLM 流式本地反代：SDK 出站走 127.0.0.1 反代直连上游（绕开 webview 网络栈
@@ -262,8 +266,8 @@ pub fn run() {
             plugins::plugin_install_from_git,
             system_info::system_info,
             plugins::plugin_uninstall,
-            updater::update_check,
-            updater::update_install,
+            self_update::update_check,
+            self_update::update_install,
             usage_stats::usage_snapshot,
             usage_stats::usage_reset,
             fs_base64::fs_read_base64_file,

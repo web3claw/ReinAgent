@@ -1451,3 +1451,49 @@ ReinAgent 架构全景
 - **验证**：`tsc` 0；新增单测 `src/lib/stt/pushToTalk.test.mjs`（3 例：物理键位命中、code 缺失回退、
   左键/异键不命中）已接入 `test:chat`，chat 168 / providers 38 / settings 6 全绿；dev 构建启动正常。
   **真机长按取流实测同受上条环境限制未完成**（webview 非 X 子窗口，无法注入按键）。
+
+### CI 自动构建与自更新（2026-10-08 定稿；照搬 yetone/magpie 的自更新模型）
+
+**分发形态（用户定稿：要单文件裸二进制，不要安装包）**
+- Windows / Linux：`tauri build --no-bundle` 出**裸二进制**，文件名
+  `ReinAgent-windows-{amd64,arm64}.exe`、`ReinAgent-linux-{amd64,arm64}`（免安装）。
+- macOS：`.app` + `.dmg`（给人下载）+ `.app` 的 **zip**（`ReinAgent-darwin-{arm64,amd64}.zip`，
+  供程序自更新解包替换）——与 magpie 完全一致（magpie 也是 dmg 给人下、zip 给自更新）。
+- ⚠ 代价（分发裸二进制必然）：Windows 用户需机器已有 WebView2 与 VC 运行时；Linux 用户需系统
+  已装 GTK3 + WebKitGTK 4.1（`ldd` 显示裸二进制有 124 个动态依赖，非自包含）。
+
+**不用 tauri-plugin-updater**
+- 已移除依赖、`.plugin()` 注册、`plugins.updater`（含 pubkey）与 `createUpdaterArtifacts`。
+  原因：插件只会下载**安装包**再交系统安装器，与「裸二进制原地替换」不兼容。
+- `tauri.conf.json` 的 `bundle.targets` 收敛为 `["app","dmg"]`（仅 macOS 本地打包用）。
+
+**自更新实现 `src-tauri/src/self_update.rs`（对齐 magpie `internal/update`）**
+- 更新源：自建 `latest.json`（Release asset），格式 `{version, notes, pub_date,
+  assets:{文件名:{url,size,sha256}}}`；默认 `releases/latest/download/latest.json`。
+- 校验：仅 SHA-256（magpie 裸二进制同此；其 macOS 另有 codesign，本项目未签名故略去）。
+- 裸二进制替换：下到同目录 `<exe>.new` → 校验 → Windows 先 `rename(exe → exe.old)` 再
+  `rename(.new → exe)`（运行中的 exe 不能覆盖但可改名）；Linux 直接原子 rename；失败回滚。
+- macOS：下载 zip → 解压到 `.ReinAgent-update/` → `rename(bundle → old.app)` →
+  `rename(staged → bundle)`；zip 顶层须为 `ReinAgent.app`。
+- 清理：`cleanup_stale()` 在 setup 调用，删上次遗留的 `.old`/`.old-N`（Windows 运行中被占用
+  删不掉，留到下次启动）与中断的 `.new`。
+- 版本比较：内置简易 semver（支持预发布，正式版 > 同号预发布）。
+- 命令：`update_check` / `update_install`（返回字段 `hasUpdate/currentVersion/...`）。
+
+**CI `.github/workflows/release.yml`**
+- 推 `v*` tag 或手动 `workflow_dispatch`；六平台矩阵（macOS arm64/intel、Windows amd64/arm64、
+  Linux amd64/arm64，arm64 用 `windows-11-arm` / `ubuntu-22.04-arm`）。
+- `build` job 各平台构建 + 归档产物（`actions/upload-artifact`）；`release` job 汇总 → 计算
+  SHA256 生成 `latest.json` → `softprops/action-gh-release` 发布（含 latest.json）。
+- **无需任何签名 secret**（校验仅 SHA-256）。
+
+**客户端（半自动）**：`AppUpdaterCard` 启动静默 `update_check`（默认源），发现新版弹常驻 toast
+（动作按钮 invoke `update_install`）；**不自动下载**。启动检查失败静默（未发 Release 时 404 属预期）；
+设置页手动检查仍如实报错。源留空即用默认（kv `reinagent-update-endpoint` 覆盖）。
+
+**未签名**：macOS dmg/zip 无签名公证（首次需右键 → 打开）；Windows/Linux 亦未签名。
+
+**验证**：`tsc` 0；`cargo check` 0 警告；Rust 单测 `self_update` 2 例通过（版本比较 / asset 命名）；
+`test:chat` 168 / `test:providers` 38 绿；workflow YAML 解析通过、六平台矩阵齐全；
+latest.json 生成脚本本地演练通过（文件名与 `asset_name()` 预期一一对应）。
+**端到端未验证**：需真实推 tag 触发 CI 才能确认产物与替换流程（尚未做）。

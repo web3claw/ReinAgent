@@ -1,0 +1,213 @@
+name: Release
+
+# 推 v* tag（或手动触发）→ 六平台构建 → 汇总产物 + SHA256 → 生成 latest.json
+# → 发布到 GitHub Releases。
+#
+# 分发形态（不用 tauri-plugin-updater，自更新逻辑见 src-tauri/src/self_update.rs）：
+# - Windows / Linux：`--no-bundle` 出的**裸二进制**（免安装，双击/直接运行）
+# - macOS：`.app` + `.dmg`（给人下载）+ `.app` 的 **zip**（给程序自更新解包替换）
+#
+# latest.json 格式（自更新模块消费）：
+#   { version, notes, pub_date, assets: { 文件名: { url, size, sha256 } } }
+#
+# 无需任何签名 secret（校验仅 SHA-256，与 magpie 一致）。
+# macOS 为未签名 dmg/zip（用户首次需右键 → 打开绕过 Gatekeeper）。
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要发布的 tag（如 v0.1.3）；留空则用 tauri.conf.json 的 version"
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            os_name: darwin
+            arch: arm64
+          - platform: macos-15-intel
+            target: x86_64-apple-darwin
+            os_name: darwin
+            arch: amd64
+          - platform: windows-latest
+            target: x86_64-pc-windows-msvc
+            os_name: windows
+            arch: amd64
+          - platform: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            os_name: windows
+            arch: arm64
+          - platform: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            os_name: linux
+            arch: amd64
+          - platform: ubuntu-22.04-arm
+            target: aarch64-unknown-linux-gnu
+            os_name: linux
+            arch: arm64
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.2"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install Linux dependencies
+        if: startsWith(matrix.platform, 'ubuntu')
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf \
+            libgtk-3-dev file
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      # ---------- 构建 ----------
+
+      # macOS：出 app + dmg（dmg 给人下载），再把 .app 打包成 zip 供自更新
+      - name: Build (macOS)
+        if: matrix.os_name == 'darwin'
+        run: bunx tauri build --target ${{ matrix.target }} --bundles app,dmg
+
+      - name: Package macOS artifacts
+        if: matrix.os_name == 'darwin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="src-tauri/target/${{ matrix.target }}/release/bundle"
+          APP="$BASE/macos/ReinAgent.app"
+          mkdir -p dist
+          # 自更新用 zip（--keepParent 保留顶层 ReinAgent.app，供解包后定位）
+          ditto -c -k --keepParent "$APP" "dist/ReinAgent-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
+          # 给人下载的未签名 dmg
+          cp "$BASE"/dmg/*.dmg "dist/ReinAgent-${{ matrix.os_name }}-${{ matrix.arch }}.dmg"
+          ls -la dist
+
+      # Windows / Linux：裸二进制（--no-bundle）
+      - name: Build (Windows / Linux)
+        if: matrix.os_name != 'darwin'
+        shell: bash
+        run: bunx tauri build --target ${{ matrix.target }} --no-bundle
+
+      - name: Package Windows / Linux artifacts
+        if: matrix.os_name != 'darwin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          if [ "${{ matrix.os_name }}" = "windows" ]; then
+            SRC="src-tauri/target/${{ matrix.target }}/release/ReinAgent.exe"
+            cp "$SRC" "dist/ReinAgent-windows-${{ matrix.arch }}.exe"
+          else
+            SRC="src-tauri/target/${{ matrix.target }}/release/ReinAgent"
+            cp "$SRC" "dist/ReinAgent-linux-${{ matrix.arch }}"
+            chmod +x "dist/ReinAgent-linux-${{ matrix.arch }}"
+          fi
+          ls -la dist
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-${{ matrix.os_name }}-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-22.04
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Resolve version and tag
+        id: meta
+        run: |
+          set -euo pipefail
+          VERSION=$(python3 -c "import json;print(json.load(open('src-tauri/tauri.conf.json'))['version'])")
+          TAG="${{ inputs.tag }}"
+          if [ -z "$TAG" ]; then
+            if [ "${GITHUB_REF_TYPE}" = "tag" ]; then TAG="${GITHUB_REF_NAME}"; else TAG="v${VERSION}"; fi
+          fi
+          # 若手填 tag 带 v 前缀，版本号取其去掉 v 的部分
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          ls -la dist
+
+      - name: Generate latest.json
+        run: |
+          set -euo pipefail
+          python3 - "${{ steps.meta.outputs.version }}" "${{ steps.meta.outputs.tag }}" > latest.json <<'PY'
+          import hashlib, json, os, sys, datetime
+          version, tag = sys.argv[1], sys.argv[2]
+          repo = os.environ["GITHUB_REPOSITORY"]
+          base = f"https://github.com/{repo}/releases/download/{tag}"
+          assets = {}
+          for name in sorted(os.listdir("dist")):
+              path = os.path.join("dist", name)
+              if not os.path.isfile(path):
+                  continue
+              data = open(path, "rb").read()
+              assets[name] = {
+                  "url": f"{base}/{name}",
+                  "size": len(data),
+                  "sha256": hashlib.sha256(data).hexdigest(),
+              }
+          doc = {
+              "version": version,
+              "notes": f"ReinAgent {tag}",
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "assets": assets,
+          }
+          print(json.dumps(doc, indent=2, ensure_ascii=False))
+          PY
+          echo "=== latest.json ==="
+          cat latest.json
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.meta.outputs.tag }}
+          name: "ReinAgent ${{ steps.meta.outputs.tag }}"
+          draft: false
+          prerelease: false
+          body: |
+            ReinAgent ${{ steps.meta.outputs.tag }}
+
+            Windows / Linux 为免安装裸二进制；macOS 为 dmg（安装）与 zip（应用内自更新用）。
+            已安装的 ReinAgent 启动时会自动检查更新。
+          files: |
+            dist/*
+            latest.json
