@@ -1620,3 +1620,11 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 ### v0.1.7 发布（2026-10-09）
 - **版本号升级**：全套升级至 `v0.1.7`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`）。
 - **包含功能**：包含启动自动检测更新、静默自动下载、左下角版本号动态状态机（进度圈百分比 / 绿色重启更新圆纽 / 黄色感叹号重试）及关于页交互优化。
+
+### v0.1.8 发布（2026-10-09）
+- **版本号升级**：全套升级至 `v0.1.8`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`、`useAppUpdateStore.test.mjs`）。
+- **Linux 桌面图标与单实例穿透加固（彻底修复重启生成齿轮图标 & 点击 R 图标无法呼出软件问题）**：
+  - `main.rs` 与 `lib.rs` 显式固定 Linux GTK `prgname` 与应用名为 `ReinAgent`；
+  - `tauri.conf.json` 启用 `app.enableGTKAppId = true`，确保窗口类名与 `.desktop` 快捷方式的 `StartupWMClass=ReinAgent` 100% 精确契合，彻底根除自更新重启后生成齿轮图标问题；
+  - 单实例唤醒在 Linux 下增加短暂置顶穿透（`set_always_on_top` 短闪还原），冲破 GNOME 焦点防窃取，确保再次点击启动时能将后台已有窗口强制弹至桌面最前端。
+

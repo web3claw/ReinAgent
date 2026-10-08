@@ -6,7 +6,7 @@ describe("useAppUpdateStore", () => {
     useAppUpdateStore.setState({
       status: "idle",
       percent: 0,
-      currentVersion: "0.1.7",
+      currentVersion: "0.1.8",
       availableVersion: undefined,
       notes: undefined,
       errorMessage: undefined,
@@ -18,7 +18,7 @@ describe("useAppUpdateStore", () => {
     const state = useAppUpdateStore.getState();
     expect(state.status).toBe("idle");
     expect(state.percent).toBe(0);
-    expect(state.currentVersion).toBe("0.1.7");
+    expect(state.currentVersion).toBe("0.1.8");
     expect(state.hasAutoChecked).toBe(false);
   });
 

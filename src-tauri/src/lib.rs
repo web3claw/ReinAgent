@@ -79,6 +79,11 @@ pub fn run() {
     if std::env::var("GDK_BACKEND").unwrap_or_default() != "x11" {
         std::env::set_var("GDK_BACKEND", "x11");
     }
+    #[cfg(target_os = "linux")]
+    {
+        gtk::glib::set_prgname(Some("ReinAgent"));
+        gtk::glib::set_application_name("ReinAgent");
+    }
     with_window_state(
         tauri::Builder::default()
             // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；
@@ -95,21 +100,17 @@ pub fn run() {
                                 let _ = window.show();
                                 let _ = window.unminimize();
                                 let _ = window.set_focus();
+                                #[cfg(target_os = "linux")]
+                                {
+                                    // 穿透 GNOME 焦点防窃取：短暂置顶后恢复正常层级
+                                    let _ = window.set_always_on_top(true);
+                                    let _ = window.set_always_on_top(false);
+                                }
                             }
                         }
                     },
                 );
-                // dev 与 release 用不同的实例名（仅 Linux）：同一通道仍互斥（两个 dev
-                // 或两个 release 各自互斥），但 dev 可与 release 同时启动调试。
-                // dbus_id 是 Linux 专用旋钮——Windows/macOS 的插件实现由 bundle
-                // identifier 派生互斥名（无自定义入口），跨通道共存仅 Linux 支持。
-                if cfg!(all(target_os = "linux", debug_assertions)) {
-                    single_instance
-                        .dbus_id("com.web3claw.reinagent.dev")
-                        .build()
-                } else {
-                    single_instance.build()
-                }
+                single_instance.build()
             })
             .manage(TerminalState::default())
             .manage(std::sync::Arc::new(stt::SttManager::default()))
