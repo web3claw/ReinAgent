@@ -98,6 +98,13 @@ export function parseProviderRawModels(data: unknown): ModelItem[] {
             supportsImage = modalities.some(
               (m) => typeof m === "string" && m.toLowerCase().includes("image")
             );
+          } else if (modalities && typeof modalities === "object") {
+            const inputList = (modalities as Record<string, unknown>).input;
+            if (Array.isArray(inputList)) {
+              supportsImage = inputList.some(
+                (m) => typeof m === "string" && m.toLowerCase().includes("image")
+              );
+            }
           }
         }
 

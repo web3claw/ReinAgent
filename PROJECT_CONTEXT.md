@@ -405,6 +405,7 @@ ReinAgent 架构全景
   - `parseProviderRawModels` 完整真实提取 `supportedLevels` 与 `defaultLevel`，写入 `ModelItem.effort`；
   - 若上游未提供，严格保留为 `undefined`，绝不凭模型名瞎猜或预设假数据；
 - `mergeFetchedModels` 增量更新时，真实同步服务端的 `effort`、`contextWindow`、`maxOutputTokens` 与 `supportsImage`。
+- **视觉能力解析（`parseProviderRawModels`）**：支持布尔值 `supports_images / supports_image`、数组形态 `input_modalities / modalities: ["text", "image"]`，以及 OpenAI/Magpie 标准对象形态 `modalities: { input: ["text", "image"] }`（检查 `input` 数组包含 `"image"`）。保留真实解析，上游未声明时保留为 `undefined`。
 
 ### 2. 模型编辑弹窗交互规范（Pill Button Group）
 - 在 `ModelEditModal.tsx` 中配置推理等级：
@@ -1493,10 +1494,27 @@ ReinAgent 架构全景
 
 **未签名**：macOS dmg/zip 无签名公证（首次需右键 → 打开）；Windows/Linux 亦未签名。
 
-**验证**：`tsc` 0；`cargo check` 0 警告；Rust 单测 `self_update` 2 例通过（版本比较 / asset 命名）；
-`test:chat` 168 / `test:providers` 38 绿；workflow YAML 解析通过、六平台矩阵齐全；
-latest.json 生成脚本本地演练通过（文件名与 `asset_name()` 预期一一对应）。
-**端到端未验证**：需真实推 tag 触发 CI 才能确认产物与替换流程（尚未做）。
+**自更新流加固与进度反馈（2026-10-08，Linux 截断 SIGSEGV 根治）**：
+- **截断与损坏成因**：历史版本在流式下载时无单 chunk 超时与断流保护，若因网络抖动中断落盘可能缺少尾部段表，运行截断的 ELF 导致动态链接器报 `SIGSEGV (Address boundary error)`。
+- **全流程原子安全加固 (`self_update.rs`)**：
+  1. 下载前生成同路径 `.part` 临时文件，中断或失败立刻清理，并在 `cleanup_stale()` 启动时自动清理历史残余 `.part`。
+  2. 下载客户端配置 10 分钟全局超时，chunk 读取循环引入 30 秒超时保护，彻底消除连接假死挂起。
+  3. 严格校验实际写入字节数与 `asset.size`（严禁字节不符），严格比对 SHA-256 哈希。
+  4. **裸二进制合法性预检 (`verify_executable_binary`)**：在转正前对可执行文件进行二进制结构校验：
+     - Linux：ELF 魔数校验 (`\x7fELF`)，64位小端 ELF 校验段表尾部偏移 `e_shoff + e_shentsize * e_shnum <= file_size`，截断文件在转正前立刻阻断；
+     - Windows：PE DOS 魔数 (`MZ`) 及 PE 签名偏移校验。
+  5. 只有所有预检全部通过才重命名转正为目标可执行文件并赋予执行权限；发生任何异常立刻清理临时文件并如实向用户提示完整错误。
+- **实时进度反馈与交互升级 (`AppUpdaterCard.tsx` + `SettingsPage.tsx`)**：
+  1. 后端下载循环通过 Tauri 事件 `update-progress` 实时向前端广播 `UpdateProgressPayload { percent, downloaded, total }`。
+  2. 界面整合：移除原下方独立的「应用更新」卡片及 URL 文本框，默认更新地址固定为 `https://github.com/web3claw/ReinAgent/releases/latest/download/latest.json`；
+  3. 「检查更新」按钮直接移至上方 ReinAgent 版本信息卡片的**右上角**，与应用标题/版本号水平对齐；
+  4. 发现新版本时按钮支持一键「立即更新」，并在描述区下方展现更新日志与安装卡片；
+  5. 点击下载更新后：
+     - 按钮禁用（防止并发重入或重复触发）；
+     - 按钮文本变为「下载中」(`updaterDownloading`)；
+     - 按钮内展示 SVG 圆圈进度条 (`CircularProgress`)，中间实时显示百分比数值 `{percent}%`。
+
+**验证**：`tsc` 0；`cargo check` 0 警告；Rust 单测 `self_update` 6 例全部通过（包含版本比较、产物命名、代理分流、小文件拒绝、截断 ELF 段表检测预检）；`bun test` 492 项全绿。
 
 ### macOS 构建缺口（2026-10-08，待修；v0.1.3 因此暂缓 macOS 发布）
 

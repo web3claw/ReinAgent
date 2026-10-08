@@ -212,6 +212,34 @@ test("parseProviderRawModels: accurately parses supports_images and supports_ima
   assert.equal(parsed[2].supportsImage, true);
 });
 
+test("parseProviderRawModels: accurately parses object-shaped modalities { input: ['text', 'image'] }", async () => {
+  const { parseProviderRawModels } = await import("./fetchModels.ts");
+
+  const payload = {
+    data: [
+      {
+        id: "workbuddy/deepseek-v4.1-flash",
+        name: "DeepSeek v4.1 Flash",
+        modalities: {
+          input: ["text", "image"],
+        },
+      },
+      {
+        id: "text-only-model",
+        name: "Text Only",
+        modalities: {
+          input: ["text"],
+        },
+      },
+    ],
+  };
+
+  const parsed = parseProviderRawModels(payload);
+  assert.equal(parsed.length, 2);
+  assert.equal(parsed[0].supportsImage, true);
+  assert.equal(parsed[1].supportsImage, false);
+});
+
 
 // ---- 需求 2026-10-05：模型列表请求头统一附带 Authorization: Bearer ----
 

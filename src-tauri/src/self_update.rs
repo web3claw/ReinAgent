@@ -63,6 +63,15 @@ pub struct UpdateCheckResult {
     pub pub_date: Option<String>,
 }
 
+/// 下载进度通知负载（前端监听 "update-progress" 事件）
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateProgressPayload {
+    pub percent: u32,
+    pub downloaded: u64,
+    pub total: u64,
+}
+
 // ---------------- 平台/产物命名 ----------------
 
 fn arch_tag() -> &'static str {
@@ -171,11 +180,14 @@ pub fn macos_bundle() -> Option<PathBuf> {
 
 // ---------------- 启动时清理上次遗留（Windows 关键） ----------------
 
-/// 清理上次更新留下的 `<exe>.old`（仍被占用则留待下次）与重复的 `<exe>.new`。
+/// 清理上次更新留下的 `<exe>.old`（仍被占用则留待下次）与重复的 `<exe>.new`、`.part`。
 /// 在 setup 里调用（此时新进程已就位，旧 exe 一般已退出）。
 pub fn cleanup_stale() {
     if let Ok(exe) = current_exe() {
         let _ = std::fs::remove_file(old_path_str(&exe));
+        let _ = std::fs::remove_file(new_path(&exe));
+        let _ = std::fs::remove_file(part_path(&new_path(&exe)));
+        let _ = std::fs::remove_file(part_path(&exe));
         // .old-2、.old-3…
         if let (Some(dir), Some(name)) = (exe.parent(), exe.file_name().and_then(|s| s.to_str())) {
             if let Ok(entries) = std::fs::read_dir(dir) {
@@ -189,15 +201,17 @@ pub fn cleanup_stale() {
             }
         }
     }
-    // 上次下载失败/中断留下的 .new
-    if let Ok(exe) = current_exe() {
-        let _ = std::fs::remove_file(new_path(&exe));
-    }
 }
 
 fn new_path(exe: &Path) -> PathBuf {
     let mut s = exe.as_os_str().to_os_string();
     s.push(".new");
+    PathBuf::from(s)
+}
+
+fn part_path(dest: &Path) -> PathBuf {
+    let mut s = dest.as_os_str().to_os_string();
+    s.push(".part");
     PathBuf::from(s)
 }
 
@@ -235,7 +249,9 @@ fn old_path_str(exe: &Path) -> PathBuf {
 fn build_client(for_url: &str) -> Result<reqwest::Client, String> {
     let (proxy_url, _no_proxy) = crate::app_proxy::read_proxy_settings();
     let proxy_trimmed = proxy_url.trim();
-    let mut builder = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(20));
+    let mut builder = reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .timeout(std::time::Duration::from_secs(600));
 
     let bypass = crate::web_tools::url_bypasses_proxy(for_url);
     if proxy_trimmed.is_empty() || bypass {
@@ -313,10 +329,16 @@ pub async fn update_check(app: tauri::AppHandle, args: UpdateArgs) -> Result<Upd
 }
 
 async fn download_to(
+    app: &tauri::AppHandle,
     client: &reqwest::Client,
     asset: &Asset,
     dest: &Path,
 ) -> Result<(), String> {
+    use tauri::Emitter;
+
+    let part = part_path(dest);
+    let _ = std::fs::remove_file(&part);
+
     let mut resp = client
         .get(&asset.url)
         .send()
@@ -328,30 +350,118 @@ async fn download_to(
     if let Some(parent) = dest.parent() {
         std::fs::create_dir_all(parent).map_err(|e| format!("创建下载目录失败：{e}"))?;
     }
-    let mut file = std::fs::File::create(dest).map_err(|e| format!("创建临时文件失败：{e}"))?;
+    let mut file = std::fs::File::create(&part).map_err(|e| format!("创建临时下载文件失败：{e}"))?;
     let mut hasher = Sha256::new();
     let mut written: u64 = 0;
-    while let Some(chunk) = resp.chunk().await.map_err(|e| format!("下载中断：{e}"))? {
+    let total = if asset.size > 0 {
+        asset.size
+    } else {
+        resp.content_length().unwrap_or(0)
+    };
+
+    let mut last_emit = std::time::Instant::now();
+    let mut last_percent = 0u32;
+
+    // 初始 0% 进度通知
+    let _ = app.emit(
+        "update-progress",
+        UpdateProgressPayload {
+            percent: 0,
+            downloaded: 0,
+            total,
+        },
+    );
+
+    loop {
+        // 单 chunk 读取 30 秒超时保护（防止连接假死）
+        let chunk_res = tokio::time::timeout(std::time::Duration::from_secs(30), resp.chunk()).await;
+        let chunk = match chunk_res {
+            Ok(Ok(Some(c))) => c,
+            Ok(Ok(None)) => break,
+            Ok(Err(e)) => {
+                let _ = std::fs::remove_file(&part);
+                return Err(format!("下载数据流中断：{e}"));
+            }
+            Err(_) => {
+                let _ = std::fs::remove_file(&part);
+                return Err("下载数据块读取超时（30秒未收到数据包）".to_string());
+            }
+        };
+
         hasher.update(&chunk);
-        file.write_all(&chunk).map_err(|e| format!("写入临时文件失败：{e}"))?;
+        if let Err(e) = file.write_all(&chunk) {
+            let _ = std::fs::remove_file(&part);
+            return Err(format!("写入临时下载文件失败：{e}"));
+        }
         written += chunk.len() as u64;
+
+        let percent = if total > 0 {
+            ((written as f64 / total as f64) * 100.0).clamp(0.0, 100.0) as u32
+        } else {
+            0
+        };
+
+        // 限频派发更新进度（至少间隔 80ms 或百分比变化）
+        if percent != last_percent
+            && (last_emit.elapsed() >= std::time::Duration::from_millis(80) || percent == 100)
+        {
+            last_percent = percent;
+            last_emit = std::time::Instant::now();
+            let _ = app.emit(
+                "update-progress",
+                UpdateProgressPayload {
+                    percent,
+                    downloaded: written,
+                    total,
+                },
+            );
+        }
     }
-    file.flush().map_err(|e| format!("落盘失败：{e}"))?;
+
+    if let Err(e) = file.flush() {
+        let _ = std::fs::remove_file(&part);
+        return Err(format!("落盘失败：{e}"));
+    }
     drop(file);
 
     let got = hex(&hasher.finalize());
     let want = asset.sha256.trim().to_ascii_lowercase();
     if !want.is_empty() && got != want {
-        let _ = std::fs::remove_file(dest);
+        let _ = std::fs::remove_file(&part);
         return Err(format!("SHA-256 校验失败（期望 {want}，实际 {got}）"));
     }
     if asset.size > 0 && written != asset.size {
-        let _ = std::fs::remove_file(dest);
+        let _ = std::fs::remove_file(&part);
         return Err(format!(
             "文件大小不符（期望 {} 字节，实际 {written} 字节）",
             asset.size
         ));
     }
+
+    // 裸二进制格式合法性预检（防止截断损坏或错误产物）
+    if !dest.extension().map(|e| e == "zip").unwrap_or(false) {
+        if let Err(e) = verify_executable_binary(&part) {
+            let _ = std::fs::remove_file(&part);
+            return Err(format!("二进制合法性预检失败：{e}"));
+        }
+    }
+
+    // 预检全部通过，原子重命名至目标路径
+    std::fs::rename(&part, dest).map_err(|e| {
+        let _ = std::fs::remove_file(&part);
+        format!("完成下载临时文件转正失败：{e}")
+    })?;
+
+    // 派发 100% 结束进度
+    let _ = app.emit(
+        "update-progress",
+        UpdateProgressPayload {
+            percent: 100,
+            downloaded: written,
+            total: if total > 0 { total } else { written },
+        },
+    );
+
     Ok(())
 }
 
@@ -361,6 +471,73 @@ fn hex(bytes: &[u8]) -> String {
         s.push_str(&format!("{b:02x}"));
     }
     s
+}
+
+/// 对下载完成的裸二进制文件进行文件格式与段表完整性预检。
+/// - Linux: 校验 ELF 魔数及 64 位段表（Section Header Table）尾部偏移是否超出文件大小；
+/// - Windows: 校验 MZ 头部及 PE 签名。
+pub fn verify_executable_binary(path: &Path) -> Result<(), String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path)
+        .map_err(|e| format!("无法读取可执行文件进行预检：{e}"))?;
+    let metadata = file
+        .metadata()
+        .map_err(|e| format!("获取文件元数据失败：{e}"))?;
+    let file_len = metadata.len();
+
+    if cfg!(target_os = "linux") {
+        if file_len < 64 {
+            return Err(format!("Linux ELF 二进制过小（仅 {file_len} 字节）"));
+        }
+        let mut header = [0u8; 64];
+        file.read_exact(&mut header)
+            .map_err(|e| format!("读取 ELF 头部失败：{e}"))?;
+
+        if &header[0..4] != b"\x7fELF" {
+            return Err("文件缺少 Linux ELF 魔数头部，不是合法的 Linux 二进制".to_string());
+        }
+
+        // 仅在 64 位 ELF (EI_CLASS = 2) 且小端 (EI_DATA = 1) 时深度校验段表偏移
+        if header[4] == 2 && header[5] == 1 {
+            let e_shoff = u64::from_le_bytes(header[40..48].try_into().unwrap());
+            let e_shentsize = u16::from_le_bytes(header[58..60].try_into().unwrap()) as u64;
+            let e_shnum = u16::from_le_bytes(header[60..62].try_into().unwrap()) as u64;
+
+            if e_shoff > 0 && e_shnum > 0 {
+                let table_end = e_shoff
+                    .checked_add(e_shentsize.saturating_mul(e_shnum))
+                    .ok_or_else(|| "ELF 段表偏移计算溢出".to_string())?;
+                if table_end > file_len {
+                    return Err(format!(
+                        "ELF 段表越界截断（需要至少 {table_end} 字节，文件实际仅 {file_len} 字节）"
+                    ));
+                }
+            }
+        }
+    } else if cfg!(target_os = "windows") {
+        if file_len < 64 {
+            return Err(format!("Windows PE 可执行文件过小（仅 {file_len} 字节）"));
+        }
+        let mut header = [0u8; 64];
+        file.read_exact(&mut header)
+            .map_err(|e| format!("读取 PE DOS 头部失败：{e}"))?;
+
+        if &header[0..2] != b"MZ" {
+            return Err("文件缺少 Windows PE DOS 魔数（MZ），不是合法的 Windows 二进制".to_string());
+        }
+
+        let pe_offset = u32::from_le_bytes(header[0x3c..0x40].try_into().unwrap()) as u64;
+        if pe_offset + 4 <= file_len {
+            use std::io::Seek;
+            if file.seek(std::io::SeekFrom::Start(pe_offset)).is_ok() {
+                let mut pe_sig = [0u8; 4];
+                if file.read_exact(&mut pe_sig).is_ok() && &pe_sig != b"PE\0\0" {
+                    return Err("文件缺少 PE 签名（PE\\0\\0），PE 结构损坏".to_string());
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn set_executable(path: &Path) -> Result<(), String> {
@@ -397,7 +574,7 @@ pub async fn update_install(app: tauri::AppHandle, args: UpdateArgs) -> Result<(
     if cfg!(target_os = "macos") {
         install_macos(&app, &dl_client, asset).await?;
     } else {
-        install_binary(&dl_client, asset).await?;
+        install_binary(&app, &dl_client, asset).await?;
     }
     app.restart();
     #[allow(unreachable_code)]
@@ -405,7 +582,11 @@ pub async fn update_install(app: tauri::AppHandle, args: UpdateArgs) -> Result<(
 }
 
 /// 裸二进制（Windows/Linux）：下到同目录 .new → 校验 → 替换（Windows 先移走旧的）。
-async fn install_binary(client: &reqwest::Client, asset: &Asset) -> Result<(), String> {
+async fn install_binary(
+    app: &tauri::AppHandle,
+    client: &reqwest::Client,
+    asset: &Asset,
+) -> Result<(), String> {
     let exe = current_exe()?;
     if !writable(exe.parent().unwrap_or(Path::new("."))) {
         return Err(format!(
@@ -415,7 +596,7 @@ async fn install_binary(client: &reqwest::Client, asset: &Asset) -> Result<(), S
     }
     let staged = new_path(&exe);
     let _ = std::fs::remove_file(&staged);
-    download_to(client, asset, &staged).await?;
+    download_to(app, client, asset, &staged).await?;
     set_executable(&staged)?;
 
     // Windows：运行中的 exe 不能覆盖，但可改名移走。
@@ -442,7 +623,7 @@ async fn install_binary(client: &reqwest::Client, asset: &Asset) -> Result<(), S
 
 /// macOS：下载 .app zip → 解压到暂存 → 换掉整个 bundle。
 async fn install_macos(
-    _app: &tauri::AppHandle,
+    app: &tauri::AppHandle,
     client: &reqwest::Client,
     asset: &Asset,
 ) -> Result<(), String> {
@@ -456,7 +637,7 @@ async fn install_macos(
     std::fs::create_dir_all(&work).map_err(|e| format!("创建暂存目录失败：{e}"))?;
 
     let zip = work.join("app.zip");
-    download_to(client, asset, &zip).await?;
+    download_to(app, client, asset, &zip).await?;
 
     // 解压（zip crate 已在依赖内）
     let file = std::fs::File::open(&zip).map_err(|e| format!("打开更新包失败：{e}"))?;
@@ -530,4 +711,57 @@ mod tests {
         // 非 http(s) 一律不当作代理目标
         assert!(!crate::web_tools::url_bypasses_proxy("file:///tmp/x"));
     }
+
+    #[test]
+    fn part_path_generation() {
+        let p = PathBuf::from("/path/to/binary");
+        assert_eq!(part_path(&p), PathBuf::from("/path/to/binary.part"));
+    }
+
+    #[test]
+    fn verify_executable_binary_rejects_truncated_file() {
+        let dir = std::env::temp_dir().join("reinagent_test_verify");
+        let _ = std::fs::create_dir_all(&dir);
+        let tiny_file = dir.join("tiny_binary");
+        std::fs::write(&tiny_file, b"too small").unwrap();
+
+        let res = verify_executable_binary(&tiny_file);
+        assert!(res.is_err(), "应拒绝小于 64 字节的坏文件");
+        let _ = std::fs::remove_file(&tiny_file);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn verify_executable_binary_detects_truncated_elf_section_table() {
+        let dir = std::env::temp_dir().join("reinagent_test_verify");
+        let _ = std::fs::create_dir_all(&dir);
+        let elf_file = dir.join("truncated_elf");
+
+        // 构造一个 64 字节的伪 ELF 头部：
+        // 魔数 \x7fELF, EI_CLASS=2 (64-bit), EI_DATA=1 (little-endian)
+        // e_shoff (40..48) = 1000, e_shentsize (58..60) = 64, e_shnum (60..62) = 10
+        // 段表需要 1000 + 64 * 10 = 1640 字节，但文件只有 200 字节
+        let mut data = vec![0u8; 200];
+        data[0..4].copy_from_slice(b"\x7fELF");
+        data[4] = 2; // 64-bit
+        data[5] = 1; // little endian
+        data[40..48].copy_from_slice(&1000u64.to_le_bytes());
+        data[58..60].copy_from_slice(&64u16.to_le_bytes());
+        data[60..62].copy_from_slice(&10u16.to_le_bytes());
+
+        std::fs::write(&elf_file, &data).unwrap();
+        let res = verify_executable_binary(&elf_file);
+        assert!(res.is_err());
+        let err_msg = res.unwrap_err();
+        assert!(err_msg.contains("ELF 段表越界截断"));
+
+        // 构造一个完整大小的 mock 文件：2000 字节，应顺利通过预检
+        let mut valid_data = vec![0u8; 2000];
+        valid_data[..200].copy_from_slice(&data);
+        std::fs::write(&elf_file, &valid_data).unwrap();
+        assert!(verify_executable_binary(&elf_file).is_ok());
+
+        let _ = std::fs::remove_file(&elf_file);
+    }
 }
+

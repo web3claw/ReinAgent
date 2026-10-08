@@ -129,6 +129,8 @@ export const translations = {
     updaterAvailable: "发现新版本 {version}",
     updaterCurrent: "当前版本 {version}",
     updaterInstall: "下载并安装（完成后自动重启）",
+    updaterInstallShort: "立即更新",
+    updaterDownloading: "下载中",
     updaterUpToDate: "已是最新版本（当前 {version}）",
     updaterNoEndpoint: "未配置更新源：留空即使用本仓库默认源，或在上方填入静态 latest.json 的 URL。",
     sttTitle: "语音输入",
@@ -919,6 +921,8 @@ export const translations = {
     updaterAvailable: "Version {version} is available",
     updaterCurrent: "current {version}",
     updaterInstall: "Download & install (restarts when done)",
+    updaterInstallShort: "Update now",
+    updaterDownloading: "Downloading...",
     updaterUpToDate: "Up to date (current {version})",
     updaterNoEndpoint:
       "No update endpoint configured: leave it empty to use this repo's default, or fill in a static latest.json URL above.",

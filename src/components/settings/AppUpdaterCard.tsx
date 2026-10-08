@@ -11,18 +11,17 @@
 
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { RefreshCw, Download } from "lucide-react";
 import { useTranslation } from "../../i18n";
-import { kvGet, kvSet } from "../../lib/storage/db";
 import { toast } from "../lw/ui/toast";
 
-const ENDPOINT_KEY = "reinagent-update-endpoint";
 /** 默认更新源：本仓库 GitHub Releases 的 latest.json（CI 发布时生成）。 */
 export const DEFAULT_UPDATE_ENDPOINT =
   "https://github.com/web3claw/ReinAgent/releases/latest/download/latest.json";
 
 export function defaultUpdateEndpoint(): string {
-  return kvGet(ENDPOINT_KEY)?.trim() || DEFAULT_UPDATE_ENDPOINT;
+  return DEFAULT_UPDATE_ENDPOINT;
 }
 
 interface CheckResult {
@@ -33,19 +32,121 @@ interface CheckResult {
   pubDate?: string;
 }
 
-export function AppUpdaterCard() {
+interface UpdateProgressPayload {
+  percent: number;
+  downloaded: number;
+  total: number;
+}
+
+/** 圆圈进度条组件（中间显示百分比数值） */
+function CircularProgress({
+  percent,
+  size = 22,
+  strokeWidth = 2.5,
+}: {
+  percent: number;
+  size?: number;
+  strokeWidth?: number;
+}) {
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  const radius = (size - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference - (circumference * clamped) / 100;
+
+  return (
+    <div
+      className="relative inline-flex items-center justify-center shrink-0 select-none"
+      style={{ width: size, height: size }}
+      role="progressbar"
+      aria-valuenow={clamped}
+      aria-valuemin={0}
+      aria-valuemax={100}
+    >
+      <svg
+        width={size}
+        height={size}
+        viewBox={`0 0 ${size} ${size}`}
+        className="transform -rotate-90 block"
+      >
+        {/* 背景底环 */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          opacity={0.3}
+        />
+        {/* 动态进度环 */}
+        <circle
+          cx={size / 2}
+          cy={size / 2}
+          r={radius}
+          fill="none"
+          stroke="currentColor"
+          strokeWidth={strokeWidth}
+          strokeDasharray={circumference}
+          strokeDashoffset={strokeDashoffset}
+          strokeLinecap="round"
+          className="transition-all duration-150 ease-out"
+        />
+      </svg>
+      {/* 中间显示百分比 */}
+      <span
+        className="absolute inset-0 flex items-center justify-center font-bold leading-none tracking-tighter"
+        style={{
+          fontSize: size >= 24 ? "8px" : "7px",
+          fontVariantNumeric: "tabular-nums",
+        }}
+      >
+        {clamped}%
+      </span>
+    </div>
+  );
+}
+
+export function AppUpdaterCard({ appVersion }: { appVersion?: string }) {
   const { t } = useTranslation();
-  const [endpoint, setEndpoint] = useState("");
   const [checking, setChecking] = useState(false);
   const [installing, setInstalling] = useState(false);
+  const [progress, setProgress] = useState<UpdateProgressPayload | null>(null);
   const [result, setResult] = useState<CheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   // 启动自动检查只跑一次（严格模式双挂载也只发一次请求）。
   const autoCheckedRef = useRef(false);
 
+  // 监听后端推送的下载进度事件
   useEffect(() => {
-    setEndpoint(kvGet(ENDPOINT_KEY) ?? "");
+    let unlisten: (() => void) | undefined;
+    void listen<UpdateProgressPayload>("update-progress", (event) => {
+      setProgress(event.payload);
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      if (unlisten) unlisten();
+    };
   }, []);
+
+  const install = async () => {
+    setInstalling(true);
+    setProgress({ percent: 0, downloaded: 0, total: 0 });
+    setError(null);
+    try {
+      await invoke("update_install", {
+        args: { feed: DEFAULT_UPDATE_ENDPOINT },
+      });
+      // 成功即重启（不返回）
+    } catch (err) {
+      setError(String(err));
+      setInstalling(false);
+      setProgress(null);
+    }
+  };
 
   // 启动自动检查（半自动）：只提示，不自动下载。静默失败——未发布 Release 时
   // 拉取 404 属预期，不该在启动时报错打扰；设置页手动检查仍如实显示错误。
@@ -56,7 +157,7 @@ export function AppUpdaterCard() {
     void (async () => {
       try {
         const r = await invoke<CheckResult>("update_check", {
-          args: { feed: defaultUpdateEndpoint() },
+          args: { feed: DEFAULT_UPDATE_ENDPOINT },
         });
         if (cancelled || !r.hasUpdate) return;
         toast.success(
@@ -67,7 +168,7 @@ export function AppUpdaterCard() {
             action: {
               label: t("updaterInstall"),
               onClick: () => {
-                void invoke("update_install", { args: { feed: defaultUpdateEndpoint() } });
+                void install();
               },
             },
           },
@@ -86,10 +187,9 @@ export function AppUpdaterCard() {
     setError(null);
     setResult(null);
     try {
-      // 留空则回退默认源（调用 Rust 前先解析好，避免传 null）。
-      const target = endpoint.trim() || DEFAULT_UPDATE_ENDPOINT;
-      kvSet(ENDPOINT_KEY, endpoint.trim());
-      const r = await invoke<CheckResult>("update_check", { args: { feed: target } });
+      const r = await invoke<CheckResult>("update_check", {
+        args: { feed: DEFAULT_UPDATE_ENDPOINT },
+      });
       setResult(r);
     } catch (err) {
       setError(String(err));
@@ -98,42 +198,64 @@ export function AppUpdaterCard() {
     }
   };
 
-  const install = async () => {
-    setInstalling(true);
-    setError(null);
-    try {
-      await invoke("update_install", {
-        args: { feed: endpoint.trim() || DEFAULT_UPDATE_ENDPOINT },
-      });
-      // 成功即重启（不返回）
-    } catch (err) {
-      setError(String(err));
-      setInstalling(false);
-    }
-  };
-
   return (
-    <div className="p-6 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] space-y-3">
-      <h3 className="text-sm font-semibold text-[var(--text)]">{t("updaterTitle")}</h3>
-      <div className="flex items-center gap-2">
-        <input
-          type="text"
-          value={endpoint}
-          onChange={(e) => setEndpoint(e.target.value)}
-          placeholder={t("updaterEndpointPlaceholder")}
-          className="min-w-0 flex-1 rounded-lg border border-[var(--border)] bg-transparent px-3 py-1.5 text-xs text-[var(--text)] placeholder-[var(--text-dim)] focus:border-[var(--brand)] focus:outline-none"
-        />
+    <div className="p-6 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] space-y-4">
+      {/* 头部：应用信息 + 右上角检查更新按钮 */}
+      <div className="flex items-center justify-between gap-4">
+        <div className="flex items-center gap-4 min-w-0">
+          <div className="w-12 h-12 bg-[var(--brand)] rounded-xl flex items-center justify-center text-white font-bold text-xl shrink-0">
+            R
+          </div>
+          <div className="min-w-0">
+            <h3 className="text-lg font-semibold truncate">ReinAgent</h3>
+            <p className="text-sm text-[var(--text-dim)] truncate">Version {appVersion || "—"}</p>
+          </div>
+        </div>
+
         <button
           type="button"
-          onClick={() => void check()}
-          disabled={checking}
-          className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+          onClick={() => {
+            if (result?.hasUpdate) {
+              void install();
+            } else {
+              void check();
+            }
+          }}
+          disabled={checking || installing}
+          className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          <RefreshCw className={`h-3.5 w-3.5 ${checking ? "animate-spin" : ""}`} />
-          {t("updaterCheck")}
+          {installing ? (
+            <>
+              <CircularProgress percent={progress?.percent ?? 0} size={18} strokeWidth={2.2} />
+              <span>{t("updaterDownloading")}</span>
+            </>
+          ) : checking ? (
+            <>
+              <RefreshCw className="h-3.5 w-3.5 animate-spin" />
+              <span>{t("updaterCheck")}</span>
+            </>
+          ) : result?.hasUpdate ? (
+            <>
+              <Download className="h-3.5 w-3.5" />
+              <span>{t("updaterInstallShort")}</span>
+            </>
+          ) : (
+            <>
+              <RefreshCw className="h-3.5 w-3.5" />
+              <span>{t("updaterCheck")}</span>
+            </>
+          )}
         </button>
       </div>
 
+      {/* 描述信息 */}
+      <div className="pt-4 border-t border-[var(--border)] text-sm text-[var(--text-dim)] space-y-2">
+        <p>A desktop AI coding assistant built with Tauri v2.</p>
+        <p>MIT License</p>
+        <p>Tech Stack: React 19, TypeScript, Vite, Tailwind CSS v4, Zustand</p>
+      </div>
+
+      {/* 状态与更新结果反馈 */}
       {error ? (
         <p className="rounded-lg border border-[var(--danger)] bg-[var(--bg-elev)] p-2 text-xs text-[var(--danger)] break-all">
           {error}
@@ -143,7 +265,7 @@ export function AppUpdaterCard() {
       {result ? (
         result.hasUpdate ? (
           <div className="space-y-2 rounded-lg border border-[var(--status-ok)]/40 bg-[var(--status-ok)]/10 p-3 text-xs">
-            <p className="text-[var(--text)]">
+            <p className="text-[var(--text)] font-medium">
               {t("updaterAvailable").replace("{version}", result.availableVersion ?? "?")}{" "}
               ({t("updaterCurrent").replace("{version}", result.currentVersion)})
             </p>
@@ -154,10 +276,19 @@ export function AppUpdaterCard() {
               type="button"
               onClick={() => void install()}
               disabled={installing}
-              className="flex items-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-1.5 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-40"
+              className="flex items-center gap-2 rounded-lg bg-[var(--brand)] px-3 py-1.5 font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
             >
-              <Download className={`h-3.5 w-3.5 ${installing ? "animate-bounce" : ""}`} />
-              {t("updaterInstall")}
+              {installing ? (
+                <>
+                  <CircularProgress percent={progress?.percent ?? 0} size={20} strokeWidth={2.5} />
+                  <span>{t("updaterDownloading")}</span>
+                </>
+              ) : (
+                <>
+                  <Download className="h-3.5 w-3.5" />
+                  <span>{t("updaterInstall")}</span>
+                </>
+              )}
             </button>
           </div>
         ) : (

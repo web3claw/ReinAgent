@@ -414,23 +414,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           {activeTab === 'about' && (
             <div className="space-y-6">
               <h2 className="text-xl font-semibold mb-6">{t('settingsAbout')}</h2>
-              <div className="p-6 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] space-y-4">
-                <div className="flex items-center gap-4">
-                  <div className="w-12 h-12 bg-[var(--brand)] rounded-xl flex items-center justify-center text-white font-bold text-xl">
-                    R
-                  </div>
-                  <div>
-                    <h3 className="text-lg font-semibold">ReinAgent</h3>
-                    <p className="text-sm text-[var(--text-dim)]">Version {appVersion || "—"}</p>
-                  </div>
-                </div>
-                <div className="pt-4 border-t border-[var(--border)] text-sm text-[var(--text-dim)] space-y-2">
-                  <p>A desktop AI coding assistant built with Tauri v2.</p>
-                  <p>MIT License</p>
-                  <p>Tech Stack: React 19, TypeScript, Vite, Tailwind CSS v4, Zustand</p>
-                </div>
-              </div>
-              <AppUpdaterCard />
+              <AppUpdaterCard appVersion={appVersion} />
             </div>
           )}
         </div>
