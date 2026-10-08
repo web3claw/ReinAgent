@@ -3,34 +3,54 @@
  *
  * 数据源与进度口径见 `src/lib/chat/todoProgress.ts`（纯逻辑，单测直驱）。
  *
- * 形态（挂在输入框上方，用户定稿 2026-10-06）：
- * - **多清单并排一行**：内容不同的 todo_write 各成一个胶囊，时间正序排列——
- *   新清单出现在第一个胶囊的右边，以此类推；只显示最近 MAX_VISIBLE_TODO_LISTS 个，
- *   更老的快照隐藏（数据仍在时间线，不丢）；
+ * 形态（挂在输入框上方）：
+ * - **同一份清单只占一个胶囊、进度原地实时更新**（归并口径见 todoProgress.ts，
+ *   用户定稿 2026-10-08：模型改状态/加删任务/改措辞都在同一胶囊刷新，不再堆积）；
+ * - **最多显示 MAX_VISIBLE_TODO_LISTS(=3) 个**；超出时淘汰**最老的已完成**胶囊
+ *   （由归并口径保证：除末个外其余必然已完成，故总有可淘汰者），数据仍在时间线里；
  * - 每个胶囊：圆环进度（N/M）+ 文案「任务进行中 · 第 X/Y 步」/「全部完成」；
  *   点击展开该清单浮层、再点收起（lw Popover；点外部 / Esc 也会收起）；
- *   行内 × 逐胶囊关闭，关闭签名按清单内容独立持久化（kv）；
+ *   行内 × 逐胶囊关闭，关闭签名按清单条目集合独立持久化（kv）；
  * - 无清单 / 全部被关闭 → 不渲染（No-Fallback：不显示假进度）。
  */
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 // 浮层一律用 lw 组件（裸引 radix primitive 有缺 Provider/被页面层级压住的事故史）
 import { Popover, PopoverContent, PopoverTrigger } from "../lw/ui/popover";
 import { Check, Circle, ChevronRight, X } from "lucide-react";
 import type { TimelineEntry } from "../../lib/chat/conversationModel";
 import type { TodoListSnapshot, TodoItemView } from "../../lib/chat/todoProgress";
-import { extractTodoLists, todoProgress as summarizeTodos } from "../../lib/chat/todoProgress";
+import {
+  extractTodoLists,
+  selectVisibleCapsules,
+  todoProgress as summarizeTodos,
+} from "../../lib/chat/todoProgress";
 import { useTranslation } from "../../i18n";
 import { kvGet, kvSet } from "../../lib/storage/db";
 
 const RING_RADIUS = 7;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
-/** 胶囊行最多可见的清单数（更老的快照隐藏；数据仍在时间线里，不丢）。 */
-const MAX_VISIBLE_TODO_LISTS = 5;
+/** 胶囊行最多可见数；超出时淘汰最老的已完成胶囊。 */
+const MAX_VISIBLE_TODO_LISTS = 3;
 /** 逐胶囊关闭签名持久化（JSON 字符串数组；上限截断防无限增长）。 */
 const DISMISSED_KEYS_KV = "reinagent-todo-dismissed-keys";
 const DISMISSED_KEYS_MAX = 50;
+/**
+ * 关闭签名版本：v2 起 key 改为「条目内容集合」签名（旧版是整份状态快照签名）。
+ * 升级时清理 v1 遗留签名，否则旧签名会与新 key 永不匹配、白白堆在 kv 里。
+ */
+const DISMISSED_KEYS_VER_KV = "reinagent-todo-dismissed-keys-ver";
+const DISMISSED_KEYS_VER = "2";
+
+/** 一次性清理 v1 关闭记录；返回是否发生了清理（true 时调用方需重置 state）。
+ * 不回滚：key 语义已从「整份状态快照」变为「条目内容集合」，旧签名无意义。 */
+function migrateDismissedKeysIfNeeded(): boolean {
+  if (kvGet(DISMISSED_KEYS_VER_KV) === DISMISSED_KEYS_VER) return false;
+  kvSet(DISMISSED_KEYS_KV, JSON.stringify([]));
+  kvSet(DISMISSED_KEYS_VER_KV, DISMISSED_KEYS_VER);
+  return true;
+}
 
 function readDismissedKeys(): string[] {
   try {
@@ -51,8 +71,13 @@ export function TaskProgressBar({ messages }: { messages: TimelineEntry[] }) {
   // 被关闭的清单签名集合（state 镜像保证点击立即隐藏；kv 写入供重启恢复）
   const [dismissedKeys, setDismissedKeys] = useState<string[]>(readDismissedKeys);
 
+  // 一次性迁移：v1 关闭记录（整份状态签名）在 v2 key 语义下永不匹配，清掉
+  useEffect(() => {
+    if (migrateDismissedKeysIfNeeded()) setDismissedKeys([]);
+  }, []);
+
   const alive = lists.filter((l) => !dismissedKeys.includes(l.key));
-  const visible = alive.slice(-MAX_VISIBLE_TODO_LISTS);
+  const visible = selectVisibleCapsules(alive, MAX_VISIBLE_TODO_LISTS);
   if (visible.length === 0) return null;
 
   const dismiss = (key: string) => {

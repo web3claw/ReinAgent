@@ -13,6 +13,14 @@
  * 所属 assistant 消息之后，因此「运行中正文就地、结束后外显」的首尾位置一致——工具卡
  * 出现时必然落在正文下方且不再移动，轮次切换不再发生上下跳动（修复卡片位置漂移）。
  *
+ * 高亮开关（2026-10-08 用户定稿，取代 7f88541 的「整轮运行兜底」）：代码块是否跳过
+ * Shiki 高亮，只看**该条文本自身**是否还在流式（`entry.status === "streaming"`），
+ * 不再用「整轮是否还在跑」的粗粒度标志。原因：单轮内多步循环时（回复→调工具→继续）
+ * 整轮长时间处于 running，用整轮标志会让**所有早已定型的段落**持续停在白色纯文本——
+ * 用户在回合内提问卡提交回答后（会话仍 streaming）看到「上面文本全变白」即由此而来。
+ * 条目一旦 done，其文本已由权威 `turn_end` 定格，可以安全上色，不必等整轮结束。
+ * 唯一仍在流的那一条继续跳过（避免每帧重跑高亮 + 整块换 DOM 造成花屏，见 7f88541）。
+ *
  * 折叠交互对齐 ZCode：运行中是「只读展开」（不渲染箭头、不可收起）；完成态翻转为默认折叠、
  * 可点击展开。轮 key 变化时组件随 React key 重挂载，折叠态自然复位。
  */
@@ -58,8 +66,6 @@ function isToolEntry(message: TimelineEntry): message is ToolTimelineEntry {
  */
 
 export interface TurnGroupViewProps {
-  /** 本轮正在流式（代码高亮等昂贵渲染降级，完成后恢复） */
-  streaming?: boolean;
   /** 本轮的自动重试记录（重试详情块数据源；仅实时轮传入） */
   retryAttempts?: import("../../lib/chat/conversationModel").RetryAttemptRecord[];
   /** 是否处于自动重试等待期（「重新连接中」副行显示条件，对齐 LiveAgent 恢复后撤下）。 */
@@ -102,12 +108,13 @@ export interface TurnGroupViewProps {
   hiddenSpans?: Array<[number, number]>;
 }
 
-/** 折叠体内「中间叙述」的暗色正文（非最终回复的 assistant 文本）。 */
-function IntermediateText({ entry, streaming }: { entry: TimelineEntry; streaming?: boolean }) {
+/** 折叠体内「中间叙述」的暗色正文（非最终回复的 assistant 文本）。
+ * 高亮开关只看**该条自身**是否还在流式（见文件头「高亮开关」说明）。 */
+function IntermediateText({ entry }: { entry: TimelineEntry }) {
   if (entry.role !== "assistant" || !entry.text) return null;
   return (
     <div className="turn-intermediate-text font-[450] text-[var(--text)] leading-relaxed">
-      <MarkdownText text={entry.text} streaming={streaming} />
+      <MarkdownText text={entry.text} streaming={entry.status === "streaming"} />
     </div>
   );
 }
@@ -286,7 +293,6 @@ function TurnGroupViewImpl({
   retrying = false,
   liveNowMs,
   live = false,
-  streaming = false,
   workspaceRoot,
   onEditSend,
   onEditResend,
@@ -455,18 +461,18 @@ function TurnGroupViewImpl({
                     <div key={entry.id} className="turn-assistant-activity">
                       <ThinkingBlock entry={entry} liveNowMs={liveNowMs} turnRunning={isTurnRunning} />
                       {entry !== lastAssistant ? (
-                        <IntermediateText entry={entry} streaming={streaming} />
+                        <IntermediateText entry={entry} />
                       ) : isTurnRunning ? (
                         // 运行中的最终回复正文：就地渲染（样式对齐 MessageItem 助手正文），
                         // 结束后由下方外显的 MessageItem 接管——时间线位置不变。
                         <div className="w-full text-sm text-[var(--text)] leading-relaxed">
                           <div className="md">
-                            {/* 高亮开关必须用「整轮是否还在跑」兜底：每次 turn_end 都会把该
-                                条目置 done，多步循环里（回复→调工具→继续）此时整轮仍在跑，
-                                仅看条目状态会让这段的代码块立刻 Shiki 高亮并整块换 DOM。 */}
+                            {/* 高亮开关只看**该条自身**是否还在流式（见文件头「高亮开关」）：
+                                条目一旦 done，内容就已被权威 turn_end 文本定格，可以安全上色，
+                                不必等整轮结束——否则一轮里的历史段落会长期停在白色。 */}
                             <MarkdownText
                               text={entry.text}
-                              streaming={streaming || entry.status === "streaming"}
+                              streaming={entry.status === "streaming"}
                             />
                             {entry.status === "streaming" ? (
                               <ChatLoading loading size="sm" className="mt-1" />

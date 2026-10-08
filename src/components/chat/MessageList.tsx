@@ -551,7 +551,6 @@ export function MessageList({
                 onBranchFrom={stableBranchFrom}
                 isEditing={editingMessageKey === turn.userMessage?.id}
                 actionsDisabled={isStreaming}
-                streaming={false}
                 highlightMessageId={highlightMessageId}
               />
             </div>
@@ -578,7 +577,6 @@ export function MessageList({
             onBranchFrom={stableBranchFrom}
             isEditing={editingMessageKey === liveTurn.userMessage?.id}
             actionsDisabled={isStreaming}
-            streaming
             highlightMessageId={highlightMessageId}
           />
           <div ref={endRef} />

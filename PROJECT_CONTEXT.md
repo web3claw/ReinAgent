@@ -1524,3 +1524,56 @@ latest.json 生成脚本本地演练通过（文件名与 `asset_name()` 预期�
   等共用同一套 no-proxy 匹配器。⚠ 不复用 reqwest 的 `NoProxy`：它不支持本项目
   `192.168.*`/`10.*` 这类尾通配，语义会不一致。
 - 代理配置非法时如实报错（No-Fallback），不静默降级直连。
+
+### 任务胶囊归并口径改造（2026-10-08，用户定稿；取代 2026-10-06「按内容新增」）
+
+问题：旧口径下每次 `todo_write` 内容不同即新开胶囊，导致同一批任务的中间状态
+（0/6→3/6→6/6）堆积成一排「未完成」胶囊（用户报障）。
+
+新口径（`src/lib/chat/todoProgress.ts::extractTodoLists`）——`todo_write` 是**全量覆盖**，
+两次调用天然是同一份清单在推进：
+- 末个胶囊**未全部完成** → 原地更新（改状态/加删任务/改措辞皆就地刷新，不新开）；
+- 末个胶囊**已全部完成** → 封存；之后再来**含未完成项**的清单才新开胶囊；
+- 新的也是"全完成" → 原地更新末个（不新开空壳）。
+- **不变式**：除末个外其余胶囊必然都是已完成态 ⇒ 「超限优先藏已完成」总有可藏目标。
+- 已确认取舍：中途放弃的半截未完成清单被后一份**原地覆盖**，胶囊区不留痕（时间线可回看）。
+- `TodoListSnapshot` 新增 `completed` 字段；`key` 改为**条目内容集合签名**（排序去重），
+  同一清单状态推进时 key 恒定 ⇒ 关闭态得以延续。
+
+UI（`TaskProgressBar.tsx`）：
+- `MAX_VISIBLE_TODO_LISTS` 5 → **3**；新增纯逻辑 `selectVisibleCapsules(lists, max)`
+  （在 todoProgress.ts，可单测）：超限淘汰**最老的已完成**胶囊，进行中的末个永不藏；
+- 关闭签名版本迁移：新增 kv `reinagent-todo-dismissed-keys-ver = "2"`，检测到旧版
+  （无此键）即清空 `reinagent-todo-dismissed-keys`（旧签名是「整份状态快照」，
+  在新 key 语义下永不匹配）——**一次性清理，不回滚**。
+
+数据清理：已清空本机 kv `reinagent-todo-dismissed-keys` 的 11 条 v1 记录
+（数据库备份 `~/.ReinAgent/conversations.db.bak-<ts>`）。
+
+验证：`tsc` 0；`todoProgress.test.mjs` 14 例通过（含原地推进/加删改措辞原地更新/
+完成封存后新开/不变式/超限淘汰 4 例）；`test:chat` 174 全绿。
+
+### 代码块高亮开关下沉到条目状态（2026-10-08，修「提问卡提交后上方文本全变白」）
+
+现象：回合内提问卡（ask_user_question）提交回答后，该轮**上方已完成的文本**里代码块的
+Shiki 配色（黄/绿）全部消失、变成白色纯文本。
+
+根因：高亮开关用的是**整轮**是否在流式（`TurnGroupView` 的 `streaming` prop = 该轮位于
+`liveTurn`），而非**该条文本自身**是否已定型。提交回答后会话仍 `status==="streaming"`
+（`withPendingApproval` 不改 status），整轮继续按 `streaming=true` 重渲染 —— 于是该轮内
+**所有早已产出完毕的段落**都被判为「流式中」而跳过 Shiki 高亮，全部呈现白色。
+
+修法（取代 7f88541 的「整轮运行兜底」）：
+- `TurnGroupView` 两条正文路径（中间叙述 `IntermediateText`、运行中就地正文）改为
+  `streaming={entry.status === "streaming"}`——只看**该条自身**是否还在流。
+- `ThinkingBlock` 正文同口径（`highlightStreaming = entry.status === "streaming"`）；
+  折叠行为仍用 `active = streaming || turnRunning`（与本修复无关，保持原样）。
+- 移除已冗余的 `TurnGroupViewProps.streaming` 及 `MessageList` 的两处传参
+  （`streaming={false}` / `streaming`）；`MessageItem` 早已是 `message.status === "streaming"`，
+  与本口径一致。
+
+新增不变式：**条目一旦 done，其文本已由权威 `turn_end` 定格，即可安全上色**，不必等整轮
+结束；仅最后仍在流的那一条继续跳过（避免每帧重跑高亮 + 整块换 DOM 造成花屏，见 7f88541）。
+
+验证：`tsc` 0；`test:chat` 174 全绿。⚠️ 视觉确认需实跑一轮「带代码块 → 提问卡 → 提交」
+（本机未实测）。

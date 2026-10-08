@@ -41,6 +41,10 @@ export function ThinkingBlock({ entry, liveNowMs, turnRunning = false }: Thinkin
   // 折叠时机 = 整轮完成（而非思考段自身完成）：轮内保持展开，轮结束自动收起。
   const active = streaming || turnRunning;
   const open = userToggle ?? active;
+  // 高亮开关只看**本段自身**是否还在流式（与 TurnGroupView 同一口径）：条目一旦 done，
+  // 思考文本已被权威 turn_end 定格，可安全上色；用整轮 `active` 会让单轮内多步循环期间
+  // 所有已定型段落持续停在白色。仍在流式的那段继续跳过（避免每帧重跑高亮换 DOM 花屏）。
+  const highlightStreaming = entry.status === "streaming";
 
   // 展开且轮内运行时：每个思考增量到达时贴住底部（折叠态不为隐藏内容滚动）。
   useEffect(() => {
@@ -86,7 +90,7 @@ export function ThinkingBlock({ entry, liveNowMs, turnRunning = false }: Thinkin
       {open && (
         <div className="thinking-body" ref={bodyRef}>
           <div className="thinking-text md">
-            <MarkdownText text={entry.thinking} streaming={active} />
+            <MarkdownText text={entry.thinking} streaming={highlightStreaming} />
           </div>
         </div>
       )}
