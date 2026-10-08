@@ -1413,3 +1413,41 @@ ReinAgent 架构全景
   - **审批拒绝 / 忽略**：拒绝组合「已拒绝请调整」续接；忽略仅清除横幅与 kv。
 - **实现**：`pendingRecovery.ts`（组装+执行纯逻辑）、`PendingRecoveryBanner.tsx`（横幅+重放提问卡；props onAnswer/onReject/onAllow 由 App 组合消息后走 handleSend——含 UserPromptSubmit hooks/提及解析全链路）；App 三态（banner/recoveryBusy）挂任务激活 effect。
 - **验证**：`tsc` 0；chat 151 / providers 30 / hub 76 绿；CDP 真机双变体——**提问**：挂起→重载→横幅出现→重放卡片带原题→答「选项甲」→续接消息发出→模型复述「已恢复上下文…你的回答『选项甲』已记录」；**审批**：write_file 审批挂起→重载→横幅带工具名→允许→**真实创建文件**（磁盘 11 字节 recovery-ok）→续接消息带执行结果→模型确认完成；两变体 kv 均正确清除。
+
+### 麦克风权限默认放行（2026-10-08；Tauri 2 on_permission_request）
+
+- **问题**：语音输入在 Linux 直接报「麦克风权限已拒绝」（`src/lib/stt/audio.ts` 把 `getUserMedia` 的
+  `NotAllowedError`/`SecurityError` 映射成该提示），Windows 则弹 WebView2「是否允许录音」询问框。
+- **根因**：`tauri::Builder` 未注册权限处理器。WebKitGTK 对 `WebKitUserMediaPermissionRequest`
+  **未处理即默认拒绝**（不弹系统询问）；WebView2 未处理则走它的默认弹窗。wry 仅对剪贴板
+  (`CLIPBOARD_READ`) 自动放行，麦克风不在其列。项目原有 `stt_request_microphone_permission`
+  仅 macOS 有真实实现，非 macOS 为空实现。
+- **修复**：`lib.rs` 的 `run()` 给 builder 加 `on_permission_request`——仅 `PermissionKind::Microphone`
+  返回 `Allow`，其余（摄像头/定位/通知等）保持 `Default`（各平台默认语义）。Windows 侧由 wry 翻译成
+  `COREWEBVIEW2_PERMISSION_STATE_ALLOW`，弹窗随之消失。macOS 除本处理器外仍需打包 `Info.plist` 的
+  `NSMicrophoneUsageDescription`（当前仓库无 `src-tauri/Info.plist`，属待办）。
+- **边界**：Windows 系统级「允许桌面应用访问麦克风」仍须开启，否则取流失败并如实报错（不伪装成功）；
+  WebView2 按来源记忆授权，dev(`http://localhost:1420`) 与正式版(`tauri://localhost`)是不同来源。
+- **验证**：`cargo check` 0、`tsc` 0、dev 正常构建启动。**真机取流实测未完成**——本机 WebKitGTK 的
+  webview 渲染于 1×1 子表面（非 X 子窗口），xdotool/合成事件无法送达 webview，自动化按键与取流验证
+  在此环境不可行，留待手工按住右 Ctrl 实测。
+
+### 长按右 Ctrl 语音输入（push-to-talk，2026-10-08；用户定稿）
+
+- **需求**：长按右 Ctrl 开始语音输入、松开即停止并回填转写；固定按键（不进设置、不可自定义）；
+  仅在任务页与新建任务输入框生效；模型流式输出时静默忽略。
+- **实现**：
+  - `src/lib/stt/pushToTalk.ts`：`isPushToTalkKey` 判定——优先物理键位 `code === "ControlRight"`，
+    回退 `key === "Control" && location === 2`（部分 WebKitGTK 环境不下发 `code`，实测合成按键为
+    `Unidentified`）。
+  - `src/lib/stt/useComposerStt.ts`：新增 `pressStart`/`pressEnd`（与麦克风按钮共用同一会话链路）。
+    `pttHeldRef` 记录本次按住、`pttPendingStopRef` 处理「松手早于开麦完成」的竞态（开麦后立即补停，
+    不留麦克风）；`cleanup`/`abandonQuietly` 复位按住态。PTT 路径下配置不完整**静默放弃**（不弹
+    toast、不跳设置）。
+  - `src/components/chat/LexicalComposer.tsx`：新增 `onRegisterPushToTalk` prop，挂载时把
+    `{available, pressStart, pressEnd}` 注册给上层（任务页/新建页输入框互斥挂载，任一时刻至多一个注册者）。
+  - `src/App.tsx`：窗口级 `keydown`/`keyup`（`ControlRight`）+ `blur`（失焦视为松开）；`e.repeat`
+    忽略自动重复；`available` 为假或 STT 内部 `disabled`（流式）时静默忽略；切任务时释放按住态。
+- **验证**：`tsc` 0；新增单测 `src/lib/stt/pushToTalk.test.mjs`（3 例：物理键位命中、code 缺失回退、
+  左键/异键不命中）已接入 `test:chat`，chat 168 / providers 38 / settings 6 全绿；dev 构建启动正常。
+  **真机长按取流实测同受上条环境限制未完成**（webview 非 X 子窗口，无法注入按键）。

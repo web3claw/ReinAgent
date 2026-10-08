@@ -26,7 +26,11 @@ import {
   persistPromptHistoryEntries,
 } from "../../lib/chat/promptHistoryStorage";
 import { ContextUsageIndicator } from "./ContextUsageIndicator";
-import { useComposerStt, type SttComposerHandle } from "../../lib/stt/useComposerStt";
+import {
+  useComposerStt,
+  type SttComposerHandle,
+  type SttPushToTalkHandle,
+} from "../../lib/stt/useComposerStt";
 import { desktopSttTransport } from "../../lib/stt/desktopSttTransport";
 import { isProviderConfigured, loadSttSettings, type SttSettings } from "../../lib/stt/settings";
 import { enhancePromptDraft } from "../../lib/promptEnhancement/enhance";
@@ -118,6 +122,11 @@ export interface LexicalComposerProps {
   onCompactRequest?: () => void;
   /** 语音输入未配置时引导打开设置「语音输入」tab */
   onOpenSttSettings?: () => void;
+  /**
+   * push-to-talk（长按说话）注册：本输入框挂载时把按下/松开入口交给上层窗口级监听。
+   * 未提供时不注册（例如 Web 模式）。
+   */
+  onRegisterPushToTalk?: (handle: SttPushToTalkHandle | null) => void;
 }
 
 interface ThinkingOption {
@@ -159,6 +168,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   onClearConversation,
   onCompactRequest,
   onOpenSttSettings,
+  onRegisterPushToTalk,
   onSend,
   onStop,
   providerId = "deepseek",
@@ -368,6 +378,19 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       onOpenSttSettings?.();
     },
   });
+
+  // push-to-talk（长按右 Ctrl）：把本输入框的「按下开麦 / 松开停止」注册给上层窗口级监听。
+  // 只在任务页与新建任务两个可见输入框里注册（它们互斥挂载），因此按键总是落到当前任务页面。
+  const pttAvailable = Boolean(sttSettingsState?.provider) && stt.available;
+  useEffect(() => {
+    if (!onRegisterPushToTalk) return;
+    onRegisterPushToTalk({
+      available: pttAvailable,
+      pressStart: () => stt.pressStart(),
+      pressEnd: () => stt.pressEnd(),
+    });
+    return () => onRegisterPushToTalk(null);
+  }, [onRegisterPushToTalk, pttAvailable, stt.pressStart, stt.pressEnd]);
 
   // ---- 提示词增强（移植 PI-Desktop useComposerSubmit.enhancePrompt，一次性非流式）----
   const [enhancing, setEnhancing] = useState(false);

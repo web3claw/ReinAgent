@@ -59,6 +59,8 @@ import { ConversationNavigator } from "./components/chat/ConversationNavigator";
 import { CodeViewerPaneHost } from "./preview/CodeViewerPaneHost";
 import { SessionStatsBar } from "./components/chat/SessionStatsBar";
 import { LexicalComposer } from "./components/chat/LexicalComposer";
+import type { SttPushToTalkHandle } from "./lib/stt/useComposerStt";
+import { isPushToTalkKey } from "./lib/stt/pushToTalk";
 import { EmptyState } from "./components/chat/EmptyState";
 import { TerminalPane } from "./components/terminal/TerminalPane";
 import { WorkspaceSidebar } from "./components/sidebar/WorkspaceSidebar";
@@ -166,6 +168,13 @@ export default function App() {
   const [skillsSectionText, setSkillsSectionText] = useState("");
   // handleNewTask 稳定转发（effect 依赖 [] 而 handleNewTask 在后声明）
   const handleNewTaskRef = useRef<() => void>(() => {});
+  // push-to-talk（长按右 Ctrl 说话）：当前可见输入框注册的句柄。任务页与新建任务页
+  // 的输入框互斥挂载，故任意时刻最多一个注册者——按键总是落到当前任务的对话框。
+  const pushToTalkRef = useRef<SttPushToTalkHandle | null>(null);
+  // 句柄注册回调（稳定身份，两个输入框共用；null = 卸载时注销）。
+  const registerPushToTalk = useCallback((handle: SttPushToTalkHandle | null) => {
+    pushToTalkRef.current = handle;
+  }, []);
   // 全局快捷键（P2-G1 集中管理 + P2-G2 可自定义绑定）：
   // 每次按键查当前绑定表（kv 缓存读，廉价）；编辑框聚焦按动作语义放行。
   useEffect(() => {
@@ -201,6 +210,42 @@ export default function App() {
     return () => window.removeEventListener("keydown", onKeyDown);
     // eslint-disable-next-line react-hooks/exhaustive-deps -- handleNewTask 经 ref 稳定转发
   }, []);
+
+  // push-to-talk（长按右 Ctrl 说话）：按住开始语音输入、松开停止。固定按键、不进设置。
+  // 只转发给当前已注册的输入框句柄（任务页 / 新建任务页），其他界面无注册者即不生效。
+  // 未配置供应商时句柄 available=false，静默忽略（不弹窗、不跳设置）；模型流式输出时
+  // STT 内部 disabled 会直接挡掉，同样静默。
+  useEffect(() => {
+    const isRightCtrl = isPushToTalkKey;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (!isRightCtrl(e)) return;
+      e.preventDefault();
+      if (e.repeat) return; // 按住期间的键盘自动重复，忽略
+      const handle = pushToTalkRef.current;
+      if (!handle?.available) return;
+      handle.pressStart();
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (!isRightCtrl(e)) return;
+      e.preventDefault();
+      pushToTalkRef.current?.pressEnd();
+    };
+    // 窗口失焦（切走/最小化）时松手信号可能丢失：视为松开，避免麦克风一直开。
+    const onBlur = () => pushToTalkRef.current?.pressEnd();
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
+
+  // 切任务 / 新建任务：句柄随输入框重新注册，先释放按住态（旧输入框卸载时的兜底）。
+  useEffect(() => {
+    return () => pushToTalkRef.current?.pressEnd();
+  }, [activeTaskId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1790,6 +1835,7 @@ export default function App() {
                   providers={providers}
                   onSelectModel={handleSelectModel}
                   onOpenSttSettings={() => { setSettingsInitialTab('stt'); setCurrentView('settings'); }}
+                  onRegisterPushToTalk={registerPushToTalk}
                   hasMessages={true}
                   contextUsage={contextUsage}
                   // 工作区根：@提及候选、附件默认目录都依赖它（此前漏传 ⇒ 提示「root 不能为空」）
@@ -2064,6 +2110,7 @@ export default function App() {
                     focusRequestTrigger={focusTrigger}
                     prefillRequest={composerPrefill}
                     onOpenSttSettings={() => { setSettingsInitialTab('stt'); setCurrentView('settings'); }}
+                    onRegisterPushToTalk={registerPushToTalk}
                     onClearConversation={() => void handleClearConversation()}
                     onCompactRequest={handleCompactRequest}
                     contextUsage={contextUsage}

@@ -118,7 +118,16 @@ pub fn run() {
             .plugin(tauri_plugin_store::Builder::new().build())
             .plugin(tauri_plugin_notification::init())
             .plugin(tauri_plugin_process::init())
-            .plugin(tauri_plugin_updater::Builder::new().build()),
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            // 麦克风权限默认放行：WebKitGTK 对 getUserMedia 请求**默认拒绝**（Linux 取流
+            // 直接 NotAllowedError），WebView2 则弹「是否允许录音」询问框。显式 Allow
+            // 让两端都静默放行语音输入；其余权限（摄像头/定位/通知等）保持各平台默认。
+            .on_permission_request(|_webview, kind| match kind {
+                tauri::webview::PermissionKind::Microphone => {
+                    tauri::webview::PermissionResponse::Allow
+                }
+                _ => tauri::webview::PermissionResponse::Default,
+            }),
     )
     .setup(|app| {
         // Linux：把「联网代理」设置注入 WebKitGTK 会话（内置浏览器 + 主 webview 共用）。

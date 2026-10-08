@@ -20,6 +20,16 @@ import { runtimeConfig } from "./settings";
 import type { SttRuntimeEvent, SttTransport, SttUiState } from "./types";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from "react";
 
+/**
+ * push-to-talk（长按说话）句柄：由可见的输入框注册给上层，供窗口级按键监听转发。
+ * `available` 为 false 时（未选供应商等）上层直接忽略按键。
+ */
+export interface SttPushToTalkHandle {
+  available: boolean;
+  pressStart(): void;
+  pressEnd(): void;
+}
+
 /** 输入框临时文本协议（textarea 版实现见 LexicalComposer）。 */
 export interface SttComposerHandle {
   /** 锁定临时文本插入点；false = 当前无法锁定（不启动识别）。 */
@@ -75,11 +85,17 @@ export function useComposerStt(options: {
   const [state, setState] = useState<SttUiState>("idle");
   const [error, setError] = useState<string | null>(null);
   const activeRef = useRef<ActiveSttSession | null>(null);
+  /** push-to-talk（长按右 Ctrl）当前是否被按住；松手只停「本次按住」开的会话。 */
+  const pttHeldRef = useRef(false);
+  /** 松手发生在 start() 尚未开麦完成之前——开麦后立即补停，避免麦克风残留。 */
+  const pttPendingStopRef = useRef(false);
 
   const cleanup = useCallback(
     (preserveLastText: boolean) => {
       const active = activeRef.current;
       activeRef.current = null;
+      // 会话结束（含最终结果/失败/中止）即释放按住态，否则下一次按住会被误判为「已按住」而忽略。
+      pttHeldRef.current = false;
       if (active) {
         window.clearTimeout(active.connectTimer);
         if (active.finalTimer !== null) window.clearTimeout(active.finalTimer);
@@ -243,9 +259,32 @@ export function useComposerStt(options: {
     [cleanup, composerRef, fail, finishProvider, sendChunk],
   );
 
-  const start = useCallback(async () => {
+  const start = useCallback(async (opts?: { fromPtt?: boolean }) => {
     if (!transport || !provider || disabled || activeRef.current) return;
+    // 新会话启动即清掉上一轮的「松手」信号（可能来自一次未成功开麦的按住）。
+    pttPendingStopRef.current = false;
+    if (opts?.fromPtt) {
+      if (pttHeldRef.current) return; // 按住期间的键盘自动重复，忽略
+      pttHeldRef.current = true;
+    }
+    // push-to-talk 的可用性由注册方（available）判定；配置不完整/无法锁定输入位时
+    // 静默放弃（不弹 toast、不跳设置）——长按操作不该把用户拽去设置页。
+    const abandonQuietly = (message: string) => {
+      if (opts?.fromPtt) {
+        // 复位为 idle：此前可能已置 requesting-permission，否则 active 会永远为真。
+        pttHeldRef.current = false;
+        setState("idle");
+        return;
+      }
+      setError(message);
+      setState("error");
+      onError?.(message);
+    };
     if (providerConfigured === false) {
+      if (opts?.fromPtt) {
+        abandonQuietly("STT供应商配置不完整");
+        return;
+      }
       const message = "STT供应商配置不完整";
       setError(message);
       setState("error");
@@ -255,18 +294,13 @@ export function useComposerStt(options: {
     }
     const providerSettings = getProviderSettings();
     if (!providerSettings) {
-      const message = "STT供应商配置不存在";
-      setError(message);
-      setState("error");
-      onError?.(message);
+      abandonQuietly("STT供应商配置不存在");
       return;
     }
     setError(null);
     setState("requesting-permission");
     if (!composerRef.current?.beginTransientText()) {
-      setState("error");
-      setError("无法锁定当前输入位置");
-      onError?.("无法锁定当前输入位置");
+      abandonQuietly("无法锁定当前输入位置");
       return;
     }
 
@@ -304,6 +338,12 @@ export function useComposerStt(options: {
         await capture.stop();
         return;
       }
+      // 按住时开麦需授权/耗时，若用户已松手：立刻停，别把麦克风留着继续录。
+      if (pttPendingStopRef.current) {
+        pttPendingStopRef.current = false;
+        void stop();
+        return;
+      }
       setState("buffering");
       active.connectTimer = window.setTimeout(() => fail("云端连接超时"), STT_CONNECT_TIMEOUT_MS);
       await transport.open({
@@ -331,6 +371,25 @@ export function useComposerStt(options: {
   ]);
 
   const toggle = useCallback(() => (activeRef.current ? void stop() : void start()), [start, stop]);
+
+  /** push-to-talk 按下：只在空闲时开新会话（识别中再按不重开）。 */
+  const pressStart = useCallback(() => {
+    if (activeRef.current) return;
+    void start({ fromPtt: true });
+  }, [start]);
+
+  /** push-to-talk 松开：只停「本次按住」开的会话，不干扰麦克风按钮开的会话。 */
+  const pressEnd = useCallback(() => {
+    if (!pttHeldRef.current) return;
+    if (!activeRef.current) {
+      // 开麦还没完成就松手：标记待停，开麦成功后立即补停。
+      pttPendingStopRef.current = true;
+      pttHeldRef.current = false;
+      return;
+    }
+    pttHeldRef.current = false;
+    void stop();
+  }, [stop]);
 
   const sessionKeyRef = useRef(sessionKey);
   useLayoutEffect(() => {
@@ -361,6 +420,9 @@ export function useComposerStt(options: {
     state,
     error,
     toggle,
+    /** push-to-talk（长按说话）：按下 start、松开 stop，与麦克风按钮共用同一会话链路。 */
+    pressStart,
+    pressEnd,
     active: state !== "idle" && state !== "error",
     available: Boolean(provider && transport),
   };
