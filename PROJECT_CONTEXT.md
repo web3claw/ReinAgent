@@ -1482,8 +1482,7 @@ ReinAgent 架构全景
 - 命令：`update_check` / `update_install`（返回字段 `hasUpdate/currentVersion/...`）。
 
 **CI `.github/workflows/release.yml`**
-- 推 `v*` tag 或手动 `workflow_dispatch`；六平台矩阵（macOS arm64/intel、Windows amd64/arm64、
-  Linux amd64/arm64，arm64 用 `windows-11-arm` / `ubuntu-22.04-arm`）。
+- 推 `v*` tag 或手动 `workflow_dispatch`；原六平台矩阵中，macOS 暂未启用（移植缺口未补齐），ARM64（`windows-11-arm` / `ubuntu-22.04-arm`）暂缓编译以显著缩短 CI 构建耗时；目前常态编译 x86_64（`windows-latest` 与 `ubuntu-22.04`）。
 - `build` job 各平台构建 + 归档产物（`actions/upload-artifact`）；`release` job 汇总 → 计算
   SHA256 生成 `latest.json` → `softprops/action-gh-release` 发布（含 latest.json）。
 - **无需任何签名 secret**（校验仅 SHA-256）。
@@ -1595,3 +1594,7 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 
 验证：`tsc` 0；`test:chat` 174 全绿。⚠️ 视觉确认需实跑一轮「带代码块 → 提问卡 → 提交」
 （本机未实测）。
+
+### v0.1.6 发布与 CI 构建矩阵精简（2026-10-09）
+- **CI 构建提速**：`.github/workflows/release.yml` 暂时注释掉 `windows-11-arm` 与 `ubuntu-22.04-arm` 的编译目标，常态发布仅编译 x86_64（`windows-latest` 与 `ubuntu-22.04`），将多架构编译耗时由 20+ 分钟大幅压缩。
+- **全套版本升级**：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 与 `src-tauri/Cargo.lock` 同步升级至 `0.1.6`。

@@ -49,18 +49,19 @@ jobs:
             target: x86_64-pc-windows-msvc
             os_name: windows
             arch: amd64
-          - platform: windows-11-arm
-            target: aarch64-pc-windows-msvc
-            os_name: windows
-            arch: arm64
+          # ARM64 平台暂缓编译（windows-11-arm 与 ubuntu-22.04-arm，加快 CI 构建）
+          # - platform: windows-11-arm
+          #   target: aarch64-pc-windows-msvc
+          #   os_name: windows
+          #   arch: arm64
           - platform: ubuntu-22.04
             target: x86_64-unknown-linux-gnu
             os_name: linux
             arch: amd64
-          - platform: ubuntu-22.04-arm
-            target: aarch64-unknown-linux-gnu
-            os_name: linux
-            arch: arm64
+          # - platform: ubuntu-22.04-arm
+          #   target: aarch64-unknown-linux-gnu
+          #   os_name: linux
+          #   arch: arm64
 
     runs-on: ${{ matrix.platform }}
 
