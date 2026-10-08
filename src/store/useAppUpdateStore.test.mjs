@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from "bun:test";
-import { useAppUpdateStore } from "./useAppUpdateStore";
+import { useAppUpdateStore } from "./useAppUpdateStore.ts";
 
 describe("useAppUpdateStore", () => {
   beforeEach(() => {
