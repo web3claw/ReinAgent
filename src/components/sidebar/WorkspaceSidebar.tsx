@@ -9,6 +9,7 @@ import {
   Timer, Settings, Monitor, Plug, Bot,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
+import { SidebarVersionUpdater } from './SidebarVersionUpdater';
 
 /** 底栏图标按钮（对齐 PI-Desktop TooltipButton + footer-action：32×32 命中区和 top 气泡提示）。
  * 无 tooltip / 无 onClick 时为纯展示占位（不高亮、不可点）。 */
@@ -285,11 +286,7 @@ export function WorkspaceSidebar({
             </span>
           </FooterIconButton>
         </div>
-        {versionText && (
-          <span className="text-[13px] leading-none tabular-nums text-[var(--text)] font-medium">
-            v{versionText}
-          </span>
-        )}
+        <SidebarVersionUpdater versionText={versionText} />
       </div>
     </div>
   );

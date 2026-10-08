@@ -1598,3 +1598,25 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 ### v0.1.6 发布与 CI 构建矩阵精简（2026-10-09）
 - **CI 构建提速**：`.github/workflows/release.yml` 暂时注释掉 `windows-11-arm` 与 `ubuntu-22.04-arm` 的编译目标，常态发布仅编译 x86_64（`windows-latest` 与 `ubuntu-22.04`），将多架构编译耗时由 20+ 分钟大幅压缩。
 - **全套版本升级**：`package.json`、`src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml` 与 `src-tauri/Cargo.lock` 同步升级至 `0.1.6`。
+- **关于页更新体验优化**：
+  - 彻底移除挂载时自动弹出的 Toast 浮窗提示（无未经用户确认的打扰性弹窗）；
+  - 右上角更新按钮文案始终保持为「检查更新」（点击即触发检查，不再替换为「立即更新」）；
+  - 检测到新版本后的详情展示与下载安装操作统一由下方的卡片面板承接。
+
+### 静默自更新与左下角版本号状态机（2026-10-09）
+- **Rust 后端支持**：
+  - `UpdateArgs` 扩展 `defer_restart: Option<bool>`：支持下载、SHA-256 校验和原子原地替换完成后延后重启（避免打断用户当前操作）；
+  - 新增 Tauri 原生指令 `update_restart`，调用 `app.restart()`，用户点击即可无缝重启到新版本。
+- **全局更新状态控制器（`useAppUpdateStore`）**：
+  - 集中管理状态流转：`idle` | `checking` | `downloading` | `ready` | `error_check` | `error_download` 以及字节下载进度 `percent`（0-100%）；
+  - 统一监听 Rust 侧派发的 `update-progress` 事件，具备 Web Mock 防崩溃安全回退。
+- **左下角状态组件（`SidebarVersionUpdater`）**：
+  - 软件启动时后台自动检测，发现新版本自动开启下载；
+  - 检查/下载中：展示圆圈进度圈，内置百分比数字（`0%`~`100%`），悬停展示动态进度 Tooltip；
+  - 下载完成待重启：展示绿色下载图标（对齐 LiveAgent 风格），悬停提示「立即重启更新」，点击直接重启生效；
+  - 获取失败/下载失败：展示黄色圆圈感叹号，悬停提示「获取更新信息失败，点击重试」或「下载更新失败，点击重新下载」，点击立即重新发起；
+  - 完整适配中英文双语字典 (`zh-CN` / `en-US`)。
+
+### v0.1.7 发布（2026-10-09）
+- **版本号升级**：全套升级至 `v0.1.7`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`）。
+- **包含功能**：包含启动自动检测更新、静默自动下载、左下角版本号动态状态机（进度圈百分比 / 绿色重启更新圆纽 / 黄色感叹号重试）及关于页交互优化。

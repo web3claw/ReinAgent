@@ -268,6 +268,7 @@ pub fn run() {
             plugins::plugin_uninstall,
             self_update::update_check,
             self_update::update_install,
+            self_update::update_restart,
             usage_stats::usage_snapshot,
             usage_stats::usage_reset,
             fs_base64::fs_read_base64_file,

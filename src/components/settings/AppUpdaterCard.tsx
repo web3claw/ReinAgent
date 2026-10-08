@@ -9,12 +9,11 @@
  * 半自动：启动静默检查，有新版提示但**不自动下载**，用户点「立即更新」才执行。
  */
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { RefreshCw, Download } from "lucide-react";
 import { useTranslation } from "../../i18n";
-import { toast } from "../lw/ui/toast";
 
 /** 默认更新源：本仓库 GitHub Releases 的 latest.json（CI 发布时生成）。 */
 export const DEFAULT_UPDATE_ENDPOINT =
@@ -113,8 +112,6 @@ export function AppUpdaterCard({ appVersion }: { appVersion?: string }) {
   const [progress, setProgress] = useState<UpdateProgressPayload | null>(null);
   const [result, setResult] = useState<CheckResult | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // 启动自动检查只跑一次（严格模式双挂载也只发一次请求）。
-  const autoCheckedRef = useRef(false);
 
   // 监听后端推送的下载进度事件
   useEffect(() => {
@@ -148,40 +145,6 @@ export function AppUpdaterCard({ appVersion }: { appVersion?: string }) {
     }
   };
 
-  // 启动自动检查（半自动）：只提示，不自动下载。静默失败——未发布 Release 时
-  // 拉取 404 属预期，不该在启动时报错打扰；设置页手动检查仍如实显示错误。
-  useEffect(() => {
-    if (autoCheckedRef.current) return;
-    autoCheckedRef.current = true;
-    let cancelled = false;
-    void (async () => {
-      try {
-        const r = await invoke<CheckResult>("update_check", {
-          args: { feed: DEFAULT_UPDATE_ENDPOINT },
-        });
-        if (cancelled || !r.hasUpdate) return;
-        toast.success(
-          t("updaterAvailable").replace("{version}", r.availableVersion ?? "?"),
-          {
-            id: "reinagent-update-available",
-            duration: 0,
-            action: {
-              label: t("updaterInstall"),
-              onClick: () => {
-                void install();
-              },
-            },
-          },
-        );
-      } catch {
-        // 启动检查失败静默（未配置/无网络/无 Release 均属预期）
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [t]);
-
   const check = async () => {
     setChecking(true);
     setError(null);
@@ -214,30 +177,14 @@ export function AppUpdaterCard({ appVersion }: { appVersion?: string }) {
 
         <button
           type="button"
-          onClick={() => {
-            if (result?.hasUpdate) {
-              void install();
-            } else {
-              void check();
-            }
-          }}
+          onClick={() => void check()}
           disabled={checking || installing}
           className="flex flex-shrink-0 items-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-1.5 text-xs font-medium text-white transition-opacity hover:opacity-90 disabled:opacity-50"
         >
-          {installing ? (
-            <>
-              <CircularProgress percent={progress?.percent ?? 0} size={18} strokeWidth={2.2} />
-              <span>{t("updaterDownloading")}</span>
-            </>
-          ) : checking ? (
+          {checking ? (
             <>
               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
               <span>{t("updaterCheck")}</span>
-            </>
-          ) : result?.hasUpdate ? (
-            <>
-              <Download className="h-3.5 w-3.5" />
-              <span>{t("updaterInstallShort")}</span>
             </>
           ) : (
             <>

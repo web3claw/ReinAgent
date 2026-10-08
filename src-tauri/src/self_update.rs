@@ -271,6 +271,8 @@ fn build_client(for_url: &str) -> Result<reqwest::Client, String> {
 pub struct UpdateArgs {
     /// feed URL；留空用 DEFAULT_FEED。
     pub feed: Option<String>,
+    /// 是否延后重启（用于自动静默下载完成后等待用户手动确认再重启）
+    pub defer_restart: Option<bool>,
 }
 
 fn feed_of(args: &UpdateArgs) -> String {
@@ -553,7 +555,7 @@ fn set_executable(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// 下载并安装更新，成功后重启应用（不返回）。
+/// 下载并安装更新，若未设置 defer_restart 则成功后自动重启应用。
 #[tauri::command]
 pub async fn update_install(app: tauri::AppHandle, args: UpdateArgs) -> Result<(), String> {
     let current = app.package_info().version.to_string();
@@ -576,6 +578,15 @@ pub async fn update_install(app: tauri::AppHandle, args: UpdateArgs) -> Result<(
     } else {
         install_binary(&app, &dl_client, asset).await?;
     }
+    if !args.defer_restart.unwrap_or(false) {
+        app.restart();
+    }
+    Ok(())
+}
+
+/// 重启应用以使已安装的更新生效。
+#[tauri::command]
+pub async fn update_restart(app: tauri::AppHandle) -> Result<(), String> {
     app.restart();
     #[allow(unreachable_code)]
     Ok(())
