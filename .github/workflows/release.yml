@@ -108,12 +108,12 @@ jobs:
           set -euo pipefail
           BASE="src-tauri/target/${{ matrix.target }}/release/bundle"
           APP="$BASE/macos/ReinAgent.app"
-          mkdir -p dist
+          mkdir -p artifacts
           # 自更新用 zip（--keepParent 保留顶层 ReinAgent.app，供解包后定位）
-          ditto -c -k --keepParent "$APP" "dist/ReinAgent-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
+          ditto -c -k --keepParent "$APP" "artifacts/ReinAgent-${{ matrix.os_name }}-${{ matrix.arch }}.zip"
           # 给人下载的未签名 dmg
-          cp "$BASE"/dmg/*.dmg "dist/ReinAgent-${{ matrix.os_name }}-${{ matrix.arch }}.dmg"
-          ls -la dist
+          cp "$BASE"/dmg/*.dmg "artifacts/ReinAgent-${{ matrix.os_name }}-${{ matrix.arch }}.dmg"
+          ls -la artifacts
 
       # Windows / Linux：裸二进制（--no-bundle）
       - name: Build (Windows / Linux)
@@ -121,27 +121,29 @@ jobs:
         shell: bash
         run: bunx tauri build --target ${{ matrix.target }} --no-bundle
 
+      # 注意：产物放 artifacts/ 而非 dist/ —— `tauri build` 会先跑 `bun run build`，
+      # 前端产物输出到仓库根的 dist/（frontendDist = ../dist），若同目录会一并被上传。
       - name: Package Windows / Linux artifacts
         if: matrix.os_name != 'darwin'
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
+          mkdir -p artifacts
           if [ "${{ matrix.os_name }}" = "windows" ]; then
             SRC="src-tauri/target/${{ matrix.target }}/release/ReinAgent.exe"
-            cp "$SRC" "dist/ReinAgent-windows-${{ matrix.arch }}.exe"
+            cp "$SRC" "artifacts/ReinAgent-windows-${{ matrix.arch }}.exe"
           else
             SRC="src-tauri/target/${{ matrix.target }}/release/ReinAgent"
-            cp "$SRC" "dist/ReinAgent-linux-${{ matrix.arch }}"
-            chmod +x "dist/ReinAgent-linux-${{ matrix.arch }}"
+            cp "$SRC" "artifacts/ReinAgent-linux-${{ matrix.arch }}"
+            chmod +x "artifacts/ReinAgent-linux-${{ matrix.arch }}"
           fi
-          ls -la dist
+          ls -la artifacts
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: dist-${{ matrix.os_name }}-${{ matrix.arch }}
-          path: dist/*
+          path: artifacts/*
           if-no-files-found: error
 
   release:
@@ -151,10 +153,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 只取构建产物（各 job 上传的 artifact 内容，不含前端 dist/）
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
-          path: dist
+          path: artifacts
           merge-multiple: true
 
       - name: Resolve version and tag
@@ -169,7 +172,7 @@ jobs:
           # 若手填 tag 带 v 前缀，版本号取其去掉 v 的部分
           echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          ls -la dist
+          ls -la artifacts
 
       - name: Generate latest.json
         run: |
@@ -180,8 +183,8 @@ jobs:
           repo = os.environ["GITHUB_REPOSITORY"]
           base = f"https://github.com/{repo}/releases/download/{tag}"
           assets = {}
-          for name in sorted(os.listdir("dist")):
-              path = os.path.join("dist", name)
+          for name in sorted(os.listdir("artifacts")):
+              path = os.path.join("artifacts", name)
               if not os.path.isfile(path):
                   continue
               data = open(path, "rb").read()
@@ -214,5 +217,5 @@ jobs:
             Windows / Linux 为免安装裸二进制（win: .exe，linux: 无扩展名）。
             已安装的 ReinAgent 启动时会自动检查更新。
           files: |
-            dist/*
+            artifacts/*
             latest.json
