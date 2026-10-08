@@ -1510,3 +1510,17 @@ latest.json 生成脚本本地演练通过（文件名与 `asset_name()` 预期�
   `objc2_av_foundation` 也未写入 Cargo.toml 的 macOS 依赖。
 - CI 已暂时移除 macOS 矩阵项（release.yml 中被注释，含恢复说明）；v0.1.3 只发
   Windows/Linux 四平台（已全部构建成功）。补齐后取消注释即可恢复。
+
+### 自更新走设置页代理（2026-10-08 补充）
+
+`self_update.rs` 的检查更新与下载更新**均按设置页 kv 代理出网**（键与其它出网同源：
+`reinagent-web-proxy` / `reinagent-web-proxy-no-proxy`，读 `~/.ReinAgent/conversations.db`）：
+
+- `build_client(for_url)`：未配置代理 → 显式直连（不跟随系统/环境变量，对齐 app_proxy 语义）；
+  已配置 → 走代理；但目标 URL 命中 no-proxy 规则时该请求直连。
+- feed（latest.json）与下载包（asset.url）**各自按自身 URL 判定**代理——两者可能不同域
+  （如 feed 在 GitHub、下载走镜像/CDN）。
+- 复用 `web_tools::url_bypasses_proxy()`（抽自原 `resolve_proxy_for_url`），与 web_fetch/MCP
+  等共用同一套 no-proxy 匹配器。⚠ 不复用 reqwest 的 `NoProxy`：它不支持本项目
+  `192.168.*`/`10.*` 这类尾通配，语义会不一致。
+- 代理配置非法时如实报错（No-Fallback），不静默降级直连。

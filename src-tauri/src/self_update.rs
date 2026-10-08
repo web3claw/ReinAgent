@@ -224,20 +224,27 @@ fn old_path_str(exe: &Path) -> PathBuf {
 
 // ---------------- HTTP ----------------
 
-fn build_client() -> Result<reqwest::Client, String> {
-    let (proxy_url, no_proxy) = crate::app_proxy::read_proxy_settings();
-    let mut builder = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(20));
+/// 构建更新用的 HTTP 客户端（每个目标 URL 一个）。
+///
+/// 代理语义与设置页（kv `reinagent-web-proxy` / `-no-proxy`）完全一致：
+/// - 未配置代理 → 显式直连（不静默跟随系统/环境变量代理，对齐 app_proxy 语义）；
+/// - 已配置代理 → 走代理；但目标 URL 命中 no-proxy 规则时该请求直连。
+///
+/// reqwest 的 `Proxy` 无 per-request 开关，故按 URL 是否命中 no-proxy 决定用哪种
+/// 客户端——命中直连的 URL（如自建镜像/内网）不会被送去代理。
+fn build_client(for_url: &str) -> Result<reqwest::Client, String> {
+    let (proxy_url, _no_proxy) = crate::app_proxy::read_proxy_settings();
     let proxy_trimmed = proxy_url.trim();
-    if !proxy_trimmed.is_empty() {
-        let mut proxy = reqwest::Proxy::all(proxy_trimmed)
-            .map_err(|e| format!("代理配置无效（kv reinagent-web-proxy = {proxy_trimmed}）：{e}"))?;
-        if !no_proxy.trim().is_empty() {
-            proxy = proxy.no_proxy(reqwest::NoProxy::from_string(no_proxy.trim()));
-        }
-        builder = builder.proxy(proxy);
-    } else {
-        // 与 llm_proxy 一致：留空 = 显式直连（不静默跟随环境代理）
+    let mut builder = reqwest::Client::builder().connect_timeout(std::time::Duration::from_secs(20));
+
+    let bypass = crate::web_tools::url_bypasses_proxy(for_url);
+    if proxy_trimmed.is_empty() || bypass {
+        // 「留空直连」语义：显式禁用一切代理（含环境变量）
         builder = builder.no_proxy();
+    } else {
+        let proxy = reqwest::Proxy::all(proxy_trimmed)
+            .map_err(|e| format!("代理配置无效（kv reinagent-web-proxy = {proxy_trimmed}）：{e}"))?;
+        builder = builder.proxy(proxy);
     }
     builder.build().map_err(|e| format!("更新客户端构建失败：{e}"))
 }
@@ -283,8 +290,9 @@ async fn fetch_feed(client: &reqwest::Client, url: &str) -> Result<Feed, String>
 #[tauri::command]
 pub async fn update_check(app: tauri::AppHandle, args: UpdateArgs) -> Result<UpdateCheckResult, String> {
     let current = app.package_info().version.to_string();
-    let client = build_client()?;
-    let feed = fetch_feed(&client, &feed_of(&args)).await?;
+    let feed_url = feed_of(&args);
+    let client = build_client(&feed_url)?;
+    let feed = fetch_feed(&client, &feed_url).await?;
     if is_newer(&feed.version, &current) {
         Ok(UpdateCheckResult {
             has_update: true,
@@ -372,8 +380,9 @@ fn set_executable(path: &Path) -> Result<(), String> {
 #[tauri::command]
 pub async fn update_install(app: tauri::AppHandle, args: UpdateArgs) -> Result<(), String> {
     let current = app.package_info().version.to_string();
-    let client = build_client()?;
-    let feed = fetch_feed(&client, &feed_of(&args)).await?;
+    let feed_url = feed_of(&args);
+    let client = build_client(&feed_url)?;
+    let feed = fetch_feed(&client, &feed_url).await?;
     if !is_newer(&feed.version, &current) {
         return Err("当前已是最新版本".to_string());
     }
@@ -382,11 +391,13 @@ pub async fn update_install(app: tauri::AppHandle, args: UpdateArgs) -> Result<(
         .assets
         .get(&name)
         .ok_or_else(|| format!("更新源缺少本机所需文件：{name}"))?;
+    // 下载走 asset 自身 URL 的代理判定（可能与 feed URL 不同，如镜像/CDN）
+    let dl_client = build_client(&asset.url)?;
 
     if cfg!(target_os = "macos") {
-        install_macos(&app, &client, asset).await?;
+        install_macos(&app, &dl_client, asset).await?;
     } else {
-        install_binary(&client, asset).await?;
+        install_binary(&dl_client, asset).await?;
     }
     app.restart();
     #[allow(unreachable_code)]
@@ -504,5 +515,19 @@ mod tests {
         assert!(name.starts_with("ReinAgent-"));
         // windows → .exe、macos → .zip、linux → 无扩展名
         assert!(name.ends_with(".exe") || name.ends_with(".zip") || !name.contains('.'));
+    }
+
+    /// 更新走公网 → 必须复用设置页的代理；no-proxy 规则命中则直连。
+    #[test]
+    fn proxy_bypass_rules_apply_to_update_urls() {
+        // 默认 no-proxy（web_tools::KV_WEB_PROXY_NO_PROXY_DEFAULT）覆盖的地址应直连
+        assert!(crate::web_tools::url_bypasses_proxy("http://127.0.0.1:7890/x"));
+        assert!(crate::web_tools::url_bypasses_proxy("http://192.168.1.5/y"));
+        // 公网地址不命中 → 应走代理
+        assert!(!crate::web_tools::url_bypasses_proxy(
+            "https://github.com/web3claw/ReinAgent/releases/download/v0.1.3/latest.json"
+        ));
+        // 非 http(s) 一律不当作代理目标
+        assert!(!crate::web_tools::url_bypasses_proxy("file:///tmp/x"));
     }
 }

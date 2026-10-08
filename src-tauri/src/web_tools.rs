@@ -398,28 +398,46 @@ pub(crate) fn filter_domains(hits: Vec<WebSearchHit>, allowed: &[String], blocke
 // HTTP 与命令
 // ---------------------------------------------------------------------------
 
+/// 从 http(s) URL 解析 (host, port)；非 http(s) 返回 None。
+/// host 取 authority 里**第一个**冒号前段（IPv6 / 带端口均按 web_tools 既有语义处理）。
+pub(crate) fn parse_host_port(url: &str) -> Option<(String, u16)> {
+    if !(url.starts_with("http://") || url.starts_with("https://")) {
+        return None;
+    }
+    let is_https = url.starts_with("https://");
+    let rest = url.split("://").nth(1)?;
+    let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
+    let host = authority.rsplit('@').next().unwrap_or(authority);
+    let host = host.split(':').next().unwrap_or(host).to_lowercase();
+    let default_port: u16 = if is_https { 443 } else { 80 };
+    let port = authority
+        .rsplit(':')
+        .next()
+        .and_then(|p| p.parse::<u16>().ok())
+        .unwrap_or(default_port);
+    Some((host, port))
+}
+
+/// 目标 URL 是否命中 no-proxy 规则（应直连）。
+/// 供 reqwest 调用方（自更新 self_update）复用同一套规则与默认值，避免另写一份
+/// 语义不同的匹配（reqwest 的 NoProxy 不支持本项目 `192.168.*` 这类尾通配）。
+pub(crate) fn url_bypasses_proxy(url: &str) -> bool {
+    let Some((host, port)) = parse_host_port(url) else {
+        return false;
+    };
+    match read_no_proxy_rules() {
+        Some(rules) => matches_no_proxy(&host, port, &rules),
+        None => false,
+    }
+}
+
 /// 解析出网代理：显式设置（kv）优先 → 标准环境变量（HTTP(S)_PROXY/ALL_PROXY）→ 直连。
 /// 设置值非法时如实报错（绝不静默降级直连——配置错误必须暴露）。
 /// 目标 URL 命中 no-proxy 规则（kv `reinagent-web-proxy-no-proxy`）→ 直连。
 pub fn resolve_proxy_for_url(url: &str) -> Result<Option<ureq::Proxy>, String> {
     // 只处理 http/https；其它 scheme（file: 等）一律直连
-    if !(url.starts_with("http://") || url.starts_with("https://")) {
+    let Some((host, port)) = parse_host_port(url) else {
         return resolve_proxy();
-    }
-    let (host, port) = match (url.split("://").nth(1), url.starts_with("https")) {
-        (Some(rest), is_https) => {
-            let authority = rest.split(['/', '?', '#']).next().unwrap_or("");
-            let host = authority.rsplit('@').next().unwrap_or(authority);
-            let host = host.split(':').next().unwrap_or(host).to_lowercase();
-            let default_port: u16 = if is_https { 443 } else { 80 };
-            let port = authority
-                .rsplit(':')
-                .next()
-                .and_then(|p| p.parse::<u16>().ok())
-                .unwrap_or(default_port);
-            (host.to_string(), port)
-        }
-        _ => return resolve_proxy(),
     };
     if let Some(no_proxy) = read_no_proxy_rules() {
         if matches_no_proxy(&host, port, &no_proxy) {
