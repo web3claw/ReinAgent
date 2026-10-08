@@ -1497,3 +1497,16 @@ ReinAgent 架构全景
 `test:chat` 168 / `test:providers` 38 绿；workflow YAML 解析通过、六平台矩阵齐全；
 latest.json 生成脚本本地演练通过（文件名与 `asset_name()` 预期一一对应）。
 **端到端未验证**：需真实推 tag 触发 CI 才能确认产物与替换流程（尚未做）。
+
+### macOS 构建缺口（2026-10-08，待修；v0.1.3 因此暂缓 macOS 发布）
+
+首次 CI 尝试发现**项目从未在 macOS 上编译过**，暴露既有移植缺口（非自更新改动引入）：
+- `src-tauri/src/browser.rs`：482/489/588 行的 `webkit2gtk` / `javascriptcore` 段用
+  `#[cfg(not(target_os = "windows"))]`，把 macOS 也算进去 → macOS 编译时尝试编 Linux 专属代码
+  报「找不到 crate」。另 483/592 行的 `evaluate_javascript` / `snapshot` 是 Linux/Windows API，
+  macOS 需改走 WKWebView 的 `evaluateJavaScript` / 截图实现。
+- `src-tauri/src/stt/mod.rs`：292 行 macOS 分支引用 `crate::services::stt::macos`——本仓库
+  **无 `services` 模块**（LiveAgent 移植遗留的悬空引用）；490-492 行的 `objc2` / `block2` /
+  `objc2_av_foundation` 也未写入 Cargo.toml 的 macOS 依赖。
+- CI 已暂时移除 macOS 矩阵项（release.yml 中被注释，含恢复说明）；v0.1.3 只发
+  Windows/Linux 四平台（已全部构建成功）。补齐后取消注释即可恢复。

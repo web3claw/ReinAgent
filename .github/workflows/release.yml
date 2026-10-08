@@ -1,17 +1,20 @@
 name: Release
 
-# 推 v* tag（或手动触发）→ 六平台构建 → 汇总产物 + SHA256 → 生成 latest.json
+# 推 v* tag（或手动触发）→ 四平台构建 → 汇总产物 + SHA256 → 生成 latest.json
 # → 发布到 GitHub Releases。
 #
 # 分发形态（不用 tauri-plugin-updater，自更新逻辑见 src-tauri/src/self_update.rs）：
 # - Windows / Linux：`--no-bundle` 出的**裸二进制**（免安装，双击/直接运行）
-# - macOS：`.app` + `.dmg`（给人下载）+ `.app` 的 **zip**（给程序自更新解包替换）
 #
 # latest.json 格式（自更新模块消费）：
 #   { version, notes, pub_date, assets: { 文件名: { url, size, sha256 } } }
 #
 # 无需任何签名 secret（校验仅 SHA-256，与 magpie 一致）。
-# macOS 为未签名 dmg/zip（用户首次需右键 → 打开绕过 Gatekeeper）。
+#
+# ⚠ macOS 暂未纳入（2026-10-08）：项目从未在 macOS 编译过，存在既有移植缺口——
+#   browser.rs 的 webkit2gtk/javascriptcore 段未用 cfg(target_os="linux") 隔离、
+#   stt/mod.rs 的 macOS 分支引用不存在的 crate::services 且缺 objc2/block2/
+#   objc2-av-foundation 依赖。补齐后再启用下面被注释的 macOS 矩阵项与构建步骤。
 
 on:
   push:
@@ -33,14 +36,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            target: aarch64-apple-darwin
-            os_name: darwin
-            arch: arm64
-          - platform: macos-15-intel
-            target: x86_64-apple-darwin
-            os_name: darwin
-            arch: amd64
+          # macOS 暂未启用（见文件头说明：既有移植缺口未补齐）
+          # - platform: macos-latest
+          #   target: aarch64-apple-darwin
+          #   os_name: darwin
+          #   arch: arm64
+          # - platform: macos-15-intel
+          #   target: x86_64-apple-darwin
+          #   os_name: darwin
+          #   arch: amd64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             os_name: windows
@@ -91,7 +95,8 @@ jobs:
 
       # ---------- 构建 ----------
 
-      # macOS：出 app + dmg（dmg 给人下载），再把 .app 打包成 zip 供自更新
+      # macOS：出 app + dmg（dmg 给人下载），再把 .app 打包成 zip 供自更新。
+      # 目前矩阵中无 darwin 项，此步不会执行；补齐 macOS 移植后启用矩阵即可复用。
       - name: Build (macOS)
         if: matrix.os_name == 'darwin'
         run: bunx tauri build --target ${{ matrix.target }} --bundles app,dmg
@@ -206,7 +211,7 @@ jobs:
           body: |
             ReinAgent ${{ steps.meta.outputs.tag }}
 
-            Windows / Linux 为免安装裸二进制；macOS 为 dmg（安装）与 zip（应用内自更新用）。
+            Windows / Linux 为免安装裸二进制（win: .exe，linux: 无扩展名）。
             已安装的 ReinAgent 启动时会自动检查更新。
           files: |
             dist/*
