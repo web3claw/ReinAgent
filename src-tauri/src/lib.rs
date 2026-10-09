@@ -56,13 +56,16 @@ pub fn focus_main_window(window: &tauri::WebviewWindow) {
     let _ = window.set_focus();
     #[cfg(target_os = "linux")]
     {
-        use gtk::prelude::*;
-        if let Ok(gtk_window) = window.gtk_window() {
-            gtk_window.show();
-            gtk_window.deiconify();
-            gtk_window.present();
-        }
-        gdk::notify_startup_complete();
+        let win = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            use gtk::prelude::*;
+            if let Ok(gtk_window) = win.gtk_window() {
+                gtk_window.show();
+                gtk_window.deiconify();
+                gtk_window.present();
+            }
+            gdk::notify_startup_complete();
+        });
         // 穿透 GNOME 焦点防窃取：短暂置顶后恢复正常层级
         let _ = window.set_always_on_top(true);
         let _ = window.set_always_on_top(false);
@@ -109,20 +112,12 @@ pub fn run() {
             // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；
             // 必须最先注册（官方要求）。保证任务栏只有一个应用图标。
             .plugin({
-                let single_instance = tauri_plugin_single_instance::Builder::new().callback(
-                    |_app, _argv, _cwd| {
-                        use tauri::Manager as _;
-                        // 回调运行在「新进程」上下文，此处无法直接拿窗口——通过已有实例的
-                        // AppHandle 聚焦；插件会把第二实例的参数转给本回调，聚焦逻辑在
-                        // setup 里保存的全局句柄上完成（见 SINGLE_APP_HANDLE OnceLock）。
-                        if let Some(app) = SINGLE_APP_HANDLE.get() {
-                            if let Some(window) = app.get_webview_window("main") {
-                                focus_main_window(&window);
-                            }
-                        }
-                    },
-                );
-                single_instance.build()
+                tauri_plugin_single_instance::init(|app, _argv, _cwd| {
+                    use tauri::Manager as _;
+                    if let Some(window) = app.get_webview_window("main") {
+                        focus_main_window(&window);
+                    }
+                })
             })
             .manage(TerminalState::default())
             .manage(std::sync::Arc::new(stt::SttManager::default()))

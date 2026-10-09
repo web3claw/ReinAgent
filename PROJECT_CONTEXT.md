@@ -1629,9 +1629,15 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 
 ### v0.1.9 发布（2026-10-09）
 - **版本号升级**：全套升级至 `v0.1.9`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`、`useAppUpdateStore.test.mjs`）。
-- **Linux 托盘唤醒与 Dock 鼠标转圈卡顿彻底修复**：
-  - 启动及唤醒时立即调用 `gdk::notify_startup_complete()`，通知 GNOME 窗口管理器启动已就绪，瞬间解除鼠标指针长时间转圈，消除 GNOME 对 Dock 图标的重复点击冷却锁；
-  - 统一抽象 `focus_main_window`，在 Linux 下显式调用原生 `gtk_window.deiconify()` 与 `gtk_window.present()`，让最小化到托盘的主窗口瞬间弹回桌面最前排；
+- **Linux 托盘唤醒与 Dock 鼠标转圈卡顿修复**：
+  - 启动及唤醒时引入 `gdk::notify_startup_complete()` 与原生 GTK 窗口调度；
   - 移除 `tauri.conf.json` 中的 `enableGTKAppId: true`，规避 GTK Application D-Bus 激活时因重复创建 `main` 窗口而导致的 Panic 崩溃。
+
+### v0.1.10 发布（2026-10-09）
+- **版本号升级**：全套升级至 `v0.1.10`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`、`useAppUpdateStore.test.mjs`）。
+- **Linux 启动 Panic 根除与单实例原生调度加固**：
+  - 彻底移除 `main.rs` 中在 GTK 运行时就绪前过早调用 `gdk::notify_startup_complete()` 导致的 Panic 崩溃，恢复应用秒级正常冷启动与更新自重启；
+  - 使用标准的 `tauri_plugin_single_instance::init` 接入单实例路由，并在聚焦逻辑中通过 `window.run_on_main_thread` 安全派发 GTK 原生 `deiconify()`、`present()` 以及 `gdk::notify_startup_complete()`，彻底解决 Linux 最小化到托盘后点击 Dock 无法拉起、鼠标转圈及无法连续点击的问题。
+
 
 
