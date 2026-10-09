@@ -94,6 +94,8 @@ const KV_ENABLED: &str = "remote-server-enabled";
 const KV_PORT: &str = "remote-server-port";
 const KV_TOKEN: &str = "remote-server-token"; // 明文（仅本机设置页读）
 const KV_TOKEN_HASH: &str = "remote-server-token-hash";
+const KV_NETWORK_MODE: &str = "remote-server-network-mode"; // "lan" | "cloudflare" | "custom"
+const KV_CUSTOM_URL: &str = "remote-server-custom-url";
 
 fn kv_get(key: &str) -> Option<String> {
     let Ok(conn) = crate::conversation_store::db_conn() else { return None; };
@@ -114,6 +116,25 @@ fn kv_set(key: &str, value: &str) {
 const MAX_FAILURES: u32 = 5;
 const BLACKLIST_MS: u64 = 5 * 60 * 1000;
 
+/// 从请求头或 socket 地址提取真实客户端 IP（优先 CF-Connecting-IP 与 X-Forwarded-For）
+fn resolve_client_ip(headers: &HeaderMap, connect_addr: &SocketAddr) -> String {
+    if let Some(cf_ip) = headers.get("cf-connecting-ip").and_then(|v| v.to_str().ok()) {
+        let ip = cf_ip.trim();
+        if !ip.is_empty() {
+            return ip.to_string();
+        }
+    }
+    if let Some(xff) = headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
+        if let Some(first) = xff.split(',').next() {
+            let ip = first.trim();
+            if !ip.is_empty() {
+                return ip.to_string();
+            }
+        }
+    }
+    connect_addr.ip().to_string()
+}
+
 fn is_blacklisted(ip: &str) -> bool {
     let st = state();
     let mut blacklist = st.blacklist.lock().expect("blacklist lock");
@@ -127,13 +148,16 @@ fn is_blacklisted(ip: &str) -> bool {
 }
 
 fn record_auth_failure(ip: &str) -> bool {
+    // 保护本地回环与本地隧道自身绝对不被加入黑名单
+    if ip == "127.0.0.1" || ip == "::1" || ip == "localhost" {
+        return false;
+    }
     let st = state();
     let mut counts = st.fail_counts.lock().expect("fail counts lock");
     let count = counts.entry(ip.to_string()).or_insert(0);
     *count += 1;
     if *count >= MAX_FAILURES {
-        let st = state();
-    let mut blacklist = st.blacklist.lock().expect("blacklist lock");
+        let mut blacklist = st.blacklist.lock().expect("blacklist lock");
         blacklist.insert(ip.to_string(), Instant::now() + Duration::from_millis(BLACKLIST_MS));
         counts.remove(ip);
         true
@@ -229,7 +253,7 @@ async fn page_handler(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let ip = addr.ip().to_string();
+    let ip = resolve_client_ip(&headers, &addr);
     // 通过 query token 鉴权时种 HttpOnly Cookie：页面 replaceState 清掉 URL 里的
     // token 后，刷新仍能凭 Cookie 通过（对齐 ZCode hasValidLiteToken 语义）。
     let via_query_token = verify_token(query.token.as_deref(), &headers, &ip)?;
@@ -238,7 +262,7 @@ async fn page_handler(
         response.headers_mut().append(
             axum::http::header::SET_COOKIE,
             axum::http::HeaderValue::from_str(&format!(
-                "reinagent_remote_token={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=31536000"
+                "reinagent_remote_token={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=31536000"
             ))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?,
         );
@@ -303,7 +327,7 @@ async fn ws_handler(
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
     State(app): State<AppHandle>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let ip = addr.ip().to_string();
+    let ip = resolve_client_ip(&headers, &addr);
     verify_token(query.token.as_deref(), &headers, &ip)?;
     Ok(ws.on_upgrade(move |socket| ws_session(socket, app)))
 }
@@ -615,6 +639,12 @@ pub struct RemoteServerStatus {
     pub token: String,
     pub url: String,
     pub connected_clients: u32,
+    pub network_mode: String,
+    pub custom_url: String,
+    pub tunnel_status: String,
+    pub tunnel_url: Option<String>,
+    pub tunnel_error: Option<String>,
+    pub tunnel_progress: Option<String>,
 }
 
 fn local_ip() -> Option<String> {
@@ -624,20 +654,55 @@ fn local_ip() -> Option<String> {
     socket.local_addr().ok().map(|a| a.ip().to_string())
 }
 
+fn derive_remote_url(mode: &str, token: &str, port: u32, custom_url: &str) -> String {
+    match mode {
+        "cloudflare" => {
+            let t_status = crate::remote_tunnel::get_tunnel_status();
+            if let Some(pub_url) = t_status.public_url {
+                format!("{pub_url}/?token={token}")
+            } else {
+                "".to_string()
+            }
+        }
+        "custom" => {
+            let base = custom_url.trim().trim_end_matches('/');
+            if !base.is_empty() {
+                format!("{base}/?token={token}")
+            } else {
+                "".to_string()
+            }
+        }
+        _ => {
+            let ip = local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+            format!("http://{ip}:{port}/?token={token}")
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn remote_server_status() -> Result<RemoteServerStatus, String> {
     let st = state();
     let enabled = st.enabled.load(Ordering::Relaxed);
     let port = st.port.load(Ordering::Relaxed);
     let token = kv_get(KV_TOKEN).unwrap_or_default();
-    let ip = local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+    let mode = kv_get(KV_NETWORK_MODE).unwrap_or_else(|| "lan".to_string());
+    let custom_url = kv_get(KV_CUSTOM_URL).unwrap_or_default();
+    let tunnel = crate::remote_tunnel::get_tunnel_status();
+    let url = derive_remote_url(&mode, &token, port, &custom_url);
+
     Ok(RemoteServerStatus {
         available: true,
         enabled,
         port,
-        url: format!("http://{ip}:{port}/?token={token}"),
         token,
+        url,
         connected_clients: st.connected_clients.load(Ordering::Relaxed),
+        network_mode: mode,
+        custom_url,
+        tunnel_status: tunnel.status,
+        tunnel_url: tunnel.public_url,
+        tunnel_error: tunnel.error,
+        tunnel_progress: tunnel.progress,
     })
 }
 
@@ -647,6 +712,8 @@ pub struct RemoteServerConfigArgs {
     pub enabled: bool,
     pub port: Option<u32>,
     pub reset_token: Option<bool>,
+    pub network_mode: Option<String>,
+    pub custom_url: Option<String>,
 }
 
 fn ensure_token() -> String {
@@ -669,6 +736,12 @@ pub async fn remote_server_config(
         st.port.store(port, Ordering::Relaxed);
         kv_set(KV_PORT, &port.to_string());
     }
+    if let Some(ref mode) = args.network_mode {
+        kv_set(KV_NETWORK_MODE, mode);
+    }
+    if let Some(ref cu) = args.custom_url {
+        kv_set(KV_CUSTOM_URL, cu);
+    }
     if args.reset_token == Some(true) {
         let token = uuid::Uuid::new_v4().simple().to_string();
         kv_set(KV_TOKEN, &token);
@@ -680,6 +753,21 @@ pub async fn remote_server_config(
     kv_set(KV_ENABLED, if args.enabled { "1" } else { "0" });
     st.enabled.store(args.enabled, Ordering::Relaxed);
     restart_server(&app)?;
+
+    let current_mode = kv_get(KV_NETWORK_MODE).unwrap_or_else(|| "lan".to_string());
+    let port = st.port.load(Ordering::Relaxed);
+    if args.enabled && current_mode == "cloudflare" {
+        let app_handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            let _ = crate::remote_tunnel::start_cloudflare_tunnel(app_handle, port).await;
+        });
+    } else {
+        let app_handle = app.clone();
+        tauri::async_runtime::spawn(async move {
+            crate::remote_tunnel::stop_tunnel(Some(&app_handle)).await;
+        });
+    }
+
     emit_status(&app);
     remote_server_status().await
 }
@@ -688,14 +776,27 @@ fn emit_status(app: &AppHandle) {
     let st = state();
     let enabled = st.enabled.load(Ordering::Relaxed);
     let port = st.port.load(Ordering::Relaxed);
-    let ip = local_ip().unwrap_or_else(|| "127.0.0.1".to_string());
+    let token = kv_get(KV_TOKEN).unwrap_or_default();
+    let mode = kv_get(KV_NETWORK_MODE).unwrap_or_else(|| "lan".to_string());
+    let custom_url = kv_get(KV_CUSTOM_URL).unwrap_or_default();
+    let tunnel = crate::remote_tunnel::get_tunnel_status();
+    let url = derive_remote_url(&mode, &token, port, &custom_url);
+
     let _ = app.emit(
         "remote-server:status",
         serde_json::json!({
+            "available": true,
             "enabled": enabled,
             "port": port,
             "connectedClients": st.connected_clients.load(Ordering::Relaxed),
-            "url": format!("http://{ip}:{port}/?token={}", kv_get(KV_TOKEN).unwrap_or_default()),
+            "url": url,
+            "token": token,
+            "networkMode": mode,
+            "customUrl": custom_url,
+            "tunnelStatus": tunnel.status,
+            "tunnelUrl": tunnel.public_url,
+            "tunnelError": tunnel.error,
+            "tunnelProgress": tunnel.progress,
         }),
     );
 }
@@ -771,6 +872,14 @@ pub fn restore_on_startup(app: &AppHandle) {
         if let Err(err) = restart_server(app) {
             eprintln!("[remote-server] startup failed: {err}");
         }
+        let mode = kv_get(KV_NETWORK_MODE).unwrap_or_else(|| "lan".to_string());
+        let port = state().port.load(Ordering::Relaxed);
+        if mode == "cloudflare" {
+            let app_handle = app.clone();
+            tauri::async_runtime::spawn(async move {
+                let _ = crate::remote_tunnel::start_cloudflare_tunnel(app_handle, port).await;
+            });
+        }
     }
 }
 
@@ -790,4 +899,35 @@ mod serde_tests {
             _ => panic!("wrong variant"),
         }
     }
+
+    #[test]
+    fn test_resolve_client_ip_headers() {
+        use axum::http::HeaderValue;
+        let connect_addr: SocketAddr = "127.0.0.1:54321".parse().unwrap();
+        let mut headers = HeaderMap::new();
+
+        // No headers: falls back to connect_addr
+        assert_eq!(resolve_client_ip(&headers, &connect_addr), "127.0.0.1");
+
+        // X-Forwarded-For
+        headers.insert("x-forwarded-for", HeaderValue::from_static("203.0.113.195, 70.41.3.18"));
+        assert_eq!(resolve_client_ip(&headers, &connect_addr), "203.0.113.195");
+
+        // CF-Connecting-IP takes precedence over XFF
+        headers.insert("cf-connecting-ip", HeaderValue::from_static("198.51.100.42"));
+        assert_eq!(resolve_client_ip(&headers, &connect_addr), "198.51.100.42");
+    }
+
+    #[test]
+    fn test_loopback_never_blacklisted() {
+        for _ in 0..10 {
+            assert!(!record_auth_failure("127.0.0.1"));
+            assert!(!record_auth_failure("::1"));
+            assert!(!record_auth_failure("localhost"));
+        }
+        assert!(!is_blacklisted("127.0.0.1"));
+        assert!(!is_blacklisted("::1"));
+        assert!(!is_blacklisted("localhost"));
+    }
 }
+

@@ -213,10 +213,20 @@ jobs:
           draft: false
           prerelease: false
           body: |
-            ReinAgent ${{ steps.meta.outputs.tag }}
+            ### 🚀 ReinAgent ${{ steps.meta.outputs.tag }} 更新日志
 
-            Windows / Linux 为免安装裸二进制（win: .exe，linux: 无扩展名）。
-            已安装的 ReinAgent 启动时会自动检查更新。
+            #### 🌐 远程访问公网穿透支持
+            - **Cloudflare 免配置安全隧道**：支持一键开启 Cloudflare Quick Tunnel，自动分配全球 Anycast 边缘 HTTPS/WSS 加密访问地址，无需公网 IP 和路由器端口映射，手机（4G/5G 移动蜂窝网络）扫码即连。
+            - **三模网络架构**：支持局域网直连 (`lan`)、Cloudflare 公网隧道 (`cloudflare`)、自定义公网域名 (`custom`) 灵活切换与设置。
+            - **公网安全加固**：支持 `CF-Connecting-IP` 与 `X-Forwarded-For` 真实客户端 IP 解析与审计，白名单严格保护本地回环代理防误封。
+
+            #### 🛠 系统与运行体验优化
+            - **Linux 单实例通道隔离**：优化 Linux D-Bus 实例隔离，支持开发调试版与 Release 版同时独立共存运行。
+
+            ---
+            📦 **下载与运行说明**：
+            - Windows / Linux 为免安装裸二进制（Windows: `.exe`，Linux: 直接下载即可运行）。
+            - 已安装的 ReinAgent 在启动时会自动检测并更新至最新版本。
           files: |
             artifacts/*
             latest.json

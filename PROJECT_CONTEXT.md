@@ -1644,6 +1644,7 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
   - 移除 `Cargo.toml` 中多余的 `gdk` crate 外部依赖；
   - 移除 `src-tauri/src/main.rs` 中与 `lib.rs` 重复的 `glib` 应用名设置；
   - 清理 `src-tauri/src/lib.rs` 中 `focus_main_window` 的无效 `gdk::notify_startup_complete()` 与置顶 Hack，保留简洁健壮的原生 GTK `deiconify()` 与 `present()` 调度；
+  - 单实例配置恢复保留 Linux Debug 模式的 `dbus_id("com.web3claw.reinagent.dev")`，确保开发版与 Release 版可同时并存运行调试；
   - 保留全局 `SINGLE_APP_HANDLE` 供系统通知点击回调使用；所有前端测试与 Rust `cargo check` 100% 通过。
 
 ### Windows 自更新 `.old` 临时文件清理修复（2026-10-09）
@@ -1658,4 +1659,36 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 - **包含功能与修复**：
   - 彻底解决 Windows 自更新重启后遗留 `.old` 临时文件的问题，增加双重延时重试机制保障旧句柄释放；
   - 完成 Linux 单实例与启动调用代码精简，移除无用的 `gdk` crate 依赖和置顶 Hack，保留简洁健壮的原生 GTK 窗口呈现调度。
+
+### 远程访问公网支持（第一阶段：Cloudflare Quick Tunnel 免配置安全隧道 + 自建公网域名）（2026-10-09）
+- **架构设计**：
+  - **三模网络架构**：
+    1. **局域网直连 (`lan`)**：保留原有模式，显示 `http://<局域网IP>:<端口>`，仅限相同 Wi-Fi/局域网互通。
+    2. **Cloudflare 免配置安全隧道 (`cloudflare`)**：无需公网 IP、免路由器端口映射、免注册任何账号。应用在后台拉起 `cloudflared` Quick Tunnel，自动分配全球 Anycast 边缘 `https://*.trycloudflare.com`，提供权威端到端 HTTPS/WSS 加密，手机直接 4G/5G 扫码即用。
+    3. **自定义反代域名 (`custom`)**：面向拥有公网 IP / VPS / Nginx 反代 / FRP / Tailscale 的进阶用户，支持配置自定义外部公网 URL。
+- **Rust 后端实现 (`remote_tunnel.rs` + `remote_server.rs`)**：
+  - **`cloudflared` 二进制管理**：启动时优先检测系统 `PATH` 中的 `cloudflared`；若缺失则按当前平台架构（x86_64/aarch64 Linux/macOS/Windows）自动从官方 Release 安全下载至 `~/.ReinAgent/bin/` 并赋予可执行权限；
+  - **隧道子进程调度**：使用 `std::process::Command` 后台托管子进程，逐行捕获 stderr 中的 `https://[a-zA-Z0-9-]+\.trycloudflare.com` 临时公网 URL，向前端广播状态，退出/切换模式/关闭服务时优雅 `kill` 终止进程；
+  - **公网安全加固（Fail2Ban & 真实 IP 解析）**：
+    - 接入 `resolve_client_ip`，优先提取 `CF-Connecting-IP` 与 `X-Forwarded-For` 头部的真实手机客户端 IP；
+    - `record_auth_failure` 白名单严格豁免本地回环 `127.0.0.1`、`::1`、`localhost`，防止公网隧道请求频繁试错误拉黑本地代理导致整站瘫痪；
+  - **状态持久化与自动恢复**：新增 `KV_NETWORK_MODE` 与 `KV_CUSTOM_URL`；应用重启时若远程服务处于启用状态，自动按保存的网络模式恢复（包括重新拉起 Cloudflare 隧道）。
+- **前端设置页交互 (`RemoteAccessSection.tsx` + `i18n`)**：
+  - 提供局域网 / Cloudflare 隧道 / 自定义外部域名 3 张可视化模式切换卡片；
+  - 接入动态连接状态机（准备中/启动中旋转动效、已连接绿色徽标、异常状态提示与重试按钮）；
+  - 动态计算并展示外网访问 URL，二维码同步实时渲染最新的公网访问地址；
+  - 中英双语完整国际化配置。
+- **质量保障**：
+  - 单测覆盖 `TunnelNetworkMode` 转换、trycloudflare 域名正则匹配、`resolve_client_ip` 真实 IP 优先级判定以及回环地址防误拉黑机制（全部 100% 通过）；
+  - 前端构建与测试套件 497 测试全绿，Vite 打包无任何类型错误。
+
+### v0.1.12 发布（2026-10-09）
+- **版本号升级**：全套升级至 `v0.1.12`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`、`useAppUpdateStore.test.mjs`）。
+- **包含功能与优化**：
+  - 远程访问正式支持 Cloudflare 免配置公网安全隧道（手机 4G/5G 扫码即连、端到端 HTTPS/WSS 加密）；
+  - 支持自定义外部公网反代域名模式与局域网直连模式三模切换；
+  - 增强公网安全真实 IP 穿透审计与本地回环白名单保护；
+  - 恢复 Linux Debug 单实例隔离（`com.web3claw.reinagent.dev`），支持开发调试版与 Release 版同时独立共存运行；
+  - 优化 GitHub Release 发布介绍文案，结构化展示更新亮点与免安装二进制下载指南。
+
 

@@ -20,6 +20,7 @@ mod web_tools;
 mod usage_stats;
 mod stt;
 mod remote_server;
+mod remote_tunnel;
 mod fs_base64;
 mod import_sqlite;
 mod fs_tree;
@@ -106,13 +107,20 @@ pub fn run() {
         tauri::Builder::default()
             // 单实例锁（P2-G2）：第二个进程启动时回调 → 聚焦已有主窗口后退出；
             // 必须最先注册（官方要求）。保证任务栏只有一个应用图标。
+            // dev 与 release 用不同的实例名（仅 Linux）：同一通道仍互斥（两个 dev
+            // 或两个 release 各自互斥），但 dev 可与 release 同时启动调试。
             .plugin({
-                tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-                    use tauri::Manager as _;
-                    if let Some(window) = app.get_webview_window("main") {
-                        focus_main_window(&window);
-                    }
-                })
+                let single_instance = tauri_plugin_single_instance::Builder::new().callback(
+                    |app, _argv, _cwd| {
+                        use tauri::Manager as _;
+                        if let Some(window) = app.get_webview_window("main") {
+                            focus_main_window(&window);
+                        }
+                    },
+                );
+                #[cfg(all(target_os = "linux", debug_assertions))]
+                let single_instance = single_instance.dbus_id("com.web3claw.reinagent.dev");
+                single_instance.build()
             })
             .manage(TerminalState::default())
             .manage(std::sync::Arc::new(stt::SttManager::default()))
