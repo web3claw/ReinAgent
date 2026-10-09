@@ -45,9 +45,8 @@ mod web_tools_tests;
 
 use terminal::TerminalState;
 
-/// 单实例聚焦用的主进程句柄（single-instance 回调在第二进程上下文触发，
-/// 无法直接拿窗口——setup 时保存本实例句柄，回调里取用）。
-static SINGLE_APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
+/// 单实例及系统通知激活使用的主进程全局句柄
+pub(crate) static SINGLE_APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
 /// 将主窗口恢复并聚焦呈现于桌面最前端（跨平台增强）
 pub fn focus_main_window(window: &tauri::WebviewWindow) {
@@ -64,11 +63,7 @@ pub fn focus_main_window(window: &tauri::WebviewWindow) {
                 gtk_window.deiconify();
                 gtk_window.present();
             }
-            gdk::notify_startup_complete();
         });
-        // 穿透 GNOME 焦点防窃取：短暂置顶后恢复正常层级
-        let _ = window.set_always_on_top(true);
-        let _ = window.set_always_on_top(false);
     }
 }
 

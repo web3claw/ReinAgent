@@ -1,6 +1,6 @@
 [package]
 name = "ReinAgent"
-version = "0.1.10"
+version = "0.1.11"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -95,6 +95,5 @@ webkit2gtk = { version = "2", features = ["v2_40"] }
 cairo-rs = { version = "0.18", features = ["png"] }
 javascriptcore = { version = "1", package = "javascriptcore-rs" }
 gtk = { version = "0.18", package = "gtk" }
-gdk = { version = "0.18", package = "gdk" }
 
 # 单文件 exe：静态链接 CRT（下面主 [profile.release] 中），产物不依赖目标机的 VC++ 运行库

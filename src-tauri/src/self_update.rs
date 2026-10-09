@@ -180,18 +180,21 @@ pub fn macos_bundle() -> Option<PathBuf> {
 
 // ---------------- 启动时清理上次遗留（Windows 关键） ----------------
 
-/// 清理上次更新留下的 `<exe>.old`（仍被占用则留待下次）与重复的 `<exe>.new`、`.part`。
-/// 在 setup 里调用（此时新进程已就位，旧 exe 一般已退出）。
-pub fn cleanup_stale() {
+fn do_cleanup_stale() {
     if let Ok(exe) = current_exe() {
-        let _ = std::fs::remove_file(old_path_str(&exe));
+        let base_old = {
+            let mut s = exe.as_os_str().to_os_string();
+            s.push(".old");
+            PathBuf::from(s)
+        };
+        let _ = std::fs::remove_file(&base_old);
         let _ = std::fs::remove_file(new_path(&exe));
         let _ = std::fs::remove_file(part_path(&new_path(&exe)));
         let _ = std::fs::remove_file(part_path(&exe));
-        // .old-2、.old-3…
+        // .old、.old-2、.old-3…
         if let (Some(dir), Some(name)) = (exe.parent(), exe.file_name().and_then(|s| s.to_str())) {
             if let Ok(entries) = std::fs::read_dir(dir) {
-                let prefix = format!("{name}.old-");
+                let prefix = format!("{name}.old");
                 for entry in entries.flatten() {
                     let fname = entry.file_name();
                     if fname.to_string_lossy().starts_with(&prefix) {
@@ -200,6 +203,22 @@ pub fn cleanup_stale() {
                 }
             }
         }
+    }
+}
+
+/// 清理上次更新留下的 `<exe>.old`（仍被占用则留待下次）与重复的 `<exe>.new`、`.part`。
+/// 在 setup 里调用。由于 Windows 下旧进程退出可能存在短暂内核句柄释放延迟，
+/// 启动时立即清理一次，并在后台延时 2 秒与 5 秒再次重试，确保彻底删除。
+pub fn cleanup_stale() {
+    do_cleanup_stale();
+    #[cfg(target_os = "windows")]
+    {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(2));
+            do_cleanup_stale();
+            std::thread::sleep(std::time::Duration::from_secs(3));
+            do_cleanup_stale();
+        });
     }
 }
 

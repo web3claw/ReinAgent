@@ -1639,5 +1639,23 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
   - 彻底移除 `main.rs` 中在 GTK 运行时就绪前过早调用 `gdk::notify_startup_complete()` 导致的 Panic 崩溃，恢复应用秒级正常冷启动与更新自重启；
   - 使用标准的 `tauri_plugin_single_instance::init` 接入单实例路由，并在聚焦逻辑中通过 `window.run_on_main_thread` 安全派发 GTK 原生 `deiconify()`、`present()` 以及 `gdk::notify_startup_complete()`，彻底解决 Linux 最小化到托盘后点击 Dock 无法拉起、鼠标转圈及无法连续点击的问题。
 
+### Linux 单实例与启动调用精简化清理（2026-10-09）
+- **冗余依赖与调用清理**：
+  - 移除 `Cargo.toml` 中多余的 `gdk` crate 外部依赖；
+  - 移除 `src-tauri/src/main.rs` 中与 `lib.rs` 重复的 `glib` 应用名设置；
+  - 清理 `src-tauri/src/lib.rs` 中 `focus_main_window` 的无效 `gdk::notify_startup_complete()` 与置顶 Hack，保留简洁健壮的原生 GTK `deiconify()` 与 `present()` 调度；
+  - 保留全局 `SINGLE_APP_HANDLE` 供系统通知点击回调使用；所有前端测试与 Rust `cargo check` 100% 通过。
 
+### Windows 自更新 `.old` 临时文件清理修复（2026-10-09）
+- **根因修复**：
+  - 原清理逻辑误调用了用于寻找“未占用可用文件名”的 `old_path_str`，导致在 `.old` 存在时反向尝试删除不存在的 `.old-2`，且前缀匹配误带短横线 `{name}.old-`，致使真正的 `<exe>.old` 文件永远被漏删；
+  - 修正为直接且显式删除 `<exe>.old`，并将目录遍历匹配前缀统一改为 `{name}.old`，覆盖 `.old`、`.old-2`、`.old-3` 等所有衍生文件；
+- **文件锁延迟保护**：
+  - 针对 Windows 下新进程启动时旧进程退出可能存在的内核句柄释放延迟，在启动同步清理后，新增后台线程在 2 秒和 5 秒后延时重试清理，确保 100% 自动干净删除，不留残留文件。
+
+### v0.1.11 发布（2026-10-09）
+- **版本号升级**：全套升级至 `v0.1.11`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`、`useAppUpdateStore.test.mjs`）。
+- **包含功能与修复**：
+  - 彻底解决 Windows 自更新重启后遗留 `.old` 临时文件的问题，增加双重延时重试机制保障旧句柄释放；
+  - 完成 Linux 单实例与启动调用代码精简，移除无用的 `gdk` crate 依赖和置顶 Hack，保留简洁健壮的原生 GTK 窗口呈现调度。
 

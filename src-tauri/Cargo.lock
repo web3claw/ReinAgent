@@ -4,7 +4,7 @@ version = 4
 
 [[package]]
 name = "ReinAgent"
-version = "0.1.10"
+version = "0.1.11"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -15,7 +15,6 @@ dependencies = [
  "dunce",
  "flate2",
  "futures-util",
- "gdk",
  "gtk",
  "hmac",
  "html2text",
