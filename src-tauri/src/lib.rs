@@ -49,6 +49,26 @@ use terminal::TerminalState;
 /// 无法直接拿窗口——setup 时保存本实例句柄，回调里取用）。
 static SINGLE_APP_HANDLE: std::sync::OnceLock<tauri::AppHandle> = std::sync::OnceLock::new();
 
+/// 将主窗口恢复并聚焦呈现于桌面最前端（跨平台增强）
+pub fn focus_main_window(window: &tauri::WebviewWindow) {
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+    #[cfg(target_os = "linux")]
+    {
+        use gtk::prelude::*;
+        if let Ok(gtk_window) = window.gtk_window() {
+            gtk_window.show();
+            gtk_window.deiconify();
+            gtk_window.present();
+        }
+        gdk::notify_startup_complete();
+        // 穿透 GNOME 焦点防窃取：短暂置顶后恢复正常层级
+        let _ = window.set_always_on_top(true);
+        let _ = window.set_always_on_top(false);
+    }
+}
+
 #[tauri::command]
 fn greet(name: &str) -> String {
     format!("Hello, {}! You've been greeted from Rust!", name)
@@ -97,15 +117,7 @@ pub fn run() {
                         // setup 里保存的全局句柄上完成（见 SINGLE_APP_HANDLE OnceLock）。
                         if let Some(app) = SINGLE_APP_HANDLE.get() {
                             if let Some(window) = app.get_webview_window("main") {
-                                let _ = window.show();
-                                let _ = window.unminimize();
-                                let _ = window.set_focus();
-                                #[cfg(target_os = "linux")]
-                                {
-                                    // 穿透 GNOME 焦点防窃取：短暂置顶后恢复正常层级
-                                    let _ = window.set_always_on_top(true);
-                                    let _ = window.set_always_on_top(false);
-                                }
+                                focus_main_window(&window);
                             }
                         }
                     },
