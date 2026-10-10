@@ -1715,29 +1715,32 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
     - 自动向内置浏览器及终端子进程环境变量注入代理配置，彻底解决国内网络环境下下载 `cloudflared` 转圈及终端拉取依赖受阻的问题；
   - **分支与标签维护**：清理历史孤立分支 `macos-build` 及历史测试标签，维护清晰发版线。
 
-### 远程公网隧道健壮性、子代理交互与文档体系升级（2026-10-10）
-- **远程访问公网隧道 (`remote_tunnel.rs`) 全面加固**：
-  - **世代守卫 (Generation Guard)**：在 `TunnelProcessState` 引入 `generation: u64`。启动与停止隧道时递增世代，stderr 读取循环及 EOF 退出判定处校验世代标识，杜绝由于快速重连导致旧线程竞争覆写新隧道状态（解决前端误报“隧道已断开”、掉二维码的问题）；
-  - **下载安全与流式防御**：
-    - 改用 `bytes_stream()` 分块流式落盘，设 200MB 硬上限防止异常/恶意代理无界推送 OOM；
-    - 严格比对 HTTP `Content-Length`，捕获并拒绝截断下载；
-    - 采用动态唯一临时文件 `.part.<pid>.<uuid>`，任何异常路径立即清理，避免并发写冲突；
-    - 增强二进制校验：体积下限 20MB + ELF/PE magic 头校验 + 就位前执行 `<path> --version` 验证真实 `cloudflared` 组件标识；
-  - **生命周期与僵尸进程回收**：
-    - `stop_tunnel` 在 `kill()` 后执行 `child.wait()` 彻底回收僵尸进程；
-    - 实现 `TunnelProcessState` 的 `Drop`；并在 Tauri 应用生命周期（`RunEvent::ExitRequested` / `Exit`）挂载同步停止钩子 `stop_tunnel_sync(None)`，防止 App 退出后后台孤儿进程持续暴露端口；
-  - **状态机与锁死防护**：
-    - 全面容忍 `Mutex` 毒化恢复（`unwrap_or_else`），采用静态 `OnceLock<Mutex<TunnelProcessState>>` 保证纯安全 Rust 实现；
-    - 所有 `app.emit` 广播均在全局状态锁释放后调用，避免死锁；
-    - 失败路径统一调用 `set_error`，及时清理 `progress` 并将真实错误通知 UI，消除卡死在 `starting` 的假象；
-    - 引入 45 秒 Watchdog 超时守护，超时未建立连接自动置为错误并提示用户。
-- **子代理卡片交互优化 (`ToolCallCard.tsx`)**：
-  - 工具卡片支持 `agent` 及 `subagent_output` 工具类型，点击可直接触发 `summaryAction` 并在右侧副边栏唤起子代理会话转录面板与回放详情；
-  - 补充前端单元测试 `ToolCallCard.test.mjs`。
-- **文档体系整理与全景展示 (`README.md` & `docs/`)**：
-  - 引入 `docs/ReinAgent.png` 作为首页工作台预览图；
-  - 结构化整合三端原生适配（Linux WebKitGTK / Windows WebView2 / macOS）、绿色单文件免依赖运行、Cloudflare 免配置公网安全隧道、全局统一网络代理、子智能体协作与副边栏转录、本地长期记忆、自动化周期任务等全景特性；
-  - 清理过期历史对比与任务审计文档，核心白皮书与提示词统一收拢至 `docs/` 专区。
+### v0.1.15 发布（2026-10-10）
+- **版本号升级**：全套升级至 `v0.1.15`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`）。
+- **包含功能与优化**：
+  - **远程访问公网隧道 (`remote_tunnel.rs`) 全面加固**：
+    - **世代守卫 (Generation Guard)**：在 `TunnelProcessState` 引入 `generation: u64`。启动与停止隧道时递增世代，stderr 读取循环及 EOF 退出判定处校验世代标识，杜绝由于快速重连导致旧线程竞争覆写新隧道状态（解决前端误报“隧道已断开”、掉二维码的问题）；
+    - **下载安全与流式防御**：
+      - 改用 `bytes_stream()` 分块流式落盘，设 200MB 硬上限防止异常/恶意代理无界推送 OOM；
+      - 严格比对 HTTP `Content-Length`，捕获并拒绝截断下载；
+      - 采用动态唯一临时文件 `.part.<pid>.<uuid>`，任何异常路径立即清理，避免并发写冲突；
+      - 增强二进制校验：体积下限 20MB + ELF/PE magic 头校验 + 就位前执行 `<path> --version` 验证真实 `cloudflared` 组件标识；
+    - **生命周期与僵尸进程回收**：
+      - `stop_tunnel` 在 `kill()` 后执行 `child.wait()` 彻底回收僵尸进程；
+      - 实现 `TunnelProcessState` 的 `Drop`；并在 Tauri 应用生命周期（`RunEvent::ExitRequested` / `Exit`）挂载同步停止钩子 `stop_tunnel_sync(None)`，防止 App 退出后后台孤儿进程持续暴露端口；
+    - **状态机与锁死防护**：
+      - 全面容忍 `Mutex` 毒化恢复（`unwrap_or_else`），采用静态 `OnceLock<Mutex<TunnelProcessState>>` 保证纯安全 Rust 实现；
+      - 所有 `app.emit` 广播均在全局状态锁释放后调用，避免死锁；
+      - 失败路径统一调用 `set_error`，及时清理 `progress` 并将真实错误通知 UI，消除卡死在 `starting` 的假象；
+      - 引入 45 秒 Watchdog 超时守护，超时未建立连接自动置为错误并提示用户。
+  - **子代理卡片交互优化 (`ToolCallCard.tsx`)**：
+    - 工具卡片支持 `agent` 及 `subagent_output` 工具类型，点击可直接触发 `summaryAction` 并在右侧副边栏唤起子代理会话转录面板与回放详情；
+    - 补充前端单元测试 `ToolCallCard.test.mjs`。
+  - **文档体系整理与全景展示 (`README.md` & `docs/`)**：
+    - 引入 `docs/ReinAgent.png` 作为首页工作台预览图；
+    - 结构化整合三端原生适配（Linux WebKitGTK / Windows WebView2 / macOS）、绿色单文件免依赖运行、Cloudflare 免配置公网安全隧道、全局统一网络代理、子智能体协作与副边栏转录、本地长期记忆、自动化周期任务等全景特性；
+    - 清理过期历史对比与任务审计文档，核心白皮书与提示词统一收拢至 `docs/` 专区。
+
 
 
 
