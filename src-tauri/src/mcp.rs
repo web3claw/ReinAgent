@@ -809,18 +809,14 @@ impl Drop for StdioTransport {
 
 /// 构建 ureq client：`http_status_as_error(false)` 让 4xx/5xx 以正常响应返回，
 /// 由上层显式分支（404 会话过期等）；connect 超时固定 10s，总超时可选。
-fn build_http_client(total_timeout: Option<Duration>) -> Result<ureq::Agent, String> {
-    let mut config = ureq::Agent::config_builder()
-        .http_status_as_error(false)
-        .timeout_connect(Some(Duration::from_secs(10)));
-    // 代理（P2-G2）：kv reinagent-web-proxy 非空时 MCP HTTP 流量经此代理
-    if let Ok(Some(proxy)) = crate::web_tools::resolve_proxy() {
-        config = config.proxy(Some(proxy));
-    }
-    if let Some(timeout) = total_timeout {
-        config = config.timeout_global(Some(timeout));
-    }
-    Ok(config.build().into())
+/// 按目标 URL 严格匹配全局代理与 no-proxy 白名单。
+fn build_http_client(for_url: &str, total_timeout: Option<Duration>) -> Result<ureq::Agent, String> {
+    crate::app_proxy::build_proxied_ureq_agent(
+        for_url,
+        Some(Duration::from_secs(10)),
+        total_timeout,
+        None,
+    )
 }
 
 struct HttpTransport {
@@ -837,7 +833,7 @@ impl HttpTransport {
             .url_trimmed()
             .ok_or_else(|| "MCP http transport 需要 url".to_string())?;
         let endpoint = validate_http_url(url)?;
-        let client = build_http_client(Some(config.timeout()))?;
+        let client = build_http_client(&endpoint, Some(config.timeout()))?;
 
         Ok(Self {
             endpoint,
@@ -1027,8 +1023,8 @@ impl SseTransport {
         };
 
         // GET 长连不设总超时（会掐断事件流）；POST 总超时 = timeoutMs。语义同 LA。
-        let client_get = build_http_client(None)?;
-        let client_post = build_http_client(Some(config.timeout()))?;
+        let client_get = build_http_client(&sse_url, None)?;
+        let client_post = build_http_client(&sse_url, Some(config.timeout()))?;
 
         let post_url: Arc<Mutex<Option<String>>> =
             Arc::new(Mutex::new(message_url_override.clone()));

@@ -33,13 +33,12 @@ pub struct HubFetchResponse {
 pub async fn hub_fetch_json(args: HubFetchArgs) -> Result<HubFetchResponse, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let timeout = Duration::from_millis(args.timeout_ms.unwrap_or(30_000).clamp(1_000, 120_000));
-        let agent: ureq::Agent = ureq::Agent::config_builder()
-            .timeout_global(Some(timeout))
-            // 非 2xx 不在 Rust 层抛错：状态码+响应体原样透传给前端（对齐 LA hubFetch
-            // 返回真实 Response 的契约，前端 fetchJson 自行格式化 status+body 错误）
-            .http_status_as_error(false)
-            .build()
-            .into();
+        let agent: ureq::Agent = crate::app_proxy::build_proxied_ureq_agent(
+            &args.url,
+            Some(Duration::from_secs(10)),
+            Some(timeout),
+            Some("ReinAgent-Hub"),
+        )?;
         let method = args.method.to_uppercase();
         // ureq 3 的类型态 API：GET/HEAD（WithoutBody，只有 call）与
         // POST/PUT/DELETE（WithBody，只有 send）是不同类型，用两个宏分开处理。

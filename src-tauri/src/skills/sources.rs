@@ -17,15 +17,15 @@ const MAX_SKILL_INSTALL_FILES: usize = 2000;
 const MAX_SKILL_INSTALL_BYTES: u64 = 50 * 1024 * 1024;
 pub(crate) const DEFAULT_GITHUB_REF: &str = "main";
 
-/// 与 mcp.rs HttpTransport 一致的 ureq 3 客户端：全局 30s 超时、自定义 UA、
-/// 非 2xx 不作为 Err 返回（由调用方读取状态与错误体）。
-fn http_agent() -> Result<ureq::Agent, String> {
-    Ok(ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(30)))
-        .http_status_as_error(false)
-        .user_agent("reinagent-skill-installer")
-        .build()
-        .into())
+/// 与 mcp.rs HttpTransport 一致的 ureq 3 客户端：遵循全局代理及 no-proxy 白名单、
+/// 全局 30s 超时、自定义 UA、非 2xx 不作为 Err 返回（由调用方读取状态与错误体）。
+fn http_agent(for_url: &str) -> Result<ureq::Agent, String> {
+    crate::app_proxy::build_proxied_ureq_agent(
+        for_url,
+        Some(Duration::from_secs(10)),
+        Some(Duration::from_secs(30)),
+        Some("reinagent-skill-installer"),
+    )
 }
 
 pub(crate) fn is_archive_path(path: &Path) -> bool {
@@ -114,7 +114,7 @@ pub(crate) fn write_download_to_path_with_progress<F>(
 where
     F: FnMut(u64, Option<u64>),
 {
-    let agent = http_agent()?;
+    let agent = http_agent(url)?;
     let mut response = agent
         .get(url)
         .call()

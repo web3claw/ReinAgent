@@ -266,22 +266,11 @@ fn old_path_str(exe: &Path) -> PathBuf {
 /// reqwest 的 `Proxy` 无 per-request 开关，故按 URL 是否命中 no-proxy 决定用哪种
 /// 客户端——命中直连的 URL（如自建镜像/内网）不会被送去代理。
 fn build_client(for_url: &str) -> Result<reqwest::Client, String> {
-    let (proxy_url, _no_proxy) = crate::app_proxy::read_proxy_settings();
-    let proxy_trimmed = proxy_url.trim();
-    let mut builder = reqwest::Client::builder()
-        .connect_timeout(std::time::Duration::from_secs(20))
-        .timeout(std::time::Duration::from_secs(600));
-
-    let bypass = crate::web_tools::url_bypasses_proxy(for_url);
-    if proxy_trimmed.is_empty() || bypass {
-        // 「留空直连」语义：显式禁用一切代理（含环境变量）
-        builder = builder.no_proxy();
-    } else {
-        let proxy = reqwest::Proxy::all(proxy_trimmed)
-            .map_err(|e| format!("代理配置无效（kv reinagent-web-proxy = {proxy_trimmed}）：{e}"))?;
-        builder = builder.proxy(proxy);
-    }
-    builder.build().map_err(|e| format!("更新客户端构建失败：{e}"))
+    crate::app_proxy::build_proxied_reqwest_client(
+        for_url,
+        Some(std::time::Duration::from_secs(20)),
+        Some(std::time::Duration::from_secs(600)),
+    )
 }
 
 // ---------------- 命令 ----------------

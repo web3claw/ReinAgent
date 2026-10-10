@@ -1531,18 +1531,26 @@ ReinAgent 架构全景
   - Windows/Linux 零影响。
 
 
-### 自更新走设置页代理（2026-10-08 补充）
+### 全软件网络请求代理规范（2026-10-10 统一收敛，Proxy & No-Proxy Enforcement Rule）
 
-`self_update.rs` 的检查更新与下载更新**均按设置页 kv 代理出网**（键与其它出网同源：
-`reinagent-web-proxy` / `reinagent-web-proxy-no-proxy`，读 `~/.ReinAgent/conversations.db`）：
+**铁律：软件中所有网络请求，只要设置了代理，都必须走代理；并且必须根据「不使用代理的地址（no-proxy）」配置决议直连。**
 
-- `build_client(for_url)`：未配置代理 → 显式直连（不跟随系统/环境变量，对齐 app_proxy 语义）；
-  已配置 → 走代理；但目标 URL 命中 no-proxy 规则时该请求直连。
-- feed（latest.json）与下载包（asset.url）**各自按自身 URL 判定**代理——两者可能不同域
-  （如 feed 在 GitHub、下载走镜像/CDN）。
-- 复用 `web_tools::url_bypasses_proxy()`（抽自原 `resolve_proxy_for_url`），与 web_fetch/MCP
-  等共用同一套 no-proxy 匹配器。⚠ 不复用 reqwest 的 `NoProxy`：它不支持本项目
-  `192.168.*`/`10.*` 这类尾通配，语义会不一致。
+- **统一核心构建器（Rust 单点真实，`app_proxy.rs`）**：
+  - `build_proxied_reqwest_client(for_url, connect_timeout, total_timeout)`：统一构建 reqwest 客户端；
+  - `build_proxied_ureq_agent(for_url, connect_timeout, total_timeout, user_agent)`：统一构建 ureq Agent。
+- **全栈请求对齐清单**：
+  1. **Cloudflare 隧道组件下载 (`remote_tunnel.rs`)**：从 GitHub 下载 `cloudflared` 二进制走代理，彻底解决国内直连被墙转圈问题；
+  2. **Skill 离线包下载与安装 (`skills/sources.rs`)**：从 GitHub / ClawHub 下载 Skill 压缩包统一经 `build_proxied_ureq_agent`；
+  3. **Hub API 请求 (`hub_http.rs`)**：前端扩展中心请求统一经 `build_proxied_ureq_agent`；
+  4. **MCP HTTP / SSE (`mcp.rs`)**：`build_http_client` 接入按 URL 决议，内网/局域网 MCP 走白名单直连，外网 MCP 走代理；
+  5. **客户端自更新 (`self_update.rs`)**：检查更新与下载均走 `build_proxied_reqwest_client`；
+  6. **LLM 模型反代 (`llm_proxy.rs`)**：请求上游模型统一按 kv 代理出网；
+  7. **前端出站 (`proxiedFetch.ts`)**：模型列表/请求走 `tauri-plugin-http` 经 Rust reqwest 注入代理与 `matchesNoProxy`；
+  8. **内置浏览器与终端 (`app_proxy.rs`, `terminal.rs`)**：启动与 spawn 注入 `--proxy-server` 与 `--proxy-bypass-list` 环境变量。
+- **直连与白名单匹配语义**：
+  - 未配置代理时显式 `.no_proxy()`（不静默继承环境变量，对齐设置页优先原则）；
+  - 命中 `reinagent-web-proxy-no-proxy`（如 `localhost,127.0.0.1,192.168.*`）时显式直连。
+
 - 代理配置非法时如实报错（No-Fallback），不静默降级直连。
 
 ### 任务胶囊归并口径改造（2026-10-08，用户定稿；取代 2026-10-06「按内容新增」）

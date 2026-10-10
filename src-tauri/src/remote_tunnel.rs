@@ -166,16 +166,17 @@ async fn download_cloudflared(app: &AppHandle) -> Result<PathBuf, String> {
 
     update_progress(app, "正在下载 Cloudflare 隧道组件 (请稍候)...");
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .map_err(|e| format!("构建下载客户端失败: {e}"))?;
+    let client = crate::app_proxy::build_proxied_reqwest_client(
+        url,
+        Some(std::time::Duration::from_secs(20)),
+        Some(std::time::Duration::from_secs(300)),
+    )?;
 
     let response = client
         .get(url)
         .send()
         .await
-        .map_err(|e| format!("连接 GitHub 下载源失败: {e}。您也可以手动在终端安装 cloudflared"))?;
+        .map_err(|e| format!("连接 GitHub 下载源失败: {e}。请检查网络或代理设置，您也可以手动在终端安装 cloudflared"))?;
 
     if !response.status().is_success() {
         return Err(format!("下载失败，HTTP 状态码: {}", response.status()));

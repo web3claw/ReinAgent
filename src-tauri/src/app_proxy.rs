@@ -141,3 +141,61 @@ pub fn apply_webkit_proxy_settings(app: &tauri::AppHandle) {
         eprintln!("apply webkit proxy: dispatch failed: {e}");
     }
 }
+
+/// 统一为 reqwest 目标请求 URL 构建带代理配置的客户端。
+/// - 若未配置代理或目标 URL 命中 no-proxy 白名单，显式禁用一切代理（no_proxy）；
+/// - 若配置了代理且未命中白名单，强制挂载代理；代理格式非法时如实报错抛出。
+pub fn build_proxied_reqwest_client(
+    for_url: &str,
+    connect_timeout: Option<std::time::Duration>,
+    total_timeout: Option<std::time::Duration>,
+) -> Result<reqwest::Client, String> {
+    let (proxy_url, _no_proxy) = read_proxy_settings();
+    let proxy_trimmed = proxy_url.trim();
+    let mut builder = reqwest::Client::builder();
+
+    if let Some(ct) = connect_timeout {
+        builder = builder.connect_timeout(ct);
+    }
+    if let Some(tt) = total_timeout {
+        builder = builder.timeout(tt);
+    }
+
+    let bypass = crate::web_tools::url_bypasses_proxy(for_url);
+    if proxy_trimmed.is_empty() || bypass {
+        builder = builder.no_proxy();
+    } else {
+        let proxy = reqwest::Proxy::all(proxy_trimmed)
+            .map_err(|e| format!("代理配置无效（kv {KV_WEB_PROXY} = {proxy_trimmed}）: {e}"))?;
+        builder = builder.proxy(proxy);
+    }
+
+    builder.build().map_err(|e| format!("构建 HTTP 客户端失败: {e}"))
+}
+
+/// 统一为 ureq 目标请求 URL 构建带代理配置的 Agent。
+/// 目标命中 no-proxy 白名单时直连，否则走代理配置；错误如实上抛。
+pub fn build_proxied_ureq_agent(
+    for_url: &str,
+    connect_timeout: Option<std::time::Duration>,
+    total_timeout: Option<std::time::Duration>,
+    user_agent: Option<&str>,
+) -> Result<ureq::Agent, String> {
+    let proxy = crate::web_tools::resolve_proxy_for_url(for_url)?;
+    let mut config = ureq::Agent::config_builder().http_status_as_error(false);
+
+    if let Some(ct) = connect_timeout {
+        config = config.timeout_connect(Some(ct));
+    }
+    if let Some(tt) = total_timeout {
+        config = config.timeout_global(Some(tt));
+    }
+    if let Some(ua) = user_agent {
+        config = config.user_agent(ua);
+    }
+    if let Some(p) = proxy {
+        config = config.proxy(Some(p));
+    }
+
+    Ok(config.build().into())
+}
