@@ -1515,18 +1515,21 @@ ReinAgent 架构全景
 
 **验证**：`tsc` 0；`cargo check` 0 警告；Rust 单测 `self_update` 6 例全部通过（包含版本比较、产物命名、代理分流、小文件拒绝、截断 ELF 段表检测预检）；`bun test` 492 项全绿。
 
-### macOS 构建缺口（2026-10-08，待修；v0.1.3 因此暂缓 macOS 发布）
+### macOS 编译适配与验证（2026-10-10 修复完成）
 
-首次 CI 尝试发现**项目从未在 macOS 上编译过**，暴露既有移植缺口（非自更新改动引入）：
-- `src-tauri/src/browser.rs`：482/489/588 行的 `webkit2gtk` / `javascriptcore` 段用
-  `#[cfg(not(target_os = "windows"))]`，把 macOS 也算进去 → macOS 编译时尝试编 Linux 专属代码
-  报「找不到 crate」。另 483/592 行的 `evaluate_javascript` / `snapshot` 是 Linux/Windows API，
-  macOS 需改走 WKWebView 的 `evaluateJavaScript` / 截图实现。
-- `src-tauri/src/stt/mod.rs`：292 行 macOS 分支引用 `crate::services::stt::macos`——本仓库
-  **无 `services` 模块**（LiveAgent 移植遗留的悬空引用）；490-492 行的 `objc2` / `block2` /
-  `objc2_av_foundation` 也未写入 Cargo.toml 的 macOS 依赖。
-- CI 已暂时移除 macOS 矩阵项（release.yml 中被注释，含恢复说明）；v0.1.3 只发
-  Windows/Linux 四平台（已全部构建成功）。补齐后取消注释即可恢复。
+历史问题根因与修复：
+- `src-tauri/src/browser.rs`：
+  - 将原粗暴的 `#[cfg(not(target_os = "windows"))]` 细化为 `#[cfg(target_os = "linux")]`，彻底避免 macOS 错误引用 Linux 专用的 `webkit2gtk`、`javascriptcore`、`cairo`、`gtk` crate。
+  - 针对非 Windows、非 Linux 平台增加安全优雅的降级保护（返回明确说明错误，不发生编译中断或崩溃）。
+- `src-tauri/src/stt/mod.rs`：
+  - 清理了未在 `Cargo.toml` 引入 `objc2` 相关依赖且悬空引用 `crate::services::stt::macos` 的废弃 macOS 权限请求代码；
+  - 统一 `stt_request_microphone_permission` 跨平台统一实现（与 `lib.rs` 中全局 Tauri `on_permission_request` 授权保持一致，无需平台专有胶水层）。
+- **CI 与多端验证状态**：
+  - 独立测试分支：`feature/macos-build`
+  - GitHub Actions `Test macOS Build`（`macos-latest` runner，Apple Silicon M 系列）构建全绿通过（`cargo check` + `bunx tauri build --no-bundle` 无错误）。
+  - 本地 Linux 回归验证：`cargo check` 0 警告、`cargo test` 211 个单元测试全部通过、`bun test` 497 项全绿、`bun run build` 成功。
+  - Windows/Linux 零影响。
+
 
 ### 自更新走设置页代理（2026-10-08 补充）
 
