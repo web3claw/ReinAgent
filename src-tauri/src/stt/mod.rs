@@ -287,13 +287,6 @@ pub async fn stt_cancel(
 }
 
 #[tauri::command]
-#[cfg(target_os = "macos")]
-pub async fn stt_request_microphone_permission(app: AppHandle) -> Result<(), String> {
-    crate::services::stt::macos::request_microphone_permission(app).await
-}
-
-#[tauri::command]
-#[cfg(not(target_os = "macos"))]
 pub async fn stt_request_microphone_permission(_app: AppHandle) -> Result<(), String> {
     Ok(())
 }
@@ -485,73 +478,6 @@ async fn test_stt_provider<R: Runtime>(
     Ok(SttTestResponse { result, message })
 }
 
-#[cfg(target_os = "macos")]
-mod macos {
-    use block2::RcBlock;
-    use objc2::runtime::Bool;
-    use objc2_av_foundation::{AVAuthorizationStatus, AVCaptureDevice, AVMediaTypeAudio};
-    use std::sync::{Arc, Mutex};
-    use tauri::AppHandle;
-
-    pub async fn request_microphone_permission(app: AppHandle) -> Result<(), String> {
-        let (sender, receiver) = tokio::sync::oneshot::channel();
-        let sender_cell = Arc::new(Mutex::new(Some(sender)));
-        let sender_for_main = sender_cell.clone();
-        app.run_on_main_thread(move || {
-            let send_result = |result| {
-                if let Ok(mut sender) = sender_for_main.lock() {
-                    if let Some(sender) = sender.take() {
-                        let _ = sender.send(result);
-                    }
-                }
-            };
-            let media_type = unsafe { AVMediaTypeAudio.as_ref() };
-            let Some(media_type) = media_type else {
-                send_result(Err("macOS 音频媒体类型不可用".to_string()));
-                return;
-            };
-            let status = unsafe { AVCaptureDevice::authorizationStatusForMediaType(media_type) };
-            match status {
-                AVAuthorizationStatus::Authorized => {
-                    send_result(Ok(()));
-                }
-                AVAuthorizationStatus::Denied => {
-                    send_result(Err("麦克风权限已拒绝，请在系统设置中允许访问".to_string()));
-                }
-                AVAuthorizationStatus::Restricted => {
-                    send_result(Err("麦克风权限受系统限制".to_string()));
-                }
-                AVAuthorizationStatus::NotDetermined => {
-                    let sender_for_callback = sender_cell.clone();
-                    let callback = RcBlock::new(move |granted: Bool| {
-                        let result = if granted.as_bool() {
-                            Ok(())
-                        } else {
-                            Err("麦克风权限被拒绝".to_string())
-                        };
-                        if let Ok(mut sender) = sender_for_callback.lock() {
-                            if let Some(sender) = sender.take() {
-                                let _ = sender.send(result);
-                            }
-                        }
-                    });
-                    unsafe {
-                        AVCaptureDevice::requestAccessForMediaType_completionHandler(
-                            media_type, &callback,
-                        )
-                    };
-                }
-                _ => {
-                    send_result(Err("未知的 macOS 麦克风权限状态".to_string()));
-                }
-            }
-        })
-        .map_err(|error| format!("无法调度 macOS 麦克风权限请求: {error}"))?;
-        receiver
-            .await
-            .map_err(|_| "macOS 麦克风权限请求未返回".to_string())?
-    }
-}
 
 fn text(config: &serde_json::Map<String, serde_json::Value>, key: &str) -> String {
     config

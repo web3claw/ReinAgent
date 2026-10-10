@@ -464,7 +464,7 @@ pub async fn browser_read_page(app: AppHandle, js: String) -> Result<String, Str
             std::thread::sleep(Duration::from_millis(50));
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
         // Linux（WebKitGTK）：与 Windows 的 postMessage 槽位不同——evaluate_javascript
         // 的完成回调直接带回 JS 结果值（JSC Value::to_str），无需页面侧上报。
@@ -513,6 +513,10 @@ pub async fn browser_read_page(app: AppHandle, js: String) -> Result<String, Str
                 }
             }
         }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Err("当前平台内嵌浏览器暂不支持 eval 结果读取".to_string())
     }
 }
 
@@ -574,7 +578,7 @@ pub async fn browser_screenshot(app: AppHandle) -> Result<String, String> {
         rx.recv_timeout(Duration::from_secs(20))
             .map_err(|_| "browser screenshot: 超时（20s）".to_string())?
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
     {
         // Linux（WebKitGTK）：原生 webkit_web_view_get_snapshot（Visible = 视口，
         // 与 Windows CDP captureScreenshot 口径一致）→ cairo Surface → PNG →
@@ -628,5 +632,9 @@ pub async fn browser_screenshot(app: AppHandle) -> Result<String, String> {
                 }
             }
         }
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
+    {
+        Err("当前平台内嵌浏览器暂不支持原生截图".to_string())
     }
 }
