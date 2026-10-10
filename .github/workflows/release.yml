@@ -5,16 +5,12 @@ name: Release
 #
 # 分发形态（不用 tauri-plugin-updater，自更新逻辑见 src-tauri/src/self_update.rs）：
 # - Windows / Linux：`--no-bundle` 出的**裸二进制**（免安装，双击/直接运行）
+# - macOS：`.app` + `.dmg`，并将 `.app` 压为 zip 供自更新
 #
 # latest.json 格式（自更新模块消费）：
 #   { version, notes, pub_date, assets: { 文件名: { url, size, sha256 } } }
 #
 # 无需任何签名 secret（校验仅 SHA-256，与 magpie 一致）。
-#
-# ⚠ macOS 暂未纳入（2026-10-08）：项目从未在 macOS 编译过，存在既有移植缺口——
-#   browser.rs 的 webkit2gtk/javascriptcore 段未用 cfg(target_os="linux") 隔离、
-#   stt/mod.rs 的 macOS 分支引用不存在的 crate::services 且缺 objc2/block2/
-#   objc2-av-foundation 依赖。补齐后再启用下面被注释的 macOS 矩阵项与构建步骤。
 
 on:
   push:
@@ -36,15 +32,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # macOS 暂未启用（见文件头说明：既有移植缺口未补齐）
-          # - platform: macos-latest
-          #   target: aarch64-apple-darwin
-          #   os_name: darwin
-          #   arch: arm64
-          # - platform: macos-15-intel
-          #   target: x86_64-apple-darwin
-          #   os_name: darwin
-          #   arch: amd64
+          - platform: macos-latest
+            target: aarch64-apple-darwin
+            os_name: darwin
+            arch: arm64
           - platform: windows-latest
             target: x86_64-pc-windows-msvc
             os_name: windows
@@ -97,7 +88,6 @@ jobs:
       # ---------- 构建 ----------
 
       # macOS：出 app + dmg（dmg 给人下载），再把 .app 打包成 zip 供自更新。
-      # 目前矩阵中无 darwin 项，此步不会执行；补齐 macOS 移植后启用矩阵即可复用。
       - name: Build (macOS)
         if: matrix.os_name == 'darwin'
         run: bunx tauri build --target ${{ matrix.target }} --bundles app,dmg
@@ -215,17 +205,19 @@ jobs:
           body: |
             ### 🚀 ReinAgent ${{ steps.meta.outputs.tag }} 更新日志
 
-            #### 🌐 远程访问公网穿透支持
-            - **Cloudflare 免配置安全隧道**：支持一键开启 Cloudflare Quick Tunnel，自动分配全球 Anycast 边缘 HTTPS/WSS 加密访问地址，无需公网 IP 和路由器端口映射，手机（4G/5G 移动蜂窝网络）扫码即连。
-            - **三模网络架构**：支持局域网直连 (`lan`)、Cloudflare 公网隧道 (`cloudflare`)、自定义公网域名 (`custom`) 灵活切换与设置。
-            - **公网安全加固**：支持 `CF-Connecting-IP` 与 `X-Forwarded-For` 真实客户端 IP 解析与审计，白名单严格保护本地回环代理防误封。
+            #### 🍎 macOS Apple Silicon 原生支持
+            - **首发 macOS (Apple Silicon / arm64) 构建**：适配 macOS 平台编译链，提供原生 `.dmg` 安装包与自动更新 `.zip` 包。
+            - **内嵌浏览器跨平台隔离**：解决非 Linux 平台条件编译冲突，提供安全的降级兼容层。
+            - **语音 STT 权限与接口重构**：统一跨平台权限模型，清理平台专用未决代码，增强稳定性。
 
-            #### 🛠 系统与运行体验优化
-            - **Linux 单实例通道隔离**：优化 Linux D-Bus 实例隔离，支持开发调试版与 Release 版同时独立共存运行。
+            #### 🌐 远程访问与系统体验
+            - **多平台自更新对齐**：Windows / Linux 裸二进制免安装更新与 macOS `.app` 替换更新全面打通。
+            - **三模网络架构稳定运行**：支持局域网直连、Cloudflare 全球边缘加密隧道与自定义公网域名。
 
             ---
             📦 **下载与运行说明**：
-            - Windows / Linux 为免安装裸二进制（Windows: `.exe`，Linux: 直接下载即可运行）。
+            - **macOS**：下载 `.dmg` 文件打开并将 ReinAgent 拖拽入应用程序目录（支持 Apple Silicon M 系列芯片；首次运行若提示未签名，请在「系统设置 → 隐私与安全性」中点击允许打开）。
+            - **Windows / Linux**：免安装裸二进制（Windows: `.exe`，Linux: 直接下载即可运行）。
             - 已安装的 ReinAgent 在启动时会自动检测并更新至最新版本。
           files: |
             artifacts/*
