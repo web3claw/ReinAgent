@@ -364,6 +364,11 @@ pub fn run() {
             skills::mcp_scan_config_file,
             clipboard_image::clipboard_read_image
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_app_handle, event| {
+            if matches!(event, tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit) {
+                remote_tunnel::stop_tunnel_sync(None);
+            }
+        });
 }

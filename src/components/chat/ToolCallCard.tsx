@@ -131,6 +131,7 @@ function ToolCallCardImpl({
         webfetch: isRunning ? "正在抓取" : "网页抓取",
         websearch: isRunning ? "正在联网搜索" : "联网搜索",
         agent: isRunning ? "子代理执行中" : "子代理",
+        subagent_output: "子代理输出",
       };
       return known[entry.toolName] ?? entry.toolName;
     },
@@ -523,6 +524,56 @@ function ToolCallCardImpl({
               type: "subagents",
               title: "子代理",
               ...(typeof entry.details?.subagentId === "string" ? { focusId: entry.details.subagentId } : {}),
+            }),
+        }}
+        renderContent={() => (
+          <div className="mb-2 space-y-1">
+            {entry.resultText.length > 0 ? (
+              <pre className="tool-result">{entry.resultText}</pre>
+            ) : (
+              <div className="tool-pending">{t("toolNoOutput")}</div>
+            )}
+          </div>
+        )}
+      />
+    );
+  }
+
+  // ---- 查询子代理输出（subagent_output）：点击同样可在右侧打开子代理详情与回放 ----
+  if (entry.toolName === "subagent_output") {
+    const subagentId =
+      typeof entry.details?.subagentId === "string"
+        ? entry.details.subagentId
+        : typeof entry.args?.id === "string"
+          ? entry.args.id
+          : "";
+    const description =
+      typeof entry.details?.description === "string"
+        ? entry.details.description
+        : subagentId;
+    const subType = typeof entry.details?.subagentType === "string" ? entry.details.subagentType : "";
+    const status = typeof entry.details?.status === "string" ? entry.details.status : "";
+    const secondary = [subType, status].filter(Boolean).join(" · ") || undefined;
+    return (
+      <ToolLayout
+        toolId={entry.toolCallId}
+        icon={<Bot className="size-4 shrink-0 text-foreground-subtle" />}
+        showIcon={showIcon}
+        kindLabel={kindLabel}
+        primaryText={description ? <span className="truncate">{description}</span> : null}
+        secondaryText={secondary}
+        statusLabel={statusLabelNode}
+        showStatusLabel={isError}
+        showFailureStatus={isError}
+        statusTooltip={statusTooltip}
+        isRunning={isRunning}
+        summaryAction={{
+          ariaLabel: "在右侧打开子代理面板",
+          onActivate: () =>
+            openCodeViewer({
+              type: "subagents",
+              title: "子代理",
+              ...(subagentId ? { focusId: subagentId } : {}),
             }),
         }}
         renderContent={() => (
