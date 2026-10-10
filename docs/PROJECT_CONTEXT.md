@@ -2,7 +2,7 @@
 
 > **文档定位**：供后续开发 Agent 与工程师快速接手本项目的**单点真相全景指南（Single Source of Truth）**。涵盖系统定位、架构分层、核心交互规范、最新进度、关键状态流转及避坑指南。
 >
-> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./docs/ROADMAP.md)（三方功能差距分析 vs LiveAgent/ZCode + 优先级路线图，2026-09-28）、**[TASKS.md](./docs/TASKS.md)（P0 起步的分步开发任务清单，可验证可测试）**、**[FIXPLAN.md](./docs/FIXPLAN.md)（写死数据与装饰性功能审计修复计划，2026-10-05；批次 0/1/2 已完成（2026-10-06 补勾），批次 3 待 D2/D3 拍板——详见下方「写死数据 / 装饰性设置 / 失效开关审计」条目）**。
+> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./archived/ROADMAP.md)（功能差距分析与历史路线图归档）**。
 
 ---
 

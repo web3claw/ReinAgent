@@ -277,9 +277,8 @@ ReinAgent/
 │   ├── icons/                    # 各分辨率桌面图标
 │   ├── Cargo.toml                # Rust 依赖声明
 │   └── tauri.conf.json           # Tauri 应用配置
-├── docs/                         # 规范文档、路线图与界面展示截图 (ReinAgent.png)
-├── PROJECT_CONTEXT.md            # 项目全景架构与状态单点真相白皮书 (Single Source of Truth)
-├── PROMPTS.md                    # 系统提示词单一真相源
+├── docs/                         # 核心白皮书、提示词真相源与界面展示截图 (PROJECT_CONTEXT.md, PROMPTS.md, ReinAgent.png)
+├── AGENTS.md                     # Agent 工作区指令与规则单一真相源
 └── package.json                  # 项目依赖与运行脚本
 ```
 
