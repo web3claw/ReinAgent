@@ -2,7 +2,7 @@
 
 > 本文档是系统提示词的**单一真相源**：第一部分记录 ZCode 的提示词原文（借鉴来源），
 > 第二部分记录 ReinAgent 当前的全部提示词，第三部分记录采纳映射与待办。
-> 修改提示词时必须同步更新本文档。
+> 配套全景白皮书见同级目录 **[PROJECT_CONTEXT.md](./PROJECT_CONTEXT.md)**。修改提示词时必须同步更新本文档。
 
 ---
 
@@ -282,7 +282,7 @@ Today's date is ….`（ZCode current-date section 同款文案）+ `# Memory In
 | meta_user 注入结构（current-date/request-user-context/skills 三段） | `buildMetaUserBlock` + `prependMetaUserBlock`（见 2.1）；AGENTS.md/gitStatus 落位已备 | ✅（部分） |
 | system-reminder 防伪造包装 | meta_user 块（currentDate/记忆/技能）已采用 <system-reminder> 包装（见 2.1） | ✅（部分） |
 | 附件 "data not instructions" 免责 | 待实现（附件功能已上线：路径引用 + 图片内联，但发送时尚未附加免责包装） | ⏳ |
-| Todo 描述与提醒 | 暂不适用（无 todo 工具） | — |
+| Todo 描述与提醒 | `todo_write` 覆盖式清单工具 + TaskProgressBar 胶囊动态进度 | ✅ 2026-09-28 |
 | 子代理 Agent 工具描述（When to use 委派触发器 + 防重复闸 + 并行派发） | `subagentRunner.ts renderSubagentCatalogDescription`（对齐 ZCode agent.ts；缺省 explorer、后台报告走 subagent_output 两处诚实差异） | ✅ 2026-10-06（工作流/压缩/计划模式提示仍暂不适用） |
 | `/init` 命令提示词（builtin-prompt-command.ts） | `src/lib/commands/initPrompt.ts` + `BUILTIN_COMMANDS` + `LexicalComposer.submit`（展开为普通消息） | ✅ 2026-10-07（真模型两轮 E2E：创建 + 编辑不覆盖） |
 | `/plan` 命令（切计划模式+可选首任务） | `BUILTIN_COMMANDS` + `LexicalComposer.submit`；配套 `exit_plan_mode` 工具与 PLAN_MODE_PROMPT 此前已落地（P2 尾巴 #8） | ✅ 2026-10-07（E2E 全流程；同批修复审批门冻结模式 bug→实时 getMode 语义） |

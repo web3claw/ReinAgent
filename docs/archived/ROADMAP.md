@@ -1,9 +1,8 @@
 # ReinAgent 功能路线图（vs LiveAgent / ZCode 差距分析）
 
-> **文档定位**：本轮（2026-09-28）对 LiveAgent / ZCode 两个参考实现做全量功能面穷举后，与 ReinAgent 现状逐项比对得出的差距清单与优先级路线图。
-> **参考源码**（严禁反编译，直接查源码）：LiveAgent `E:\DevCode\ReinAgent\LiveAgent`、ZCode `E:\DevCode\ReinAgent\ZCode`。
-> **路径**：`docs/ROADMAP.md`。配套任务清单见 **[TASKS.md](./TASKS.md)**（P0 起的分步开发计划：批次 A~E、13 个任务，每步带验收命令与进度表）。
-> **维护纪律**：完成任一条目后，在此表标记 ✅ 并同步 `PROJECT_CONTEXT.md` 对应章节与 `docs/TASKS.md` 任务清单状态。
+> **文档定位（历史归档）**：本篇记录 2026-09-28 对 LiveAgent / ZCode 两个参考实现做全量功能面穷举后，与 ReinAgent 当时现状比对得出的差距清单与阶段性开发路线图。
+> **参考源码**（严禁反编译，直接查源码）：LiveAgent 源码、ZCode 源码。
+> **归档说明**：本路线图规划的绝大部分核心能力（检查点原子回滚、Git 工作台、子代理系统、长期记忆、自动化、全链路代理、Cloudflare 隧道等）已全部开发完毕并经全面测试验证。项目的最新全景架构与单一真相源请以 **[PROJECT_CONTEXT.md](../PROJECT_CONTEXT.md)** 为准。
 
 ## 〇、总览
 

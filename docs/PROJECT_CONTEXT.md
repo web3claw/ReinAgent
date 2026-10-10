@@ -1699,7 +1699,23 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
   - 远程访问正式支持 Cloudflare 免配置公网安全隧道（手机 4G/5G 扫码即连、端到端 HTTPS/WSS 加密）；
   - 支持自定义外部公网反代域名模式与局域网直连模式三模切换；
   - 增强公网安全真实 IP 穿透审计与本地回环白名单保护；
-### 远程公网隧道健壮性与子代理交互优化（2026-10-10）
+
+### v0.1.13 发布（2026-10-10）
+- **版本号升级**：全套升级至 `v0.1.13`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`、`useAppUpdateStore.test.mjs`）。
+- **包含功能与优化**：
+  - 开启 macOS Apple Silicon (`aarch64-apple-darwin`) 跨平台 CI 构建流水线，支持发布 M 系列 Mac 原生 `.dmg` / `.app` 安装包；
+  - 修复多平台 Release 触发与资产打包规范。
+
+### v0.1.14 发布（2026-10-10）
+- **版本号升级**：全套升级至 `v0.1.14`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`、`useAppUpdateStore.test.mjs`）。
+- **包含功能与优化**：
+  - **全局出站网络代理统一规范重构 (`app_proxy.rs`)**：
+    - 统一将客户端内所有出站 HTTP/WebSocket 请求（LLM API 交互、远程模型列表抓取、自更新检查、Cloudflare 隧道组件下载、云端语音 STT、Web 抓取工具等）接入代理出网；
+    - 严格落实「不使用代理的地址」直连豁免规则（本地回环 `localhost`、`127.0.0.1` 等直连）；
+    - 自动向内置浏览器及终端子进程环境变量注入代理配置，彻底解决国内网络环境下下载 `cloudflared` 转圈及终端拉取依赖受阻的问题；
+  - **分支与标签维护**：清理历史孤立分支 `macos-build` 及历史测试标签，维护清晰发版线。
+
+### 远程公网隧道健壮性、子代理交互与文档体系升级（2026-10-10）
 - **远程访问公网隧道 (`remote_tunnel.rs`) 全面加固**：
   - **世代守卫 (Generation Guard)**：在 `TunnelProcessState` 引入 `generation: u64`。启动与停止隧道时递增世代，stderr 读取循环及 EOF 退出判定处校验世代标识，杜绝由于快速重连导致旧线程竞争覆写新隧道状态（解决前端误报“隧道已断开”、掉二维码的问题）；
   - **下载安全与流式防御**：
@@ -1718,9 +1734,10 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 - **子代理卡片交互优化 (`ToolCallCard.tsx`)**：
   - 工具卡片支持 `agent` 及 `subagent_output` 工具类型，点击可直接触发 `summaryAction` 并在右侧副边栏唤起子代理会话转录面板与回放详情；
   - 补充前端单元测试 `ToolCallCard.test.mjs`。
-- **文档与 README 全景更新 (`README.md`)**：
+- **文档体系整理与全景展示 (`README.md` & `docs/`)**：
   - 引入 `docs/ReinAgent.png` 作为首页工作台预览图；
-  - 结构化整合三端原生适配（Linux WebKitGTK / Windows WebView2 / macOS）、绿色单文件免依赖运行、Cloudflare 免配置公网安全隧道、全局统一网络代理、子智能体协作与副边栏转录、本地长期记忆、自动化周期任务等全景特性。
+  - 结构化整合三端原生适配（Linux WebKitGTK / Windows WebView2 / macOS）、绿色单文件免依赖运行、Cloudflare 免配置公网安全隧道、全局统一网络代理、子智能体协作与副边栏转录、本地长期记忆、自动化周期任务等全景特性；
+  - 清理过期历史对比与任务审计文档，核心白皮书与提示词统一收拢至 `docs/` 专区。
 
 
 
