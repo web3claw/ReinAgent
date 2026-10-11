@@ -17,8 +17,10 @@ test("内置助手：4 个预设、general 空人设、其余有人设、无人�
   for (const d of defs) {
     assert.ok(d.prompt.length > 50, d.id + " 有人设正文");
     assert.ok(d.description.length > 0);
-    assert.equal(d.model, undefined, "助手是纯人设：无模型字段");
-    assert.equal(d.thinkingLevel, undefined, "助手是纯人设：无思考等级字段");
+    assert.equal(d.model, undefined, "内置助手无绑定字段");
+    assert.equal(d.thinkingLevel, undefined, "内置助手无绑定字段");
+    assert.equal(d.skills, undefined, "内置助手无绑定字段");
+    assert.equal(d.mcpServers, undefined, "内置助手无绑定字段");
   }
 });
 
@@ -38,7 +40,65 @@ test("parse/render round-trip（纯人设）", () => {
   assert.equal(parsed.def.prompt, "You are a test assistant.");
 });
 
-test("parse 容错：旧文件的 model/thinkingLevel frontmatter 被忽略", () => {
+test("parse/render round-trip：绑定字段（model/thinkingLevel/skills/mcpServers）", () => {
+  const doc = renderAssistantDocument({
+    id: "preset-assistant",
+    name: "preset-assistant",
+    description: "带绑定",
+    prompt: "You are preset.",
+    model: "deepseek/deepseek-chat",
+    thinkingLevel: "high",
+    skills: ["skills-creator", "code-review"],
+    mcpServers: ["node_repl"],
+  });
+  assert.ok(doc.includes("model: deepseek/deepseek-chat"));
+  assert.ok(doc.includes("thinkingLevel: high"));
+  assert.ok(doc.includes("skills: skills-creator, code-review"));
+  assert.ok(doc.includes("mcpServers: node_repl"));
+  const parsed = parseAssistantDocument(doc);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.def.model, "deepseek/deepseek-chat");
+  assert.equal(parsed.def.thinkingLevel, "high");
+  assert.deepEqual(parsed.def.skills, ["skills-creator", "code-review"]);
+  assert.deepEqual(parsed.def.mcpServers, ["node_repl"]);
+});
+
+test("parse 空绑定字段：空串/空列表 = 未绑定", () => {
+  const doc = [
+    "---",
+    "name: empty-bind",
+    "description: 空绑定",
+    "model:",
+    "thinkingLevel:",
+    "skills: , ,",
+    "mcpServers:",
+    "---",
+    "",
+    "Body here.",
+  ].join("\n");
+  const parsed = parseAssistantDocument(doc);
+  assert.equal(parsed.ok, true);
+  assert.equal(parsed.def.model, undefined);
+  assert.equal(parsed.def.thinkingLevel, undefined);
+  assert.equal(parsed.def.skills, undefined);
+  assert.equal(parsed.def.mcpServers, undefined);
+});
+
+test("render 省略未绑定维度（产物无空 frontmatter 行）", () => {
+  const doc = renderAssistantDocument({
+    id: "partial",
+    name: "partial",
+    description: "只绑模型",
+    prompt: "Body.",
+    model: "openai/gpt-5",
+  });
+  assert.ok(doc.includes("model: openai/gpt-5"));
+  assert.ok(!doc.includes("thinkingLevel:"), "未绑定不写行");
+  assert.ok(!doc.includes("skills:"), "未绑定不写行");
+  assert.ok(!doc.includes("mcpServers:"), "未绑定不写行");
+});
+
+test("parse 容错：旧文件的 model/thinkingLevel 现在按绑定读取（零迁移兼容）", () => {
   const legacy = [
     "---",
     "name: legacy-assistant",
@@ -51,8 +111,8 @@ test("parse 容错：旧文件的 model/thinkingLevel frontmatter 被忽略", ()
   ].join("\n");
   const parsed = parseAssistantDocument(legacy);
   assert.equal(parsed.ok, true);
-  assert.equal(parsed.def.model, undefined);
-  assert.equal(parsed.def.thinkingLevel, undefined);
+  assert.equal(parsed.def.model, "deepseek/deepseek-chat");
+  assert.equal(parsed.def.thinkingLevel, "high");
   assert.equal(parsed.def.prompt, "You are legacy.");
 });
 

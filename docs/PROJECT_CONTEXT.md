@@ -1798,3 +1798,13 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 **⚠️ tauri common-controls-v6 铁坑（Windows cargo test）**：tauri 2.x 默认启用 `common-controls-v6` → muda/rfd 静态导入 `TaskDialogIndirect`（仅 comctl32 v6 导出）；tauri-build 的 winres 清单只嵌 bin 目标，**cargo test 测试二进制无清单 → 加载即 0xc0000139 (STATUS_ENTRYPOINT_NOT_FOUND)**（此前疑似因主要在 Linux 侧跑 cargo test 而未暴露）。修复 = Cargo.toml `tauri = { default-features = false, features = ["wry","compression","dynamic-acl","x11","dbus","tray-icon","unstable"] }`（其余默认特性全保留；bin 仍由 tauri-build 嵌 v6 清单，视觉不变，仅罕见运行时错误对话框回退 MessageBoxW）。诊断手段：python 解析 PE 导入表逐项比对系统 DLL 导出表。
 
 **边界（一期明确不做）**：附件预览回显缩略图（发送即内联）、子代理/后台工作浮层手机版、多设备 mobileViewState 持久化、iOS PWA 元信息。
+
+
+### 助手 = 一键预设包（2026-10-11 用户定稿；取代 2026-10-02「纯人设」收敛）
+
+- **语义（用户三点确认）**：选中某个助手（任务 chip 或助手页设为全局默认）的那一刻，该助手携带的**模型/思考级别/技能/MCP 一次性套用**；之后用户在任务里手动改动以手动为准（不持续锁定）；**未绑定的维度维持现状不动**（通用助手无绑定 = 什么都不改）。
+- **数据层**（`assistantDefs.ts`）：frontmatter 扩可选 `model`（"providerId/modelId" 单行）、`thinkingLevel`、`skills`（逗号分隔）、`mcpServers`（逗号分隔）；解析宽松（空串/空列表 = 未绑定）、序列化省略未绑定维度、旧文件零迁移兼容（旧 model/thinkingLevel 行现在按绑定读取）。
+- **套用逻辑**（`assistantBindings.ts` 纯模块，`buildAssistantBindingsPlan`）：模型/思考写任务记录（沿用 providerId/modelId/thinkingLevel 字段，chip 如实显示）；技能 = 整组替换 `hubSettings.skills.selected`；MCP = 整组替换启用集（绑定清单内启用、清单外禁用）；非法值（无斜杠 model、未知 thinkingLevel）跳过（No-Fallback）。套用后 toast 摘要「已应用助手绑定：模型 / 思考级别 / 技能×N / MCP×N」。
+- **接入点**：App `AssistantChip.onPick`（任务作用域：绑定写当前任务）与助手页 `applyGlobal`（全局默认路径：仅套用技能/MCP，任务字段留给后续任务的 chip 应用）；**编辑器保存即重新套用**（2026-10-12 用户实测「在助手编辑里勾了 browser-use，上下文面板技能仍 0%」）：根因 = 编辑 ≠ 生效——general 本就是全局默认，不会再点一次「设为全局默认」，套用从未发生。修 = `save()` 末尾检测「保存的助手 == 当前全局默认」时立即 `applyBindings(def, null)` 重新套用（技能/MCP 即时跟上，模型/思考留任务作用域）；任务作用域的重新套用走聊天页 chip。远程桥 `switch_task` 后的助手应用走同一 buildAssistantBindingsPlan。⚠️ MCP 清单标签 = 服务器 id（与 MCP Hub 卡片一致，description 悬浮提示——用户报「显示名字不一样」后修正）。
+- **编辑器**（AssistantsPage）：新增「预设绑定」区；**内置 4 助手同样可编辑**（2026-10-12 用户两轮定稿：编辑按钮对内置开放，保存为同名用户文件遮蔽内置；**编辑后的内置仍归「内置助手」组**——`listUserAssistants` 对与内置 id 同名的用户文件保留 `builtin: true` 标记（`isBuiltinShadowId` 纯判定，可测），绝不跑进自定义组；编辑后的内置**不可删除**，改提供「恢复出厂预设」按钮（RotateCcw，删遮蔽文件即回到编译期内置）；general 永不可删。原「内置不可编辑删除」最终语义 = 内置恒在内置组、不可删除、可编辑、编辑后可重置——模型下拉（启用供应商×启用模型，loadProvidersConfigFromDisk 同源）+ 思考七档下拉 + 技能多选清单（discoverSkills 同源）+ MCP 多选清单（已配置服务器，**标签 = 服务器 id 与 MCP Hub 卡片一致**，description 作悬浮提示）；未绑定选项为「（不绑定 — 维持现状）」。
+- **测试**：`test:assistants` 16/16（frontmatter round-trip/空绑定/旧文件兼容 + bindings plan 全绑定/无绑定/非法值/null）；CDP E2E 实证（写绑定助手 → chip 应用 → 任务 model/thinking 变化 + hubSettings 启用集变化 → 清理还原）。

@@ -8,8 +8,11 @@
  * 模型与推理强度一律跟随设置里的默认。
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Bot, Globe, Pencil, Plus, Trash2 } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Bot, Globe, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
+import { useHubSettings } from "../../store/hubSettingsStore";
+import * as skillsLib from "../../lib/skills/index";
+import { buildAssistantBindingsPlan } from "../../lib/assistants/assistantBindings";
 import { useTranslation } from "../../i18n";
 import { toast } from "../lw/ui/toast";
 import { useAppStore } from "../../store/useAppStore";
@@ -37,7 +40,23 @@ interface Draft {
   draftId: string;
   description: string;
   prompt: string;
+  /** 一键预设绑定（2026-10-11 用户定稿）：model = "providerId/modelId"；未绑 = 维持现状。 */
+  model: string;
+  thinkingLevel: string;
+  skills: string[];
+  mcpServers: string[];
 }
+
+/** 思考等级七档（与 useAppStore ThinkingLevel / composer THINKING_OPTIONS 同值域）。 */
+const THINKING_LEVEL_OPTIONS: { value: string; label: string }[] = [
+  { value: "off", label: "Off / 关闭" },
+  { value: "default", label: "Default / 默认" },
+  { value: "low", label: "Low / 低" },
+  { value: "medium", label: "Medium / 中" },
+  { value: "high", label: "High / 高" },
+  { value: "xhigh", label: "XHigh / 极高" },
+  { value: "max", label: "Max / 最大" },
+];
 
 const emptyDraft = (): Draft => ({
   editingId: null,
@@ -45,6 +64,10 @@ const emptyDraft = (): Draft => ({
   draftId: "",
   description: "",
   prompt: "",
+  model: "",
+  thinkingLevel: "",
+  skills: [],
+  mcpServers: [],
 });
 
 export function AssistantsPage() {
@@ -54,7 +77,24 @@ export function AssistantsPage() {
   // 助手页只管全局默认：任务作用域唯一入口是聊天页任务名旁的 AssistantChip
   const globalDefaultAssistantId = useAppStore((s) => s.globalDefaultAssistantId);
   const setGlobalDefaultAssistant = useAppStore((s) => s.setGlobalDefaultAssistant);
+  const hubMcpServers = useHubSettings((s) => s.settings.mcp.servers);
+  const hubSetSettings = useHubSettings((s) => s.setSettings);
+  // 编辑器模型选项数据源（loadProvidersConfigFromDisk 与 ModelPicker 同源）；挂载时拉一次
+  const providersRef = useRef<{ id: string; name: string; enabled: boolean; models: { id: string; name: string; enabled: boolean }[] }[]>([]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const { loadProvidersConfigFromDisk } = await import("../settings/model-provider/types");
+        providersRef.current = await loadProvidersConfigFromDisk();
+        setProvidersVersion((v) => v + 1);
+      } catch (err) {
+        console.warn("[assistants] provider load failed:", err);
+      }
+    })();
+  }, []);
+  const [providersVersion, setProvidersVersion] = useState(0);
   const [catalog, setCatalog] = useState<AssistantDef[]>([]);
+  const [userPaths, setUserPaths] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -62,6 +102,7 @@ export function AssistantsPage() {
   const reload = useCallback(async () => {
     const cat = await loadAssistantCatalog();
     setCatalog(cat.assistants);
+    setUserPaths(cat.userPaths);
   }, []);
 
   useEffect(() => {
@@ -75,24 +116,124 @@ export function AssistantsPage() {
   const builtins = visible.filter((d) => d.builtin);
   const customs = visible.filter((d) => !d.builtin);
 
+  // 编辑器选项：技能 = 发现清单（与发送注入同源 discoverSkills）；模型/MCP 见下方 memo。
+  const [skillOptions, setSkillOptions] = useState<{ id: string; name: string; description?: string }[]>([]);
+  useEffect(() => {
+    void (async () => {
+      try {
+        const discovery = await skillsLib.discoverSkills();
+        setSkillOptions(
+          discovery.skills.map((sk: { name: string; description?: string }) => ({
+            id: sk.name,
+            name: sk.name,
+            description: sk.description,
+          })),
+        );
+      } catch (err) {
+        console.warn("[assistants] skill discovery failed:", err);
+      }
+    })();
+  }, []);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- providersRef 变化经 providersVersion 显式触发
+  const modelOptions = useMemo(() => {
+    const providers = providersRef.current;
+    return providers
+      .filter((prov) => prov.enabled !== false)
+      .flatMap((prov) =>
+        prov.models
+          .filter((m) => m.enabled !== false)
+          .map((m) => ({ value: `${prov.id}/${m.id}`, label: `${prov.name || prov.id}/${m.name || m.id}` })),
+      );
+    // providersVersion 参与以触发重算
+  }, [providersVersion]);
+
+  const mcpOptions = useMemo(
+    () =>
+      hubMcpServers.map((srv: { id: string; description?: string }) => ({
+        id: srv.id,
+        label: srv.id,
+        description: srv.description,
+      })),
+    [hubMcpServers],
+  );
+
   const applyGlobal = (def: AssistantDef) => {
     setGlobalDefaultAssistant(def.id);
+    // 一键预设包：全局默认切换同样套用绑定（对后续新任务生效；当前任务经 chip 选择时套用）
+    applyBindings(def, null);
+  };
+
+  /** 套用助手绑定（任务字段 + hubSettings 启用集）；taskId=null = 不写任务字段（全局默认路径）。 */
+  const applyBindings = (def: AssistantDef | null, taskId: string | null) => {
+    const plan = buildAssistantBindingsPlan(
+      def,
+      hubMcpServers.map((srv) => srv.id),
+    );
+    const store = useAppStore.getState();
+    if (plan.taskModel && taskId) {
+      store.updateTaskModel(taskId, plan.taskModel.providerId, plan.taskModel.modelId);
+    }
+    if (plan.taskThinkingLevel && taskId) {
+      store.updateTaskThinkingLevel(taskId, plan.taskThinkingLevel);
+    }
+    if (plan.skillSelection) {
+      hubSetSettings((prev) => ({
+        ...prev,
+        skills: { ...prev.skills, selected: plan.skillSelection! },
+      }));
+    }
+    if (plan.mcpEnabledIds) {
+      const enabledSet = new Set(plan.mcpEnabledIds);
+      hubSetSettings((prev) => ({
+        ...prev,
+        mcp: {
+          ...prev.mcp,
+          servers: prev.mcp.servers.map((srv) => ({ ...srv, enabled: enabledSet.has(srv.id) })),
+        },
+      }));
+    }
+    if (plan.summary) {
+      toast.success(`已应用助手绑定：${plan.summary}`);
+    }
   };
 
   const save = async () => {
     if (!draft) return;
     try {
       const slug = assistantSlug(draft.name);
+      const savedId = draft.editingId ?? (slug || draft.draftId);
       await saveUserAssistant({
-        id: draft.editingId ?? (slug || draft.draftId),
+        id: savedId,
         name: draft.name.trim(),
         description: draft.description.trim(),
         prompt: draft.prompt,
+        model: draft.model.trim() || undefined,
+        thinkingLevel: draft.thinkingLevel.trim() || undefined,
+        skills: draft.skills.length > 0 ? draft.skills : undefined,
+        mcpServers: draft.mcpServers.length > 0 ? draft.mcpServers : undefined,
       });
       await reload();
+      // 保存后立即重新套用绑定（2026-10-12 用户实测「勾了技能面板仍 0%」）：
+      // 编辑 ≠ 生效的断层在这里闭合——该助手若是当前全局默认，技能/MCP 启用集
+      // 与全局默认的新任务模型即时跟上；任务作用域的重新套用走聊天页 chip。
+      if (globalDefaultAssistantId === savedId) {
+        const def = catalog.find((d) => d.id === savedId) ?? null;
+        applyBindings(def, null);
+      }
       setDraft(null);
     } catch (err) {
       console.error("[assistants] save failed:", err);
+      toast.error(String(err instanceof Error ? err.message : err).slice(0, 200));
+    }
+  };
+
+  /** 被编辑遮蔽的内置助手「重置」：删遮蔽文件恢复出厂预设（内置常量仍在）。 */
+  const resetBuiltin = async (def: AssistantDef) => {
+    try {
+      await deleteAssistantById(def.id);
+      await reload();
+    } catch (err) {
       toast.error(String(err instanceof Error ? err.message : err).slice(0, 200));
     }
   };
@@ -133,25 +274,29 @@ export function AssistantsPage() {
         description={def.description || t("subagentNoDescription")}
         actions={
           <>
-            {!def.builtin ? (
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={t("edit")}
-                title={t("edit")}
-                onClick={() =>
-                  setDraft({
-                    editingId: def.id,
-                    name: def.name,
-                    draftId: def.id,
-                    description: def.description,
-                    prompt: def.prompt,
-                  })
-                }
-              >
-                <Pencil className="size-3.5" />
-              </Button>
-            ) : null}
+            {/* 内置助手同样可编辑（2026-10-12 用户定稿）：保存为同名用户文件遮蔽内置
+                （catalog 加载时用户同名覆盖内置，机制现成）；删除按钮仍按原保护语义 */}
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={t("edit")}
+              title={t("edit")}
+              onClick={() =>
+                setDraft({
+                  editingId: def.id,
+                  name: def.name,
+                  draftId: def.id,
+                  description: def.description,
+                  prompt: def.prompt,
+                  model: def.model ?? "",
+                  thinkingLevel: def.thinkingLevel ?? "",
+                  skills: def.skills ?? [],
+                  mcpServers: def.mcpServers ?? [],
+                })
+              }
+            >
+              <Pencil className="size-3.5" />
+            </Button>
             {deletable ? (
               <ConfirmActionPopover
                 title={tf("assistantDelete")}
@@ -169,6 +314,28 @@ export function AssistantsPage() {
                     onClick={open}
                   >
                     <Trash2 className="size-3.5" />
+                  </Button>
+                )}
+              </ConfirmActionPopover>
+            ) : null}
+            {def.builtin && userPaths[def.id] ? (
+              // 被编辑遮蔽的内置：删除不可用，改提供「重置」（删遮蔽文件恢复出厂预设）
+              <ConfirmActionPopover
+                title={tf("assistantResetTitle")}
+                description={tf("assistantResetDesc").replace("{name}", def.name)}
+                confirmLabel={t("confirm")}
+                cancelLabel={t("cancel")}
+                onConfirm={() => void resetBuiltin(def)}
+              >
+                {(open) => (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={tf("assistantResetTitle")}
+                    title={tf("assistantResetTitle")}
+                    onClick={open}
+                  >
+                    <RotateCcw className="size-3.5" />
                   </Button>
                 )}
               </ConfirmActionPopover>
@@ -234,6 +401,9 @@ export function AssistantsPage() {
 
       {draft ? (
         <AssistantEditor
+          modelOptions={modelOptions}
+          skillOptions={skillOptions}
+          mcpOptions={mcpOptions}
           draft={draft}
           setDraft={setDraft}
           onClose={() => setDraft(null)}
@@ -249,13 +419,21 @@ function AssistantEditor({
   setDraft,
   onClose,
   onSave,
+  modelOptions,
+  skillOptions,
+  mcpOptions,
 }: {
   draft: Draft;
   setDraft: (d: Draft) => void;
   onClose: () => void;
   onSave: () => void;
+  modelOptions: { value: string; label: string }[];
+  skillOptions: { id: string; name: string; description?: string }[];
+  mcpOptions: { id: string; label: string; description?: string }[];
 }) {
   const { t } = useTranslation();
+  // 动态键（assistantBindings*）查表签名
+  const tf = t as unknown as (key: string) => string;
   const [error, setError] = useState<string | null>(null);
   const isCreate = draft.editingId === null;
   // 保存用的稳定 id：ASCII 名转 slug；中文名用打开编辑器时固定的 draftId
@@ -319,7 +497,103 @@ function AssistantEditor({
             <p className="text-[11px] text-[var(--text-dim)]">{t("assistantPromptHint")}</p>
           </div>
 
-          <p className="text-[11px] text-[var(--text-dim)]">{t("assistantFollowsDefaultsHint")}</p>
+          {/* 一键预设绑定（2026-10-11 用户定稿）：应用助手时一次性套用；未绑定维度维持现状 */}
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-[var(--text-dim)]">{tf("assistantBindingsTitle")}</label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-xs text-[var(--text-dim)]">{tf("assistantBindingsModel")}</label>
+                <select
+                  className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-2 py-1.5 text-sm text-[var(--text-primary)]"
+                  value={draft.model}
+                  onChange={(e) => setDraft({ ...draft, model: e.currentTarget.value })}
+                >
+                  <option value="">（不绑定 — 维持现状）</option>
+                  {modelOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-[var(--text-dim)]">{tf("assistantBindingsThinking")}</label>
+                <select
+                  className="w-full rounded-md border border-[var(--border)] bg-[var(--bg-card)] px-2 py-1.5 text-sm text-[var(--text-primary)]"
+                  value={draft.thinkingLevel}
+                  onChange={(e) => setDraft({ ...draft, thinkingLevel: e.currentTarget.value })}
+                >
+                  <option value="">（不绑定 — 维持现状）</option>
+                  {THINKING_LEVEL_OPTIONS.map((level) => (
+                    <option key={level.value} value={level.value}>
+                      {level.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="space-y-1.5">
+                <label className="text-xs text-[var(--text-dim)]">{tf("assistantBindingsSkills")}</label>
+                <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-[var(--border)] p-2">
+                  {skillOptions.length === 0 ? (
+                    <p className="text-xs text-[var(--text-dim)]">（无可用技能）</p>
+                  ) : (
+                    skillOptions.map((skill) => (
+                      <label key={skill.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="accent-[var(--brand)]"
+                          checked={draft.skills.includes(skill.id)}
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              skills: e.currentTarget.checked
+                                ? [...draft.skills, skill.id]
+                                : draft.skills.filter((id) => id !== skill.id),
+                            })
+                          }
+                        />
+                        <span className="min-w-0 truncate" title={skill.description || skill.id}>
+                          {skill.name || skill.id}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs text-[var(--text-dim)]">{tf("assistantBindingsMcp")}</label>
+                <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-[var(--border)] p-2">
+                  {mcpOptions.length === 0 ? (
+                    <p className="text-xs text-[var(--text-dim)]">（无已配置 MCP 服务器）</p>
+                  ) : (
+                    mcpOptions.map((srv) => (
+                      <label key={srv.id} className="flex cursor-pointer items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          className="accent-[var(--brand)]"
+                          checked={draft.mcpServers.includes(srv.id)}
+                          onChange={(e) =>
+                            setDraft({
+                              ...draft,
+                              mcpServers: e.currentTarget.checked
+                                ? [...draft.mcpServers, srv.id]
+                                : draft.mcpServers.filter((id) => id !== srv.id),
+                            })
+                          }
+                        />
+                        <span className="min-w-0 truncate font-mono" title={srv.description}>
+                          {srv.label}
+                        </span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </div>
+            </div>
+            <p className="text-[11px] text-[var(--text-dim)]">{tf("assistantBindingsHint")}</p>
+          </div>
 
           {error ? <p className="text-xs text-red-500">{error}</p> : null}
         </DialogBody>

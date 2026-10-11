@@ -93,6 +93,7 @@ import { getOsInfo } from "./lib/system/systemInfo";
 import { getTerminalSettings } from "./lib/terminal/terminalSettings";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
 import { buildContextUsageData } from "./lib/chat/contextUsage";
+import { buildAssistantBindingsPlan } from "./lib/assistants/assistantBindings";
 import { getTools } from "./lib/agent/tools";
 import type { PendingApproval } from "./lib/chat/conversationModel";
 import { CheckpointRewindProvider, formatCheckpointRewoundNotification } from "./lib/chat/checkpointRewind";
@@ -160,6 +161,7 @@ export default function App() {
   // Hub 设置切片订阅：技能/MCP 的启用状态变化驱动上下文容量面板的技能/MCP 分类
   const hubSkillsSettings = useHubSettings((s) => s.settings.skills);
   const hubMcpServers = useHubSettings((s) => s.settings.mcp.servers);
+  const hubSetSettings = useHubSettings((s) => s.setSettings);
 
   // /clear 的二次确认弹窗（复用 checkpoint 回退同款 useConfirmDialog）
   const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirmDialog();
@@ -1986,6 +1988,42 @@ export default function App() {
               onPick={(id) => {
                 if (activeTaskId) {
                   updateTaskAssistant(activeTaskId, id);
+                  // 助手 = 一键预设包（2026-10-11 用户定稿）：应用的那一刻一次性套用绑定
+                  // （模型/思考 → 任务字段；技能/MCP → hubSettings 启用集整组替换）。
+                  // 手动改动以手动为准（不持续锁定）；未绑定维度维持现状。
+                  void (async () => {
+                    const cat = await import("./lib/assistants/assistantDefs").then((m) => m.loadAssistantCatalog());
+                    const def = cat.assistants.find((d) => d.id === id) ?? null;
+                    const plan = buildAssistantBindingsPlan(def, hubMcpServers.map((srv) => srv.id));
+                    if (plan.taskModel) {
+                      updateTaskModel(activeTaskId, plan.taskModel.providerId, plan.taskModel.modelId);
+                    }
+                    if (plan.taskThinkingLevel) {
+                      updateTaskThinkingLevel(activeTaskId, plan.taskThinkingLevel);
+                    }
+                    if (plan.skillSelection) {
+                      hubSetSettings((prev) => ({
+                        ...prev,
+                        skills: { ...prev.skills, selected: plan.skillSelection! },
+                      }));
+                    }
+                    if (plan.mcpEnabledIds) {
+                      const enabledSet = new Set(plan.mcpEnabledIds);
+                      hubSetSettings((prev) => ({
+                        ...prev,
+                        mcp: {
+                          ...prev.mcp,
+                          servers: prev.mcp.servers.map((srv) => ({
+                            ...srv,
+                            enabled: enabledSet.has(srv.id),
+                          })),
+                        },
+                      }));
+                    }
+                    if (plan.summary) {
+                      toast.success(`已应用助手绑定：${plan.summary}`);
+                    }
+                  })();
                 } else {
                   setGlobalDefaultAssistant(id);
                 }

@@ -2,12 +2,13 @@
  * assistantDefs —— 助手（主对话人设预设）数据层。
  *
  * 定位与子智能体互补：子智能体是主模型的「委派工」（独立上下文跑子任务）；
- * 助手是「主对话人设」（切换后改变当前对话的系统提示词人设段）。
- * 助手不携带模型/推理预设——模型与推理强度一律跟随设置里的默认。
+ * 助手是「一键预设包」（2026-10-11 用户定稿，取代 2026-10-02「纯人设」收敛）：
+ * 应用助手的那一刻，绑定的模型/思考级别/技能/MCP 一次性套用；之后用户在
+ * 任务里手动改动以手动为准（不持续锁定）；未绑定的维度维持现状不动。
  *
  * 存储：`~/.ReinAgent/assistants/<id>.md`（frontmatter：name/description +
- * 正文 = 人设指令）。与子智能体同风格，用户可手改；旧文件里的 model/thinkingLevel
- * frontmatter 读取时忽略。
+ * 可选 model/thinkingLevel/skills[]/mcpServers[] + 正文 = 人设指令）。
+ * 与子智能体同风格，用户可手改；缺字段的旧文件零迁移兼容。
  * 内置预设（general/coder/writer/translator）为编译期常量，v1 不可编辑删除；
  * 用户自定义同名遮蔽内置。
  */
@@ -26,6 +27,14 @@ export interface AssistantDef {
   description: string;
   /** 人设指令（正文）。general 为空 = 无注入。 */
   prompt: string;
+  /** 应用时套用到任务的模型钉选（"providerId/modelId" 形态；未绑 = 维持现状）。 */
+  model?: string;
+  /** 应用时套用到任务的思考等级（未绑 = 维持现状）。 */
+  thinkingLevel?: string;
+  /** 应用时套用的启用技能清单（未绑 = 维持现状；绑了 = 整组替换）。 */
+  skills?: string[];
+  /** 应用时套用的启用 MCP 服务器清单（未绑 = 维持现状；绑了 = 整组替换）。 */
+  mcpServers?: string[];
   builtin?: boolean;
 }
 
@@ -34,6 +43,10 @@ export interface UserAssistantInput {
   name: string;
   description: string;
   prompt: string;
+  model?: string;
+  thinkingLevel?: string;
+  skills?: string[];
+  mcpServers?: string[];
 }
 
 export function assistantSlug(value: string): string {
@@ -86,6 +99,18 @@ export function parseAssistantDocument(raw: string): {
   if (!body) errors.push("empty prompt body");
   if (new TextEncoder().encode(raw).length > MAX_ASSISTANT_BYTES) errors.push("document too large");
   if (errors.length > 0) return { ok: false, errors };
+  // 可选绑定字段：model = "providerId/modelId"（单一标量行）；skills/mcpServers =
+  // 逗号分隔行（YAML 数组行不解析——编辑器写出的就是标量行形态，用户手写同样宽松）。
+  const model = meta.model?.trim() || undefined;
+  const thinkingLevel = meta.thinkingLevel?.trim() || undefined;
+  const parseList = (value: string | undefined): string[] | undefined => {
+    if (!value) return undefined;
+    const items = value
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+    return items.length > 0 ? items : undefined;
+  };
   return {
     ok: true,
     errors: [],
@@ -94,6 +119,10 @@ export function parseAssistantDocument(raw: string): {
       name: displayName,
       description,
       prompt: body,
+      ...(model ? { model } : {}),
+      ...(thinkingLevel ? { thinkingLevel } : {}),
+      ...(parseList(meta.skills) ? { skills: parseList(meta.skills) } : {}),
+      ...(parseList(meta.mcpServers) ? { mcpServers: parseList(meta.mcpServers) } : {}),
     },
   };
 }
@@ -103,11 +132,19 @@ export function renderAssistantDocument(def: {
   name: string;
   description: string;
   prompt: string;
+  model?: string;
+  thinkingLevel?: string;
+  skills?: string[];
+  mcpServers?: string[];
 }): string {
   // name = 用户起的显示名（支持中文）；id = 稳定 ASCII 句柄（文件名/#提及用）。
   // name 与 id 一致时不写冗余 id 行（内置预设与旧文件同形态）。
   const lines = ["---", `name: ${def.name}`, `description: ${def.description}`];
   if (def.id !== def.name) lines.push(`id: ${def.id}`);
+  if (def.model) lines.push(`model: ${def.model}`);
+  if (def.thinkingLevel) lines.push(`thinkingLevel: ${def.thinkingLevel}`);
+  if (def.skills && def.skills.length > 0) lines.push(`skills: ${def.skills.join(", ")}`);
+  if (def.mcpServers && def.mcpServers.length > 0) lines.push(`mcpServers: ${def.mcpServers.join(", ")}`);
   lines.push("---", "", def.prompt.trim(), "");
   return lines.join("\n");
 }
@@ -162,6 +199,11 @@ const BUILTIN_DOCUMENTS: readonly { id: string; name: string; description: strin
   },
 ];
 
+/** 用户文件是否为「编辑过的内置」（与内置 id 同名）——遮蔽后仍归内置组。 */
+export function isBuiltinShadowId(id: string): boolean {
+  return BUILTIN_DOCUMENTS.some((d) => d.id === id);
+}
+
 export function builtinAssistantDefs(): AssistantDef[] {
   return BUILTIN_DOCUMENTS.map((d) => ({
     id: d.id,
@@ -207,7 +249,15 @@ export async function listUserAssistants(): Promise<AssistantsScan> {
       // 文件名 = 稳定 ASCII id（写入时生成）；name 行是中文显示名。
       // id 与文件名脱钩时的兜底：无 id 行的旧文件 id 仍取 name。
       const fileId = name.replace(/\.md$/i, "");
-      records.push({ ...parsed.def, id: parsed.def.id || fileId, builtin: false });
+      // 与内置 id 同名的用户文件 = 「编辑过的内置」（2026-10-12 用户定稿：编辑内置
+      // 保存为同名遮蔽文件后，仍归内置组、不进自定义组）——builtin 标记保留。
+      const def = parsed.def;
+      if (!def) continue;
+      records.push({
+        ...def,
+        id: def.id || fileId,
+        builtin: isBuiltinShadowId(def.id || fileId) || undefined,
+      });
     } catch (err) {
       diagnostics.push(`${name}: ${String(err)}`);
     }
@@ -281,7 +331,10 @@ export async function saveUserAssistant(input: UserAssistantInput): Promise<void
     throw new Error(`助手数量已达上限（${MAX_ASSISTANTS} 个）`);
   }
   const path = resolveWorkspacePath(ASSISTANTS_DIR_DISPLAY, "") + `/${input.id}.md`;
-  await fsInvoke("fs_write_file", { path, content: renderAssistantDocument(input) });
+  await fsInvoke("fs_write_file", {
+    path,
+    content: renderAssistantDocument(input),
+  });
   invalidateAssistantCatalog();
 }
 
