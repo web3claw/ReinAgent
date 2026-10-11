@@ -736,6 +736,25 @@ export default function App() {
     };
   }, [state.messages, contextUsage]);
 
+  // 远程桥：把最新的上下文容量快照暴露给 remoteBridge（手机弹层数据源）。
+  // 剥离 categoryContent（函数字段不可序列化），只留数字与标签键。
+  useEffect(() => {
+    (window as unknown as Record<string, unknown>).__reinagentContextUsage = contextUsage
+      ? {
+          used: contextUsage.used,
+          total: contextUsage.total,
+          percent: contextUsage.percent,
+          hitRate: contextUsage.hitRate,
+          categories: contextUsage.categories.map((c) => ({
+            key: c.key,
+            labelKey: c.labelKey,
+            percent: c.percent,
+            chars: c.chars,
+          })),
+        }
+      : null;
+  }, [contextUsage]);
+
   // 记忆页设置抽屉的「驱动模型」选择器选项：全部启用服务商下的启用模型
   //（value = "providerId::modelId"，group = 服务商名，供 ModelPicker 分组展示）
   const hubModelOptions = useMemo(
@@ -1441,6 +1460,7 @@ export default function App() {
     text: string,
     images?: { base64: string; mimeType: string }[],
     userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
+    opts?: { explicitTaskId?: string | null; explicitProject?: string | null },
   ) => {
     // F4：当前服务商/模型被禁用 → 明确拦截并提示（禁用是本义上的"不可用"，
     // 绝不能照发请求）。对齐既有 hook-block 的 toast + 早退样式。
@@ -1479,11 +1499,11 @@ export default function App() {
           } catch (err) {
             console.warn("[mentions] resolve failed (sending without context block):", err);
           }
-          sendNow(outgoing, images, userAttachments);
+          sendNow(outgoing, images, userAttachments, opts);
         })();
         return true;
       }
-      return sendNow(text, images, userAttachments);
+      return sendNow(text, images, userAttachments, opts);
     };
     if (effectiveWorkspaceRoot) {
       void (async () => {
@@ -1566,8 +1586,12 @@ export default function App() {
     text: string,
     images?: { base64: string; mimeType: string }[],
     userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
+    opts?: { explicitTaskId?: string | null; explicitProject?: string | null },
   ) => {
-    let targetTaskId = activeTaskId;
+    // 远程发送（remoteBridge V2）带显式目标：既有任务直发（不强切桌面视图）；
+    // null = 草稿提升（project 由远程 start_draft 决定）。undefined = 本地路径按 activeTaskId。
+    let targetTaskId = opts?.explicitTaskId !== undefined ? opts.explicitTaskId : activeTaskId;
+    const explicitProject = opts?.explicitProject;
 
     // If currently in draft mode (no activeTaskId), create the task on first message
     if (!targetTaskId) {
@@ -1577,7 +1601,7 @@ export default function App() {
       const draftState = useAppStore.getState();
       targetTaskId = createTask(
         fallbackTitle,
-        selectedProject,
+        explicitProject ?? selectedProject,
         sessionProviderId,
         sessionModelId,
         draftState.thinkingLevel,
@@ -1617,19 +1641,45 @@ export default function App() {
     return poolSend(targetTaskId, finalText, buildTurnOptions(images, userAttachments, targetTaskId));
   };
 
-  // 远程访问桥：手机发送走同一发送链路（buildTurnOptions 闭包一致）。
-  // 挂 window 由 remoteBridge 调用；重复挂载以最新闭包为准。
+  // 远程访问桥 V2：手机发送走与本地完全一致的链路（handleSend：UserPromptSubmit hooks、
+  // @提及解析、草稿提升、标题生成、buildTurnOptions）。attachments = 远程上传端点
+  // 落盘到工作区 .ReinAgent/.temp/pasted/ 的文件路径；图片按会话模型视觉能力内联
+  // （buildOutgoingPayload 单一真源，与 Composer/编辑重发同函数）。taskId=null = 远程草稿
+  // 提升（start_draft 已选定 explicitProject）。挂 window 由 remoteBridge 调用；
+  // effect 无依赖数组随渲染重挂，闭包恒新鲜。
   useEffect(() => {
-    (window as unknown as Record<string, unknown>).__reinagentRemoteSend = (taskId: string, text: string) => {
-      const trimmed = String(text ?? "").trim();
-      if (!trimmed) return false;
-      // 仅允许向已存在的任务发送（不支持手机新建任务——远程能力白名单）
-      const exists = useAppStore.getState().tasks.some((t) => t.id === taskId);
-      if (!exists) return false;
-      return poolSend(taskId, trimmed, buildTurnOptions(undefined, undefined, taskId));
+    (window as unknown as Record<string, unknown>).__reinagentRemoteSendV2 = async (args: {
+      taskId: string | null;
+      text: string;
+      attachments?: unknown;
+    }) => {
+      const trimmed = String(args?.text ?? "").trim();
+      const rawAttachments = Array.isArray(args?.attachments) ? args.attachments : [];
+      const refs = rawAttachments
+        .filter((a): a is { path: string; name?: string; kind?: string } => {
+          return Boolean(a) && typeof (a as { path?: unknown }).path === "string";
+        })
+        .map((a) => ({
+          path: a.path,
+          name: typeof a.name === "string" && a.name ? a.name : a.path.replace(/^.*[\/]/, ""),
+          kind: a.kind === "image" ? "image" : "file",
+        })) as { path: string; name: string; kind: "image" | "file" }[];
+      if (!trimmed && refs.length === 0) return false;
+      if (args.taskId) {
+        const exists = useAppStore.getState().tasks.some((t) => t.id === args.taskId);
+        if (!exists) return false;
+      }
+      const supportsImage = currentModel?.supportsImage === true;
+      const { payload, imageInputs } = await buildOutgoingPayload(trimmed, refs, supportsImage);
+      return Boolean(
+        handleSend(payload, imageInputs, refs, {
+          explicitTaskId: args.taskId ?? null,
+          explicitProject: (window as unknown as { __reinagentRemoteDraftProject?: string | null }).__reinagentRemoteDraftProject ?? undefined,
+        }),
+      );
     };
     return () => {
-      delete (window as unknown as Record<string, unknown>).__reinagentRemoteSend;
+      delete (window as unknown as Record<string, unknown>).__reinagentRemoteSendV2;
     };
   });
 

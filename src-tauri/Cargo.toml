@@ -18,7 +18,19 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "unstable"] }
+# default-features=false：剔除 tauri 默认的 common-controls-v6——它让 muda/rfd 静态导入
+# TaskDialogIndirect（仅 comctl32 v6 导出），而 tauri-build 的 winres 清单只嵌 bin 目标，
+# cargo test 测试二进制无清单 → 加载即 0xc0000139。其余默认特性全部保留；bin 仍由
+# tauri-build 嵌 Common-Controls v6 清单（主题/对话框视觉不变，仅罕见错误对话框回退 MessageBoxW）。
+tauri = { version = "2", default-features = false, features = [
+    "wry",
+    "compression",
+    "dynamic-acl",
+    "x11",
+    "dbus",
+    "tray-icon",
+    "unstable",
+] }
 # 导入管线：dsh 会话日志的 zstd 多帧解码（对齐 Wake 的 zstd 用法）
 zstd = "0.13"
 tauri-plugin-single-instance = "2"
@@ -60,7 +72,9 @@ tempfile = "3"
 dirs = "6"
 toml = "0.9"
 tokio = { version = "1", features = ["rt", "time"] }
-axum = { version = "0.8.9", features = ["ws"] }
+axum = { version = "0.8.9", features = ["ws", "multipart"] }
+# 手机远控前端（Vite 构建产物 remote_assets/app）编译期内嵌，随裸二进制分发
+include_dir = "0.7"
 
 # 系统通知直发（notify_send）：tauri-plugin-notification 在 Windows dev 构建
 # （exe 位于 target/debug|release）不设置 AUMID，Toast 被系统静默丢弃

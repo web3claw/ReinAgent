@@ -21,6 +21,7 @@ use axum::{
     routing::get,
     Router,
 };
+use include_dir::{include_dir, Dir};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -226,20 +227,41 @@ fn verify_token(
     Ok(via_query.then(|| token))
 }
 
-// ---------------- 手机单页（批 3：内联 HTML，include_str! 编译进二进制） ----------------
+// ---------------- 手机前端（Vite 构建产物编译期内嵌，见 vite.remote.config.ts） ----------------
 
-const REMOTE_PAGE: &str = include_str!("remote_page.html");
-const MARKED_JS: &str = include_str!("../remote_assets/marked.umd.js");
-const PURIFY_JS: &str = include_str!("../remote_assets/purify.min.js");
+static REMOTE_APP: Dir = include_dir!("$CARGO_MANIFEST_DIR/remote_assets/app");
 
-/// 组装手机页面：把 markdown 渲染库注入占位符（构建一次后缓存）。
-fn build_remote_page() -> &'static String {
-    static BUILT: OnceLock<String> = OnceLock::new();
-    BUILT.get_or_init(|| {
-        REMOTE_PAGE
-            .replace("/*__MARKED_JS__*/", MARKED_JS)
-            .replace("/*__PURIFY_JS__*/", PURIFY_JS)
-    })
+fn mime_for_path(path: &str) -> &'static str {
+    match path.rsplit('.').next().unwrap_or("") {
+        "html" => "text/html; charset=utf-8",
+        "js" | "mjs" => "text/javascript; charset=utf-8",
+        "css" => "text/css; charset=utf-8",
+        "json" | "map" => "application/json",
+        "svg" => "image/svg+xml",
+        "png" => "image/png",
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "ico" => "image/x-icon",
+        "woff" => "font/woff",
+        "woff2" => "font/woff2",
+        "ttf" => "font/ttf",
+        "txt" => "text/plain; charset=utf-8",
+        _ => "application/octet-stream",
+    }
+}
+
+/// 从内嵌目录取文件；找不到时回退 index.html（前端无路由，仅为健壮性兜底）。
+/// 根路径显式 text/html——mime_for_path 对无扩展名路径会落到 octet-stream，
+/// WebView2 把 octet-stream 顶层导航当下载拒绝（ERR_ABORTED + isDownload）。
+fn remote_app_asset(path: &str) -> Option<(&'static [u8], &'static str)> {
+    let trimmed = path.trim_start_matches('/');
+    let is_root = trimmed.is_empty() || trimmed == "index.html";
+    let file = REMOTE_APP
+        .get_file(trimmed)
+        .or_else(|| REMOTE_APP.get_file("index.html"))?;
+    let mime = if is_root { "text/html; charset=utf-8" } else { mime_for_path(trimmed) };
+    Some((file.contents(), mime))
 }
 
 #[derive(Deserialize)]
@@ -253,11 +275,32 @@ async fn page_handler(
     headers: HeaderMap,
     ConnectInfo(addr): ConnectInfo<SocketAddr>,
 ) -> Result<impl IntoResponse, StatusCode> {
+    serve_remote_asset("", Query(query), headers, addr).await
+}
+
+async fn remote_asset_handler(
+    // axum 通配符 {*path} 只捕获 /assets/ 之后的余下段 —— 内嵌查找需还原 assets/ 前缀
+    axum::extract::Path(path): axum::extract::Path<String>,
+    Query(query): Query<TokenQuery>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> Result<impl IntoResponse, StatusCode> {
+    serve_remote_asset(&format!("assets/{path}"), Query(query), headers, addr).await
+}
+
+async fn serve_remote_asset(
+    path: &str,
+    query: Query<TokenQuery>,
+    headers: HeaderMap,
+    addr: SocketAddr,
+) -> Result<impl IntoResponse, StatusCode> {
     let ip = resolve_client_ip(&headers, &addr);
     // 通过 query token 鉴权时种 HttpOnly Cookie：页面 replaceState 清掉 URL 里的
     // token 后，刷新仍能凭 Cookie 通过（对齐 ZCode hasValidLiteToken 语义）。
     let via_query_token = verify_token(query.token.as_deref(), &headers, &ip)?;
-    let mut response = ([("content-type", "text/html; charset=utf-8")], build_remote_page().clone()).into_response();
+    let (body, mime) =
+        remote_app_asset(path).ok_or(StatusCode::NOT_FOUND)?;
+    let mut response = ([("content-type", mime)], Vec::<u8>::from(body)).into_response();
     if let Some(token) = via_query_token {
         response.headers_mut().append(
             axum::http::header::SET_COOKIE,
@@ -280,19 +323,42 @@ enum ServerMessage {
         /// 服务端时间戳（手机端时钟差校准用）
         server_time: u64,
     },
-    Snapshot {
-        tasks: Vec<Value>,
+    /// 通用请求应答（switch_task / start_draft / list_models 等 reqId 型 op）
+    Result {
+        req_id: String,
+        ok: bool,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        payload: Option<Value>,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        error: Option<String>,
     },
+    /// 任务/工作区快照（ZCode WebRemoteControlWorkspaceListResult 同形；主动推送 + 拉取应答）
+    WorkspaceList { payload: Value },
     State {
         task_id: String,
         revision: u64,
+        /// 序列化时间线行（serializeEntry 同形）+ queuedMessages + pendingApproval
         messages: Value,
         running: bool,
+        /// 排队中的引导消息（流式中 send 入队）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        queued_messages: Option<Value>,
+        /// 审批/提问/计划挂起（args.kind 区分；与桌面 ApprovalCard 同源）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        pending_approval: Option<Value>,
+        /// 上下文容量快照（桌面 buildContextUsageData 可序列化子集；仅活动任务）
+        #[serde(skip_serializing_if = "Option::is_none")]
+        context_usage: Option<Value>,
     },
     ApprovalPending {
         task_id: String,
         tool_name: String,
         args: Value,
+    },
+    /// 桌面活动任务/工作区变化同步（手机跟随桌面切换）
+    DesktopState {
+        active_task_id: Option<String>,
+        active_workspace_key: Option<String>,
     },
     Accepted {
         req_id: String,
@@ -310,14 +376,47 @@ enum ClientMessage {
     Hello {},
     #[serde(rename = "list_tasks")]
     ListTasks { req_id: String },
+    #[serde(rename = "list_workspaces")]
+    ListWorkspaces { req_id: String },
     #[serde(rename = "subscribe")]
     Subscribe { req_id: String, task_id: String },
+    #[serde(rename = "unsubscribe")]
+    Unsubscribe { req_id: String, task_id: String },
     #[serde(rename = "send")]
-    Send { req_id: String, task_id: String, text: String },
+    Send {
+        req_id: String,
+        /// null = 桌面草稿态发送（提升为首条消息建任务）
+        task_id: Option<String>,
+        text: String,
+        /// 远程上传的附件（upload 端点返回的路径）
+        #[serde(default)]
+        attachments: Vec<Value>,
+    },
     #[serde(rename = "approve")]
     Approve { req_id: String, task_id: String, decision: Value },
     #[serde(rename = "stop")]
     Stop { req_id: String, task_id: String },
+    // ---- ZCode MobileShell Switcher API 同款操作（generic request 应答） ----
+    #[serde(rename = "switch_task")]
+    SwitchTask { req_id: String, task_id: String },
+    #[serde(rename = "start_draft")]
+    StartDraft { req_id: String, workspace_key: String },
+    #[serde(rename = "mark_task_read")]
+    MarkTaskRead { req_id: String, task_id: String },
+    #[serde(rename = "update_mobile_view_state")]
+    UpdateMobileViewState { req_id: String, workspace_key: String, task_id: Option<String> },
+    #[serde(rename = "remove_queued")]
+    RemoveQueued { req_id: String, task_id: String, index: u32 },
+    #[serde(rename = "list_models")]
+    ListModels { req_id: String },
+    #[serde(rename = "set_model")]
+    SetModel { req_id: String, task_id: Option<String>, provider_id: String, model_id: String },
+    #[serde(rename = "get_task_options")]
+    GetTaskOptions { req_id: String, task_id: Option<String> },
+    #[serde(rename = "set_approval_mode")]
+    SetApprovalMode { req_id: String, task_id: Option<String>, mode: String },
+    #[serde(rename = "set_thinking_level")]
+    SetThinkingLevel { req_id: String, task_id: Option<String>, level: String },
 }
 
 async fn ws_handler(
@@ -378,9 +477,9 @@ async fn ws_session(socket: WebSocket, app: AppHandle) {
                 Ok(event) => {
                     let guard = client_for_bridge.lock().await;
                     match event {
-                        BridgeEvent::State { task_id, revision, messages, running } => {
+                        BridgeEvent::State { task_id, revision, messages, running, queued_messages, pending_approval, context_usage } => {
                             if guard.subscribed.contains(&task_id) {
-                                guard.send(ServerMessage::State { task_id, revision, messages, running });
+                                guard.send(ServerMessage::State { task_id, revision, messages, running, queued_messages, pending_approval, context_usage });
                             }
                         }
                         BridgeEvent::ApprovalPending { task_id, tool_name, args } => {
@@ -388,8 +487,11 @@ async fn ws_session(socket: WebSocket, app: AppHandle) {
                                 guard.send(ServerMessage::ApprovalPending { task_id, tool_name, args });
                             }
                         }
-                        BridgeEvent::Snapshot { tasks } => {
-                            guard.send(ServerMessage::Snapshot { tasks });
+                        BridgeEvent::WorkspaceList { payload } => {
+                            guard.send(ServerMessage::WorkspaceList { payload });
+                        }
+                        BridgeEvent::DesktopState { active_task_id, active_workspace_key } => {
+                            guard.send(ServerMessage::DesktopState { active_task_id, active_workspace_key });
                         }
                     }
                 }
@@ -435,29 +537,50 @@ async fn handle_client_text(client: &Arc<tokio::sync::Mutex<WsClient>>, text: &s
     match msg {
         ClientMessage::Hello {} => {
             guard.send(ServerMessage::Hello { ok: true, server_time: now_ms() });
-            // hello 后立刻推一份任务快照
-            let tasks = request_snapshot_from_webview(&guard.app).await.unwrap_or_default();
-            guard.send(ServerMessage::Snapshot { tasks });
         }
-        ClientMessage::ListTasks { req_id } => {
-            guard.send(ServerMessage::Accepted { req_id });
-            let tasks = request_snapshot_from_webview(&guard.app).await.unwrap_or_default();
-            guard.send(ServerMessage::Snapshot { tasks });
+        ClientMessage::ListTasks { req_id } | ClientMessage::ListWorkspaces { req_id } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "list_workspaces", serde_json::json!({})).await;
+        }
         }
         ClientMessage::Subscribe { req_id, task_id } => {
             guard.subscribed.insert(task_id.clone());
             guard.send(ServerMessage::Accepted { req_id });
             // 立即推一次当前状态
-            let state = request_task_state_from_webview(&guard.app, &task_id).await;
-            if let Some((revision, messages, running)) = state {
-                guard.send(ServerMessage::State { task_id, revision, messages, running });
+            let app = guard.app.clone();
+            drop(guard);
+            if let Some(state) = request_task_state_from_webview(&app, &task_id).await {
+                // 空帧（池刚创建、水合未完成）不广播——保留手机端「加载中」态，
+                // 水合完成后的 notify 会推真帧（空会话与水合空窗此时无法区分，宁可多等）。
+                let is_empty = state.messages.as_array().map(|a| a.is_empty()).unwrap_or(false);
+                if !is_empty {
+                    let _ = bridge_bus().send(BridgeEvent::State {
+                        task_id,
+                        revision: state.revision,
+                        messages: state.messages,
+                        running: state.running,
+                        queued_messages: state.queued_messages,
+                        pending_approval: state.pending_approval,
+                        context_usage: state.context_usage,
+                    });
+                }
             }
         }
-        ClientMessage::Send { req_id, task_id, text } => {
+        ClientMessage::Unsubscribe { req_id, task_id } => {
+            guard.subscribed.remove(&task_id);
+            guard.send(ServerMessage::Accepted { req_id });
+        }
+        ClientMessage::Send { req_id, task_id, text, attachments } => {
             guard.send(ServerMessage::Accepted { req_id });
             let app = guard.app.clone();
             drop(guard);
-            let _ = app.emit("remote-bridge:send", serde_json::json!({ "taskId": task_id, "text": text }));
+            let _ = app.emit(
+                "remote-bridge:send",
+                serde_json::json!({ "taskId": task_id, "text": text, "attachments": attachments }),
+            );
         }
         ClientMessage::Approve { req_id, task_id, decision } => {
             guard.send(ServerMessage::Accepted { req_id });
@@ -474,18 +597,177 @@ async fn handle_client_text(client: &Arc<tokio::sync::Mutex<WsClient>>, text: &s
             drop(guard);
             let _ = app.emit("remote-bridge:stop", serde_json::json!({ "taskId": task_id }));
         }
+        // ---- reqId 型操作统一走 webview 请求等待器（应答帧 Result） ----
+        ClientMessage::SwitchTask { req_id, task_id } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "switch_task", serde_json::json!({ "taskId": task_id })).await;
+        }
+        }
+        ClientMessage::StartDraft { req_id, workspace_key } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "start_draft", serde_json::json!({ "workspaceKey": workspace_key })).await;
+        }
+        }
+        ClientMessage::MarkTaskRead { req_id, task_id } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "mark_task_read", serde_json::json!({ "taskId": task_id })).await;
+        }
+        }
+        ClientMessage::UpdateMobileViewState { req_id, workspace_key, task_id } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "update_mobile_view_state", serde_json::json!({ "workspaceKey": workspace_key, "taskId": task_id })).await;
+        }
+        }
+        ClientMessage::RemoveQueued { req_id, task_id, index } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "remove_queued", serde_json::json!({ "taskId": task_id, "index": index })).await;
+        }
+        }
+        ClientMessage::ListModels { req_id } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "list_models", serde_json::json!({})).await;
+        }
+        }
+        ClientMessage::SetModel { req_id, task_id, provider_id, model_id } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "set_model", serde_json::json!({ "taskId": task_id, "providerId": provider_id, "modelId": model_id })).await;
+        }
+        }
+        ClientMessage::GetTaskOptions { req_id, task_id } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "get_task_options", serde_json::json!({ "taskId": task_id })).await;
+        }
+        }
+        ClientMessage::SetApprovalMode { req_id, task_id, mode } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "set_approval_mode", serde_json::json!({ "taskId": task_id, "mode": mode })).await;
+        }
+        }
+        ClientMessage::SetThinkingLevel { req_id, task_id, level } => {
+            {
+            let app = guard.app.clone();
+            guard.send(ServerMessage::Accepted { req_id: req_id.clone() });
+            drop(guard);
+            request_over_ws(client.clone(), app, req_id, "set_thinking_level", serde_json::json!({ "taskId": task_id, "level": level })).await;
+        }
+        }
     }
     Ok(())
 }
 
-// ---------------- 桥接：Rust ↔ webview ----------------
+/// reqId 型 op 的等待段（Accepted 已由调用方经守卫发出、守卫已放锁）：
+/// **spawn 独立任务**等待 webview 应答（remote_bridge_answer_request 解析等待器）→ 短锁回 Result 帧。
+/// 绝不在 handle_client_text 的处理循环内等待——同一连接上后续帧（subscribe/send/…）
+/// 会被 15s 等待窗口串行阻塞（实测：hello 后 list_workspaces+list_models 各等应答，
+/// 跟发的 subscribe 被堵到超时，手机页永远收不到任务状态）。
+async fn request_over_ws(
+    client: Arc<tokio::sync::Mutex<WsClient>>,
+    app: AppHandle,
+    req_id: String,
+    kind: &str,
+    payload: Value,
+) {
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    request_waiters().lock().expect("request waiters lock").insert(req_id.clone(), tx);
+    let _ = app.emit(
+        "remote-bridge:request",
+        serde_json::json!({ "reqId": req_id, "kind": kind, "payload": payload }),
+    );
+    tauri::async_runtime::spawn(async move {
+        let outcome = match tokio::time::timeout(Duration::from_secs(15), rx).await {
+            Ok(Ok(result)) => result,
+            Ok(Err(_)) => Err("webview dropped the request".to_string()),
+            Err(_) => Err("webview request timed out".to_string()),
+        };
+        // 无论如何清理等待器（超时路径防泄漏）
+        request_waiters().lock().expect("request waiters lock").remove(&req_id);
+        let frame = match outcome {
+            Ok(payload) => ServerMessage::Result { req_id, ok: true, payload: Some(payload), error: None },
+            Err(error) => ServerMessage::Result { req_id, ok: false, payload: None, error: Some(error) },
+        };
+        guard_send(&client, frame).await;
+    });
+}
+
+/// 短暂加锁发送一帧（不跨 await 持锁）。
+async fn guard_send(client: &Arc<tokio::sync::Mutex<WsClient>>, msg: ServerMessage) {
+    let guard = client.lock().await;
+    guard.send(msg);
+}
+
+/// webview 应答通用请求（remoteBridge 调用）：解析对应连接上挂着的等待器。
+#[tauri::command]
+pub async fn remote_bridge_answer_request(
+    req_id: String,
+    ok: bool,
+    payload: Option<Value>,
+    error: Option<String>,
+) -> Result<(), String> {
+    let waiter = request_waiters().lock().expect("request waiters lock").remove(&req_id);
+    if let Some(waiter) = waiter {
+        let result = if ok {
+            Ok(payload.unwrap_or(Value::Null))
+        } else {
+            Err(error.unwrap_or_else(|| "unknown error".to_string()))
+        };
+        let _ = waiter.send(result);
+    }
+    Ok(())
+}
+
+/// webview 推送工作区/任务快照（ZCode WorkspaceListResult 同形 JSON）。
+#[tauri::command]
+pub async fn remote_bridge_push_workspace_list(payload: Value) -> Result<(), String> {
+    broadcast_workspace_list(&payload);
+    Ok(())
+}
+
+fn broadcast_workspace_list(payload: &Value) {
+    let _ = bridge_bus().send(BridgeEvent::WorkspaceList { payload: payload.clone() });
+}
 
 /// 桥接广播总线：webview 推来的状态/审批事件扇出给所有 WS 客户端。
 #[derive(Clone, Debug)]
 enum BridgeEvent {
-    State { task_id: String, revision: u64, messages: Value, running: bool },
+    State {
+        task_id: String,
+        revision: u64,
+        messages: Value,
+        running: bool,
+        queued_messages: Option<Value>,
+        pending_approval: Option<Value>,
+        context_usage: Option<Value>,
+    },
     ApprovalPending { task_id: String, tool_name: String, args: Value },
-    Snapshot { tasks: Vec<Value> },
+    WorkspaceList { payload: Value },
+    DesktopState { active_task_id: Option<String>, active_workspace_key: Option<String> },
 }
 
 static BRIDGE_BUS: OnceLock<tokio::sync::broadcast::Sender<BridgeEvent>> = OnceLock::new();
@@ -494,7 +776,7 @@ fn bridge_bus() -> &'static tokio::sync::broadcast::Sender<BridgeEvent> {
     BRIDGE_BUS.get_or_init(|| tokio::sync::broadcast::channel(64).0)
 }
 
-/// webview → Rust 桥接入口（main.tsx 监听这些命令事件后调用对应命令）。
+/// webview → Rust 状态推送（会话池订阅回调；含排队消息与挂起审批）。
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BridgeStateArgs {
@@ -502,6 +784,12 @@ pub struct BridgeStateArgs {
     pub revision: u64,
     pub messages: Value,
     pub running: bool,
+    #[serde(default)]
+    pub queued_messages: Option<Value>,
+    #[serde(default)]
+    pub pending_approval: Option<Value>,
+    #[serde(default)]
+    pub context_usage: Option<Value>,
 }
 
 #[tauri::command]
@@ -511,6 +799,9 @@ pub async fn remote_bridge_state(args: BridgeStateArgs) -> Result<(), String> {
         revision: args.revision,
         messages: args.messages,
         running: args.running,
+        queued_messages: args.queued_messages,
+        pending_approval: args.pending_approval,
+        context_usage: args.context_usage,
     });
     Ok(())
 }
@@ -533,61 +824,48 @@ pub async fn remote_bridge_approval(args: BridgeApprovalArgs) -> Result<(), Stri
     Ok(())
 }
 
+/// webview 推送桌面活动任务/工作区变化（手机跟随）。
 #[tauri::command]
-pub async fn remote_bridge_snapshot(tasks: Vec<Value>) -> Result<(), String> {
-    let _ = bridge_bus().send(BridgeEvent::Snapshot { tasks });
+pub async fn remote_bridge_push_desktop_state(
+    active_task_id: Option<String>,
+    active_workspace_key: Option<String>,
+) -> Result<(), String> {
+    let _ = bridge_bus().send(BridgeEvent::DesktopState {
+        active_task_id,
+        active_workspace_key,
+    });
     Ok(())
 }
 
-/// webview 主动请求：让 WS 客户端收到最新任务快照（列表变化时调用）。
-#[tauri::command]
-pub async fn remote_bridge_notify_tasks() -> Result<(), String> {
-    // webview 拿到 tasks 后调 remote_bridge_snapshot；这里只负责发事件请求快照
-    if let Some(app) = state().handle.lock().expect("handle lock").clone() {
-        let _ = app.emit("remote-bridge:tasks-changed", ());
-    }
-    Ok(())
-}
-
-/// webview 拉取快照：把请求转给 webview（webview 监听事件后调 remote_bridge_snapshot）。
-async fn request_snapshot_from_webview(app: &AppHandle) -> Option<Vec<Value>> {
-    let (tx, rx) = tokio::sync::oneshot::channel();
-    snapshot_waiters().lock().expect("waiters lock").push(tx);
-    let _ = app.emit("remote-bridge:need-snapshot", ());
-    tokio::time::timeout(Duration::from_secs(5), rx).await.ok()?.ok()
-}
-
-async fn request_task_state_from_webview(app: &AppHandle, task_id: &str) -> Option<(u64, Value, bool)> {
+async fn request_task_state_from_webview(app: &AppHandle, task_id: &str) -> Option<TaskStateReply> {
     let (tx, rx) = tokio::sync::oneshot::channel();
     state_waiters().lock().expect("state waiters lock").insert(task_id.to_string(), tx);
     let _ = app.emit("remote-bridge:need-state", serde_json::json!({ "taskId": task_id }));
     tokio::time::timeout(Duration::from_secs(5), rx).await.ok()?.ok()
 }
 
-type SnapshotWaiter = tokio::sync::oneshot::Sender<Vec<Value>>;
-type StateWaiter = tokio::sync::oneshot::Sender<(u64, Value, bool)>;
-
-static SNAPSHOT_WAITERS: OnceLock<std::sync::Mutex<Vec<SnapshotWaiter>>> = OnceLock::new();
-static STATE_WAITERS: OnceLock<std::sync::Mutex<HashMap<String, StateWaiter>>> = OnceLock::new();
-
-fn snapshot_waiters() -> &'static std::sync::Mutex<Vec<SnapshotWaiter>> {
-    SNAPSHOT_WAITERS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+#[derive(Debug)]
+struct TaskStateReply {
+    revision: u64,
+    messages: Value,
+    running: bool,
+    queued_messages: Option<Value>,
+    pending_approval: Option<Value>,
+    context_usage: Option<Value>,
 }
+
+type StateWaiter = tokio::sync::oneshot::Sender<TaskStateReply>;
+type RequestWaiter = tokio::sync::oneshot::Sender<Result<Value, String>>;
+
+static STATE_WAITERS: OnceLock<std::sync::Mutex<HashMap<String, StateWaiter>>> = OnceLock::new();
+static REQUEST_WAITERS: OnceLock<std::sync::Mutex<HashMap<String, RequestWaiter>>> = OnceLock::new();
 
 fn state_waiters() -> &'static std::sync::Mutex<HashMap<String, StateWaiter>> {
     STATE_WAITERS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
-/// webview 应答快照请求（remote_page 数据源）。
-#[tauri::command]
-pub async fn remote_bridge_answer_snapshot(tasks: Vec<Value>) -> Result<(), String> {
-    let waiters: Vec<SnapshotWaiter> = snapshot_waiters().lock().expect("waiters lock").drain(..).collect();
-    for waiter in waiters {
-        let _ = waiter.send(tasks.clone());
-    }
-    // 同时广播给订阅客户端（列表变化推送）
-    let _ = bridge_bus().send(BridgeEvent::Snapshot { tasks });
-    Ok(())
+fn request_waiters() -> &'static std::sync::Mutex<HashMap<String, RequestWaiter>> {
+    REQUEST_WAITERS.get_or_init(|| std::sync::Mutex::new(HashMap::new()))
 }
 
 /// 手机发送被桌面拒绝（任务不存在等）：v1 简化为日志（后续可回错误帧）。
@@ -610,22 +888,179 @@ pub struct BridgeAnswerStateArgs {
     pub revision: u64,
     pub messages: Value,
     pub running: bool,
+    #[serde(default)]
+    pub queued_messages: Option<Value>,
+    #[serde(default)]
+    pub pending_approval: Option<Value>,
+    #[serde(default)]
+    pub context_usage: Option<Value>,
 }
 
 /// webview 应答单任务状态请求。
 #[tauri::command]
 pub async fn remote_bridge_answer_state(args: BridgeAnswerStateArgs) -> Result<(), String> {
+    let reply = TaskStateReply {
+        revision: args.revision,
+        messages: args.messages.clone(),
+        running: args.running,
+        queued_messages: args.queued_messages.clone(),
+        pending_approval: args.pending_approval.clone(),
+        context_usage: args.context_usage.clone(),
+    };
     let waiter = state_waiters().lock().expect("waiters lock").remove(&args.task_id);
     if let Some(waiter) = waiter {
-        let _ = waiter.send((args.revision, args.messages.clone(), args.running));
+        let _ = waiter.send(reply);
     }
     let _ = bridge_bus().send(BridgeEvent::State {
         task_id: args.task_id,
         revision: args.revision,
         messages: args.messages,
         running: args.running,
+        queued_messages: args.queued_messages,
+        pending_approval: args.pending_approval,
+        context_usage: args.context_usage,
     });
     Ok(())
+}
+
+// ---------------- 附件上传（手机 → 工作区 .ReinAgent/.temp/pasted/） ----------------
+
+/// 文件名清洗：取 basename，替换路径分隔与控制字符，截断到 120 字符。
+fn sanitize_upload_name(raw: &str) -> String {
+    let base = raw.rsplit(['/', '\\']).next().unwrap_or("file").trim();
+    let cleaned: String = base
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '(' | ')' | ' ' | '[' | ']') {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    let trimmed = cleaned.trim().trim_matches('.');
+    let fallback = trimmed.is_empty();
+    let mut name = if fallback { "file".to_string() } else { trimmed.to_string() };
+    if name.len() > 120 {
+        // 保留扩展名
+        if let Some(dot) = name.rfind('.') {
+            let ext = &name[dot..];
+            let stem_len = 120 - ext.len();
+            name = format!("{}{}", &name[..stem_len.max(1)], ext);
+        } else {
+            name.truncate(120);
+        }
+    }
+    name
+}
+
+/// 解析任务对应的工作区根：任务 payload 的 project 字段 → 用户主目录 DefaultProject。
+fn resolve_task_workspace_root(task_id: &str) -> Option<std::path::PathBuf> {
+    let conn = crate::conversation_store::db_conn().ok()?;
+    let payload: String = conn
+        .query_row(
+            "SELECT payload FROM task WHERE id = ?1",
+            [task_id],
+            |row| row.get(0),
+        )
+        .ok()?;
+    let project: Option<String> = serde_json::from_str::<Value>(&payload)
+        .ok()
+        .and_then(|v| v.get("project").and_then(|p| p.as_str()).map(|s| s.to_string()));
+    let base = match project.filter(|p| !p.trim().is_empty()) {
+        Some(p) => std::path::PathBuf::from(p),
+        None => default_project_root(),
+    };
+    Some(base)
+}
+
+fn default_project_root() -> std::path::PathBuf {
+    if let Some(home) = dirs::home_dir() {
+        home.join(".ReinAgent").join("DefaultProject")
+    } else if let Some(profile) = std::env::var_os("USERPROFILE") {
+        std::path::PathBuf::from(profile).join(".ReinAgent").join("DefaultProject")
+    } else {
+        std::path::PathBuf::from("/tmp/ReinAgent/DefaultProject")
+    }
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UploadedAttachment {
+    path: String,
+    name: String,
+    kind: String, // "image" | "file"
+    size: u64,
+}
+
+/// 单文件大小上限（与桌面 fs_import_pasted_file 对齐：25MB）。
+const UPLOAD_MAX_BYTES: usize = 25 * 1024 * 1024;
+
+fn is_image_name(name: &str) -> bool {
+    let lower = name.to_lowercase();
+    [".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"]
+        .iter()
+        .any(|ext| lower.ends_with(ext))
+}
+
+#[derive(Deserialize)]
+struct UploadQuery {
+    #[serde(default)]
+    token: Option<String>,
+    #[serde(default)]
+    task_id: Option<String>,
+}
+
+async fn attachment_upload_handler(
+    Query(query): Query<UploadQuery>,
+    headers: HeaderMap,
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+    mut multipart: axum::extract::Multipart,
+) -> Result<axum::Json<Vec<UploadedAttachment>>, StatusCode> {
+    let ip = resolve_client_ip(&headers, &addr);
+    verify_token(query.token.as_deref(), &headers, &ip)?;
+    let task_id = query.task_id.unwrap_or_default();
+    let workspace_root = resolve_task_workspace_root(&task_id)
+        .unwrap_or_else(default_project_root);
+    let pasted_dir = workspace_root.join(".ReinAgent").join(".temp").join("pasted");
+    std::fs::create_dir_all(&pasted_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    // 幂等补建 .ReinAgent/.gitignore（与 fs_cmd 同内容），手机上传产物对用户仓库隐形
+    crate::fs_cmd::ensure_reinagent_gitignore(&workspace_root.join(".ReinAgent"));
+
+    let mut uploaded = Vec::new();
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| StatusCode::BAD_REQUEST)?
+    {
+        let Some(file_name) = field.file_name().map(|s| s.to_string()) else {
+            continue;
+        };
+        if file_name.is_empty() {
+            continue;
+        }
+        let data = field
+            .bytes()
+            .await
+            .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
+        if data.is_empty() {
+            continue;
+        }
+        if data.len() > UPLOAD_MAX_BYTES {
+            return Err(StatusCode::PAYLOAD_TOO_LARGE);
+        }
+        let name = sanitize_upload_name(&file_name);
+        let stamped = format!("remote-{}-{}", chrono::Local::now().format("%Y%m%d-%H%M%S%3f"), name);
+        let dest = pasted_dir.join(&stamped);
+        std::fs::write(&dest, &data).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        uploaded.push(UploadedAttachment {
+            path: dest.to_string_lossy().to_string(),
+            name,
+            kind: if is_image_name(&stamped) { "image" } else { "file" }.to_string(),
+            size: data.len() as u64,
+        });
+    }
+    Ok(axum::Json(uploaded))
 }
 
 // ---------------- 状态与配置命令 ----------------
@@ -826,6 +1261,8 @@ fn restart_server(app: &AppHandle) -> Result<(), String> {
     tauri::async_runtime::spawn(async move {
         let router = Router::new()
             .route("/", get(page_handler))
+            .route("/assets/{*path}", get(remote_asset_handler))
+            .route("/api/attachment", axum::routing::post(attachment_upload_handler))
             .route("/ws", get(ws_handler))
             .with_state(app_for_router);
         let listener = match tokio::net::TcpListener::bind(("0.0.0.0", port as u16)).await {
@@ -928,6 +1365,57 @@ mod serde_tests {
         assert!(!is_blacklisted("127.0.0.1"));
         assert!(!is_blacklisted("::1"));
         assert!(!is_blacklisted("localhost"));
+    }
+    #[test]
+    fn send_parses_null_task_id_and_attachments() {
+        let json = r#"{"op":"send","reqId":"r2","taskId":null,"text":"hi","attachments":[{"path":"C:/x/a.png","name":"a.png","kind":"image"}]}"#;
+        let parsed: ClientMessage = serde_json::from_str(json).expect("send with null taskId");
+        match parsed {
+            ClientMessage::Send { req_id, task_id, text, attachments } => {
+                assert_eq!(req_id, "r2");
+                assert_eq!(task_id, None);
+                assert_eq!(text, "hi");
+                assert_eq!(attachments.len(), 1);
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn switch_task_parses_camel_case() {
+        let json = r#"{"op":"switch_task","reqId":"r3","taskId":"t9"}"#;
+        match serde_json::from_str::<ClientMessage>(json).expect("switch_task") {
+            ClientMessage::SwitchTask { req_id, task_id } => {
+                assert_eq!(req_id, "r3");
+                assert_eq!(task_id, "t9");
+            }
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn sanitize_upload_name_keeps_basename_and_strips_unsafe() {
+        assert_eq!(sanitize_upload_name("a/b/c.txt"), "c.txt");
+        assert_eq!(sanitize_upload_name("../../../etc/passwd"), "passwd");
+        assert_eq!(sanitize_upload_name(""), "file");
+        assert_eq!(sanitize_upload_name("..."), "file");
+        assert!(sanitize_upload_name("hello*?.md").ends_with(".md"));
+        assert!(!sanitize_upload_name("hello*?.md").contains('*'));
+    }
+
+    #[test]
+    fn sanitize_upload_name_truncates_but_keeps_extension() {
+        let long = format!("{}.png", "x".repeat(200));
+        let out = sanitize_upload_name(&long);
+        assert!(out.len() <= 124);
+        assert!(out.ends_with(".png"));
+    }
+
+    #[test]
+    fn is_image_name_covers_common_extensions() {
+        assert!(is_image_name("a.PNG"));
+        assert!(is_image_name("b.jpeg"));
+        assert!(!is_image_name("c.pdf"));
     }
 }
 

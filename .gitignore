@@ -39,3 +39,6 @@ src-tauri/target
 
 # ReinAgent per-workspace scratch (debug scripts, temp artifacts; auto-cleanable)
 .ReinAgent/
+
+# 手机远控前端构建产物（vite.remote.config.ts 输出；build.rs 兜底建目录）
+src-tauri/remote_assets/app/

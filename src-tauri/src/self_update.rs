@@ -551,6 +551,9 @@ pub fn verify_executable_binary(path: &Path) -> Result<(), String> {
 }
 
 fn set_executable(path: &Path) -> Result<(), String> {
+    // path 仅在 unix 分支使用（Windows 权限继承自 rename 产物，无需处理）
+    #[cfg(not(unix))]
+    let _ = path;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;

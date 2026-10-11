@@ -512,3 +512,39 @@ pub async fn kv_set_many(pairs: Vec<KvPair>) -> Result<(), String> {
     .await
     .map_err(|e| e.to_string())?
 }
+
+/// 每任务最后一条 assistant 行的状态（手机远控列表徽标数据源）。
+/// ZCode 语义：列表状态取「当前/最后一回合的结果」而非历史中任意错误——
+/// error = 最后一回合失败；done/stopped（及异常残留的 streaming）= 已完成。
+#[tauri::command]
+pub async fn conversation_task_statuses() -> Result<Vec<TaskStatusRow>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let conn = db_conn()?;
+        let mut stmt = conn
+            .prepare(
+                "SELECT m.task_id, m.status
+                 FROM message m
+                 JOIN (SELECT task_id, MAX(seq) AS max_seq FROM message WHERE role = 'assistant' GROUP BY task_id) t
+                   ON m.task_id = t.task_id AND m.seq = t.max_seq",
+            )
+            .map_err(|e| e.to_string())?;
+        let rows = stmt
+            .query_map([], |row| {
+                Ok(TaskStatusRow {
+                    task_id: row.get(0)?,
+                    status: row.get(1)?,
+                })
+            })
+            .map_err(|e| e.to_string())?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskStatusRow {
+    pub task_id: String,
+    pub status: String,
+}

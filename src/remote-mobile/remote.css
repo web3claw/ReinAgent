@@ -1,0 +1,374 @@
+/*
+ * remote.css —— 手机远控独立主题层（对齐 ZCode packages/ui styles.css 移动端子集）。
+ *
+ * 独立于桌面 global.css：色板逐项取 ZCode zai-dark/zai-light 值（Tailwind v4 neutral/
+ * sky/green/red/yellow 默认调色板），UI 字号基准 --ui-font-size: 14px（ZCode 同值）。
+ * data-theme="dark|light" 驱动；@custom-variant dark 让移植组件的 dark: 变体生效。
+ */
+@import "tailwindcss";
+
+@custom-variant dark (&:where([data-theme="dark"], [data-theme="dark"] *));
+
+@theme {
+  /* Tailwind v4 默认调色板（oklch），ZCode 色板引用的原始值 */
+  --color-neutral-50: oklch(0.985 0 0);
+  --color-neutral-100: oklch(0.97 0 0);
+  --color-neutral-200: oklch(0.922 0 0);
+  --color-neutral-300: oklch(0.87 0 0);
+  --color-neutral-400: oklch(0.708 0 0);
+  --color-neutral-500: oklch(0.556 0 0);
+  --color-neutral-600: oklch(0.439 0 0);
+  --color-neutral-700: oklch(0.37 0 0);
+  --color-neutral-800: oklch(0.268 0 0);
+  --color-neutral-900: oklch(0.205 0 0);
+  --color-neutral-950: oklch(0.145 0 0);
+  --color-sky-50: oklch(0.977 0.013 236.62);
+  --color-sky-300: oklch(0.828 0.111 230.318);
+  --color-sky-400: oklch(0.746 0.16 232.661);
+  --color-sky-500: oklch(0.685 0.169 237.323);
+  --color-sky-900: oklch(0.391 0.09 240.876);
+  --color-sky-950: oklch(0.293 0.066 243.157);
+  --color-green-500: oklch(0.723 0.192 149.579);
+  --color-green-600: oklch(0.627 0.194 149.214);
+  --color-red-400: oklch(0.704 0.191 22.216);
+  --color-red-500: oklch(0.637 0.237 25.331);
+  --color-red-600: oklch(0.577 0.245 27.325);
+  --color-yellow-500: oklch(0.795 0.184 86.047);
+  --color-yellow-600: oklch(0.681 0.162 75.834);
+  --color-violet-400: oklch(0.702 0.183 293.541);
+  --color-violet-950: oklch(0.283 0.141 291.089);
+  --color-white: #fff;
+
+  /* UI 字号体系（ZCode 同值：14px 基准） */
+  --ui-font-size: 14px;
+  --text-ui-xl: calc(var(--ui-font-size) + 4px);
+  --text-ui-lg: calc(var(--ui-font-size) + 2px);
+  --text-ui-base: var(--ui-font-size);
+  --text-ui-caption: calc(var(--ui-font-size) - 1px);
+  --text-ui-sm: calc(var(--ui-font-size) - 2px);
+  --text-ui-xs: calc(var(--ui-font-size) - 4px);
+  --text-ui-xl--line-height: 1.4;
+  --text-ui-lg--line-height: 1.45;
+  --text-ui-base--line-height: 1.5;
+  --text-ui-sm--line-height: 1.5;
+  --text-ui-xs--line-height: 1.45;
+
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei UI",
+    "Microsoft YaHei", "Noto Sans CJK SC", sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New",
+    "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", monospace;
+}
+
+/* === ZCode 色板（深色 = 默认，浅色 = data-theme 覆盖） === */
+:root,
+[data-theme="dark"] {
+  --zcode-background: var(--color-neutral-900);
+  --zcode-background-alt: color-mix(in oklab, var(--color-neutral-800) 60%, transparent);
+  --zcode-brand: var(--color-sky-500);
+  --zcode-accent: color-mix(in oklab, var(--color-sky-950) 50%, transparent);
+  --zcode-border: color-mix(in oklab, var(--color-neutral-50) 10%, transparent);
+  --zcode-border-hover: color-mix(in oklab, var(--color-neutral-50) 30%, transparent);
+  --zcode-selected: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --zcode-header: var(--color-neutral-900);
+  --zcode-surface: color-mix(in oklab, var(--color-white) 5%, transparent);
+  --zcode-surface-hover: color-mix(in oklab, var(--color-white) 10%, transparent);
+  --zcode-card: var(--color-neutral-800);
+  --zcode-card-border: var(--zcode-border);
+  --zcode-foreground: var(--color-neutral-200);
+  --zcode-foreground-subtle: color-mix(in oklab, var(--color-neutral-200) 60%, transparent);
+  --zcode-foreground-subtlest: color-mix(in oklab, var(--color-neutral-200) 30%, transparent);
+  --zcode-foreground-inverse: var(--color-white);
+  --zcode-success: var(--color-green-500);
+  --zcode-destructive: var(--color-red-500);
+  --zcode-warning: var(--color-yellow-500);
+  --zcode-toast: var(--color-neutral-900);
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  --zcode-background: var(--color-neutral-50);
+  --zcode-brand: var(--color-sky-400);
+  --zcode-accent: var(--color-sky-50);
+  --zcode-border: color-mix(in oklab, var(--color-neutral-950) 10%, transparent);
+  --zcode-border-hover: color-mix(in oklab, var(--color-neutral-950) 20%, transparent);
+  --zcode-selected: color-mix(in oklab, var(--color-neutral-950) 10%, transparent);
+  --zcode-header: var(--color-neutral-100);
+  --zcode-surface: color-mix(in oklab, var(--color-neutral-950) 3%, transparent);
+  --zcode-surface-hover: color-mix(in oklab, var(--color-neutral-950) 5%, transparent);
+  --zcode-card: var(--color-white);
+  --zcode-foreground: var(--color-neutral-700);
+  --zcode-foreground-subtle: color-mix(in oklab, var(--color-neutral-700) 60%, transparent);
+  --zcode-foreground-subtlest: color-mix(in oklab, var(--color-neutral-700) 40%, transparent);
+  --zcode-foreground-inverse: var(--color-white);
+  --zcode-success: var(--color-green-600);
+  --zcode-destructive: var(--color-red-600);
+  --zcode-warning: var(--color-yellow-600);
+  --zcode-toast: var(--color-white);
+  color-scheme: light;
+}
+
+@theme inline {
+  /* 移植组件的语义类（bg-background / text-foreground-subtle / bg-card …）→ 色板变量 */
+  --color-background: var(--zcode-background);
+  --color-background-alt: var(--zcode-background-alt);
+  --color-brand: var(--zcode-brand);
+  --color-accent: var(--zcode-accent);
+  --color-border: var(--zcode-border);
+  --color-border-hover: var(--zcode-border-hover);
+  --color-selected: var(--zcode-selected);
+  --color-header: var(--zcode-header);
+  --color-surface: var(--zcode-surface);
+  --color-surface-hover: var(--zcode-surface-hover);
+  --color-card: var(--zcode-card);
+  --color-card-border: var(--zcode-card-border);
+  --color-foreground: var(--zcode-foreground);
+  --color-foreground-subtle: var(--zcode-foreground-subtle);
+  --color-foreground-subtlest: var(--zcode-foreground-subtlest);
+  --color-foreground-inverse: var(--zcode-foreground-inverse);
+  --color-success: var(--zcode-success);
+  --color-success-foreground: var(--zcode-foreground-inverse);
+  --color-destructive: var(--zcode-destructive);
+  --color-destructive-foreground: var(--zcode-foreground-inverse);
+  --color-warning: var(--zcode-warning);
+  --color-warning-foreground: var(--zcode-foreground-inverse);
+  --color-toast: var(--zcode-toast);
+  --color-input-border: var(--zcode-border);
+  --color-input-border-hover: var(--zcode-border-hover);
+  --color-input-border-focused: var(--zcode-brand);
+  --color-popover: var(--zcode-card);
+  --color-popover-foreground: var(--zcode-foreground);
+  --color-popover-border: var(--zcode-border);
+}
+
+/* === 基础 === */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overscroll-behavior-y: none;
+}
+
+body {
+  background: var(--zcode-background);
+  color: var(--zcode-foreground);
+  font-family: var(--font-sans);
+  font-size: var(--ui-font-size);
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+#root {
+  height: 100dvh;
+}
+
+button {
+  cursor: pointer;
+  font-family: inherit;
+}
+
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  color: inherit;
+}
+
+/* 隐藏滚动条（时间线/列表） */
+.no-scrollbar {
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* === Markdown（对话页正文；对齐 ZCode Streamdown 视觉与桌面 .md 语义） === */
+.md {
+  font-size: var(--text-ui-base);
+  line-height: 1.7;
+  word-break: break-word;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+.md > :last-child {
+  margin-bottom: 0;
+}
+.md p {
+  margin: 0.9em 0;
+}
+.md strong {
+  font-weight: 650;
+}
+.md h1,
+.md h2,
+.md h3,
+.md h4 {
+  font-weight: 600;
+  margin: 1.3em 0 0.6em;
+  line-height: 1.4;
+}
+.md h1 {
+  font-size: 1.35em;
+}
+.md h2 {
+  font-size: 1.2em;
+}
+.md h3 {
+  font-size: 1.1em;
+}
+.md h4 {
+  font-size: 1.05em;
+}
+.md ul,
+.md ol {
+  margin: 0.8em 0;
+  padding-left: 1.5em;
+}
+.md ul {
+  list-style: disc;
+}
+.md ol {
+  list-style: decimal;
+}
+.md li {
+  margin: 0.35em 0;
+}
+.md li::marker {
+  color: var(--zcode-foreground-subtle);
+}
+.md code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  background: var(--zcode-surface-hover);
+  border-radius: 4px;
+  padding: 0.12em 0.35em;
+}
+.md pre {
+  margin: 1em 0;
+  border-radius: 8px;
+  border: 1px solid var(--zcode-border);
+  background: color-mix(in oklab, var(--color-neutral-950) 70%, var(--zcode-card));
+  overflow: hidden;
+}
+[data-theme="light"] .md pre {
+  background: oklch(0.205 0 0);
+}
+.md pre code {
+  display: block;
+  background: transparent;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--color-neutral-200);
+}
+.md blockquote {
+  margin: 0.9em 0;
+  padding: 0.1em 0 0.1em 0.9em;
+  border-left: 3px solid var(--zcode-border-hover);
+  color: var(--zcode-foreground-subtle);
+}
+.md table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin: 1em 0;
+  font-size: 0.95em;
+}
+.md th,
+.md td {
+  border: 1px solid var(--zcode-border);
+  padding: 5px 10px;
+  text-align: left;
+}
+.md th {
+  background: var(--zcode-surface);
+  font-weight: 600;
+}
+.md hr {
+  border: none;
+  border-top: 1px solid var(--zcode-border);
+  margin: 1.4em 0;
+}
+.md a {
+  color: var(--zcode-brand);
+  text-decoration: none;
+}
+.md a:active {
+  opacity: 0.7;
+}
+
+/* 思考块 */
+.thinking-body {
+  color: var(--zcode-foreground-subtle);
+  font-size: var(--text-ui-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+/* 工具卡运行中扫光（对齐 ZCode shimmer 语义，reduced-motion 退化） */
+@keyframes rc-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+.shimmer-text {
+  background: linear-gradient(
+    90deg,
+    var(--zcode-foreground-subtlest) 40%,
+    var(--zcode-foreground) 50%,
+    var(--zcode-foreground-subtlest) 60%
+  );
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  animation: rc-shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shimmer-text {
+    animation: none;
+    color: var(--zcode-foreground-subtle);
+    -webkit-text-fill-color: currentcolor;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Radix 弹层出现动画（手机端轻量形态） */
+@keyframes rc-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+[data-slot="rc-popover-content"] {
+  animation: rc-pop-in 120ms ease-out;
+}
+
+/* textarea 自适应高度重置 */
+textarea.composer-input {
+  resize: none;
+  background: transparent;
+  border: none;
+  outline: none;
+  width: 100%;
+  max-height: 132px;
+}
