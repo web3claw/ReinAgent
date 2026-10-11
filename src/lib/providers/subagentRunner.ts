@@ -33,9 +33,32 @@ import {
   type SubagentDefinition,
 } from "../subagents/subagentDefinitions.js";
 
-/** 子代理默认步数上限。ZCode maxTurns 默认 4；实测 Deepseek 碎步形态（工具轮+正文轮各占一步）
- *  4 步连「列目录+报告」都触顶，放宽到 6（主模型会收到触顶 ⚠ 警告并如实转告）。 */
-export const SUBAGENT_MAX_STEPS = 6;
+/** 子代理默认步数上限。
+ *  若主 Agent 传入 maxSteps，则子代理继承该步数；
+ *  若未指定，默认基准放宽至 25（防止复杂任务未出终稿即因触顶中断）。 */
+export const SUBAGENT_MAX_STEPS = 25;
+
+/** 判别是否为 429 / 速率超限错误。 */
+export function isRateLimitError(errOrMsg: unknown): boolean {
+  if (!errOrMsg) return false;
+  const msg =
+    typeof errOrMsg === "string"
+      ? errOrMsg
+      : (errOrMsg as { message?: string })?.message ?? String(errOrMsg);
+  return /429|rate[- _]?limit|too many requests/i.test(msg);
+}
+
+/** 429 重试前清理起始消息序列，确保末条不是 assistant（满足 runTurn 前置约束）。 */
+export function sanitizeMessagesForRunTurn(messages: any[], prompt: string): any[] {
+  const list = Array.isArray(messages) ? [...messages] : [];
+  while (list.length > 0 && list[list.length - 1]?.role === "assistant") {
+    list.pop();
+  }
+  if (list.length === 0) {
+    return [{ role: "user", content: prompt, timestamp: Date.now() }];
+  }
+  return list;
+}
 
 /** 定义是否可改动文件/执行命令（决定是否继承父审批门）。 */
 export function subagentCanMutate(definition: SubagentDefinition): boolean {
@@ -181,6 +204,10 @@ export interface SubagentToolDeps {
   workspaceRoot?: string;
   /** 父轮 AbortSignal：父停子停。 */
   signal?: AbortSignal;
+  /** 父轮步数限制：跟随主 Agent 对话框设置。若未传入则回退至 SUBAGENT_MAX_STEPS (25)。 */
+  maxSteps?: number;
+  /** 429 速率限制重试退避延时计算（毫秒），可选注入（单测中加速或自定义退避策略）。 */
+  rateLimitRetryDelay?: (retryCount: number) => number;
   /** 父审批门（可改动定义继承；只读定义不挂）。 */
   beforeToolCall?: (ctx: any, signal?: AbortSignal) => Promise<{ block?: boolean; reason?: string } | undefined>;
   /** 父轮工具注册表（getTools() 结果——不含 agent，天然禁递归）。 */
@@ -362,36 +389,101 @@ export async function createSubagentTool(deps: SubagentToolDeps) {
         startedAt,
       });
 
-      /** 共享推进逻辑：跑嵌套循环 → 汇总 → registry 收束（+ 后台通知）。 */
-      const driveRun = async (signal: AbortSignal | undefined): Promise<SubagentRunResult> => {
-        const result = await runTurn({
-          model: pinned?.model ?? deps.model,
-          stream: pinned?.stream ?? deps.stream,
-          api: pinned?.api ?? deps.api,
-          label: pinned?.label ?? deps.label,
-          getApiKey: pinned?.getApiKey ?? deps.getApiKey,
-          systemPrompt: composeSubagentSystemPrompt(definition, deps.workspaceRoot),
-          // 转录末条为 user：子代理任务作为单条 user 消息进入
-          messages: [{ role: "user", content: params.prompt, timestamp: Date.now() }],
-          tools: scopedTools as any[],
-          signal,
-          maxSteps: SUBAGENT_MAX_STEPS,
-          // 定义钉选 thinking 优先（off 映射关闭），否则跟随会话
-          thinkingLevel: (definition.thinkingLevel === "off"
-            ? "off"
-            : definition.thinkingLevel ?? deps.thinkingLevel ?? "off") as any,
-          // 可改动定义：继承父审批门（写操作弹主会话审批）；只读定义结构性安全不挂。
-          beforeToolCall: subagentCanMutate(definition) ? deps.beforeToolCall : undefined,
-          onEvent: () => {},
+      const effectiveMaxSteps = deps.maxSteps ?? SUBAGENT_MAX_STEPS;
+      const getRetryDelay =
+        deps.rateLimitRetryDelay ??
+        ((count: number) => {
+          const baseDelay = 2000 * Math.pow(2, count);
+          const jitter = Math.random() * 1000;
+          return Math.min(10000, baseDelay + jitter);
         });
+      const MAX_RATE_LIMIT_RETRIES = 3;
+
+      /** 共享推进逻辑：跑嵌套循环 → 汇总 → registry 收束（+ 后台通知）。支持 429 速率限制重试。 */
+      const driveRun = async (signal: AbortSignal | undefined): Promise<SubagentRunResult> => {
+        let currentMessages: any[] = [{ role: "user", content: params.prompt, timestamp: Date.now() }];
+        let retryCount = 0;
+        let lastResult: any = null;
+
+        while (true) {
+          if (signal?.aborted) {
+            break;
+          }
+          try {
+            const turnMessages = sanitizeMessagesForRunTurn(currentMessages, params.prompt);
+            const result = await runTurn({
+              model: pinned?.model ?? deps.model,
+              stream: pinned?.stream ?? deps.stream,
+              api: pinned?.api ?? deps.api,
+              label: pinned?.label ?? deps.label,
+              getApiKey: pinned?.getApiKey ?? deps.getApiKey,
+              systemPrompt: composeSubagentSystemPrompt(definition, deps.workspaceRoot),
+              messages: turnMessages,
+              tools: scopedTools as any[],
+              signal,
+              maxSteps: effectiveMaxSteps,
+              // 定义钉选 thinking 优先（off 映射关闭），否则跟随会话
+              thinkingLevel: (definition.thinkingLevel === "off"
+                ? "off"
+                : definition.thinkingLevel ?? deps.thinkingLevel ?? "off") as any,
+              // 可改动定义：继承父审批门（写操作弹主会话审批）；只读定义结构性安全不挂。
+              beforeToolCall: subagentCanMutate(definition) ? deps.beforeToolCall : undefined,
+              onEvent: () => {},
+            });
+            lastResult = result;
+            if (Array.isArray(result.messages) && result.messages.length > 0) {
+              currentMessages = result.messages;
+            }
+
+            // 检查是否有 429 速率限制且未被用户中止
+            if (
+              !result.aborted &&
+              result.errorMessage &&
+              isRateLimitError(result.errorMessage) &&
+              retryCount < MAX_RATE_LIMIT_RETRIES
+            ) {
+              const delay = getRetryDelay(retryCount);
+              retryCount++;
+              console.warn(
+                `[subagent] rate limit encountered (${result.errorMessage}), retrying (${retryCount}/${MAX_RATE_LIMIT_RETRIES}) after ${Math.round(delay)}ms...`,
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue;
+            }
+            break;
+          } catch (err: any) {
+            if (signal?.aborted) {
+              break;
+            }
+            if (isRateLimitError(err) && retryCount < MAX_RATE_LIMIT_RETRIES) {
+              const delay = getRetryDelay(retryCount);
+              retryCount++;
+              console.warn(
+                `[subagent] rate limit caught error (${err?.message ?? err}), retrying (${retryCount}/${MAX_RATE_LIMIT_RETRIES}) after ${Math.round(delay)}ms...`,
+              );
+              await new Promise((resolve) => setTimeout(resolve, delay));
+              continue;
+            }
+            // 真实错误不吞，如实记录
+            lastResult = {
+              messages: currentMessages,
+              maxStepsReached: false,
+              aborted: false,
+              errorMessage: err?.message ?? String(err),
+            };
+            break;
+          }
+        }
+
+        const finalMessages = lastResult?.messages ?? currentMessages;
         // 转录落库（P2 尾巴 #7）：完成后即可在右侧面板完整回放
-        void persistSubagentTranscript(runId, result.messages);
+        void persistSubagentTranscript(runId, finalMessages);
         const summary = summarizeSubagentRun(
-          result.messages,
+          finalMessages,
           now() - startedAt,
-          result.maxStepsReached,
-          result.aborted,
-          result.errorMessage,
+          lastResult?.maxStepsReached ?? false,
+          lastResult?.aborted ?? Boolean(signal?.aborted),
+          lastResult?.errorMessage,
         );
         return summary;
       };
@@ -452,6 +544,7 @@ export async function createSubagentTool(deps: SubagentToolDeps) {
         usage: summary.usage,
         summary: summary.content,
         error: summary.errorMessage,
+        maxStepsReached: summary.maxStepsReached,
       });
 
       // 结果文本（对齐 ZCode formatAgentOutputForResult：报告 + 事实头 + usage 块）

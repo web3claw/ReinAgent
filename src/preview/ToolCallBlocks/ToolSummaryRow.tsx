@@ -71,7 +71,7 @@ function SummaryLeadingContent({
   return (
     <>
       {showIcon ? (
-        <span className="shrink-0 text-foreground-subtlest [&_svg]:text-foreground-subtlest">
+        <span className="shrink-0 text-foreground-subtlest">
           {icon}
         </span>
       ) : null}

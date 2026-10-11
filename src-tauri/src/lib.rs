@@ -266,6 +266,7 @@ pub fn run() {
             browser::browser_open,
             browser::browser_set_bounds,
             browser::browser_navigate,
+            browser::browser_reload,
             browser::browser_eval,
             browser::browser_read_page,
             browser::browser_screenshot,

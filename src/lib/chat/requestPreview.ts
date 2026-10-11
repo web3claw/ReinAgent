@@ -89,6 +89,7 @@ export interface RequestPreviewInput {
     assistantId?: string;
     approvalMode?: ApprovalMode;
     thinkingLevel?: string;
+    maxSteps?: number;
     toolPolicies?: Record<string, "allow" | "ask" | "deny">;
   };
   /** 当前会话状态（时间线与计数器；与 UI 所见一致）。 */
@@ -206,6 +207,7 @@ export async function buildRequestPreview(input: RequestPreviewInput): Promise<R
       label: model.provider || "openai-completions",
       getApiKey: () => config.apiKey.trim(),
       workspaceRoot,
+      maxSteps: options.maxSteps,
       thinkingLevel: (options.thinkingLevel ?? undefined) as never,
       registryTools: assembly.registryTools as never[],
       beforeToolCall: undefined,

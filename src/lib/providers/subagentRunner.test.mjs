@@ -21,6 +21,7 @@ import {
   createSubagentOutputTool,
   createSubagentTool,
   filterToolsForDefinition,
+  isRateLimitError,
   subagentCanMutate,
   summarizeSubagentRun,
   SUBAGENT_MAX_STEPS,
@@ -247,7 +248,7 @@ test("6 · 工具描述渲染目录；系统提示词含定义正文与工作区
     composeSubagentSystemPrompt(reviewer).includes("no file-modification tools"),
     "纯只读定义声明不可改动",
   );
-  assert.equal(SUBAGENT_MAX_STEPS, 6);
+  assert.equal(SUBAGENT_MAX_STEPS, 25);
   assert.equal(normalizeSubagentHandle("Explore"), "explorer");
   assert.equal(normalizeSubagentHandle("general-purpose"), "fixer");
 });
@@ -314,3 +315,93 @@ test("7 · 后台子代理立即返回；subagent_output 查询状态与报告�
   assert.equal(missing.isError, true);
   assert.ok(missing.content[0].text.includes("sub-404"));
 });
+
+// ---------------------------------------------------------------------------
+// 8 · 步数继承：主 Agent maxSteps 传入时，子代理以传入步数为准
+// ---------------------------------------------------------------------------
+test("8 · 步数继承：子代理继承父轮传入的 maxSteps", async () => {
+  const { __resetForTests } = await import("../subagents/subagentRegistry.ts");
+  __resetForTests();
+  const registry = getTools();
+
+  // 准备多轮调用（工具调用 + 尝试继续）
+  const subCore = makeFaux();
+  subCore.setResponses([
+    faux.fauxAssistantMessage([faux.fauxToolCall("glob", { pattern: "**/*" })]),
+    faux.fauxAssistantMessage([faux.fauxText("未能完成的后续")]),
+  ]);
+
+  // 当显式限制 maxSteps: 1 时，执行完 1 轮工具调用即触顶停止
+  const agentTool = await createSubagentTool({
+    model: subCore.getModel(),
+    stream: fauxStream(subCore),
+    api: "faux",
+    label: "faux",
+    getApiKey: () => undefined,
+    registryTools: registry,
+    catalog: testCatalog(),
+    maxSteps: 1,
+  });
+
+  const res = await agentTool.execute("call-steps", {
+    description: "步数测试",
+    prompt: "列出文件",
+    subagent_type: "explorer",
+  });
+
+  assert.notEqual(res.isError, true);
+  const text = res.content[0].text;
+  assert.ok(text.includes("⚠ 步数上限触顶"), "maxSteps: 1 触顶并如实报警");
+});
+
+// ---------------------------------------------------------------------------
+// 9 · 429 速率限制重试：自动识别 429、退避并在重试后成功输出结果
+// ---------------------------------------------------------------------------
+test("9 · 429 速率限制重试：识别速率超限并指数退避断点续跑", async () => {
+  assert.equal(isRateLimitError("429 Too Many Requests"), true);
+  assert.equal(isRateLimitError("rate limit exceeded, please retry"), true);
+  assert.equal(isRateLimitError("requests per minute rate-limit hit"), true);
+  assert.equal(isRateLimitError({ message: "429: Too Many Requests" }), true);
+  assert.equal(isRateLimitError("SyntaxError: Unexpected token"), false);
+
+  const { __resetForTests } = await import("../subagents/subagentRegistry.ts");
+  __resetForTests();
+  const registry = getTools();
+
+  let attempts = 0;
+  const subCore = makeFaux();
+  subCore.setResponses([
+    faux.fauxAssistantMessage([faux.fauxText("429 重试后成功生成的最终报告")]),
+  ]);
+  const baseStream = fauxStream(subCore);
+  const flakyStream = (model, context, options) => {
+    attempts++;
+    if (attempts === 1) {
+      throw new Error("429 Too Many Requests");
+    }
+    return baseStream(model, context, options);
+  };
+
+  const agentTool = await createSubagentTool({
+    model: subCore.getModel(),
+    stream: flakyStream,
+    api: "faux",
+    label: "faux",
+    getApiKey: () => undefined,
+    registryTools: registry,
+    catalog: testCatalog(),
+    // 注入快速退避延迟（5ms），避免单测等待
+    rateLimitRetryDelay: () => 5,
+  });
+
+  const res = await agentTool.execute("call-retry", {
+    description: "429 重试测试",
+    prompt: "生成报告",
+    subagent_type: "explorer",
+  });
+
+  assert.notEqual(res.isError, true);
+  assert.equal(attempts, 2, "发生了一次 429 重试，总共调用 2 次");
+  assert.ok(res.content[0].text.includes("429 重试后成功生成的最终报告"));
+});
+

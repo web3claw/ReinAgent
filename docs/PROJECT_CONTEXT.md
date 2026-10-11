@@ -466,7 +466,7 @@ ReinAgent 架构全景
 | 13.4 | 会话统计行（SessionStatsBar，对齐 LiveAgent 底部统计条） | 底栏下一行等宽小字：`N 轮 · M 步 | 上下文 P% | LLM/工具 耗时 | 输入/输出 tok · 命中 %`；耗时来自时间打点累计（流式段按当前时刻实算）；命中率 = 累计 cacheRead /（累计 input + cacheRead）（全会话口径，修复只取末条的 0%/100% 跳变）；居中、13px、亮色 | `SessionStatsBar.tsx`、`App.tsx` |
 | 13.5 | 上下文容量面板 | 触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 缓存命中率（移至会话统计行，≥0 才显示）；已用取真实 usage（input+cacheRead+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；**不含剩余额度**（用户确认排除）；**明细行可点击**——有内容的类别（消息/系统提示词/系统工具）懒构建真实文本在右侧面板查看（markdown/json 高亮），无内容类别（技能/MCP/其他）如实 0.0% 且不可点击 | `contextUsage.ts`、`ContextUsageIndicator.tsx`、`LexicalComposer.tsx`、`App.tsx` |
 | 14 | **任务级设置隔离 + 审批模式落地（对齐 ZCode task-local thoughtLevel/mode）** | 三项设置按任务隔离：模型（`providerId/modelId`，已有）、推理等级（`thinkingLevel?`）、审批模式（`approvalMode?`），字段随 task payload 进 SQLite；有活动任务读写任务字段，草稿态读写全局默认（首次发送随 createTask 落到新任务）；模型切换自动对齐改为任务粒度（只修正覆盖不受支持的任务，绝不冲掉仍受支持的覆盖）。审批模式四档（对齐 ZCode 用户可切面）：`plan 计划模式`（写/执行一律拦截+系统提示词约束只读调研）/`ask 变更前确认`（写+执行弹审批卡）/`edit 自动编辑`（写自动放行，执行弹卡）/`full 完全访问`（默认，零开销直通）；工具分级 `resolveToolPermissionKind`（read 直通/write/exec 受限，未知工具保守视为 write）。审批流经 pi-agent-core 原生 `beforeToolCall` 钩子：需要批准时 await 用户决策（**循环挂起不中止**，同 ZCode 权限流语义），拒绝 → `{block:true, reason}` 错误工具结果（模型知道被拒不重试）；审批卡（`ApprovalCard`）渲染于输入框上方（工具名+参数摘要+允许/总是允许/拒绝），「总是允许」为任务级内存免审集合；stop/clear/轮次异常结束均以 reject 解除挂起；模式下拉对齐 ZCode（图标+标题+描述，full 态触发按钮 warning 色）。实测：隔离（A 改 B 不动+全局不动）、拒绝（模型停手文件未创建）、允许（批准后文件真实落盘）全链路通过 | `useAppStore.ts`、`tools.js`（resolveToolPermissionKind）、`agentRuntime.js`（beforeToolCall 透传）、`runAgentTurn.ts`（createApprovalGate/PLAN_MODE_PROMPT）、`conversationPool.ts`（审批协调器）、`conversationController.js`（requestApproval/resolveApproval）、`conversationModel.js`（pendingApproval）、`ApprovalCard.tsx`、`LexicalComposer.tsx`、`App.tsx`、`approvalGate.test.mjs` |
-| 15 | **应用品牌换装（logo + 应用图标 + 底栏图标条）** | 应用图标全套更换：R 主题（蓝色渐变圆角方块 + 白色粗体 R，`src-tauri/app-icon.png` 1024 源图经 `cargo tauri icon` 生成 icon.ico/icns/各尺寸 PNG/Store logos），窗口/任务栏/开始菜单生效（需 Rust 重构建后启动）；左上角 logo 改为同源内联 SVG（`AppLogo` 组件，替换原文字方块）；左下角用户栏移除（头像 K/用户名 kwtgsgi8 删除），替换为 **PI-Desktop sidebar-footer 同款图标条**（lucide 14px 图标 + 32×32 命中区 + radix Tooltip 300ms，对齐 TooltipButton/footer-action）：齿轮=设置（可点，i18n settings）/ **插头 Plug=扩展**（navPlugins，占位）/ 时钟=定时任务（navScheduled，占位）/ 电脑（原 Monitor，占位）——占位无功能、默认全部不高亮；右侧版本号 `v{getVersion()}` 对齐 footer-build（**12px tabular-nums leading-none、UI 字体非 mono**；浏览器模式取不到则隐藏） | `WorkspaceSidebar.tsx`（AppLogo + 底栏）、`src-tauri/icons/*`、`src-tauri/app-icon.png` |
+| 15 | **应用品牌换装（logo + 应用图标 + 底栏图标条）** | 应用图标全套更换：R 主题（蓝色渐变圆角方块 + 白色粗体 R，`src-tauri/app-icon.png` 1024 源图经 `cargo tauri icon` 生成 icon.ico/icns/各尺寸 PNG/Store logos），窗口/任务栏/开始菜单生效（需 Rust 重构建后启动）；左上角 logo 改为同源内联 SVG（`AppLogo` 组件，替换原文字方块）；左下角用户栏移除（头像 K/用户名 kwtgsgi8 删除），替换为 **PI-Desktop sidebar-footer 同款图标条**（lucide 14px 图标 + 32×32 命中区 + radix Tooltip 300ms，对齐 TooltipButton/footer-action）：齿轮=设置（可点，i18n settings）/ **插头 Plug=插件**（navPlugins，打开插件页）/ 时钟=定时任务（navScheduled，占位）/ 电脑（原 Monitor，占位）——占位无功能、默认全部不高亮；右侧版本号 `v{getVersion()}` 对齐 footer-build（**12px tabular-nums leading-none、UI 字体非 mono**；浏览器模式取不到则隐藏） | `WorkspaceSidebar.tsx`（AppLogo + 底栏）、`src-tauri/icons/*`、`src-tauri/app-icon.png` |
 | 13 | 临时/资料目录约定（B+C 组合，对齐 pi 的 `.pi/` 模式） | 系统提示词约定：一次性脚本/分析产物必须放 `<工作区>/.ReinAgent/.temp/`（视为可丢弃）；记忆等持久资料也统一放 `<工作区>/.ReinAgent/` 下各自子目录（禁止散落项目根）；Rust `fs_clean_reinagent_tmp` 白名单清理 `.ReinAgent/.temp`（两级路径严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈）。参照：PI-Desktop host-core 的 `.pi/` 工作区目录模式（plans/artifact.rs，路径安全校验同思路） | `runAgentTurn.ts`、`fs_cmd.rs`、`TurnGroupView.tsx` |
 
 ### 2. 未实现（Gap 清单，按主题分组）
@@ -1733,13 +1733,49 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
       - 所有 `app.emit` 广播均在全局状态锁释放后调用，避免死锁；
       - 失败路径统一调用 `set_error`，及时清理 `progress` 并将真实错误通知 UI，消除卡死在 `starting` 的假象；
       - 引入 45 秒 Watchdog 超时守护，超时未建立连接自动置为错误并提示用户。
-  - **子代理卡片交互优化 (`ToolCallCard.tsx`)**：
+  - **子代理卡片交互与视觉优化 (`ToolCallCard.tsx`)**：
     - 工具卡片支持 `agent` 及 `subagent_output` 工具类型，点击可直接触发 `summaryAction` 并在右侧副边栏唤起子代理会话转录面板与回放详情；
-    - 补充前端单元测试 `ToolCallCard.test.mjs`。
-  - **文档体系整理与全景展示 (`README.md` & `docs/`)**：
-    - 引入 `docs/ReinAgent.png` 作为首页工作台预览图；
-    - 结构化整合三端原生适配（Linux WebKitGTK / Windows WebView2 / macOS）、绿色单文件免依赖运行、Cloudflare 免配置公网安全隧道、全局统一网络代理、子智能体协作与副边栏转录、本地长期记忆、自动化周期任务等全景特性；
-    - 清理过期历史对比与任务审计文档，核心白皮书与提示词统一收拢至 `docs/` 专区。
+    - 引入语义变量 `--subagent-blue`（亮色/默认暗色/OpenCode 配色下分别为天蓝 `#38bdf8` 与皇家蓝 `#0284c7`），将「子代理」/「子代理输出」类型标签及 Bot 图标统一定制为鲜亮蓝色，彻底解决在 OpenCode 等特定消息配色下被意外覆写为橙色的问题；
+  - **聊天外链交互与系统浏览器右键菜单 (`MarkdownBlockRenderer.tsx` + `BrowserPane.tsx`)**：
+    - 聊天消息中的 `http/https` 外链点击直接在侧边栏内置浏览器（`BrowserPane`）中打开，若内置浏览器已打开则自动平滑导航至目标 URL；
+    - 链接右键菜单集成系统级原生菜单（Tauri 2 `Menu.popup()`），提供「在内置浏览器中打开」、「在系统浏览器中打开链接」（调起操作系统外部浏览器 `openUrl`）以及「复制链接地址」。
+
+### v0.1.16 发布（2026-10-11）
+- **版本号升级**：全套升级至 `v0.1.16`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`）。
+- **包含功能与优化**：
+  - **内置浏览器全宽最大化与三端兼容 (`BrowserPane.tsx` + `CodeViewerPaneHost.tsx` + `App.tsx`)**：
+    - 在内置浏览器顶栏地址栏右侧、关闭按钮（`X`）前面新增最大化/还原切换按钮；
+    - 未最大化时显示 `Maximize2` 图标，Tooltip/aria-label 显示「最大化」（`Maximize`）；点击后浏览器面板扩展至工作区全宽（向左完全铺满至左侧边栏边缘，占据中央主工作区）；
+    - 最大化后图标动态切换为 `Minimize2` 图标，Tooltip/aria-label 显示「还原」（`Restore`）；点击后无缝还原回用户之前拖拽设定的面板宽度（`paneW`）；
+    - 最大化期间隐藏左边缘的拖拽手柄，关闭浏览器或切换面板时自动重置最大化态；
+    - 容器层采用 `relative flex-1 min-w-0` 宿主容器，最大化时以 `absolute inset-0 z-30` 铺满，下方聊天工作台 DOM 与滚动位置完整保留且不发生卸载；
+  - **内置浏览器刷新转动动效与防重入生命周期 (`BrowserPane.tsx` + `browser.rs`)**：
+    - 刷新按钮点击后，图标由静止变为持续顺时针平滑旋转动画（`<RotateCw className="animate-spin ..." />`）；
+    - 按钮自动进入 `disabled` 状态（样式带有 `cursor-not-allowed opacity-60`），禁止加载中重复触发；
+    - Tooltip 与 `aria-label` 动态切换为「正在刷新…」（英文：`Refreshing…`）；
+    - 后端在 `WebviewBuilder` 中挂载 `on_page_load` 监听器，页面开始加载时派发 `browser-page-loading(true)`，加载完成瞬间派发 `browser-page-loading(false)`；并新增 `browser_reload` 原生命令；
+    - 前端内置 15 秒超时守护（Watchdog）与异常捕获双保险机制，在断网、DNS 挂死或命令报错时自动重置 `loading` 状态，彻底避免永久转圈卡死。
+  - **全量侧边栏通用放大还原与铺满工作区 (`CodeViewerPaneHost.tsx`)**：
+    - 将最大化/还原能力全量扩展至右侧全部侧边栏面板：**子代理侧边栏（`subagents`）、Git 管理侧边栏（`git`）、文件管理器侧边栏（`files`）、代码/变更对比/审阅通用预览面板（`file`/`patch`/`code-review`）** 及内置浏览器；
+    - 所有侧边栏顶部标题栏关闭按钮（`X`）左侧均对齐渲染最大化/还原按钮：未最大化显示 `Maximize2`（最大化 / Maximize），最大化显示 `Minimize2`（还原 / Restore）；
+    - 最大化时面板直接以 `absolute inset-0 z-30` 铺满至左侧边栏右边缘，占据中央整个主工作区，并自动隐藏左边缘的拖拽把手；
+    - 点击还原后无缝恢复至用户之前拖拽保存的宽度（`paneW`），并恢复左侧拖拽调宽把手；
+    - 切换面板类型或关闭面板时，自动重置回未最大化状态，保持多语言与亮暗主题语义变量完全一致。
+  - **子代理步数继承主 Agent 设置与 429 速率限制重试保护 (`subagentRunner.ts` + `runAgentTurn.ts` + `requestPreview.ts`)**：
+    - **步数继承主 Agent 设定**：
+      - `SubagentToolDeps` 增加 `maxSteps?: number`，主 Agent 调用点（`runAgentTurn.ts` faux 分支与正常分支）将 `base.maxSteps` 完整透传至子代理工具；
+      - 废弃原本过小的 6 步硬编码，将默认基准上限 `SUBAGENT_MAX_STEPS` 放宽至 25（在未传入时作为兜底），彻底解决复杂调研任务因 6 步触顶过早而中断未产出终稿的问题；
+      - 前台与后台分支统一将 `maxStepsReached` 随 `finishRun` 沉降至 registry，供 UI 面板与下游模型完整获取触顶事实；
+    - **429 速率超限保护与指数退避断点续跑**：
+      - 引入 `isRateLimitError(errOrMsg)`，精确识别 HTTP 429、`rate limit`、`too many requests`、`rate_limit_exceeded` 等多供应商速率受限错误；
+      - 在子代理核心推进循环 `driveRun` 中实现自动重试守卫：最多重试 3 次，采用指数退避算法（2s、4s、8s + 随机 jitter 抖动），并在用户主动中止时（`signal.aborted`）立即早退；
+      - 自动消息清理裁剪机制（`sanitizeMessagesForRunTurn`）：在 429 发生重试时，自动剔除末尾不合规的未闭合 assistant 消息，回退至最后一条有效 toolResult 或起始 user 消息，保证接续调用 100% 满足 `runTurn` 契约并实现断点续跑；
+      - 单测套件扩展（`subagentRunner.test.mjs`）：包含步数透传触顶测试、429 退避重试成功输出测试，全套 500 个单测及 Vite/tsc 构建全绿通过。
+  - **子代理执行中蓝色高亮与 Bot 图标统一蓝色 (`global.css` + `ToolLayout.tsx` + `ToolSummaryRow.tsx`)**：
+    - **执行中蓝色流光**：在 `global.css` 引入 `.animated-gradient-blue-text`，基于 `--subagent-blue` 语义变量使用 `color-mix` 产生柔和清透的蓝色呼吸渐变流光；在 `ToolLayout.tsx` 中识别子代理专属类名，运行中（`isRunning`）自动由默认灰白扫光切换为蓝色流光，使「子代理执行中」始终保持鲜明蓝色；
+    - **Bot 机器人图标高亮**：在 `ToolSummaryRow.tsx` 移除 `[&_svg]:text-foreground-subtlest` 强制选择器，确保子代理等组件传入的 `<Bot className="... text-[var(--subagent-blue)]" />` 能够原样呈现高亮蓝色，未指定颜色的图标继续继承默认浅灰。全生命周期（执行中与已完成）保持视觉纯正统一。
+
+
 
 
 

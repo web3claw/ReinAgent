@@ -12,6 +12,7 @@ use std::sync::OnceLock;
 use std::time::Duration;
 use tauri::command;
 use tauri::AppHandle;
+use tauri::Emitter;
 use tauri::Manager;
 use tauri::Webview;
 use tauri::WebviewUrl;
@@ -117,12 +118,24 @@ pub async fn browser_open(app: AppHandle, url: String) -> Result<(), String> {
         .get_window("main")
         .ok_or_else(|| "browser: 主窗口不存在".to_string())?;
     if let Some(webview) = window.get_webview(BROWSER_LABEL) {
+        let _ = app.emit("browser-page-loading", true);
         webview
             .navigate(parse_url(&url)?)
             .map_err(|e| format!("browser navigate: {e}"))?;
         return Ok(());
     }
-    let builder = tauri::webview::WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(parse_url(&url)?));
+    let app_handle = app.clone();
+    let builder = tauri::webview::WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(parse_url(&url)?))
+        .on_page_load(move |_webview, payload| {
+            match payload.event() {
+                tauri::webview::PageLoadEvent::Started => {
+                    let _ = app_handle.emit("browser-page-loading", true);
+                }
+                tauri::webview::PageLoadEvent::Finished => {
+                    let _ = app_handle.emit("browser-page-loading", false);
+                }
+            }
+        });
     if let Err(e) = window.add_child(
         builder,
         tauri::PhysicalPosition::new(0, 0),
@@ -136,6 +149,7 @@ pub async fn browser_open(app: AppHandle, url: String) -> Result<(), String> {
         let webview = window
             .get_webview(BROWSER_LABEL)
             .ok_or_else(|| format!("浏览器状态异常: {msg}"))?;
+        let _ = app.emit("browser-page-loading", true);
         webview
             .navigate(parse_url(&url)?)
             .map_err(|e| format!("browser navigate: {e}"))?;
@@ -335,10 +349,21 @@ pub async fn browser_set_bounds(
 
 #[command]
 pub async fn browser_navigate(app: AppHandle, url: String) -> Result<(), String> {
+    let _ = app.emit("browser-page-loading", true);
     let webview = get_browser_webview(&app)?;
     webview
         .navigate(parse_url(&url)?)
         .map_err(|e| format!("browser navigate: {e}"))?;
+    Ok(())
+}
+
+#[command]
+pub async fn browser_reload(app: AppHandle) -> Result<(), String> {
+    let _ = app.emit("browser-page-loading", true);
+    let webview = get_browser_webview(&app)?;
+    webview
+        .eval("location.reload();".to_string())
+        .map_err(|e| format!("browser reload: {e}"))?;
     Ok(())
 }
 

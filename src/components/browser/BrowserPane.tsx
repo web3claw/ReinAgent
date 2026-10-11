@@ -9,17 +9,55 @@
 
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ArrowLeft, ArrowRight, Globe, RotateCw, X } from "lucide-react";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { ArrowLeft, ArrowRight, Globe, Maximize2, Minimize2, RotateCw, X } from "lucide-react";
+import { useTranslation } from "../../i18n";
 
 const START_URL = "https://www.bing.com";
 
-export function BrowserPane({ url, onClose }: { url?: string; onClose: () => void }) {
+export function BrowserPane({
+  url,
+  onClose,
+  isMaximized,
+  onToggleMaximize,
+}: {
+  url?: string;
+  onClose: () => void;
+  isMaximized?: boolean;
+  onToggleMaximize?: () => void;
+}) {
+  const { t } = useTranslation();
   const [address, setAddress] = useState(url ?? START_URL);
   const [ready, setReady] = useState(false);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const slotRef = useRef<HTMLDivElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
   const boundsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+
+  // 页面加载生命周期事件监听
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    listen<boolean>("browser-page-loading", (event) => {
+      setLoading(Boolean(event.payload));
+    })
+      .then((fn) => {
+        unlisten = fn;
+      })
+      .catch(() => {});
+    return () => {
+      if (unlisten) unlisten();
+    };
+  }, []);
+
+  // 15秒超时守护，防止网络挂死或静默无响应导致刷新按钮永久旋转
+  useEffect(() => {
+    if (!loading) return;
+    const timer = window.setTimeout(() => {
+      setLoading(false);
+    }, 15000);
+    return () => window.clearTimeout(timer);
+  }, [loading]);
 
   const reportBounds = () => {
     const el = slotRef.current;
@@ -41,6 +79,7 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
   // 打开：创建子控件并导航
   useEffect(() => {
     let disposed = false;
+    setLoading(true);
     void (async () => {
       try {
         await invoke("browser_open", { url: address });
@@ -48,7 +87,10 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
         setReady(true);
         requestAnimationFrame(reportBounds);
       } catch (err) {
-        if (!disposed) setError(String(err).slice(0, 300));
+        if (!disposed) {
+          setLoading(false);
+          setError(String(err).slice(0, 300));
+        }
       }
     })();
     return () => {
@@ -57,6 +99,27 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 外部 url prop 发生变化时（如用户在聊天中点击新链接），若浏览器已就绪则自动导航
+  useEffect(() => {
+    if (!ready || !url) return;
+    setAddress(url);
+    setLoading(true);
+    void invoke("browser_navigate", { url }).catch((err) => {
+      setLoading(false);
+      setError(String(err).slice(0, 300));
+    });
+  }, [ready, url]);
+
+
+  // 最大化/还原切换时立即刷新 bounds
+  useEffect(() => {
+    if (!ready) return;
+    const raf = requestAnimationFrame(() => {
+      reportBounds();
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [ready, isMaximized]);
 
   // bounds 同步：ResizeObserver + 窗口 resize
   useEffect(() => {
@@ -105,7 +168,27 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
       next = /^[\w-]+(\.[\w-]+)+/.test(next) ? `https://${next}` : `https://www.bing.com/search?q=${encodeURIComponent(next)}`;
     }
     setAddress(next);
-    void invoke("browser_navigate", { url: next }).catch((err) => setError(String(err).slice(0, 300)));
+    setLoading(true);
+    void invoke("browser_navigate", { url: next }).catch((err) => {
+      setLoading(false);
+      setError(String(err).slice(0, 300));
+    });
+  };
+
+  const handleReload = async () => {
+    if (loading) return;
+    setLoading(true);
+    try {
+      await invoke("browser_reload");
+    } catch {
+      // 降级兜底：若 reload 不可达，退化为 navigate(address)
+      try {
+        await invoke("browser_navigate", { url: address });
+      } catch (err) {
+        setLoading(false);
+        setError(String(err).slice(0, 300));
+      }
+    }
   };
 
   /** 历史导航：子 WebView 内 history.back/forward。 */
@@ -146,11 +229,17 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
         </button>
         <button
           type="button"
-          title="刷新"
-          onClick={() => navigate(address)}
-          className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+          disabled={loading}
+          title={loading ? t("refreshing") : t("refresh")}
+          aria-label={loading ? t("refreshing") : t("refresh")}
+          onClick={() => void handleReload()}
+          className={`rounded p-1 text-[var(--text-dim)] transition-opacity ${
+            loading
+              ? "cursor-not-allowed opacity-60"
+              : "hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+          }`}
         >
-          <RotateCw className="h-3.5 w-3.5" />
+          <RotateCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} />
         </button>
         <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md border border-[var(--border)] bg-[var(--bg-sunken)] px-2 py-1">
           <Globe className="h-3.5 w-3.5 shrink-0 text-[var(--text-dim)]" />
@@ -170,6 +259,21 @@ export function BrowserPane({ url, onClose }: { url?: string; onClose: () => voi
             placeholder="输入网址或搜索词"
           />
         </div>
+        {onToggleMaximize && (
+          <button
+            type="button"
+            onClick={onToggleMaximize}
+            title={isMaximized ? t("restore") : t("maximize")}
+            className="flex-shrink-0 rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+            aria-label={isMaximized ? t("restore") : t("maximize")}
+          >
+            {isMaximized ? (
+              <Minimize2 className="h-3.5 w-3.5" />
+            ) : (
+              <Maximize2 className="h-3.5 w-3.5" />
+            )}
+          </button>
+        )}
         <button
           type="button"
           onClick={onClose}

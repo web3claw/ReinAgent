@@ -507,9 +507,10 @@ function ToolCallCardImpl({
     return (
       <ToolLayout
         toolId={entry.toolCallId}
-        icon={<Bot className="size-4 shrink-0 text-foreground-subtle" />}
+        icon={<Bot className="size-4 shrink-0 text-[var(--subagent-blue)]" />}
         showIcon={showIcon}
         kindLabel={kindLabel}
+        kindLabelClassName="text-[var(--subagent-blue)]"
         primaryText={description ? <span className="truncate">{description}</span> : null}
         secondaryText={secondary}
         statusLabel={statusLabelNode}
@@ -557,9 +558,10 @@ function ToolCallCardImpl({
     return (
       <ToolLayout
         toolId={entry.toolCallId}
-        icon={<Bot className="size-4 shrink-0 text-foreground-subtle" />}
+        icon={<Bot className="size-4 shrink-0 text-[var(--subagent-blue)]" />}
         showIcon={showIcon}
         kindLabel={kindLabel}
+        kindLabelClassName="text-[var(--subagent-blue)]"
         primaryText={description ? <span className="truncate">{description}</span> : null}
         secondaryText={secondary}
         statusLabel={statusLabelNode}

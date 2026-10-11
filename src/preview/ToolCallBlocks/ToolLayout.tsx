@@ -30,6 +30,7 @@ interface ToolLayoutProps {
   autoOpen?: boolean;
   autoCollapseOnComplete?: boolean;
   kindLabel: ReactNode;
+  kindLabelClassName?: string;
   expandedKindLabel?: ReactNode;
   kindDetail?: ReactNode;
   expandedKindDetail?: ReactNode;
@@ -74,6 +75,7 @@ function ToolLayoutComponent({
   autoOpen = false,
   autoCollapseOnComplete = false,
   kindLabel,
+  kindLabelClassName: customKindLabelClassName,
   expandedKindLabel,
   kindDetail,
   expandedKindDetail,
@@ -140,10 +142,14 @@ function ToolLayoutComponent({
   // 动画长期占用渲染资源；运行态改由文案扫光和状态文字表达，图标保持静态。
   const summaryIcon = icon;
   // 运行态需要保留 kind 文案扫光，用来表达当前工具仍在进行中；
-  // 非运行态仍保持最浅文本色，避免摘要信息喧宾夺主。
+  // 子代理专属蓝色文案使用蓝色流光，其余工具保持默认扫光；
+  // 非运行态仍保持最浅文本色（或自定义主题色），避免摘要信息喧宾夺主。
+  const isSubagentBlue = customKindLabelClassName?.includes("subagent-blue");
   const kindLabelClassName = cn(
     "font-medium whitespace-nowrap shrink-0",
-    isRunning ? "animated-gradient-text" : "text-foreground-subtlest",
+    isRunning
+      ? (isSubagentBlue ? "animated-gradient-blue-text" : "animated-gradient-text")
+      : (customKindLabelClassName ?? "text-foreground-subtlest"),
   );
 
   useEffect(() => {

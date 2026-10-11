@@ -1890,8 +1890,10 @@ export default function App() {
         commands={paletteCommandsRef.current}
       />
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col h-full overflow-hidden">
+      {/* 工作区主内容与右侧预览面板容器 */}
+      <div className="flex-1 relative flex h-full min-w-0 overflow-hidden">
+        {/* Main Content Area */}
+        <div className="flex-1 flex flex-col h-full overflow-hidden">
         {/* 持久化故障横幅（F23）：SQLite 或 KV 写盘失败时醒目提示，避免用户误以为数据已安全保存 */}
         {storageDegradedError ? (
           <div className="flex items-center justify-between gap-3 bg-red-500/10 border-b border-red-500/30 px-4 py-2 text-xs text-red-600 dark:text-red-400 z-50">
@@ -2265,8 +2267,9 @@ export default function App() {
         )}
       </div>
 
-      {/* 右侧代码/变更预览面板（ZCode PreviewPane 移植） */}
-      <CodeViewerPaneHost workspacePath={effectiveWorkspaceRoot || undefined} />
+        {/* 右侧代码/变更预览面板（ZCode PreviewPane 移植） */}
+        <CodeViewerPaneHost workspacePath={effectiveWorkspaceRoot || undefined} />
+      </div>
 
       {/* Hub 三页共用 toast 容器（LiveAgent toast-manager 移植；hub-scope 使弹层吃 LiveAgent 色板） */}
       <div className="hub-scope fixed z-[10010]">

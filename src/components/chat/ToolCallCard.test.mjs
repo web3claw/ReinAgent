@@ -13,4 +13,7 @@ test("ToolCallCard 源码中 agent 与 subagent_output 均支持 summaryAction �
   // 检查 subagent_output 分支
   assert.ok(content.includes('if (entry.toolName === "subagent_output")'), "存在 subagent_output 分支");
   assert.ok(content.includes('focusId: subagentId'), "subagent_output 正确传递 focusId");
+
+  // 检查子代理类别标签与图标采用蓝色主题变量
+  assert.ok(content.includes('kindLabelClassName="text-[var(--subagent-blue)]"'), "子代理类别标签采用主题蓝色");
 });

@@ -20,6 +20,7 @@
   --bg-secondary: #191c24;
   --accent: #5b8cff;
   --accent-dim: #3a5db0;
+  --subagent-blue: #38bdf8;
   --danger: #ff6b6b;
   --warn-bg: #3a2f12;
   --warn-border: #7a6320;
@@ -137,6 +138,7 @@
   --bg-secondary: #f8fafc;
   --accent: #2563eb;
   --accent-dim: #dbeafe;
+  --subagent-blue: #0284c7;
   --danger: #ef4444;
   --warn-bg: #fef9c3;
   --warn-border: #fde047;
@@ -220,6 +222,7 @@
   --brand: #fab283;
   --accent: #fab283;
   --accent-dim: #b97f52;
+  --subagent-blue: #38bdf8;
   --surface: #1e1e1e;
   --surface-hover: #282828;
   --bg-card: #1e1e1e;
@@ -258,6 +261,7 @@
   --brand: #3b7dd8;
   --accent: #3b7dd8;
   --accent-dim: #2968c3;
+  --subagent-blue: #0284c7;
   --surface: #f5f5f5;
   --surface-hover: #ebebeb;
   --bg-card: #f5f5f5;
@@ -1487,6 +1491,27 @@ select option {
 @keyframes gradient-flow {
   0% { background-position: 0% 0%; }
   100% { background-position: -300% 0%; }
+}
+
+.animated-gradient-blue-text {
+  display: inline-block;
+  background: linear-gradient(
+    90deg,
+    var(--subagent-blue) 0%,
+    var(--subagent-blue) 34%,
+    color-mix(in srgb, var(--subagent-blue) 35%, transparent) 50%,
+    var(--subagent-blue) 66%,
+    var(--subagent-blue) 100%
+  );
+  background-size: 300% 100%;
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  animation: gradient-flow 4s linear infinite;
+  will-change: background-position;
+  transform: translateZ(0);
+  backface-visibility: hidden;
 }
 
 @theme {
