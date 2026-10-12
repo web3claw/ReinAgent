@@ -931,6 +931,44 @@ pub async fn fs_pick_files(workdir: Option<String>) -> Result<Vec<String>, Strin
     .map_err(|e| e.to_string())?
 }
 
+/// 原生保存文件对话框（rfd）。取消返回 None。filter_name/extensions 形如
+/// ("JSON 文档", ["json"])——extensions 无点小写。
+#[tauri::command]
+pub async fn fs_pick_save_path(
+    default_file_name: String,
+    filter_name: Option<String>,
+    filter_extensions: Option<Vec<String>>,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new().set_file_name(&default_file_name);
+        if let (Some(name), Some(exts)) = (filter_name, filter_extensions) {
+            let refs: Vec<&str> = exts.iter().map(String::as_str).collect();
+            dialog = dialog.add_filter(name, &refs);
+        }
+        Ok(dialog.save_file().map(|p| p.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+/// 原生打开单文件对话框（rfd）。取消返回 None。
+#[tauri::command]
+pub async fn fs_pick_open_file(
+    filter_name: Option<String>,
+    filter_extensions: Option<Vec<String>>,
+) -> Result<Option<String>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = rfd::FileDialog::new();
+        if let (Some(name), Some(exts)) = (filter_name, filter_extensions) {
+            let refs: Vec<&str> = exts.iter().map(String::as_str).collect();
+            dialog = dialog.add_filter(name, &refs);
+        }
+        Ok(dialog.pick_file().map(|p| p.to_string_lossy().into_owned()))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// 读图片做缩略图预览（≤5MB），返回 mime + base64。
 #[tauri::command]
 pub async fn fs_read_image_preview(path: String) -> Result<ImageDataBase64, String> {

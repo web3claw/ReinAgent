@@ -718,6 +718,86 @@ pub async fn backup_mark_dirty() -> Result<(), String> {
     Ok(())
 }
 
+/// 导出到本地文件（前端已经 fs_pick_save_path 拿到目标路径）。
+/// 与 WebDAV 上传同一采集/序列化链路，manifest 内联，单文件自包含。
+#[tauri::command]
+pub async fn backup_export_to_file(path: String) -> Result<BackupManifest, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        if path.trim().is_empty() {
+            return Err("导出路径为空".to_string());
+        }
+        let snapshot = collect_backup_snapshot()?;
+        let manifest = build_backup_manifest(&snapshot);
+        let document = serialize_backup_document(&snapshot, &manifest)?;
+        std::fs::write(&path, document).map_err(|e| format!("写入导出文件失败：{e}"))?;
+        Ok(manifest)
+    })
+    .await
+    .map_err(|e| format!("backup_export_to_file join 失败：{e}"))?
+}
+
+/// 导入文件大小上限（与 WebDAV 下载同一口径）。
+const BACKUP_IMPORT_MAX_BYTES: u64 = 16 * 1024 * 1024;
+
+/// 导入预览：解析+校验成功但尚未写盘，供确认对话框展示。
+/// 只读文件，不动任何配置。
+#[tauri::command]
+pub async fn backup_import_preview(path: String) -> Result<BackupRemoteInfo, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let metadata =
+            std::fs::metadata(&path).map_err(|e| format!("读取导入文件失败：{e}"))?;
+        if metadata.len() > BACKUP_IMPORT_MAX_BYTES {
+            return Err(format!(
+                "导入文件过大（{} 字节），上限为 {BACKUP_IMPORT_MAX_BYTES} 字节",
+                metadata.len()
+            ));
+        }
+        let text = std::fs::read_to_string(&path).map_err(|e| format!("读取导入文件失败：{e}"))?;
+        // parse 即校验（manifest 版本门 + 结构校验），预览阶段不落盘。
+        let (snapshot, manifest) = crate::backup_snapshot::parse_backup_document(&text)?;
+        drop(snapshot);
+        let raw = serde_json::to_vec(&manifest).map_err(|e| format!("序列化元信息失败：{e}"))?;
+        Ok(BackupRemoteInfo {
+            manifest,
+            // size/sha256 是 WebDAV manifest 的传输校验字段，文件导入用不上；
+            // 填文件实际大小保持结构复用。
+            size: raw.len(),
+            sha256: backup_sha256_hex(&raw),
+        })
+    })
+    .await
+    .map_err(|e| format!("backup_import_preview join 失败：{e}"))?
+}
+
+/// 从本地文件导入应用（前端确认后调用）。校验 → 备份当前配置 → 写盘 →
+/// emit backup:applied（前端重载各域内存态，与 WebDAV 下载同一链路）。
+#[tauri::command]
+pub async fn backup_import_from_file(path: String) -> Result<BackupApplyOutcome, String> {
+    let outcome = tauri::async_runtime::spawn_blocking(move || {
+        let metadata =
+            std::fs::metadata(&path).map_err(|e| format!("读取导入文件失败：{e}"))?;
+        if metadata.len() > BACKUP_IMPORT_MAX_BYTES {
+            return Err(format!(
+                "导入文件过大（{} 字节），上限为 {BACKUP_IMPORT_MAX_BYTES} 字节",
+                metadata.len()
+            ));
+        }
+        let text = std::fs::read_to_string(&path).map_err(|e| format!("读取导入文件失败：{e}"))?;
+        let (snapshot, _) = crate::backup_snapshot::parse_backup_document(&text)?;
+        // 导入是显式恢复动作：全程抑制自动上传标脏（与 WebDAV 下载同语义），
+        // 应用前自动备份当前配置。
+        let _suppression = suppress();
+        crate::backup_snapshot::apply_backup_snapshot(snapshot)
+    })
+    .await
+    .map_err(|e| format!("backup_import_from_file join 失败：{e}"))??;
+
+    if let Some(handle) = SINGLE_APP_HANDLE.get() {
+        let _ = handle.emit(APPLIED_EVENT, outcome.backup_path.clone());
+    }
+    Ok(outcome)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -773,6 +853,57 @@ mod tests {
         // BackupSyncConfigView 没有密码字段（编译期保证），这里防未来回归。
         let json = serde_json::to_string(&view).unwrap();
         assert!(!json.contains("secret"), "{json}");
+    }
+
+    #[test]
+    fn export_import_roundtrip_via_file() {
+        // 真实链路：serialize → 写临时文件 → 读回 parse → 快照一致。
+        let snapshot = crate::backup_snapshot::BackupSnapshot {
+            providers: Some(serde_json::json!([
+                {"id": "deepseek", "name": "DeepSeek", "baseUrl": "https://api.deepseek.com"},
+                {"id": "custom-1", "name": "GW", "baseUrl": "http://gw:1"}
+            ])),
+            mcp: Some(serde_json::json!([{"id": "docs", "enabled": true}])),
+            assistants: Some(serde_json::json!([
+                {"id": "coder", "name": "coder.md", "content": "---\nname: coder\nmodel: custom-1/m\n---\nbody"}
+            ])),
+            skills_selection: Some(serde_json::json!(["browser-use"])),
+            system: Some(serde_json::json!({"provider": "custom-1", "modelId": "m", "apiKey": "sk-x", "baseUrl": "http://gw:1"})),
+        };
+        let manifest = crate::backup_snapshot::build_backup_manifest(&snapshot);
+        let document = crate::backup_snapshot::serialize_backup_document(&snapshot, &manifest).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("export.json");
+        std::fs::write(&path, &document).unwrap();
+
+        let metadata = std::fs::metadata(&path).unwrap();
+        assert!(metadata.len() <= BACKUP_IMPORT_MAX_BYTES);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let (parsed, parsed_manifest) = crate::backup_snapshot::parse_backup_document(&text).unwrap();
+        assert_eq!(parsed_manifest.snapshot_id, manifest.snapshot_id);
+        assert_eq!(parsed.providers, snapshot.providers);
+        assert_eq!(parsed.system, snapshot.system);
+        assert_eq!(parsed.assistants, snapshot.assistants);
+    }
+
+    #[test]
+    fn import_rejects_oversized_and_garbage() {
+        let dir = tempfile::tempdir().unwrap();
+        // 超限文件。
+        let big = dir.path().join("big.json");
+        std::fs::write(&big, vec![b'x'; (BACKUP_IMPORT_MAX_BYTES + 1) as usize]).unwrap();
+        assert!(std::fs::metadata(&big).unwrap().len() > BACKUP_IMPORT_MAX_BYTES);
+        // 非 JSON 垃圾。
+        let junk = dir.path().join("junk.json");
+        std::fs::write(&junk, "not a backup").unwrap();
+        let text = std::fs::read_to_string(&junk).unwrap();
+        assert!(crate::backup_snapshot::parse_backup_document(&text).is_err());
+        // 合法 JSON 但缺 manifest。
+        let empty = dir.path().join("empty.json");
+        std::fs::write(&empty, "{}").unwrap();
+        let text = std::fs::read_to_string(&empty).unwrap();
+        assert!(crate::backup_snapshot::parse_backup_document(&text).is_err());
     }
 
     #[test]

@@ -13,7 +13,7 @@
 
 import { useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
-import { CloudUpload, Download, Loader2, PlugZap, AlertCircle, CheckCircle2, Cloud } from "lucide-react";
+import { CloudUpload, Download, Loader2, PlugZap, AlertCircle, CheckCircle2, Cloud, FileDown, FileUp } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { Button } from "../lw/ui/button";
 import { Input } from "../lw/ui/input";
@@ -21,10 +21,15 @@ import { toast } from "../lw/ui/toast";
 import { useConfirmDialog } from "../ui/ConfirmDialog";
 import {
   backupDownload,
+  backupExportToFile,
   backupFetchRemoteInfo,
+  backupImportFromFile,
+  backupImportPreview,
   backupTestConnection,
   backupUpload,
   loadBackupSyncConfig,
+  pickOpenFile,
+  pickSavePath,
   saveBackupSyncConfig,
   type BackupRemoteInfo,
   type BackupSyncConfigView,
@@ -47,6 +52,8 @@ export function BackupSyncSection() {
   const [testing, setTesting] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [importing, setImporting] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = () => {
@@ -195,6 +202,92 @@ export function BackupSyncSection() {
     }
   };
 
+  /** 导出当前配置到本地文件（系统保存对话框）。 */
+  const exportToFile = async () => {
+    try {
+      const stamp = new Date().toISOString().slice(0, 10);
+      const path = await pickSavePath(`reinagent-config-${stamp}.json`);
+      if (!path) return; // 用户取消
+      setExporting(true);
+      const manifest = await backupExportToFile(path);
+      const d = manifest.domains;
+      toast.success(
+        t("backupExportOk")
+          .replace("{path}", path)
+          .replace("{providers}", String(d.providers))
+          .replace("{mcp}", String(d.mcp))
+          .replace("{assistants}", String(d.assistants))
+          .replace("{skills}", String(d.skillsSelection))
+          .replace("{system}", String(d.system)),
+        { duration: 6000 },
+      );
+    } catch (err) {
+      toast.error(formatError(err), { duration: 6000 });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  /** 从本地文件导入：选文件 → 预览校验 → 确认覆盖 → 应用（复用 backup:applied 重载链）。 */
+  const importFromFile = async () => {
+    try {
+      const path = await pickOpenFile();
+      if (!path) return; // 用户取消
+      setImporting(true);
+      // 先解析+校验（不写盘）：非本应用导出/高版本/畸形文件在这里被拦下。
+      const info = await backupImportPreview(path);
+      const d = info.manifest.domains;
+      const confirmed = await confirm({
+        title: t("backupImportConfirmTitle"),
+        description: (
+          <div className="space-y-1.5 text-sm">
+            <p className="break-all">
+              <span className="text-[var(--text-secondary)]">{t("backupImportFileLabel")}</span>{" "}
+              {path}
+            </p>
+            <p>
+              <span className="text-[var(--text-secondary)]">{t("backupRemoteDevice")}</span>{" "}
+              {info.manifest.deviceName}
+            </p>
+            <p>
+              <span className="text-[var(--text-secondary)]">{t("backupRemoteTime")}</span>{" "}
+              {new Date(info.manifest.createdAt).toLocaleString()}
+            </p>
+            <p>
+              <span className="text-[var(--text-secondary)]">{t("backupRemoteDomains")}</span>{" "}
+              {t("backupDomainProviders").replace("{n}", String(d.providers))} ·{" "}
+              {t("backupDomainMcp").replace("{n}", String(d.mcp))} ·{" "}
+              {t("backupDomainAssistants").replace("{n}", String(d.assistants))} ·{" "}
+              {t("backupDomainSkills").replace("{n}", String(d.skillsSelection))} ·{" "}
+              {t("backupDomainSystem").replace("{n}", String(d.system))}
+            </p>
+            <p className="whitespace-pre-line text-[11px] text-[var(--text-secondary)]">
+              {t("backupRestoreWarning")}
+            </p>
+          </div>
+        ),
+        confirmLabel: t("backupRestoreConfirmYes"),
+        cancelLabel: t("cancel"),
+      });
+      if (!confirmed) return;
+      const outcome = await backupImportFromFile(path);
+      const counts = outcome.applied;
+      toast.success(
+        t("backupDownloadOk")
+          .replace("{providers}", String(counts.providers))
+          .replace("{mcp}", String(counts.mcp))
+          .replace("{assistants}", String(counts.assistants))
+          .replace("{skills}", String(counts.skillsSelection))
+          .replace("{system}", String(counts.system)),
+        { duration: 6000 },
+      );
+    } catch (err) {
+      toast.error(formatError(err), { duration: 8000 });
+    } finally {
+      setImporting(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex items-center gap-2 p-4 text-sm text-[var(--text-dim)]">
@@ -300,6 +393,14 @@ export function BackupSyncSection() {
           <Button size="sm" variant="outline" onClick={() => void fetchRemoteInfo()} disabled={downloading}>
             {downloading ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
             {t("backupRestore")}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void exportToFile()} disabled={exporting}>
+            {exporting ? <Loader2 className="size-3.5 animate-spin" /> : <FileDown className="size-3.5" />}
+            {t("backupExportFile")}
+          </Button>
+          <Button size="sm" variant="outline" onClick={() => void importFromFile()} disabled={importing}>
+            {importing ? <Loader2 className="size-3.5 animate-spin" /> : <FileUp className="size-3.5" />}
+            {t("backupImportFile")}
           </Button>
         </div>
       </div>

@@ -97,3 +97,35 @@ export async function backupUpload(): Promise<number> {
 export async function backupDownload(): Promise<BackupApplyOutcome> {
   return invoke<BackupApplyOutcome>("backup_download");
 }
+
+/** 弹系统保存对话框选导出路径；取消返回 null。 */
+export async function pickSavePath(defaultFileName: string): Promise<string | null> {
+  return invoke<string | null>("fs_pick_save_path", {
+    defaultFileName,
+    filterName: "JSON",
+    filterExtensions: ["json"],
+  });
+}
+
+/** 弹系统打开对话框选导入文件；取消返回 null。 */
+export async function pickOpenFile(): Promise<string | null> {
+  return invoke<string | null>("fs_pick_open_file", {
+    filterName: "JSON",
+    filterExtensions: ["json"],
+  });
+}
+
+/** 导出到本地文件（路径已选定），返回 manifest 供摘要展示。 */
+export async function backupExportToFile(path: string): Promise<BackupManifestView> {
+  return invoke<BackupManifestView>("backup_export_to_file", { path });
+}
+
+/** 导入预览：解析+校验（不写盘），返回 manifest 供确认框展示。失败抛错。 */
+export async function backupImportPreview(path: string): Promise<BackupRemoteInfo> {
+  return invoke<BackupRemoteInfo>("backup_import_preview", { path });
+}
+
+/** 从本地文件导入应用（确认后调用），走 backup:applied 重载链。 */
+export async function backupImportFromFile(path: string): Promise<BackupApplyOutcome> {
+  return invoke<BackupApplyOutcome>("backup_import_from_file", { path });
+}

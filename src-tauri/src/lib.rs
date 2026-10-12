@@ -378,7 +378,12 @@ pub fn run() {
             webdav_backup::backup_fetch_remote_info,
             webdav_backup::backup_upload,
             webdav_backup::backup_download,
-            webdav_backup::backup_mark_dirty
+            webdav_backup::backup_mark_dirty,
+            webdav_backup::backup_export_to_file,
+            webdav_backup::backup_import_preview,
+            webdav_backup::backup_import_from_file,
+            fs_cmd::fs_pick_save_path,
+            fs_cmd::fs_pick_open_file
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
