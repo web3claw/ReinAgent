@@ -1776,6 +1776,27 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
     - **Bot 机器人图标高亮**：在 `ToolSummaryRow.tsx` 移除 `[&_svg]:text-foreground-subtlest` 强制选择器，确保子代理等组件传入的 `<Bot className="... text-[var(--subagent-blue)]" />` 能够原样呈现高亮蓝色，未指定颜色的图标继续继承默认浅灰。全生命周期（执行中与已完成）保持视觉纯正统一。
 
 
+### v0.1.17 发布（2026-10-12）
+- **版本号升级**：全套升级至 `v0.1.17`（`package.json`、`tauri.conf.json`、`Cargo.toml`、`Cargo.lock`）。
+- **包含功能与优化**：
+  - **手机远控完整复刻 ZCode Web Remote Control (`src/remote-mobile/` + `remote_server.rs` + `remoteBridge.ts`)**：
+    - 独立移动端 React 19 应用作为第二 Vite 入口，内嵌静态打包（`include_dir!`）同源静态托管；
+    - 任务列表主页：工作区卡片、置顶分区、时间线分组、排序整理、未读圆点与状态徽标；
+    - 移动端聊天交互：双行大圆角工具栏 Composer（排队指示器、附件上传、审批模式盾、上下文进度环、模型与思考等级选择器）、Shiki 代码高亮、思考折叠、审批/问答/执行计划卡片；
+    - 协议 v2 与双向桥：11 项新请求操作、工作区列表与桌面状态主动推送、单 SQL 极速聚合持久化末回合状态；
+    - 独立主题与语言菜单：深/浅/跟随系统、中/英切换，本地 localStorage 持久化。
+  - **助手一键预设包 (`AssistantsPage.tsx` + `assistantBindings.ts` + `assistantDefs.ts`)**：
+    - 助手从纯身份设定升级为一键预设包：支持绑定模型（`providerId/modelId`）、思考等级（`thinkingLevel`）、技能集（`skills`）及 MCP 服务集（`mcpServers`）；
+    - 选定助手时一键应用预设配置，后续手动调整仍可自由覆盖；
+    - 助手编辑器新增「预设绑定」区；内置 4 助手支持本地阴影编辑（Shadow Files）与一键重置为内置，编辑保存即时重新套用生效。
+  - **WebDAV 配置云备份与多端同步 (`webdav_backup.rs` + `backup_snapshot.rs` + `BackupSyncSection.tsx`)**：
+    - 纯 Rust 安全实现 WebDAV 传输层（坚果云 Jianguoyun 深度兼容、代理感知、敏感信息脱敏）；
+    - 五大域配置快照（Providers、Assistants、Skills、MCP、通用设置与 KV 状态），带 Manifest 版本守卫、供应商 ID 映射与恢复前本地自动备份；
+    - 设备级配置、密码查看分离、双重验证 SHA-256、防抖自动同步与全域重新水合。
+  - **本地快照文件导入与导出 (`fs_cmd.rs` + `BackupSyncSection.tsx`)**：
+    - 支持将全域配置快照直接导出为本地备份文件（`.json`）；
+    - 本地快照文件导入与预览：16MB 安全体积护栏、Manifest 结构校验、导入前信息确认弹窗（设备、时间、各域统计）、自动创建安全回退备份后整包应用并热重载。
+
 ### 手机远控完整复刻 ZCode Web Remote Control（2026-10-11，方案 B：独立手机 React 应用 + 定向搬源码；CDP 全链路 E2E + 截图目检）
 
 **需求与定案**：手机端任务列表页与任务对话页 1:1 复刻 ZCode Web Remote Control（样式+功能+交互）。调研结论（ZCode 源码实证）：ZCode 手机端 = 桌面整个 React 应用经 IPlatformService 桥 + relay 复用（对话页是 58k 行桌面聊天栈，不可整搬）；任务列表页（`WebRemoteControlMobileTaskHome` 等 ~2,400 行）自包含可直搬。**用户拍板四点**：方案 B（独立手机 React 应用 + 定向搬源码）、附件上传一期就做、手机端独立主题菜单、手机改模型/审批模式 = 改桌面任务配置。**主题与语言**：调色板菜单 = 设置入口，含主题（深/浅/跟随系统，`reinagent-remote-theme`）与语言（跟随系统/中文/English，`reinagent-remote-locale`）两组，**菜单项 ZCode 勾选样式（选中项右侧 ✓ + 高亮底），选择按设备 localStorage 记忆、随选即时生效（CDP 三段实证：seed light+zh → 切 en → 恢复 zh+dark 全部跨刷新还原）**；语言默认跟随手机系统/浏览器语言（navigator.language，ZCode 网页同语义——浏览器上报英文即英文，可菜单强制中文）。
