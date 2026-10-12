@@ -1854,3 +1854,12 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 - **Rust**：`fs_cmd.rs` 新增通用对话框命令 `fs_pick_save_path`（rfd `save_file` + set_file_name + add_filter）与 `fs_pick_open_file`（rfd `pick_file` + filter）；`webdav_backup.rs` 新增三命令：`backup_export_to_file`（collect + serialize → 写用户选定路径，返回 manifest 供摘要）、`backup_import_preview`（**只读校验**：大小上限 16MB + parse_backup_document 版本门/结构校验，不写盘——非本应用导出/高版本/畸形文件在预览即被拦下）、`backup_import_from_file`（校验 → 抑制守卫内 apply_backup_snapshot（含 provider id 重映射 + 应用前自动本地备份）→ emit `backup:applied` 走既有前端重载链）。导入语义与 WebDAV 下载完全一致：显式恢复动作、不触发自动上传、快照外文件不删除。
 - **前端**：BackupSyncSection 手动操作区加「导出到文件…」（FileDown）与「从文件导入…」（FileUp）两按钮；导入 = 选文件 → preview → useConfirmDialog 确认框（文件路径/来源设备/时间/各域条目数/覆盖警示）→ 应用 → toast 摘要。i18n 增 6 键（backupExportFile/backupExportOk/backupImportFile/backupImportConfirmTitle/backupImportFileLabel + 英文对应）。
 - **验证**：cargo 241/241（新增 roundtrip via file + oversized/garbage 拒绝 2 测试）；tsc 0；前端套件绿。CDP E2E 8/8：导出（manifest 真实条目数）→ 制造三域差异 → 预览校验（marker 不在快照中）→ 畸形文件拒绝 → 导入应用（本地备份文件生成）→ provider/MCP marker 全部还原。E2E 残留（临时导出文件/marker 文件）已清理。
+
+### 侧边栏版本号点击检查/下载更新与悬停提示（2026-10-12）
+
+- **交互体验升级**：
+  - 左下角侧边栏底部的软件版本号（如 `v0.1.17`）由原本的纯文本展示升级为可交互按钮（`group/tt` + `cursor-pointer`）；
+  - **点击立即检查与下载**：点击版本号直接调用 `checkAndAutoDownload()`，执行逻辑与软件冷启动时的自动检查/静默下载完全同构；触发后组件平滑切入原本的进度圆圈、绿色下载就绪或黄色重试状态机；
+  - **悬停 Tooltip 提示**：鼠标移动悬停在版本号上方时，自底向上弹出半透明气泡，提示「检查和下载更新」（英文环境展示「Check and download updates」）；
+  - 完整适配 Tailwind CSS v4 语义化主题变量（`var(--text-dim)`、`var(--text)`、`var(--sidebar-hover)`、`var(--bg-elev)`、`var(--border)`）及中英文多语言词条（`updaterCheckAndDownload`）。
+- **验证**：新增单测 `SidebarVersionUpdater.test.mjs`，全仓单测 522/522 pass，`tsc && vite build` 构建通过。

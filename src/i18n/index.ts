@@ -136,6 +136,7 @@ export const translations = {
     updaterRestartNow: "立即重启更新",
     updaterCheckFailed: "获取更新信息失败，点击重试",
     updaterDownloadFailed: "下载更新失败，点击重新下载",
+    updaterCheckAndDownload: "检查和下载更新",
     updaterUpToDate: "已是最新版本（当前 {version}）",
     updaterNoEndpoint: "未配置更新源：留空即使用本仓库默认源，或在上方填入静态 latest.json 的 URL。",
     sttTitle: "语音输入",
@@ -1004,6 +1005,7 @@ export const translations = {
     updaterRestartNow: "Restart to update now",
     updaterCheckFailed: "Failed to check for updates, click to retry",
     updaterDownloadFailed: "Failed to download update, click to retry",
+    updaterCheckAndDownload: "Check and download updates",
     updaterUpToDate: "Up to date (current {version})",
     updaterNoEndpoint:
       "No update endpoint configured: leave it empty to use this repo's default, or fill in a static latest.json URL above.",

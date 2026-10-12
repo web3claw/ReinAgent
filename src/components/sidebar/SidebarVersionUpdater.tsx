@@ -159,12 +159,27 @@ export function SidebarVersionUpdater({ versionText }: SidebarVersionUpdaterProp
     );
   }
 
-  // 4. 默认常态：无新版本，显示普通版本号
+  // 4. 默认常态：无新版本，显示普通版本号（点击可检查和下载更新，hover 提示）
   if (!versionText) return null;
 
   return (
-    <span className="text-[13px] leading-none tabular-nums text-[var(--text-dim)] font-medium">
-      v{versionText}
-    </span>
+    <div className="group/tt relative inline-flex items-center justify-center">
+      <button
+        type="button"
+        onClick={() => void checkAndAutoDownload()}
+        aria-label={t("updaterCheckAndDownload")}
+        className="text-[13px] leading-none tabular-nums text-[var(--text-dim)] hover:text-[var(--text)] active:scale-95 font-medium transition-colors duration-150 cursor-pointer select-none rounded px-1 py-0.5 hover:bg-[var(--sidebar-hover)] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[var(--border)]"
+      >
+        v{versionText}
+      </button>
+
+      {/* Tooltip */}
+      <span
+        role="tooltip"
+        className="pointer-events-none absolute bottom-full right-0 z-50 mb-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-2.5 py-1.5 opacity-0 shadow-xl transition-opacity duration-100 group-hover/tt:opacity-100"
+      >
+        <span className="text-xs font-medium text-[var(--text)]">{t("updaterCheckAndDownload")}</span>
+      </span>
+    </div>
   );
 }
