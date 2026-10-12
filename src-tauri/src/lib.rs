@@ -38,6 +38,7 @@ mod self_update;
 mod webdav;
 mod webdav_backup;
 mod backup_snapshot;
+mod cua_driver;
 #[cfg(test)]
 mod git_panel_tests;
 #[cfg(test)]
@@ -383,7 +384,15 @@ pub fn run() {
             webdav_backup::backup_import_preview,
             webdav_backup::backup_import_from_file,
             fs_cmd::fs_pick_save_path,
-            fs_cmd::fs_pick_open_file
+            fs_cmd::fs_pick_open_file,
+            cua_driver::cua_driver_probe,
+            cua_driver::cua_driver_install_command,
+            cua_driver::cua_driver_install,
+            cua_driver::cua_driver_permissions_status,
+            cua_driver::cua_driver_permissions_grant,
+            cua_driver::cua_driver_self_identity,
+            cua_driver::cua_driver_self_windows,
+            cua_driver::cua_driver_frontmost_pid
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

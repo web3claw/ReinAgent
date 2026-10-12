@@ -1863,3 +1863,34 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
   - **悬停 Tooltip 提示**：鼠标移动悬停在版本号上方时，自底向上弹出半透明气泡，提示「检查和下载更新」（英文环境展示「Check and download updates」）；
   - 完整适配 Tailwind CSS v4 语义化主题变量（`var(--text-dim)`、`var(--text)`、`var(--sidebar-hover)`、`var(--bg-elev)`、`var(--border)`）及中英文多语言词条（`updaterCheckAndDownload`）。
 - **验证**：新增单测 `SidebarVersionUpdater.test.mjs`，全仓单测 522/522 pass，`tsc && vite build` 构建通过。
+
+### Computer Use (CUA) 桌面操作驱动 1:1 复刻 LiveAgent（2026-10-12）
+
+- **需求与架构定案**：
+  - 完整复刻 LiveAgent 的 Computer Use（CUA 桌面操作驱动）能力与管理面板：包含主卡片启用总开关、60 项能力简介、三步走开始引导卡片（1. 安装驱动 -> 2. 系统授权 -> 3. 启用）、管理设置弹窗与驱动安装步骤弹窗；
+  - **管理设置弹窗 1:1 对齐**：
+    1. 工具审批策略三档单选 `[允许 | 询问 | 拒绝]`（受管工具执行前统一鉴权拦截）；
+    2. `允许操作 ReinAgent 自身` 防自指开关（关：防止 Agent 误点本应用产生死循环交互）；
+    3. 单次调用超时四档单选 `[30s | 60s | 120s | 300s]`（防止操作挂死，超时直接熔断）；
+    4. 6 项能力概览卡片带小蓝点提示；
+    5. 底部风控安全说明与 `trycua/cua ↗` 上游驱动仓库外链。
+- **Rust 后端实现 (`src-tauri/src/cua_driver/mod.rs`)**：
+  - `cua_driver_probe`：探测各平台已知路径（Windows `%LOCALAPPDATA%\Programs\cua\cua.exe` / macOS `/usr/local/bin/cua` 等）及 `cua --version` 与 manifest；
+  - `cua_driver_install_command` & `cua_driver_install`：生成安装命令，流式执行安装并在 `cua_driver_install_progress` 事件中实时派发输出日志；
+  - `cua_driver_permissions_status` & `cua_driver_permissions_grant`：macOS TCC 辅助功能与屏幕录制授权检测及唤起，Windows/Linux 平台返回免授权默认值；
+  - `cua_driver_self_identity`、`cua_driver_self_window_rects`、`cua_driver_frontmost_pid`：宿主自省能力，获取自身 PID、前端逻辑矩形及前台进程 PID，为防自指守卫提供真实数据支撑。
+- **前端核心逻辑与自卫沙箱 (`src/lib/mcp/`)**：
+  - `cuaSelfGuard.ts`：实现自卫守卫拦截器（PID 拦截、屏幕矩形命中拦截、无目标键盘输入的前台检查拦截、出参敏感信息与 window_id 动态清洗与学习）；
+  - `cuaDriverForm.ts`：超时值安全钳制（10s ~ 10min，默认 60s）、探测缓存 60s TTL、命令漂移检测与对齐对准、kv 持久化助手；
+  - `mcpTools.ts`：在 `execute` 执行链前置嵌入 CUA 策略鉴权与 `guard.refuse`，后置挂载 `guard.strip`；
+  - `mcpServerDefaults.ts`：注册 `CUA_DRIVER_SERVER_ID = "cua-driver"` 常量并在 MCP Hub 隐藏受管驱动，避免配置重叠。
+- **设置页与 UI 实现 (`src/components/settings/`)**：
+  - `SettingsPage.tsx`：导航项新增 `cua`（Monitor 图标，双语标题「Computer Use」），挂载 `CuaDriverSection`；
+  - `CuaDriverSection.tsx`：深度集成 Tailwind CSS v4 语义变量与 `Dialog`、`Switch`、`Button` 组件，完整还原主面板、三步向导、管理设置与安装进度弹窗；
+  - `src/i18n/index.ts`：补充中英文双语字典（`cua*` 系列键）。
+- **验证**：
+  - 新增单测 `cuaSelfGuard.test.mjs` (9/9 pass) 与 `cuaDriverForm.test.mjs` (7/7 pass)；
+  - 全仓单测 538/538 pass；
+  - 前端 `bun run build` 构建通过；
+  - Rust `cargo check` 退出码 0。
+

@@ -33,7 +33,8 @@ import {
   Mic,
   Sparkles,
   Smartphone,
-  CloudUpload
+  CloudUpload,
+  Monitor
 } from 'lucide-react';
 import { McpHubPage } from '../mcp/McpHubPage';
 import { ImportSection } from './ImportSection';
@@ -41,6 +42,7 @@ import { SttSection } from './SttSection';
 import { PromptEnhancementCard } from './PromptEnhancementCard';
 import { RemoteAccessSection } from './RemoteAccessSection';
 import { BackupSyncSection } from './BackupSyncSection';
+import { CuaDriverSection } from './CuaDriverSection';
 import { SkillsHubPage } from '../skills/SkillsHubPage';
 import { MemoryPanel } from '../memory/MemoryPanel';
 
@@ -98,7 +100,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
       mounted = false;
     };
   }, []);
-  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'skills' | 'mcp' | 'memory' | 'usage' | 'hooks' | 'plugins' | 'import' | 'stt' | 'enhance' | 'remote' | 'backup' | 'about'>('general');
+  const [activeTab, setActiveTab] = useState<'general' | 'appearance' | 'provider' | 'terminal' | 'agent' | 'skills' | 'mcp' | 'memory' | 'usage' | 'hooks' | 'plugins' | 'import' | 'stt' | 'enhance' | 'remote' | 'backup' | 'cua' | 'about'>('general');
   // 外部定位（侧栏插件图标 → plugins）：initialTab 变化时跟随切换
   useEffect(() => {
     if (initialTab) setActiveTab(initialTab as typeof activeTab);
@@ -120,6 +122,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
     { id: 'enhance', label: t('enhanceNav'), icon: Sparkles },
     { id: 'remote', label: t('remoteTitle'), icon: Smartphone },
     { id: 'backup', label: t('backupTitle'), icon: CloudUpload },
+    { id: 'cua', label: t('cuaNav'), icon: Monitor },
     { id: 'about', label: t('settingsAbout'), icon: Info },
   ] as const;
 
@@ -189,6 +192,13 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           <div className="mx-auto w-full max-w-1320px">
             <h2 className="mb-6 text-xl font-semibold">{t('backupTitle')}</h2>
             <BackupSyncSection />
+          </div>
+        </div>
+      ) : activeTab === 'cua' ? (
+        <div className="min-h-0 w-full overflow-y-auto px-5 pt-4 pb-6 [scrollbar-gutter:stable] sm:px-6 lg:px-8 xl:px-10">
+          <div className="mx-auto w-full max-w-1320px">
+            <h2 className="mb-6 text-xl font-semibold">{t('cuaTitle')}</h2>
+            <CuaDriverSection />
           </div>
         </div>
       ) : activeTab === 'enhance' ? (

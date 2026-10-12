@@ -9,6 +9,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { Type } from "typebox";
 import type { McpServerConfig } from "../hub/mcpTypes";
+import { isCuaDriverServer } from "../hub/mcpServerDefaults";
+import { resolveCuaSelfGuard } from "./cuaSelfGuard";
+import { getCuaAllowSelf, getCuaPolicy } from "./cuaDriverForm";
 
 /** 后端 mcp_list_tools 的条目（LA McpToolInfo 同构） */
 interface McpToolEntry {
@@ -84,6 +87,20 @@ function buildMcpTool(server: McpServerConfig, tool: McpToolEntry) {
     // MCP 工具自带 JSON Schema；无法静态表达 → any 兜底（库侧仍会校验参数合法性）
     parameters: Type.Object({}, { additionalProperties: true }),
     execute: async (_toolCallId: string, args: unknown) => {
+      if (isCuaDriverServer(server)) {
+        const policy = getCuaPolicy();
+        if (policy === "deny") {
+          return textResult("该调用已被工具审批策略拒绝（策略已设置为「拒绝」）。", true);
+        }
+        const guard = await resolveCuaSelfGuard(getCuaAllowSelf());
+        if (guard) {
+          const refusal = await guard.refuse(tool.name, args as Record<string, unknown>);
+          if (refusal) {
+            return textResult(refusal, true);
+          }
+        }
+      }
+
       try {
         const result = await invoke<Record<string, unknown>>("mcp_call_tool", {
           serverId: server.id,
@@ -92,13 +109,21 @@ function buildMcpTool(server: McpServerConfig, tool: McpToolEntry) {
         });
         const isError = result.isError === true;
         const content = Array.isArray(result.content) ? result.content : [];
-        const text = content
+        let text = content
           .map((block) => {
             const record = block as { type?: string; text?: string };
             return record.type === "text" && typeof record.text === "string" ? record.text : "";
           })
           .filter(Boolean)
           .join("\n") || JSON.stringify(result);
+
+        if (isCuaDriverServer(server) && !getCuaAllowSelf()) {
+          const guard = await resolveCuaSelfGuard(false);
+          if (guard) {
+            text = guard.strip(text);
+          }
+        }
+
         return textResult(isError ? `MCP 工具报告失败：\n${text}` : text, isError);
       } catch (err) {
         throw new Error(
