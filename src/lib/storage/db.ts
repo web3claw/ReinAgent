@@ -72,6 +72,23 @@ export function isStorageInitialized(): boolean {
   return initialized;
 }
 
+/** 从磁盘重拉 kv 全量刷新缓存（备份恢复后：技能启用集等 kv 域可能已被远端快照改写）。 */
+export async function reloadKvFromDisk(): Promise<void> {
+  if (!initialized) return;
+  try {
+    const kvPairs = await invoke<{ key: string; value: string }[]>("kv_get_all");
+    // 合并语义：先落盘的写透队列待写项优先级更高（恢复刚完成，队列里只可能是
+    // 恢复之后用户的新改动，不该被覆盖）。
+    const pending = new Map(kvPending);
+    kvCache = new Map(kvPairs.map((p) => [p.key, p.value]));
+    for (const [key, value] of pending) {
+      kvCache.set(key, value);
+    }
+  } catch (err) {
+    console.error("[db] reloadKvFromDisk failed:", err);
+  }
+}
+
 // ---- kv 同步读（缓存） / 写透 ----
 
 export function kvGet(key: string): string | null {

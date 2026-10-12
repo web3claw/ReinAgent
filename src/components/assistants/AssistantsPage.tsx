@@ -13,6 +13,7 @@ import { Bot, Globe, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useHubSettings } from "../../store/hubSettingsStore";
 import * as skillsLib from "../../lib/skills/index";
 import { buildAssistantBindingsPlan } from "../../lib/assistants/assistantBindings";
+import { markBackupDirty } from "../../lib/backup/backupSync";
 import { useTranslation } from "../../i18n";
 import { toast } from "../lw/ui/toast";
 import { useAppStore } from "../../store/useAppStore";
@@ -213,6 +214,7 @@ export function AssistantsPage() {
         skills: draft.skills.length > 0 ? draft.skills : undefined,
         mcpServers: draft.mcpServers.length > 0 ? draft.mcpServers : undefined,
       });
+      markBackupDirty();
       await reload();
       // 保存后立即重新套用绑定（2026-10-12 用户实测「勾了技能面板仍 0%」）：
       // 编辑 ≠ 生效的断层在这里闭合——该助手若是当前全局默认，技能/MCP 启用集
@@ -232,6 +234,7 @@ export function AssistantsPage() {
   const resetBuiltin = async (def: AssistantDef) => {
     try {
       await deleteAssistantById(def.id);
+      markBackupDirty();
       await reload();
     } catch (err) {
       toast.error(String(err instanceof Error ? err.message : err).slice(0, 200));
@@ -241,6 +244,7 @@ export function AssistantsPage() {
   const remove = async (def: AssistantDef) => {
     try {
       await deleteAssistantById(def.id);
+      markBackupDirty();
       await reload();
     } catch (err) {
       toast.error(String(err instanceof Error ? err.message : err).slice(0, 200));

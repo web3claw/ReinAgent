@@ -77,7 +77,7 @@ import { RequestPreviewDialog } from "./components/trajectory/RequestPreviewDial
 import { buildRequestPreview, type RequestPreview } from "./lib/chat/requestPreview";
 import { PlanModeCard } from "./components/chat/PlanModeCard";
 import { resolveWorkspaceRoot, initUserHome } from "./lib/agent/workspace";
-import { kvGet } from "./lib/storage/db";
+import { kvGet, kvGetJSON, reloadKvFromDisk } from "./lib/storage/db";
 import { useAppStore } from "./store/useAppStore";
 import { listen } from "@tauri-apps/api/event";
 import { discoverWorkspaceHooks, runWorkspaceHooks, trustWorkspaceHooks, untrustWorkspaceHooks } from "./lib/hooks/hooksRuntime";
@@ -143,7 +143,10 @@ export default function App() {
   const activeApprovalMode = activeTask?.approvalMode ?? globalApprovalMode;
 
   const { t, locale } = useTranslation();
-  const { settings, status, update } = useSettings();
+  const { settings, status, update, reload: reloadSettings } = useSettings();
+  // 备份恢复重载用（effect 依赖 [] 而 reloadSettings 每渲染新建，走 ref 桥接）
+  const reloadSettingsRef = useRef(reloadSettings);
+  reloadSettingsRef.current = reloadSettings;
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
   
@@ -326,6 +329,46 @@ export default function App() {
   // Hub 三页（Skills/MCP/记忆）设置层：启动时装载 MCP 服务器列表（Rust JSON 为真相源）
   useEffect(() => {
     void useHubSettings.getState().hydrateMcp();
+  }, []);
+
+  // WebDAV 备份恢复完成：磁盘上五域文件已被远端快照改写，前端各内存态必须
+  // 全部重载，否则后续编辑会把还原前的旧配置整域写回盘。reload 顺序无依赖。
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const stop = await listen("backup:applied", () => {
+          void reloadKvFromDisk();
+          void useHubSettings.getState().hydrateMcp();
+          // hubSettings 的 skills 切片来自 kv 缓存：kv 刷新后按磁盘值重写内存
+          void (async () => {
+            const saved = kvGetJSON<{ enabled?: boolean; selected?: string[] }>("reinagent-skills-settings");
+            if (saved && Array.isArray(saved.selected)) {
+              useHubSettings.setState((prev) => ({
+                settings: { ...prev.settings, skills: { ...prev.settings.skills, selected: saved.selected ?? [] } },
+              }));
+            }
+          })();
+          void reloadSettingsRef.current();
+          void loadProvidersConfigFromDisk(settingsRef.current)
+            .then((list) => setProviders(list))
+            .catch((err) => console.error("[backup] 恢复后重载 providers 失败:", err));
+          // 助手 catalog 有模块级缓存，恢复后清掉让下次读取重扫磁盘
+          void import("./lib/assistants/assistantDefs").then((m) => {
+            if (typeof m.invalidateAssistantCatalog === "function") m.invalidateAssistantCatalog();
+          });
+        });
+        if (cancelled) stop();
+        else unlisten = stop;
+      } catch (err) {
+        console.warn("[backup] backup:applied listen unavailable (web mode)", err);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
   }, []);
 
   // 会话级当前模型选择（初始跟随当前任务或系统默认，聊天框切换时仅修改当前任务模型，绝不覆盖系统默认模型）

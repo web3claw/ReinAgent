@@ -15,6 +15,7 @@ import { kvGet, kvSetJSON } from "../lib/storage/db";
 import { invoke } from "@tauri-apps/api/core";
 import type { McpServerConfig, McpSettings } from "../lib/hub/mcpTypes";
 import { applyMcpOps } from "../lib/hub/mcpTypes";
+import { markBackupDirty } from "../lib/backup/backupSync";
 
 /** LA settings/types.ts SkillsSettings 同构 */
 export interface SkillsSettings {
@@ -175,6 +176,8 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
         console.error("[hubSettings] mcp_save_servers failed:", err),
       );
     }
+    // 备份标脏：skills（kv）与 mcp（Rust 文件）都是快照域；memory 切片不是。
+    markBackupDirty();
     set({ settings: next });
   },
 
@@ -190,6 +193,7 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
         console.error("[hubSettings] mcp_save_servers failed:", err),
       );
     }
+    markBackupDirty();
     set({ settings: { ...prev, mcp } });
   },
 }));

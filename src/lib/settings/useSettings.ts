@@ -11,6 +11,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createEnvSettingsStore, DEFAULT_SETTINGS } from "./store";
 import type { Settings } from "./store";
 import type { SettingsStore } from "./settingsStore";
+import { markBackupDirty } from "../backup/backupSync";
 
 export interface SettingsStatus {
   /** 是否已完成首次加载。 */
@@ -25,6 +26,8 @@ export interface UseSettingsResult {
   settings: Settings;
   status: SettingsStatus;
   update: (patch: Partial<Settings>) => void;
+  /** 从磁盘重读 settings.json（备份恢复后：远端快照可能已改写默认模型指针）。 */
+  reload: () => Promise<void>;
 }
 
 export function useSettings(): UseSettingsResult {
@@ -56,6 +59,18 @@ export function useSettings(): UseSettingsResult {
     setSettings((prev) => ({ ...prev, ...patch }));
   }, []);
 
+  const reload = useCallback(async () => {
+    const store = storeRef.current;
+    if (store === null) return;
+    try {
+      const loaded = await store.load();
+      skipNextSave.current = true;
+      setSettings({ ...DEFAULT_SETTINGS, ...loaded });
+    } catch {
+      // load 内部已降级处理（warning 语义），此处无需额外动作。
+    }
+  }, []);
+
   // settings 变化后自动写回；写失败会把 status 刷新为「仅内存 + 警示」。
   useEffect(() => {
     const store = storeRef.current;
@@ -65,9 +80,11 @@ export function useSettings(): UseSettingsResult {
       return;
     }
     void store.save(settings).then(() => {
+      // 备份标脏：settings.json 的 settings 键（默认模型指针）是快照 system 域。
+      markBackupDirty();
       setStatus((prev) => ({ ...prev, persistent: !store.degraded, warning: store.warning }));
     });
   }, [settings, status.ready]);
 
-  return { settings, status, update };
+  return { settings, status, update, reload };
 }

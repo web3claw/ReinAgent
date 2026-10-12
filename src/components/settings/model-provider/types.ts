@@ -1,5 +1,6 @@
 import type { Settings } from "../../../lib/settings/store";
 import { cleanBaseUrl } from "../../../lib/providers/modelFactory";
+import { markBackupDirty } from "../../../lib/backup/backupSync";
 
 // API 格式类型唯一定义在 lib/providers/modelFactory（ProviderConfig.apiFormat 同源）
 export type { ApiFormatType } from "../../../lib/providers/modelFactory";
@@ -306,6 +307,7 @@ export async function saveProvidersConfigToDisk(providers: ProviderItem[]): Prom
     await invoke("provider_config_save", {
       content: JSON.stringify(normalizedProviders, null, 2),
     });
+    markBackupDirty();
     return true;
   } catch (e) {
     console.error("[provider_config] Failed to save provider_config.json to disk", e);

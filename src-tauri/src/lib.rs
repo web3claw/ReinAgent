@@ -35,6 +35,9 @@ mod app_proxy;
 mod llm_proxy;
 mod hide_to_tray;
 mod self_update;
+mod webdav;
+mod webdav_backup;
+mod backup_snapshot;
 #[cfg(test)]
 mod git_panel_tests;
 #[cfg(test)]
@@ -191,6 +194,10 @@ pub fn run() {
         }
         // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
         automation::start_scheduler(app.handle().clone());
+        // WebDAV 备份自动同步任务（标脏 → 防抖合并 → 仅上传）；注册全局句柄供
+        // backup:applied 事件发送（下载应用完成 → 前端重载各配置域内存态）
+        webdav_backup::register_app_handle(app.handle().clone());
+        webdav_backup::start_auto_sync(app.handle().clone());
         // Windows dev 构建：补注册 AUMID（未注册 AppId 的 Toast 只进通知中心不弹横幅）
         #[cfg(target_os = "windows")]
         git_panel::ensure_windows_aumid_registered();
@@ -364,7 +371,14 @@ pub fn run() {
             skills::system_ensure_builtin_skills,
             skills::mcp_scan_external,
             skills::mcp_scan_config_file,
-            clipboard_image::clipboard_read_image
+            clipboard_image::clipboard_read_image,
+            webdav_backup::backup_load_sync_config,
+            webdav_backup::backup_save_sync_config,
+            webdav_backup::backup_test_sync_connection,
+            webdav_backup::backup_fetch_remote_info,
+            webdav_backup::backup_upload,
+            webdav_backup::backup_download,
+            webdav_backup::backup_mark_dirty
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

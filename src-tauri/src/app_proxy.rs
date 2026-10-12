@@ -17,7 +17,9 @@ use std::path::PathBuf;
 const KV_WEB_PROXY: &str = "reinagent-web-proxy";
 const KV_WEB_PROXY_NO_PROXY: &str = "reinagent-web-proxy-no-proxy";
 
-fn kv_db_path() -> PathBuf {
+/// kv 库路径（conversations.db）。pub：backup_snapshot / webdav_backup 复用
+/// 同一路径决议（快照的技能启用清单域直接读 kv 表）。
+pub fn kv_db_path() -> PathBuf {
     if let Ok(home) = std::env::var("USERPROFILE") {
         if !home.trim().is_empty() {
             return PathBuf::from(home).join(".ReinAgent").join("conversations.db");
