@@ -264,7 +264,7 @@ pub fn frontmost_pid() -> Result<u32, String> {
             GetForegroundWindow, GetWindowThreadProcessId,
         };
         let hwnd = unsafe { GetForegroundWindow() };
-        if hwnd.0 == 0 {
+        if hwnd.0.is_null() {
             return Err("no foreground window".to_string());
         }
         let mut pid: u32 = 0;
