@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReinAgent · Local-first AI coding &amp; desktop agent</title>
+<meta name="description" content="ReinAgent is a local-first, cross-platform AI coding and desktop agent workbench built on Tauri 2 (Rust) and React 19.">
+<meta name="theme-color" content="#4f46e5">
+<link rel="canonical" href="https://web3claw.github.io/ReinAgent/en/">
+<link rel="alternate" hreflang="zh-CN" href="https://web3claw.github.io/ReinAgent/en/">
+<link rel="alternate" hreflang="en" href="https://web3claw.github.io/ReinAgent/en/">
+<link rel="alternate" hreflang="x-default" href="https://web3claw.github.io/ReinAgent/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ReinAgent">
+<meta property="og:title" content="ReinAgent · Local-first AI coding &amp; desktop agent">
+<meta property="og:description" content="ReinAgent is a local-first, cross-platform AI coding and desktop agent workbench built on Tauri 2 (Rust) and React 19.">
+<meta property="og:url" content="https://web3claw.github.io/ReinAgent/en/">
+<meta property="og:image" content="https://web3claw.github.io/ReinAgent/ReinAgent.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg>
+      <span>ReinAgent<small>本地优先 AI 编程与桌面 Agent</small></span>
+    </a>
+    <button class="icon-btn nav-toggle" data-nav-toggle aria-expanded="false" aria-label="展开导航">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="site-nav" aria-label="Main navigation">
+      <a href="../index.html">Home</a>
+      <a href="../guide/index.html">Docs</a>
+      <a href="../guide/architecture.html">Architecture</a>
+      <a href="../guide/getting-started.html">Download</a>
+      <a href="../guide/faq.html">FAQ</a>
+    </nav>
+    <div class="header-actions">
+      <span class="lang" role="group" aria-label="Language">
+        <a href="../index.html">中文</a>
+        <a href="#" aria-current="true" title="English version">EN</a>
+      </span>
+      <button class="icon-btn" data-theme-toggle aria-label="Toggle theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3v2m0 14v2M5.6 5.6 7 7m10 10 1.4 1.4M3 12h2m14 0h2M5.6 18.4 7 17m10-10 1.4-1.4"/><circle cx="12" cy="12" r="3.2"/></svg>
+      </button>
+      <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+        Download <span data-latest-version>v0.1.18</span>
+      </a>
+    </div>
+  </div>
+</header>
+<main id="main">
+  <section class="hero">
+    <div class="wrap hero-copy">
+      <span class="tag">Local-first · MIT · Tauri 2</span>
+      <h1>Local-first AI coding &amp; desktop agent workbench</h1>
+      <p class="lede">ReinAgent keeps conversations, tasks, code changes and model settings in one local store: a Tauri 2 (Rust) backend handles system access and persistence, a React 19 frontend drives the UI and the agent loop, and everything lands in a local SQLite WAL database. Model calls go only to providers you configure yourself.</p>
+      <div class="hero-cta">
+        <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent#readme"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>Read the README</a>
+        <a class="btn btn-ghost" href="https://github.com/web3claw/ReinAgent/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>Download</a>
+        <a class="btn btn-ghost" href="../guide/index.html">中文文档</a>
+      </div>
+    </div>
+  </section>
+  <section class="section">
+    <div class="wrap docs-body">
+      <h2>Documentation language notice</h2>
+      <div class="note">The full documentation set is currently published in <strong>Chinese</strong> only, including the project architecture whitepaper rendered from the repository Markdown. An English translation of the guide pages is not available yet.</div>
+      <h2>Highlights</h2>
+      <div class="table-wrap"><table>
+  <thead><tr><th>Capability</th><th>Summary</th></tr></thead>
+  <tbody>
+    <tr><td>Local-first</td><td>All history, task timelines, code snapshots and API keys stay on your machine (<code>~/.ReinAgent/</code>).</td></tr>
+    <tr><td>Portable single binary</td><td>No Node.js, Python or Rust runtime required — unzip and run.</td></tr>
+    <tr><td>Approval &amp; rewind</td><td>Four approval modes (plan / ask / edit / full) plus per-round checkpoint rewind with SHA-256 conflict protection.</td></tr>
+    <tr><td>Real protocol support</td><td>Chat Completions, Anthropic Messages, Responses and Google Generative AI, with fail-fast handshakes and no guessed metadata.</td></tr>
+    <tr><td>Subagents</td><td>The main agent dispatches isolated subagents for parallel research and review without polluting its own context.</td></tr>
+    <tr><td>Remote access</td><td>LAN direct, Cloudflare Quick Tunnel, or a custom domain — monitor and approve from a phone.</td></tr>
+  </tbody>
+</table></div>
+      <p>Read more in the <a href="../guide/index.html">Chinese documentation index</a>, or see the <a href="https://github.com/web3claw/ReinAgent">source repository</a>.</p>
+    </div>
+  </section>
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <span>© 2026 ReinAgent Contributors · MIT</span>
+    <nav aria-label="Footer navigation">
+      <a href="../guide/index.html">Docs (Chinese)</a>
+      <a href="https://github.com/web3claw/ReinAgent">GitHub</a>
+      <a href="https://github.com/web3claw/ReinAgent/releases">Releases</a>
+      <a href="https://github.com/web3claw/ReinAgent/blob/main/AGENTS.md">Conventions</a>
+      <a href="../guide/dev.html">Contribute</a>
+      <a href="../ATTRIBUTION.md">Attribution</a>
+    </nav>
+    <span class="spacer">Local-first · Native on 3 platforms · Portable binary</span>
+    <span class="visit-counter" data-visit-counter title="匿名统计，不使用 Cookie，仅统计浏览人数与浏览量。"><span class="vc-seg" data-visit-segment="visitors" hidden><span class="vc-label">访问人数</span> <b data-visit-visitors>–</b></span><span class="vc-sep" data-visit-sep hidden aria-hidden="true">·</span><span class="vc-seg" data-visit-segment="views" hidden><span class="vc-label">浏览量</span> <b data-visit-views>–</b></span></span>
+  </div>
+</footer>
+<div class="lightbox" data-lightbox aria-hidden="true">
+  <button class="lightbox-close" data-lightbox-close aria-label="关闭">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <img alt="">
+  <span class="lightbox-caption"></span>
+</div>
+</body>
+</html>

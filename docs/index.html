@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ReinAgent · 高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台</title>
+<meta name="description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问与本地长期记忆。">
+<meta name="theme-color" content="#4f46e5">
+<link rel="canonical" href="https://web3claw.github.io/ReinAgent/">
+<link rel="alternate" hreflang="zh-CN" href="https://web3claw.github.io/ReinAgent/">
+<link rel="alternate" hreflang="en" href="https://web3claw.github.io/ReinAgent/en/">
+<link rel="alternate" hreflang="x-default" href="https://web3claw.github.io/ReinAgent/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ReinAgent">
+<meta property="og:title" content="ReinAgent · 高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台">
+<meta property="og:description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问与本地长期记忆。">
+<meta property="og:url" content="https://web3claw.github.io/ReinAgent/">
+<meta property="og:image" content="https://web3claw.github.io/ReinAgent/ReinAgent.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="assets/site.css">
+<script defer src="assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要内容</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg>
+      <span>ReinAgent<small>本地优先 AI 编程与桌面 Agent</small></span>
+    </a>
+    <button class="icon-btn nav-toggle" data-nav-toggle aria-expanded="false" aria-label="展开导航">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="index.html" aria-current="page">首页</a>
+      <a href="guide/index.html">文档</a>
+      <a href="guide/architecture.html">架构</a>
+      <a href="guide/getting-started.html">下载</a>
+      <a href="guide/faq.html">FAQ</a>
+    </nav>
+    <div class="header-actions">
+      <span class="lang" role="group" aria-label="Language">
+        <a href="#" aria-current="true">中文</a>
+        <a href="en/index.html" title="English version">EN</a>
+      </span>
+      <button class="icon-btn" data-theme-toggle aria-label="切换主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3v2m0 14v2M5.6 5.6 7 7m10 10 1.4 1.4M3 12h2m14 0h2M5.6 18.4 7 17m10-10 1.4-1.4"/><circle cx="12" cy="12" r="3.2"/></svg>
+      </button>
+      <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+        下载 <span data-latest-version>v0.1.18</span>
+      </a>
+    </div>
+  </div>
+</header>
+<main id="main">
+  <section class="hero">
+    <div class="wrap hero-copy">
+        <span class="tag">当前版本 <span data-latest-version>v0.1.18</span> · MIT · 本地优先</span>
+        <h1>高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台</h1>
+        <p class="lede">ReinAgent 把对话、任务、代码改动与模型配置放进同一套本地底座：Tauri 2（Rust）负责系统能力与持久化，React 19 前端负责界面与 Agent 回路，数据落在本地 SQLite WAL。模型调用只发往你自己配置的供应商。</p>
+        <div class="hero-cta">
+          <a class="btn btn-primary" href="guide/getting-started.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg>快速开始</a>
+          <a class="btn btn-ghost" href="https://github.com/web3claw/ReinAgent/releases/latest"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>下载桌面版</a>
+          <a class="btn btn-ghost" href="https://github.com/web3claw/ReinAgent"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.7c-2.78.6-3.37-1.34-3.37-1.34-.45-1.16-1.1-1.47-1.1-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.87 1.5 2.3 1.07 2.86.82.09-.64.35-1.07.63-1.32-2.22-.25-4.56-1.11-4.56-4.95 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.65 0 0 .84-.27 2.75 1.02a9.5 9.5 0 0 1 5 0c1.9-1.29 2.74-1.02 2.74-1.02.55 1.38.2 2.4.1 2.65.64.7 1.03 1.59 1.03 2.68 0 3.85-2.35 4.7-4.58 4.94.36.31.68.92.68 1.85v2.74c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg>源码</a>
+        </div>
+        <div class="hero-meta">
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg>Tauri 2 · Rust 后端</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg>React 19 · TypeScript · Tailwind v4</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg>SQLite WAL · 本地优先</span>
+          <span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg>Bun 包管理</span>
+        </div>
+      </div>
+  </section>
+
+  <section class="section section--alt">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">它是什么</span>
+        <h2>一套本地底座，问与做都在同一处</h2>
+        <p>对话、任务、代码改动与模型配置共用一份本地数据；切换任务自动还原专属模型与推理等级，新建任务不产生配置污染。</p>
+      </div>
+      <div class="grid grid-3">
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg></span>本地优先与绿色单文件</h3>
+          <p>所有会话历史、任务时间线、代码改动快照、模型密钥与配置 100% 留在本地（SQLite WAL + JSON）。提供免装 Node.js / Python / Rust 的独立绿色可执行文件，解压即跑。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg></span>三端原生融合</h3>
+          <p>Linux（WebKitGTK）、Windows（WebView2）、macOS 深度原生适配；托盘常驻、单实例守护、关闭窗口最小化继续跑。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="6" r="2.6"/><circle cx="6" cy="17" r="2.6"/><circle cx="18" cy="17" r="2.6"/><path d="M10.6 8.2 7.4 14.8M13.4 8.2l3.2 6.6M8.6 17h6.8"/></svg></span>多智能体协作</h3>
+          <p>主 Agent 派发独立子代理并行作业与任务隔离；对话流中的工具卡片可一键唤起子代理面板，查看思考链与完整工具轨迹。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3l7 3v6c0 4-3 7.3-7 9-4-1.7-7-5-7-9V6z"/><path d="M9.5 12.2l1.8 1.8 3.4-3.6"/></svg></span>审批与原子回退</h3>
+          <p>四档审批模式（plan / ask / edit / full）；文件修改前自动留存前像，UI 支持逐轮撤销，具备 SHA-256 指纹冲突防护。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg></span>真实多协议接入</h3>
+          <p>原生适配 Chat Completions、Anthropic Messages、Responses 与 Google Generative AI；Fail-Fast 握手探测，Base URL 规范化清洗。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg></span>上下文预算与压缩</h3>
+          <p>基于服务端真实元数据计算水位线，70% 触发压缩；微压缩非侵入式裁剪历史工具结果，本地反代放宽至 32MB 护栏。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">界面</span>
+        <h2>明暗主题与语义化配色</h2>
+        <p>全系统遵循 Tailwind CSS v4 语义变量换肤，内置 AntiGravity 与 OpenCode 两套消息配色体系。</p>
+      </div>
+      <div class="gallery">
+        <figure>
+          <div class="frame"><div class="frame-bar"><i></i><i></i><i></i></div><img class="shot" src="ReinAgent.png" alt="ReinAgent 工作台界面"></div>
+          <figcaption><b>工作台</b>：对话、任务与模型状态集中在同一视口，点开可看原尺寸。</figcaption>
+        </figure>
+      </div>
+      <div class="note">功能截图画廊待补充：此处仅展示仓库内已有的真实界面图（<code>docs/ReinAgent.png</code>），其余页面截图待后续替换。</div>
+    </div>
+  </section>
+
+  <section class="section section--alt">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">起步</span>
+        <h2>两种跑法</h2>
+      </div>
+      <div class="grid grid-2">
+        <div>
+          <h3>桌面版（无需环境）</h3>
+          <div class="code"><button class="copy" aria-label="复制代码"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5H6a2 2 0 0 0-2 2v9"/></svg></button><pre><code># 下载对应系统的绿色可执行文件
+# https://github.com/web3claw/ReinAgent/releases/latest
+#
+# Linux   AppImage / 可执行二进制
+# Windows 便携 .exe
+# macOS   原生应用
+#
+# 免装 Node.js / Python / Rust，解压即跑</code></pre></div>
+          <p>关闭窗口默认最小化到系统托盘，后台继续运行。</p>
+        </div>
+        <div>
+          <h3>源码运行</h3>
+          <div class="code"><button class="copy" aria-label="复制代码"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 5H6a2 2 0 0 0-2 2v9"/></svg></button><pre><code>git clone https://github.com/web3claw/ReinAgent
+cd ReinAgent
+
+bun install
+bun run tauri dev
+
+# 需要 Bun ≥ 1.1、Node.js ≥ 20、Rust stable</code></pre></div>
+          <p>正式打包使用 <code>bun run tauri build</code>。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="wrap">
+      <div class="section-head">
+        <span class="eyebrow">文档</span>
+        <h2>按功能分页的说明文档</h2>
+        <p>每一块能力都有独立页面，包含配置项、面板说明与排错。</p>
+      </div>
+      <div class="docs-cards">
+        <a href="guide/getting-started.html"><strong>快速开始</strong><span>三种运行方式、首次配置与数据落点</span></a>
+        <a href="guide/workspace.html"><strong>Agent 工作台</strong><span>输入胶囊、推理强度、任务记忆与子代理</span></a>
+        <a href="guide/permissions.html"><strong>审批与检查点</strong><span>四档审批模式、检查点与原子回退</span></a>
+        <a href="guide/models.html"><strong>模型与协议</strong><span>四协议接入、元数据解析与统一代理</span></a>
+        <a href="guide/memory.html"><strong>本地长期记忆</strong><span>作用域隔离、自动沉淀与审查合并</span></a>
+        <a href="guide/git.html"><strong>Git 工作台</strong><span>分支、行级差异与 AI 提交信息</span></a>
+        <a href="guide/extensions.html"><strong>扩展与集成</strong><span>生态导入、Skills、MCP 与语音输入</span></a>
+        <a href="guide/automation.html"><strong>自动化与定时任务</strong><span>Cron 周期任务、条件触发与执行追溯</span></a>
+        <a href="guide/PROJECT_CONTEXT.html"><strong>架构白皮书</strong><span>系统分层、状态流转、持久化键名</span></a>
+        <a href="guide/faq.html"><strong>常见问题</strong><span>启动、模型、上下文、回退</span></a>
+        <a href="guide/dev.html"><strong>参与开发</strong><span>目录结构、构建与验证</span></a>
+      </div>
+    </div>
+  </section>
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <span>© 2026 ReinAgent Contributors · MIT</span>
+    <nav aria-label="页脚导航">
+      <a href="guide/index.html">文档</a>
+      <a href="https://github.com/web3claw/ReinAgent">GitHub</a>
+      <a href="https://github.com/web3claw/ReinAgent/releases">更新日志</a>
+      <a href="https://github.com/web3claw/ReinAgent/blob/main/AGENTS.md">实现约定</a>
+      <a href="guide/dev.html">参与开发</a>
+      <a href="ATTRIBUTION.md">站点署名</a>
+    </nav>
+    <span class="spacer">本地优先 · 三端原生 · 绿色单文件</span>
+    <span class="visit-counter" data-visit-counter title="匿名统计，不使用 Cookie，仅统计浏览人数与浏览量。"><span class="vc-seg" data-visit-segment="visitors" hidden><span class="vc-label">访问人数</span> <b data-visit-visitors>–</b></span><span class="vc-sep" data-visit-sep hidden aria-hidden="true">·</span><span class="vc-seg" data-visit-segment="views" hidden><span class="vc-label">浏览量</span> <b data-visit-views>–</b></span></span>
+  </div>
+</footer>
+<div class="lightbox" data-lightbox aria-hidden="true">
+  <button class="lightbox-close" data-lightbox-close aria-label="关闭">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <img alt="">
+  <span class="lightbox-caption"></span>
+</div>
+</body>
+</html>

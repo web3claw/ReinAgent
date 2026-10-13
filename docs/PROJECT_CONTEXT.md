@@ -1894,3 +1894,28 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
   - 前端 `bun run build` 构建通过；
   - Rust `cargo check` 退出码 0。
 
+
+
+## 十八、官网静态站（GitHub Pages，2026-10-13 落地）
+
+`docs/` 目录同时承担两个职责：项目内部文档（本白皮书、PROMPTS、archived/ROADMAP）与 ReinAgent 官网静态站根目录。站点由 GitHub Pages 以 **GitHub Actions** 方式部署（`.github/workflows/pages.yml`，`path: docs`），线上地址 `https://web3claw.github.io/ReinAgent/`。
+
+### 站点结构
+
+- **页面骨架与设计系统**：`docs/assets/site.css`（语义化 CSS 变量、明暗主题、卡片/文档/代码块组件）与 `docs/assets/site.js`（主题切换、移动端导航、代码复制、截图灯箱、访问计数、版本号拉取）改编自 Hetu 官方站（Apache-2.0），署名见 `docs/ATTRIBUTION.md`。
+- **首页**：`docs/index.html`，hero + 六张能力卡 + 界面画廊 + 两种跑法 + 文档卡片。
+- **功能文档**：`docs/guide/*.html`，共 20 页（功能文档 8、深入实现 4、设计与运维 5、工程文档 3），侧栏按分组列出并自动高亮当前页。
+- **工程文档页**：`guide/PROJECT_CONTEXT.html`、`guide/PROMPTS.html`、`guide/ROADMAP.html` 由仓库 Markdown 原文用 `Bun.markdown.html()` 渲染生成，Markdown 内的相对链接（`./PROMPTS.md`、`src/**` 等）在生成阶段重写为站内 HTML 页或 GitHub 绝对链接。
+- **英文落地页**：`docs/en/index.html`（文档正文目前仅中文，英文页为现状说明）。
+- **图片**：`docs/ReinAgent.png` 为仓库自有界面图；参考站点的截图已移除，不引用任何非 ReinAgent 界面图。
+
+### 生成与维护
+
+- 生成脚本：`.ReinAgent/tools/build-site.js`（站点生成器，产物写入 `docs/`，不污染工作区与项目根）。
+- **同步约定**：修改 `README.md`、`PROJECT_CONTEXT.md`、`PROMPTS.md` 或 `archived/ROADMAP.md` 后，若需官网同步，重新执行 `bun run .ReinAgent/tools/build-site.js` 并提交 `docs/` 产物。
+- 链接校验脚本：`.ReinAgent/tools/check-links.js`（站内链接存在性 + 品牌残留检查）。
+- 本地预览：`python3 -m http.server 8000 --directory docs`。
+
+### 部署前置
+
+仓库 Settings → Pages 的 Source 必须设为 **GitHub Actions**（分支部署只支持 `/` 或 `/docs` 根，且根目录 `index.html` 已被 Vite/Tauri 应用占用）。

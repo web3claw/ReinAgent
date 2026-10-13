@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>审批与检查点 · ReinAgent 文档</title>
+<meta name="description" content="四档审批模式、检查点与原子回退">
+<meta name="theme-color" content="#4f46e5">
+<link rel="canonical" href="https://web3claw.github.io/ReinAgent/guide/permissions.html">
+<link rel="alternate" hreflang="zh-CN" href="https://web3claw.github.io/ReinAgent/guide/permissions.html">
+<link rel="alternate" hreflang="en" href="https://web3claw.github.io/ReinAgent/en/">
+<link rel="alternate" hreflang="x-default" href="https://web3claw.github.io/ReinAgent/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ReinAgent">
+<meta property="og:title" content="审批与检查点 · ReinAgent 文档">
+<meta property="og:description" content="四档审批模式、检查点与原子回退">
+<meta property="og:url" content="https://web3claw.github.io/ReinAgent/guide/permissions.html">
+<meta property="og:image" content="https://web3claw.github.io/ReinAgent/ReinAgent.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要内容</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg>
+      <span>ReinAgent<small>本地优先 AI 编程与桌面 Agent</small></span>
+    </a>
+    <button class="icon-btn nav-toggle" data-nav-toggle aria-expanded="false" aria-label="展开导航">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="../index.html">首页</a>
+      <a href="../guide/index.html" aria-current="page">文档</a>
+      <a href="../guide/architecture.html">架构</a>
+      <a href="../guide/getting-started.html">下载</a>
+      <a href="../guide/faq.html">FAQ</a>
+    </nav>
+    <div class="header-actions">
+      <span class="lang" role="group" aria-label="Language">
+        <a href="#" aria-current="true">中文</a>
+        <a href="../en/index.html" title="English version">EN</a>
+      </span>
+      <button class="icon-btn" data-theme-toggle aria-label="切换主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3v2m0 14v2M5.6 5.6 7 7m10 10 1.4 1.4M3 12h2m14 0h2M5.6 18.4 7 17m10-10 1.4-1.4"/><circle cx="12" cy="12" r="3.2"/></svg>
+      </button>
+      <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+        下载 <span data-latest-version>v0.1.18</span>
+      </a>
+    </div>
+  </div>
+</header>
+<main id="main">
+  <div class="wrap docs">
+<aside class="docs-side">
+    <h2>功能文档</h2>
+    <ol>
+      <li><a href="getting-started.html">快速开始</a></li>
+      <li><a href="workspace.html">Agent 工作台</a></li>
+      <li><a href="permissions.html" aria-current="page">审批与检查点</a></li>
+      <li><a href="models.html">模型与协议</a></li>
+      <li><a href="memory.html">本地长期记忆</a></li>
+      <li><a href="git.html">Git 工作台</a></li>
+      <li><a href="extensions.html">扩展与集成</a></li>
+      <li><a href="automation.html">自动化与定时任务</a></li>
+    </ol>
+    <h2>深入实现</h2>
+    <ol>
+      <li><a href="agent-loop.html">Agent 运行回路</a></li>
+      <li><a href="context.html">上下文预算与压缩</a></li>
+      <li><a href="trajectory.html">轨迹分析与请求预览</a></li>
+      <li><a href="architecture.html">架构与实现</a></li>
+    </ol>
+    <h2>设计与运维</h2>
+    <ol>
+      <li><a href="desktop.html">桌面与三端适配</a></li>
+      <li><a href="remote.html">远程访问与隧道</a></li>
+      <li><a href="data.html">数据与安全</a></li>
+      <li><a href="faq.html">常见问题</a></li>
+      <li><a href="dev.html">参与开发</a></li>
+    </ol>
+    <h2>工程文档（仓库原文）</h2>
+    <ol>
+      <li><a href="PROJECT_CONTEXT.html">项目全景架构白皮书</a></li>
+      <li><a href="PROMPTS.html">提示词参考与现状</a></li>
+      <li><a href="ROADMAP.html">功能路线图归档</a></li>
+    </ol>
+  </aside>
+    <div class="docs-body">
+      <h1>审批与检查点</h1>
+      <p class="lede">四档审批模式、检查点与原子回退</p>
+<p>ReinAgent 的每一步写操作与命令执行都可审批、可回退。这是它与「只给建议」的对话式工具最本质的差别。</p>
+
+<h2>四档审批模式（ApprovalMode）</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>模式</th><th>行为</th></tr></thead>
+  <tbody>
+    <tr><td><code>plan</code></td><td>计划模式，只读调研，拦截一切修改操作</td></tr>
+    <tr><td><code>ask</code></td><td>变更前审批，写文件与执行命令均需确认</td></tr>
+    <tr><td><code>edit</code></td><td>自动放行编辑，执行命令时弹窗确认</td></tr>
+    <tr><td><code>full</code></td><td>完全访问直通</td></tr>
+  </tbody>
+</table></div>
+<p>审批基于 <code>beforeToolCall</code> 挂起机制实现：审批触发时 Agent 运行回路安全暂停，用户决策后即时恢复，不会丢失中间状态。</p>
+
+<h2>代码改动检查点与原子回退</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>机制</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>前像留存</td><td>文件被修改前由 Rust 后端自动留存前像</td></tr>
+    <tr><td>逐轮撤销</td><td>UI 支持按轮次撤销代码改动（Checkpoint & Rewind）</td></tr>
+    <tr><td>冲突防护</td><td>基于 SHA-256 指纹的 TOCTOU 冲突检测，避免覆盖外部改动</td></tr>
+  </tbody>
+</table></div>
+<div class="note">检查点保存在 <code>~/.ReinAgent/checkpoints/&lt;taskId&gt;/</code>，仅供本机会话回退使用。</div>
+
+<h2>内置工具与尺寸闸门</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>工具</th><th>尺寸约束</th></tr></thead>
+  <tbody>
+    <tr><td><code>read_file</code></td><td>2000 行 / 256KB 上限</td></tr>
+    <tr><td><code>write_file</code> / <code>edit_file</code></td><td>受审批模式约束的受控写入</td></tr>
+    <tr><td><code>list_dir</code></td><td>8KB 输出上限</td></tr>
+    <tr><td><code>exec_command</code></td><td>30KB 内联收集</td></tr>
+  </tbody>
+</table></div>
+    <div class="docs-pager"><span><a href="workspace.html">← Agent 工作台</a></span><span><a href="models.html">模型与协议 →</a></span></div>
+    </div>
+  </div>
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <span>© 2026 ReinAgent Contributors · MIT</span>
+    <nav aria-label="页脚导航">
+      <a href="../guide/index.html">文档</a>
+      <a href="https://github.com/web3claw/ReinAgent">GitHub</a>
+      <a href="https://github.com/web3claw/ReinAgent/releases">更新日志</a>
+      <a href="https://github.com/web3claw/ReinAgent/blob/main/AGENTS.md">实现约定</a>
+      <a href="../guide/dev.html">参与开发</a>
+      <a href="../ATTRIBUTION.md">站点署名</a>
+    </nav>
+    <span class="spacer">本地优先 · 三端原生 · 绿色单文件</span>
+    <span class="visit-counter" data-visit-counter title="匿名统计，不使用 Cookie，仅统计浏览人数与浏览量。"><span class="vc-seg" data-visit-segment="visitors" hidden><span class="vc-label">访问人数</span> <b data-visit-visitors>–</b></span><span class="vc-sep" data-visit-sep hidden aria-hidden="true">·</span><span class="vc-seg" data-visit-segment="views" hidden><span class="vc-label">浏览量</span> <b data-visit-views>–</b></span></span>
+  </div>
+</footer>
+<div class="lightbox" data-lightbox aria-hidden="true">
+  <button class="lightbox-close" data-lightbox-close aria-label="关闭">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <img alt="">
+  <span class="lightbox-caption"></span>
+</div>
+</body>
+</html>

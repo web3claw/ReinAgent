@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>功能路线图归档 · ReinAgent 文档</title>
+<meta name="description" content="与 LiveAgent / ZCode 的差距分析、工具系统、上下文工程与优先级路线图（仓库内 archived/ROADMAP.md 原文）。">
+<meta name="theme-color" content="#4f46e5">
+<link rel="canonical" href="https://web3claw.github.io/ReinAgent/guide/ROADMAP.html">
+<link rel="alternate" hreflang="zh-CN" href="https://web3claw.github.io/ReinAgent/guide/ROADMAP.html">
+<link rel="alternate" hreflang="en" href="https://web3claw.github.io/ReinAgent/en/">
+<link rel="alternate" hreflang="x-default" href="https://web3claw.github.io/ReinAgent/">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="ReinAgent">
+<meta property="og:title" content="功能路线图归档 · ReinAgent 文档">
+<meta property="og:description" content="与 LiveAgent / ZCode 的差距分析、工具系统、上下文工程与优先级路线图（仓库内 archived/ROADMAP.md 原文）。">
+<meta property="og:url" content="https://web3claw.github.io/ReinAgent/guide/ROADMAP.html">
+<meta property="og:image" content="https://web3claw.github.io/ReinAgent/ReinAgent.png">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="../assets/site.css">
+<script defer src="../assets/site.js"></script>
+</head>
+<body>
+<a class="skip" href="#main">跳到主要内容</a>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="../index.html">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg>
+      <span>ReinAgent<small>本地优先 AI 编程与桌面 Agent</small></span>
+    </a>
+    <button class="icon-btn nav-toggle" data-nav-toggle aria-expanded="false" aria-label="展开导航">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg>
+    </button>
+    <nav class="site-nav" aria-label="主导航">
+      <a href="../index.html">首页</a>
+      <a href="../guide/index.html" aria-current="page">文档</a>
+      <a href="../guide/architecture.html">架构</a>
+      <a href="../guide/getting-started.html">下载</a>
+      <a href="../guide/faq.html">FAQ</a>
+    </nav>
+    <div class="header-actions">
+      <span class="lang" role="group" aria-label="Language">
+        <a href="#" aria-current="true">中文</a>
+        <a href="../en/index.html" title="English version">EN</a>
+      </span>
+      <button class="icon-btn" data-theme-toggle aria-label="切换主题">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><path d="M12 3v2m0 14v2M5.6 5.6 7 7m10 10 1.4 1.4M3 12h2m14 0h2M5.6 18.4 7 17m10-10 1.4-1.4"/><circle cx="12" cy="12" r="3.2"/></svg>
+      </button>
+      <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
+        下载 <span data-latest-version>v0.1.18</span>
+      </a>
+    </div>
+  </div>
+</header>
+<main id="main">
+  <div class="wrap docs">
+<aside class="docs-side">
+    <h2>功能文档</h2>
+    <ol>
+      <li><a href="getting-started.html">快速开始</a></li>
+      <li><a href="workspace.html">Agent 工作台</a></li>
+      <li><a href="permissions.html">审批与检查点</a></li>
+      <li><a href="models.html">模型与协议</a></li>
+      <li><a href="memory.html">本地长期记忆</a></li>
+      <li><a href="git.html">Git 工作台</a></li>
+      <li><a href="extensions.html">扩展与集成</a></li>
+      <li><a href="automation.html">自动化与定时任务</a></li>
+    </ol>
+    <h2>深入实现</h2>
+    <ol>
+      <li><a href="agent-loop.html">Agent 运行回路</a></li>
+      <li><a href="context.html">上下文预算与压缩</a></li>
+      <li><a href="trajectory.html">轨迹分析与请求预览</a></li>
+      <li><a href="architecture.html">架构与实现</a></li>
+    </ol>
+    <h2>设计与运维</h2>
+    <ol>
+      <li><a href="desktop.html">桌面与三端适配</a></li>
+      <li><a href="remote.html">远程访问与隧道</a></li>
+      <li><a href="data.html">数据与安全</a></li>
+      <li><a href="faq.html">常见问题</a></li>
+      <li><a href="dev.html">参与开发</a></li>
+    </ol>
+    <h2>工程文档（仓库原文）</h2>
+    <ol>
+      <li><a href="PROJECT_CONTEXT.html">项目全景架构白皮书</a></li>
+      <li><a href="PROMPTS.html">提示词参考与现状</a></li>
+      <li><a href="ROADMAP.html" aria-current="page">功能路线图归档</a></li>
+    </ol>
+  </aside>
+    <div class="docs-body">
+      <h1>功能路线图归档</h1>
+      <p class="lede">与 LiveAgent / ZCode 的差距分析、工具系统、上下文工程与优先级路线图（仓库内 archived/ROADMAP.md 原文）。</p>
+<div class="note">本页为仓库内 <code>docs/archived/ROADMAP.md</code> 的原文渲染版本，随代码同步更新。原文以仓库文件为准。</div>
+<div class="md-original"><blockquote>
+<p><strong>文档定位（历史归档）</strong>：本篇记录 2026-09-28 对 LiveAgent / ZCode 两个参考实现做全量功能面穷举后，与 ReinAgent 当时现状比对得出的差距清单与阶段性开发路线图。
+<strong>参考源码</strong>（严禁反编译，直接查源码）：LiveAgent 源码、ZCode 源码。
+<strong>归档说明</strong>：本路线图规划的绝大部分核心能力（检查点原子回滚、Git 工作台、子代理系统、长期记忆、自动化、全链路代理、Cloudflare 隧道等）已全部开发完毕并经全面测试验证。项目的最新全景架构与单一真相源请以 <strong><a href="PROJECT_CONTEXT.html">PROJECT_CONTEXT.md</a></strong> 为准。</p>
+</blockquote>
+<h2>〇、总览</h2>
+<p>聊天核心链路（会话池 / 流式渲染 / 编辑重发 / 重试 / 分支 / checkpoint 回退 / 审批四档 / 任务级隔离）已与两家对齐；Skills / MCP / Memory 三 Hub 已全量移植。<strong>最大差距集中在三块</strong>：</p>
+<ol>
+<li><strong>工具系统</strong>：我们仅 5 个工具（read/write/edit/list_dir/exec），两家 25~30 个（搜索/后台任务/待办/子代理/联网/问答…）；</li>
+<li><strong>上下文工程</strong>：无历史压缩（长会话会撑爆窗口）、无 microcompact、@提及与斜杠命令只有空壳、无 AGENTS.md/gitStatus 注入；</li>
+<li><strong>子代理 / Git 面板群 / 桌面集成</strong>（托盘、通知、快捷键、更新器）整体缺失。</li>
+</ol>
+<hr />
+<h2>一、工具系统（差距最大）</h2>
+<table>
+<thead>
+<tr><th>功能</th><th>LiveAgent</th><th>ZCode</th><th>ReinAgent</th><th>参考定位（LA / ZCode）</th></tr>
+</thead>
+<tbody>
+<tr><td>read / write / edit / list_dir</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
+<tr><td><strong>Glob / Grep（模式与内容搜索）</strong></td><td>✅</td><td>✅</td><td>✅ 2026-09-28</td><td>LA <code>lib/tools/fsTools.ts</code>；ZCode <code>tool/handlers/glob.ts</code>、<code>grep.ts</code></td></tr>
+<tr><td><strong>Todo 清单工具 + 进度 UI</strong></td><td>✅ Task*</td><td>✅</td><td>✅ 2026-09-28</td><td>LA <code>lib/tools/taskTools.ts</code> + TaskProgressBar；ZCode <code>handlers/todo.ts</code></td></tr>
+<tr><td><strong>后台 Bash（驻留进程 / TaskOutput / TaskStop / 输出侧栏）</strong></td><td>✅ ManagedProcess</td><td>✅</td><td>❌（exec 为同步 120s 阻塞）</td><td>LA <code>lib/tools/processTools.ts</code>；ZCode <code>handlers/bash-background-*.ts</code>、<code>ui/app-shell/BackgroundBashOutputSidePane.tsx</code></td></tr>
+<tr><td><strong>WebFetch / WebSearch</strong></td><td>✅ hosted search</td><td>✅</td><td>❌（零联网）</td><td>LA <code>lib/tools/nativeWebSearch.ts</code>；ZCode <code>handlers/webfetch*.ts</code>、<code>websearch*.ts</code></td></tr>
+<tr><td>Node REPL 沙箱</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>handlers/node-repl.ts</code>、<code>core/repl/</code></td></tr>
+<tr><td>图片 / PDF / 视频读取</td><td>✅ Image</td><td>✅</td><td>❌（read_file 仅文本）</td><td>ZCode <code>handlers/read-image.ts</code>、<code>read-pdf.ts</code>、<code>read-video.ts</code></td></tr>
+<tr><td>文件删除 Delete</td><td>✅</td><td>—</td><td>✅ 2026-09-28</td><td>LA <code>fsTools.ts</code></td></tr>
+<tr><td>Skill 工具（按需加载技能全文）</td><td>✅</td><td>✅</td><td>❌（现靠 read_file 读 skill://）</td><td>LA <code>lib/tools/skillTools.ts</code>；ZCode <code>handlers/skill.ts</code></td></tr>
+<tr><td><strong>子代理系统</strong>（Agent/SendMessage/Explore/自定义 profile/持久记忆/运行目录侧栏）</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>lib/subagents/</code>、<code>workspace/subagent_worktree.rs</code>；ZCode <code>core/subagent/</code>、<code>ui/app-shell/SubagentDirectorySidePane.tsx</code></td></tr>
+<tr><td><strong>AskUserQuestion / Clarify 追问卡</strong></td><td>✅</td><td>✅</td><td>❌（模型无法向用户提问）</td><td>LA <code>components/chat/AskUserQuestionCard.tsx</code>、<code>clarifyRunner.ts</code>；ZCode <code>handlers/ask-user-question.ts</code>、<code>V4UserInputDialog.tsx</code></td></tr>
+<tr><td><strong>ExitPlanMode / 计划侧栏 / escalate</strong></td><td>✅ ExitPlanMode</td><td>✅</td><td>❌（计划模式仅提示词约束）</td><td>LA <code>planModeTools.ts</code>；ZCode <code>handlers/plan-mode.ts</code>、<code>escalate.ts</code>、<code>app-shell/PlanDetailSidePane.tsx</code></td></tr>
+<tr><td>Cron 管理工具（模型自主管理定时任务）</td><td>✅</td><td>✅</td><td>❌（自动化仅 UI 入口）</td><td>LA <code>cronTools.ts</code>；ZCode <code>handlers/cron.ts</code></td></tr>
+<tr><td>ReadConversation / ReadSessionContext（读历史会话）</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>conversationTools.ts</code>；ZCode <code>handlers/read-session-context.ts</code></td></tr>
+<tr><td>ToolSearch（工具目录检索）</td><td>✅</td><td>—</td><td>❌</td><td>LA <code>toolSearchTools.ts</code></td></tr>
+<tr><td>动态工作流（创建/修订/评估/运行可视化/保存）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>core/workflow/</code>、<code>ui/app-shell/WorkflowRunSidePane*</code></td></tr>
+<tr><td>浏览器驱动 / Computer Use</td><td>✅ Browser</td><td>✅ CUA</td><td>❌</td><td>LA <code>browserTools.ts</code>、<code>services/browser/</code>；ZCode <code>packages/zcode-cua/</code></td></tr>
+</tbody>
+</table>
+<hr />
+<h2>二、上下文工程</h2>
+<table>
+<thead>
+<tr><th>功能</th><th>LiveAgent</th><th>ZCode</th><th>ReinAgent</th><th>参考定位</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>历史压缩 compact</strong>（阈值/策略/摘要模型/手动触发/压缩带 UI）</td><td>✅ 双层检查点</td><td>✅</td><td>✅ 2026-09-28（批次 D）</td><td>LA <code>lib/chat/compaction/</code>（policy/engine/summarizer/tokenLedger）+ <code>CompactionBand.tsx</code>；ZCode <code>core/compact/</code>（policy/manual/prompt）</td></tr>
+<tr><td><strong>microcompact（工具结果裁剪）</strong></td><td>—</td><td>✅</td><td>✅ 2026-09-28（批次 D）</td><td>ZCode <code>runtime/methods/microcompact.ts</code></td></tr>
+<tr><td>system-reminder 包装 / meta_user 通道</td><td>✅</td><td>✅</td><td>✅（2026-09-28 已对齐）</td><td>本项目 <code>runAgentTurn.ts buildMetaUserBlock</code>，见 PROMPTS.md 2.1</td></tr>
+<tr><td><strong>@提及系统</strong>（文件提及 + 注入）</td><td>✅</td><td>✅</td><td>✅ 2026-09-28（文件提及；技能/agent 提及待技能工具后）</td><td>LA <code>MentionComposer*</code>、<code>mentionInjection.ts</code>；ZCode <code>ui/mentions/</code></td></tr>
+<tr><td><strong>斜杠命令</strong>（自定义命令文件 + 内置命令）</td><td>✅</td><td>✅</td><td>✅ 2026-09-28（/clear 实义、/compact 占位；插件命令二期）</td><td>LA <code>skillTools</code>；ZCode <code>ui/slashCommandHelpers.ts</code>、<code>svc/commands/</code></td></tr>
+<tr><td>AGENTS.md 注入（OVERRIDE + 免责）</td><td>✅</td><td>✅</td><td>❌（落位已备：meta_user 块）</td><td>ZCode <code>context/sections/request-user-context.ts</code></td></tr>
+<tr><td>gitStatus 快照注入</td><td>—</td><td>✅</td><td>❌（落位已备：meta_user 块）</td><td>ZCode <code>context/sections/env-info.ts</code></td></tr>
+<tr><td>会话指引动态段（按可用工具变化）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>context/dynamic-sections.ts buildSessionGuidanceSection</code></td></tr>
+<tr><td>记忆 Organizer 引擎 + Extraction 自动抽取</td><td>✅</td><td>✅</td><td>⚠️ Rust 表/命令与 UI 已备，二期接线（已定档）</td><td>LA <code>lib/memory/organizer/service.ts</code>；ZCode <code>core/memory/</code></td></tr>
+<tr><td>跨会话上下文读取</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>core/session-context/</code></td></tr>
+</tbody>
+</table>
+<hr />
+<h2>三、权限与安全</h2>
+<table>
+<thead>
+<tr><th>功能</th><th>LiveAgent</th><th>ZCode</th><th>ReinAgent</th><th>参考定位</th></tr>
+</thead>
+<tbody>
+<tr><td>审批四档 + 挂起审批</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
+<tr><td><strong>工具级策略</strong>（每工具 allow/ask/deny，Hub 内切换）</td><td>✅ ToolPolicyToggle</td><td>✅ broker+rule-matching</td><td>❌ 一期裁剪（UI 组件 <code>lw/hub/ToolPolicyToggle.tsx</code> 已备，缺设置切片）</td><td>LA <code>toolPolicy.ts</code>、<code>WorkbenchToolPolicySection</code>；ZCode <code>core/permission/broker.ts</code></td></tr>
+<tr><td>审批恢复（重启后待审横幅）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>runtime/permission-grant-recovery.ts</code>、<code>PendingCommandRecoveryBanner.tsx</code></td></tr>
+<tr><td>沙箱能力探测 / 工作区根授权</td><td>✅</td><td>✅(部分)</td><td>❌</td><td>LA <code>sandboxPolicy</code>、<code>root_grants.rs</code></td></tr>
+<tr><td>MCP Elicitation 弹窗</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/ElicitationDialog.tsx</code></td></tr>
+</tbody>
+</table>
+<hr />
+<h2>四、Git 与工作区面板</h2>
+<table>
+<thead>
+<tr><th>功能</th><th>LiveAgent</th><th>ZCode</th><th>ReinAgent</th><th>参考定位</th></tr>
+</thead>
+<tbody>
+<tr><td>变更摘要卡 / 文件回退</td><td>✅</td><td>✅</td><td>✅（摘要卡 + checkpoint/rewind）</td><td>—</td></tr>
+<tr><td><strong>Git 面板群</strong>（分支切换器 / 提交图谱 / 变更卡 / 代码审查 tab）</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>commands/workspace/git.rs</code>、<code>RightDock*</code>；ZCode <code>ui/GitPane*.tsx</code>、<code>git-graph/</code>、<code>previewPaneCodeReview.ts</code></td></tr>
+<tr><td><strong>工作区文件树</strong>（git 状态着色 / 监视刷新 / 拖拽）</td><td>✅</td><td>✅</td><td>❌（预览面板内文件树未接）</td><td>ZCode <code>ui/workspace-file-tree/</code></td></tr>
+<tr><td>工作区文件搜索（索引 / worker）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/workspace-file-search/</code></td></tr>
+<tr><td>多终端标签 + 租约管理</td><td>✅</td><td>✅</td><td>⚠️ 单终端 Pane</td><td>LA <code>TerminalPaneHost</code>、<code>terminalPaneLeaseStore</code></td></tr>
+</tbody>
+</table>
+<hr />
+<h2>五、聊天 UX 与通知</h2>
+<table>
+<thead>
+<tr><th>功能</th><th>LiveAgent</th><th>ZCode</th><th>ReinAgent</th><th>参考定位</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>回合队列</strong>（忙时排队发送 + 队列面板）</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>chat/queue/chatTurnQueue.ts</code>；ZCode <code>v4/</code> 排队消息面板</td></tr>
+<tr><td><strong>后台任务完成系统通知 + 提示音 + 未读角标 + 审批红点</strong></td><td>✅</td><td>✅</td><td>❌（多任务并行的体验缺口）</td><td>LA <code>useNotifyToasts.ts</code>；ZCode <code>lib/taskNotificationOrchestrator.ts</code></td></tr>
+<tr><td>草稿持久化 / 提示词历史翻页</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>chat/composer/</code>；ZCode <code>chatComposerDraftStorage.ts</code></td></tr>
+<tr><td>滚动位置记忆</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>lib/chatSessionScrollMemory.ts</code></td></tr>
+<tr><td>命令面板（全局快捷命令 + 历史）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/command-center/</code></td></tr>
+<tr><td>选区侧聊（选中代码侧边提问）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>app-shell/SelectionSideChatPane.tsx</code></td></tr>
+<tr><td>错误归因横幅（分类 + 证据）</td><td>⚠️</td><td>✅</td><td>⚠️ 有错误行 + hint</td><td>ZCode <code>ChatErrorBanner.tsx</code>、<code>lib/chatErrorAttribution.ts</code></td></tr>
+<tr><td>任务归档 / 批量删除</td><td>⚠️</td><td>✅</td><td>❌</td><td>ZCode <code>lib/archivedTaskDeletion.ts</code></td></tr>
+<tr><td>办公 / 新手双模式 UI</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/onboarding/</code></td></tr>
+</tbody>
+</table>
+<hr />
+<h2>六、预览与可视化</h2>
+<table>
+<thead>
+<tr><th>功能</th><th>LiveAgent</th><th>ZCode</th><th>ReinAgent</th><th>参考定位</th></tr>
+</thead>
+<tbody>
+<tr><td>代码 / Markdown / 图片 / patch 预览</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
+<tr><td><strong>PDF / Office（docx/xlsx/pptx）渲染引擎</strong></td><td>✅</td><td>✅</td><td>❌（诚实降级 stub，见 PROJECT_CONTEXT 十一）</td><td>ZCode <code>ui/previewPane*Content.tsx</code>、<code>presentation/</code></td></tr>
+<tr><td>演示文稿渲染 + PDF 导出</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/presentation/</code></td></tr>
+<tr><td>白板（画笔/导出/加入聊天）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/WhiteboardPane.tsx</code></td></tr>
+<tr><td>Treemapping 回合文件活动图</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/TreemappingPane.tsx</code></td></tr>
+<tr><td>助手产物预览卡（HTML/PPTX 自动打开）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/AssistantPreviewCards.tsx</code></td></tr>
+</tbody>
+</table>
+<hr />
+<h2>七、模型与用量</h2>
+<table>
+<thead>
+<tr><th>功能</th><th>LiveAgent</th><th>ZCode</th><th>ReinAgent</th><th>参考定位</th></tr>
+</thead>
+<tbody>
+<tr><td>多协议多模型 / 自定义 BaseURL / 元数据编辑</td><td>✅</td><td>✅</td><td>✅</td><td>—</td></tr>
+<tr><td><strong>模型元数据真实解析（弃写死 128K/8192）</strong></td><td>✅</td><td>✅</td><td>✅ 2026-09-28（批次 A2）</td><td>见 PROJECT_CONTEXT 十.4</td></tr>
+<tr><td>Provider 故障转移</td><td>✅</td><td>✅(部分)</td><td>❌（仅重试）</td><td>LA <code>providerFailover</code>、<code>model_failover.rs</code></td></tr>
+<tr><td>原生联网搜索</td><td>✅</td><td>—</td><td>❌</td><td>LA <code>nativeWebSearch</code></td></tr>
+<tr><td><strong>用量统计图表</strong>（日趋势 / 模型饼图 / 热力图 / 配额）</td><td>✅</td><td>✅</td><td>⚠️ 仅会话统计行</td><td>ZCode <code>ui/settings/usage-stats/</code></td></tr>
+<tr><td>缓存前缀调试 / 模型轨迹调试面板</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>lib/debug/agentDebug</code>；ZCode <code>ui/ModelTrajectory*</code></td></tr>
+<tr><td>推理等级与步数联动</td><td>✅ thinkingLevels</td><td>✅</td><td>✅</td><td>—</td></tr>
+</tbody>
+</table>
+<hr />
+<h2>八、桌面集成与杂项</h2>
+<table>
+<thead>
+<tr><th>功能</th><th>LiveAgent</th><th>ZCode</th><th>ReinAgent</th><th>参考定位</th></tr>
+</thead>
+<tbody>
+<tr><td>系统托盘 / 全局快捷键（录制/冲突检测）</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>trayMenu</code>、<code>globalShortcuts</code>；ZCode <code>ui/shortcuts/</code></td></tr>
+<tr><td>自动更新器 + 发布公告</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>update.rs</code>、<code>appUpdates.ts</code></td></tr>
+<tr><td>Hooks 生命周期钩子（脚本/HTTP + 信任评审）</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>hookLifecycle.ts</code>、<code>HookModal</code>；ZCode <code>core/hooks/workspace-hook-*.ts</code></td></tr>
+<tr><td>插件系统（商店/市场源/创建器）</td><td>—</td><td>✅</td><td>❌（侧栏入口已删）</td><td>ZCode <code>ui/settings/PluginStore*.tsx</code>、<code>svc/plugins/</code></td></tr>
+<tr><td>STT 语音输入（5 家供应商）</td><td>✅</td><td>—</td><td>❌</td><td>LA <code>services/stt/</code>、<code>useComposerStt</code></td></tr>
+<tr><td>WebDAV 备份同步 / Cherry Studio 导入</td><td>✅</td><td>—</td><td>❌</td><td>LA <code>webdav_auto_sync.rs</code>、<code>cherry_import.rs</code></td></tr>
+<tr><td>轨迹回放（时间线/小地图/子代理泳道）</td><td>✅</td><td>—</td><td>❌</td><td>LA <code>lib/trajectory/</code>、<code>components/trajectory/</code></td></tr>
+<tr><td>资源管理器（存储扫描 / 清理 / 重算）</td><td>—</td><td>✅</td><td>⚠️ 仅 temp 目录清理按钮</td><td>ZCode <code>ui/resource-manager/</code></td></tr>
+<tr><td>Onboarding（模式引导 / 外部代理导入 / Claude 会话迁移）</td><td>—</td><td>✅</td><td>❌</td><td>ZCode <code>ui/onboarding/</code>、<code>ExternalAgentImportDialog.tsx</code></td></tr>
+<tr><td>电源活动（阻止休眠）/ 字体管理 / 深链</td><td>✅</td><td>✅</td><td>❌</td><td>LA <code>power_activity.rs</code>、<code>fonts.rs</code></td></tr>
+<tr><td>桌面单机可缓的远程协作面</td><td>✅ gateway/WebUI/设备/隧道/SSH</td><td>✅ SSH/Bots/分享/同步/订阅</td><td>❌（不实现）</td><td>LA <code>crates/agent-gateway</code>；ZCode <code>svc/bots/</code>、<code>packages/server/</code>、Coding Plan</td></tr>
+</tbody>
+</table>
+<hr />
+<h2>九、优先级路线图</h2>
+<h3>P0 —— 补核心能力（&quot;家底&quot;级，建议优先）</h3>
+<ol>
+<li><del><strong>工具扩军第一批</strong></del> ✅ 2026-09-28（批次 B：glob/grep/delete_file/todo_write + Todo 卡 + 进度条；工具总数 5→9）</li>
+<li><del><strong>历史压缩 compact + microcompact</strong></del> ✅ 2026-09-28（批次 D：阈值 80% 自动压缩 + /compact 手动 + 压缩带 UI + microcompact 裁工具结果）</li>
+<li><del><strong>模型元数据真实解析</strong></del> ✅ 2026-09-28（批次 A2：<code>buildModel</code> 按真实元数据，未知走「不钳制/不发送/不声明多模态」语义）</li>
+<li><del><strong>后台任务完成通知 + 审批红点</strong>（系统通知 + 提示音 + 侧栏未读角标）</del> ✅ 2026-09-28（批次 E，2f02b19）。</li>
+<li><del><strong>@提及与斜杠命令实义化</strong></del> ✅ 2026-09-28（批次 C：真菜单 + 命令文件扫描 + 提及内容注入；/compact 占位待批次 D）</li>
+<li><del><strong>回合状态条 attention 强制展开</strong>（「等待你的决定」时强制展开 + 隐藏窗口停表）</del> ✅ 2026-09-28（批次 A1）</li>
+</ol>
+<h3>P1 —— 差异化能力</h3>
+<ol start="7">
+<li><strong>子代理系统</strong>（<strong>两批完成</strong> ✅ 2026-09-28：引擎（嵌套 runTurn / Explore+general-purpose / 结构性禁递归 / 审批门继承）+ 回合内子代理卡 + <strong>后台子代理（run_in_background / subagent_output / 完成通知）+ 目录面板（Running/Ended/Stop/详情）</strong>；<strong>回放增量</strong> ✅ 2026-09-29（af0bc27：转录落 conversations.db message/part 表 task_id=<code>subagent:&lt;id&gt;</code> + SubagentReplay 完整回放，跨重启可看）；<strong>仍未做</strong>：自定义 agents/*.md profile、子代理私有上下文持久化与 resume）：ZCode <code>core/subagent/</code>、LA <code>lib/subagents/</code>。</li>
+<li><del><strong>AskUserQuestion + ExitPlanMode 交互闭环</strong></del> ✅ 2026-09-29 收口（7ea0c1d：ExitPlanMode 工具 + 审批门模式分支（仅计划模式可用）+ PlanModeCard 计划批准卡（markdown 渲染 / 批准切 ask 模式 / 拒绝带反馈）+ PLAN_MODE_PROMPT 重写；提问卡/提问工具 05ecc98 已有）：ZCode contracts/tools/plan-mode.ts。</li>
+<li><del><strong>后台 Bash</strong>（驻留进程 + TaskOutput/TaskStop）</del> ✅ 2026-09-28（Rust <code>bg_process.rs</code> 四命令 + <code>background_bash</code>/<code>task_output</code>/<code>task_stop</code> 三工具 + 回合内 turnActivity 标签；Tauri 实测闭环）。§11.5 增量未做：输出侧栏、输入框「后台工作」按钮/耗时标签。</li>
+<li><del><strong>WebFetch / WebSearch</strong>（含域名白名单与结果缓存）</del> ✅ 2026-09-28（Rust <code>web_tools.rs</code>：DDG 无 Key 搜索 + ureq 抓取 + 15min 缓存 + SSRF 防护 + 代理设置；UI 联网搜索聚合行「已搜索 N 次·N 个来源」）。§11.8 增量未做：来源行点击外链打开。</li>
+<li><del><strong>工具级策略</strong>（allow/ask/deny 三态 + Hub 内切换）</del> ✅ 2026-09-28（ee7fb11：任务级 toolPolicies + MCP Hub 卡 serverPolicy 切换）。</li>
+<li><del><strong>AGENTS.md + gitStatus 注入</strong>（落位 meta_user 块）</del> <strong>主体</strong> ✅ 2026-09-28（3d49fc7：agents_md.rs 四级回退扫描 + meta_user 注入）；gitStatus 快照未纳入（需异步 git + 缓存，见 PROMPTS.md 待办）。</li>
+<li><del><strong>用量统计图表</strong>（日趋势 / 模型分布 / 热力图）</del> ✅ 2026-09-28（<strong>复刻 ZCode 一致</strong>：源码直移 settings/usage-stats + Recharts + 52 周热力图每日/每周/累计 + 汇总条五指标 streak/peak/最长聊天 + 每日分模型趋势 + donut 份额；Rust 快照同形 AppUsageSnapshot）。未做增量：Coding Plan 远端配额面板、工具用量榜。</li>
+<li><del><strong>记忆 Organizer 接线 + Extraction 管线</strong></del> ✅ 2026-09-28/29 两批齐（Extraction 批 + <strong>Organizer 编排批</strong>：scan→cluster→plan→gate→apply 全链路 + 调度挂载 + Run Now + 历史弹窗；<strong>独立模型统一解析</strong> 88812f0——organizer 与 extraction 都吃 <code>MemorySettings.organizerModel</code>；reviewItems 持久化已实证）。summaryModel（对话总结模型选择器）暂为死设置，待压缩批接线。</li>
+<li><strong>排队消息面板 + 任务通知</strong>：<strong>通知/提示音/侧栏红点</strong> ✅ 批次 E（2f02b19）；<strong>steering 运行中引导 ✅</strong> 批次 F（SteerQueuePanel）。未做：完整排队面板（表头/上移/编辑撤回/打断并执行）、审批角标倒计时填充与 hover snooze。</li>
+</ol>
+<h3>P2 —— 完善与打磨</h3>
+<ol start="16">
+<li><del><strong>Git 面板群与工作区文件树</strong></del> ✅ 2026-09-29 收口（批次 D 面板/分支切换/变更卡/文件树 + 501c481 <strong>提交图谱</strong>（泳道算法）+ 68350dc <strong>代码审查预览模式</strong>（评论卡→行域高亮+内联覆盖）+ 10s 自动轮询）。</li>
+<li><strong>PDF / Office 预览引擎</strong> ✅ 批次 E（docx-preview + SheetJS，实测算例已清）；<strong>未做增量</strong>：助手产物预览卡（PPTX 自动打开）。</li>
+<li><strong>命令面板 / 托盘 / 自动更新器</strong> ✅ 2026-09-29（a63f48d Ctrl+K 面板 16 命令；9192cb5 托盘 tray-icon+菜单+左键切换显隐、updater 插件+设置卡片+minisign 密钥对）；<strong>未做</strong>：快捷键录制/冲突检测。</li>
+<li><strong>Hooks + 插件系统</strong> ✅ 2026-09-29 v1（bf72791：hook_execute/信任横幅/PreToolUse+UserPromptSubmit+Stop 三事件/宽松输出协议；f4123de：插件=本地目录+plugin.json 清单，贡献 slash 命令与 hooks，设置「插件」tab 安装/启停/卸载 + <strong>单实例锁</strong>）。<strong>未做</strong>：PostToolUse/PermissionRequest/SessionStart 事件、市场源（git/npm/github）、agent/skill 贡献、插件 userConfig。</li>
+<li><strong>STT 语音、轨迹回放、白板、Treemapping、Markdown 演示导出</strong>——暂缓未动。</li>
+<li><strong>草稿持久化</strong> ✅ A3（任务级 kv + 防抖）、<strong>错误归因横幅</strong> ✅ B1（六类分类徽标）、<strong>批量审批</strong> ✅ B2；未做：审批卡倒计时。</li>
+<li><strong>steering</strong> ✅ F1、<strong>命令安全模式选择器</strong> ✅ B3（确认即审批模式下拉）、ClarifyPanel <strong>不立项</strong>（ExitPlanMode 落地后由计划批准卡覆盖同类交互）。</li>
+<li><strong>代码评论卡</strong> ✅ C2（::code-comment 协议 + 提示词声明 6442152 + 弯引号容忍）、<strong>选区引用菜单</strong> ✅ C1；未做：选区侧聊、Node REPL 多图网格。</li>
+<li><strong>回顶按钮/dock 分离</strong> ✅ A2、<strong>加载更早消息</strong> ✅ A1b、<strong>会话内查找</strong> ✅ A1a、<strong>快照字段提示</strong> ✅ A4；未做：ConversationStatusPanel 分区分组面板。</li>
+<li><strong>工作流卡族、goal 卡</strong>——未做（依赖动态工作流立项）。</li>
+</ol>
+<h3>九尾巴任务（2026-09-29 一轮收口，#1-#9 全部 ✅）</h3>
+<p>用户排序（小→中→大）：#2 git 自动轮询 / #3 提交图谱 / #5 ::code-comment 提示词声明 / #8 Plan 工具化+ExitPlanMode / #4 代码审查预览模式 / #6 记忆管线独立模型 / #1 reviewItems 持久化（复核已修）/ #7 子会话持久化回放 / #9 Hooks+命令面板+托盘+更新器+插件 v1+单实例锁。
+逐项实现细节、提交号与实测记录见 <strong>PROJECT_CONTEXT.md 第十七/十八章「P2 尾巴批 1-9」</strong>。期间顺带修复：压缩会话刷新丢消息（持久化计数器）、会话 composer 草稿键污染、弯引号指令解析、两批缺失 i18n 键、托盘双图标。</p>
+<h3>暂缓（单机场景价值低 / 基建重）</h3>
+<p>远程网关与 WebUI、设备管理、隧道、SSH 远程工作区、会话分享、Bots 渠道、设置/技能/MCP 远程同步、Coding Plan 订阅类、遥测上报。</p>
+<hr />
+<h2>十一、会话内交互卡片（转写区 UI 细节清单）</h2>
+<blockquote>
+<p>2026-09-28 二次调研：把两家<strong>出现在对话流内的</strong>交互/状态 UI 逐项穷举后补齐。ReinAgent 已有项不再重复列 P0/P1（仅列增量细节）；标 <strong>【新】</strong> 的为完全缺失。</p>
+</blockquote>
+<h3>11.1 子智能体（重点）</h3>
+<table>
+<thead>
+<tr><th>项</th><th>LA</th><th>ZCode</th><th>我们</th><th>说明与参考</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>子代理卡片（回合内）</strong></td><td>✅ 每子代理一张卡：MetaTags（<code>agent 2/3</code>/status/<code>mode=worktree</code>/apply/cleanup）+ 代理名/role/task/worktree 分支/diffStat/untracked/错误；批量被拒另有 <code>subagent_batch</code> 卡</td><td>✅ <code>AgentToolCallBlock</code>：Bot 图标 + 类型标签 + 主文案（活动/输出）+ 子工具列表嵌入 + 后台 Agent 过程（启动中/已启动/失败、活动流、输出近 N 行）+ <strong>「在右侧打开」</strong> → SubagentSessionSidePane</td><td>❌ 【新】</td><td>LA <code>components/chat/assistant-bubble/ToolResultDisplay.tsx</code>(L966-1130)、<code>agent-gui/src/lib/subagents/cards.ts</code>；ZCode <code>ToolCallBlocks/renderers/agent.tsx</code>、<code>agentHelpers.ts</code>、<code>v4/ConversationRowView.tsx</code>(SubagentRowView L2074)</td></tr>
+<tr><td><strong>子代理目录侧栏</strong></td><td>—</td><td>✅ Running/Ended 两段 + 每行状态图标（running 转圈/waiting·blocked 暂停/success 对勾/failed 感叹/cancelled 禁止/lost 虚线圈）+ 标题/状态词/summary/相对时间，点击进会话；Ended 分页</td><td>❌ 【新】</td><td>ZCode <code>app-shell/SubagentDirectorySidePane.tsx</code>、<code>SubagentSessionSidePane.tsx</code>、<code>hooks/useSessionSubagents.ts</code></td></tr>
+<tr><td><strong>运行中子代理行 + 停止</strong></td><td>—</td><td>✅ 状态面板 Agents 分区，可折叠（折叠显最长运行时长·N 个运行中）+ 独立 Stop 按钮</td><td>❌ 【新】</td><td>ZCode <code>v4/ConversationStatusPanel.tsx</code>(SubagentStatusSection)</td></tr>
+</tbody>
+</table>
+<h3>11.2 提问 / 澄清（重点）</h3>
+<table>
+<thead>
+<tr><th>项</th><th>LA</th><th>ZCode</th><th>我们</th><th>说明与参考</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>AskUserQuestion 卡（回合内）</strong></td><td>✅ 逐题单选、推荐项绿标「推荐」+ 描述、底部 <code>1 / N</code> + 上下箭头切题（滑动动画）、「跳过/继续/提交回答」、「其他（自行输入）」内嵌框（Enter 提交）、倒计时「m:ss 后自动选择推荐项」（到点按推荐锁定）；落定后只读三态：已提交/应答超时按推荐继续/已取消；提交失败红字</td><td>✅ 工具卡只读态：运行中 <code>asking</code>，结束显示 asked +「N 个问题」/「未提供回答」/「已自动继续」+ 逐题问答对；交互全走弹窗</td><td>❌ 【新】</td><td>LA <code>components/chat/AskUserQuestionCard.tsx</code>、<code>lib/chat/askUserQuestion.ts</code>、<code>ToolCallItem.tsx</code>；ZCode <code>ToolCallBlocks/renderers/ask-question.tsx</code></td></tr>
+<tr><td><strong>ElicitationDialog（分页问答/表单）</strong></td><td>—(ClarifyPanel 近似)</td><td>✅ 题目分页（上一题/下一题/<code>N/M</code>）+ 选项 + 自定义回答 + 提交/继续/忽略 + 倒计时（最后 60s 显示秒）+ 悬停 snooze + Plan 审批特化（主按钮强制 approve）+ 来源角标（子代理发起）</td><td>❌ 【新】</td><td>ZCode <code>ElicitationDialog.tsx</code>、<code>InteractionRequestOriginBadge.tsx</code>、<code>v4/V4InteractionDialogs.tsx</code></td></tr>
+<tr><td><strong>V4UserInputDialog（最小问答弹窗）</strong></td><td>—</td><td>✅ prompt + 选项（点即答）+ 可选自由输入（sensitive 密码框）+ 提交</td><td>❌ 【新】</td><td>ZCode <code>v4/V4UserInputDialog.tsx</code></td></tr>
+<tr><td><strong>ClarifyPanel（提示词澄清面板）</strong></td><td>✅ 输入框上方：多轮澄清、单选/多选 + 「其他」自由输入、已答轮折叠只读、「直接生成提示词」（可带部分答案）、重试/关闭、列表吸底</td><td>—</td><td>❌ 【新】</td><td>LA <code>components/chat/clarify/ClarifyPanel.tsx</code>、<code>useClarifySession.ts</code>、<code>clarifyRunner.ts</code></td></tr>
+</tbody>
+</table>
+<h3>11.3 计划模式</h3>
+<table>
+<thead>
+<tr><th>项</th><th>LA</th><th>ZCode</th><th>我们</th><th>说明与参考</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>PlanModeCard（ExitPlanMode 卡）</strong></td><td>✅ 左脊三态色（approved 绿/pending 天蓝+光晕/inactive 灰）+ 状态词（已批准/等待你的批准/不再待决）+ 卡体 markdown 计划 + pending 时「批准并开始执行」（spinner→批准中）；对话式批准（输入&quot;同意/开始&quot;亦可）</td><td>✅ <code>SwitchModeToolCallBlock</code> 整卡可点（role=button，Enter/Space）→ PlanDetailSidePane 渲染实时计划；卡内内联预览 + 复制</td><td>❌ 【新】（我们只提示词约束，无卡/无批准按钮）</td><td>LA <code>components/chat/PlanModeCard.tsx</code>、<code>lib/chat/planMode.ts</code>、<code>planModeTools.ts</code>；ZCode <code>ToolCallBlocks/renderers/switch-mode.tsx</code>、<code>app-shell/PlanDetailSidePane.tsx</code></td></tr>
+<tr><td><strong>Plan 模式开关标记（输入框）</strong></td><td>—</td><td>✅ 模式下拉 checkbox「Plan」+ 选中后工具栏灯泡标记（hover 变 ✕ 移除）；工具结果自动同步开关</td><td>❌ 【新】</td><td>ZCode <code>v4/composer/V4ComposerModeControls.tsx</code>、<code>composerPlanTransition.ts</code></td></tr>
+</tbody>
+</table>
+<h3>11.4 Todo 清单</h3>
+<table>
+<thead>
+<tr><th>项</th><th>LA</th><th>ZCode</th><th>我们</th><th>说明与参考</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>Todo 工具卡</strong></td><td>—(仅任务工具)</td><td>✅ 表头 kindLabel「任务清单」+ 当前项 + <code>已完成/总数</code>；展开列表每项状态图标</td><td>✅ 2026-09-28（批次 B4）</td><td>ZCode <code>ToolCallBlocks/renderers/todo.tsx</code></td></tr>
+<tr><td><strong>Todo/Plan/Goal 状态面板分区</strong></td><td>—</td><td>✅ 侧栏状态面板分区：逐项状态图标、Todo 预览弹层、折叠胶囊显当前 in-progress 项</td><td>❌ 【新】</td><td>ZCode <code>v4/ConversationStatusPanel.tsx</code>(L584-910)</td></tr>
+</tbody>
+</table>
+<h3>11.5 后台任务与队列</h3>
+<table>
+<thead>
+<tr><th>项</th><th>LA</th><th>ZCode</th><th>我们</th><th>说明与参考</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>后台任务卡 + 输出侧栏</strong></td><td>✅ BackgroundTasksPanel（托管进程列表：刷新/停止/清空/日志对话框/右键菜单）</td><td>✅ <code>TaskOutput</code>/<code>TaskStop</code> 卡 + <code>BackgroundBashOutputSidePane</code>（运行中转圈、「完整输出文件」链接、跟随吸底）+ 输入框「后台工作」按钮（badge 计 bash/workflow/subagent）+ 耗时标签</td><td>❌ 【新】</td><td>LA <code>project-tools/BackgroundTasksPanel.tsx</code>、<code>lib/managed-process/store.ts</code>；ZCode <code>renderers/task-output.tsx</code>、<code>task-stop.tsx</code>、<code>app-shell/BackgroundBashOutputSidePane.tsx</code>、<code>v4/composer/ConversationBackgroundWorkTrigger.tsx</code></td></tr>
+<tr><td><strong>排队消息面板</strong></td><td>✅ 输入框上方：表头「等待队列 N」+ 折叠、每行序号+预览+「N 个文件」、上移/编辑撤回/打断并执行(RunNow)/删除</td><td>✅ 可拖拽排序（dnd-kit）、「立即发送/编辑撤回/删除」、队列暂停横幅+恢复、发送前确认弹窗</td><td>❌ 【新】</td><td>LA <code>pages/chat/ChatComposerBar.tsx</code>(L1162-1300)、<code>queue/chatTurnQueue.ts</code>；ZCode <code>v4/ConversationQueuePanel.tsx</code></td></tr>
+<tr><td><strong>转向消息（steering/guide）</strong></td><td>—</td><td>✅ 运行中插入的消息以真实用户行渲染，副行「等待引导当前任务…」；投递策略 startNow/queue/guide；状态词「正在引导对话/已引导对话」</td><td>❌ 【新】</td><td>ZCode <code>v4/ConversationPendingGuideList.tsx</code>、<code>v4/pendingGuideProjection.ts</code></td></tr>
+</tbody>
+</table>
+<h3>11.6 压缩标记</h3>
+<table>
+<thead>
+<tr><th>项</th><th>LA</th><th>ZCode</th><th>我们</th><th>说明与参考</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>压缩带 / seam（回合内）</strong></td><td>✅ 紫罗兰 band：运行中 shimmer + 进度条，落定可展开（chips「覆盖 N 条消息」+ 展开挂摘要 markdown）</td><td>✅ compact 分隔线</td><td>✅ 2026-09-28（批次 D2；chips「覆盖 N 条消息」+ 展开）</td><td>LA <code>components/chat/CompactionBand.tsx</code>、<code>CompactionSeamRow.tsx</code>；ZCode <code>v4/ConversationRowView.tsx</code>(L1666-1890)</td></tr>
+<tr><td><strong>ContextCheckpointCard（压缩分隔卡）</strong></td><td>✅ 回合之间居中卡：标题 +「N 条消息/已压缩」+ 点击展开摘要 + 显示生成来源 provider/model</td><td>—</td><td>❌ 【新】</td><td>LA <code>components/chat/ContextCheckpointCard.tsx</code></td></tr>
+</tbody>
+</table>
+<h3>11.7 通知与恢复</h3>
+<table>
+<thead>
+<tr><th>项</th><th>LA</th><th>ZCode</th><th>我们</th><th>说明与参考</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>系统任务通知 + 提示音</strong></td><td>✅ 后台完成/需要审批时系统通知 + toast</td><td>✅ 任务终态（completed/failed）+ 待交互通知（含 AskUserQuestion 挂起）+ 提示音（设置开关，偏好持久化）</td><td>❌ 【新】</td><td>LA <code>useNotifyToasts.ts</code>；ZCode <code>lib/taskNotificationOrchestrator.ts</code>、<code>lib/taskNotificationSound.ts</code>、<code>hooks/useTaskNotifications.ts</code></td></tr>
+<tr><td><strong>任务列表交互角标</strong></td><td>—</td><td>✅ <code>TaskInteractionBadge</code>（权限类/问答类，带倒计时填充，hover 变 snooze，点击进任务）；任务行「标为未读」+ 未读点</td><td>❌ 【新】</td><td>ZCode <code>TaskInteractionBadge.tsx</code>、<code>TaskListItem.tsx</code></td></tr>
+<tr><td><strong>错误归因横幅</strong></td><td>⚠️ usage 类特判</td><td>✅ 输入框上方：错误文案 + traceId + 展开详情 + 复制 + 反馈 + 去设置模型 + 重试 + 关闭；归因按 code/正则证据分类（provider/runtime/network/tool × rate_limit/balance/context/auth/timeout/overload…）</td><td>⚠️ 我们有错误行+hint，无归因分类/横幅</td><td>ZCode <code>ChatErrorBanner.tsx</code>、<code>lib/chatErrorAttribution.ts</code></td></tr>
+<tr><td><strong>审批恢复横幅</strong></td><td>—</td><td>✅ 「检测到未完成的待审批命令」+ 重新发送（有 replay payload 时）/忽略，不自动重放</td><td>❌ 【新】</td><td>ZCode <code>v4/PendingCommandRecoveryBanner.tsx</code></td></tr>
+<tr><td><strong>Hook 待审横幅</strong></td><td>—</td><td>✅ 待审 hook 数 + 去审核 + dismiss（bundleDigest 幂等）</td><td>❌ 【新】（依赖 Hooks）</td><td>ZCode <code>v4/WorkspaceHookPendingBanner.tsx</code></td></tr>
+<tr><td><strong>会话订阅错误面板</strong></td><td>—</td><td>✅ 转写区整块替换：错误 + 重新订阅 + 上报</td><td>❌ 【新】（单机可简化）</td><td>ZCode <code>v4/SessionSubscriptionErrorPanel.tsx</code></td></tr>
+<tr><td><strong>MCP 不可用提示</strong></td><td>—</td><td>✅ 输入框上方 notice（额度耗尽类）</td><td>❌ 【新】（单机可简化）</td><td>ZCode <code>v4/mcpUnavailableBannerNotice.ts</code></td></tr>
+<tr><td><strong>重试历史可展开</strong></td><td>✅ RetryDetailsBlock「N 次重试」→ 每次尝试序号+错误</td><td>✅ 仅副行 <code>chat.apiRetryStatus</code></td><td>⚠️ 我们此前按用户决策删除了 RetryDetailsBlock（副行已带原因）</td><td>用户定档不复加</td></tr>
+</tbody>
+</table>
+<h3>11.8 产物与其他卡</h3>
+<table>
+<thead>
+<tr><th>项</th><th>LA</th><th>ZCode</th><th>我们</th><th>说明与参考</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>助手产物预览卡</strong></td><td>—</td><td>✅ markdown/file 预览卡（stat 校验）+ PPTX 自动打开 + HTML 走浏览器 + OpenSplitButton</td><td>❌ 【新】</td><td>ZCode <code>AssistantPreviewCards.tsx</code>、<code>v4/assistantPreviewPptxAutoOpen.ts</code></td></tr>
+<tr><td><strong>代码评论卡</strong></td><td>—</td><td>✅ 折叠区每条评论（P0-P2 优先级着色）+ 点击跳代码查看器定位</td><td>❌ 【新】</td><td>ZCode <code>AssistantCodeCommentCards.tsx</code>、<code>lib/assistantCodeComment.js</code></td></tr>
+<tr><td><strong>选区引用菜单 + 选区侧聊</strong></td><td>—</td><td>✅ 选中文本浮层两项「加入当前任务」「在侧聊中提问」+ 侧聊 pane + 引用 chip</td><td>❌ 【新】</td><td>ZCode <code>v4/ConversationSelectionTooltip.tsx</code>、<code>app-shell/SelectionSideChatPane.tsx</code></td></tr>
+<tr><td><strong>Node REPL 图片网格</strong></td><td>✅ ToolImages 灯箱（缩放/平移/复制/系统打开）</td><td>✅ 多图缩略图网格（≥2 张分组）+ 点击开预览对话框（左右切换/缩放/下载）</td><td>⚠️ 单图灯箱已有，多图网格待加（依赖 Node REPL 工具）</td><td>ZCode <code>renderers/nodeReplImageGrid.tsx</code>、<code>ai-elements/image-preview-dialog.tsx</code></td></tr>
+<tr><td><strong>工作流运行卡族</strong></td><td>—</td><td>✅ run 卡（整卡可点开侧栏）/后台通知行/完成收据卡（时长·tokens·子代理数·阶段数四格+产物索引）/轮尾摘要/只读问答行</td><td>❌ 【新】（依赖动态工作流）</td><td>ZCode <code>v4/ConversationWorkflowCompletion.tsx</code>、<code>WorkflowNotificationToolRow.tsx</code>、<code>workflow-timeline/</code></td></tr>
+<tr><td><strong>goal 卡与目标校验分隔线</strong></td><td>—</td><td>✅ Goal 工具卡 + goalVerify 分隔线（第 N 次迭代·校验中/已完成）+ 状态面板分区（暂停/恢复）</td><td>❌ 【新】</td><td>ZCode <code>renderers/goal.tsx</code>、<code>v4/ConversationRowView.tsx</code>(L1826)</td></tr>
+<tr><td><strong>任务进度条（composer 上方）</strong></td><td>✅ 圆环/对勾 + 「任务进行中」+ 第 X/Y 步 + 已完成 N/M；hover PreviewCard 展开步骤清单</td><td>—</td><td>❌ 【新】（依赖 Todo/Task 工具）</td><td>LA <code>components/chat/TaskProgressBar.tsx</code>、<code>lib/chat/taskProgress.ts</code></td></tr>
+<tr><td><strong>命令安全模式选择器</strong></td><td>✅ 输入框工具栏下拉四档：询问/自动/沙箱/断网沙箱（含平台能力差异文案）</td><td>—</td><td>❌ 【新】</td><td>LA <code>components/chat/CommandSafetyModeSelector.tsx</code>、<code>sandboxPolicy.ts</code></td></tr>
+<tr><td><strong>工具卡聚合组</strong></td><td>✅ ToolTraceGroup（思考+工具折叠分组，显 running/failed/completed/waiting 计数）</td><td>✅ changes-group / execute-group / cua-group（多文件、多 bash、CUA 分别聚合）</td><td>⚠️ 我们按独立卡渲染（2026-09-27 已删除查阅聚合）</td><td>ZCode <code>renderers/changes-group.tsx</code>、<code>execute-group.tsx</code></td></tr>
+<tr><td><strong>联网搜索聚合行</strong></td><td>✅ HostedSearchGroupView「已搜索 N 次·N 个来源」+ 展开来源 + 失败文案</td><td>—</td><td>❌ 【新】（依赖 WebSearch）</td><td>LA <code>HostedSearchGroupView.tsx</code></td></tr>
+<tr><td><strong>ConversationStatusPanel（分区分组面板）</strong></td><td>—</td><td>✅ 六分区：Git/Goal/Plan/Session Plans/Todo/Terminals/Agents/Workflows，每区可 Stop + 目录入口；折叠胶囊显摘要 metric</td><td>⚠️ 我们有会话统计行，无分区面板</td><td>ZCode <code>v4/ConversationStatusPanel.tsx</code>、<code>conversationStatusPanelModel.ts</code></td></tr>
+<tr><td><strong>回到底部按钮 / 底部 dock 动画 / 配额横幅</strong></td><td>—</td><td>✅ 回顶圆钮（吸底时隐藏）、dock 入场退场动画、配额/并发/MCP 额度横幅（可 dismiss，含去设置入口）</td><td>⚠️ 我们靠贴底跟随，无回顶按钮</td><td>ZCode <code>v4/ConversationTimeline.tsx</code>(L128/L1930)、<code>ConversationQuotaBanner.tsx</code></td></tr>
+<tr><td><strong>加载更早消息 / 会话内查找</strong></td><td>✅ ChatTranscript load-earlier 阈值 + 搜索对话框</td><td>✅ 顶部「加载更早消息」+ 会话内 find 高亮索引 + TaskFindDialog</td><td>❌ 【新】（历史分页 hydration 已在 PROJECT_CONTEXT 十一 Gap）</td><td>ZCode <code>v4/ConversationTimeline.tsx</code>、<code>useConversationTimelineFind.ts</code></td></tr>
+<tr><td><strong>白板 / 内嵌浏览器 / Office 预览 pane</strong></td><td>—</td><td>✅ WhiteboardPane（画笔/橡皮/撤销/加入对话）、EmbeddedBrowserPane、PreviewPane 系列（含 PPTX 元素引用 chip）</td><td>❌ 【新】</td><td>ZCode <code>WhiteboardPane.tsx</code>、<code>EmbeddedBrowserPane</code>、<code>previewPanePptxContent.tsx</code></td></tr>
+<tr><td><strong>快照字段提示</strong></td><td>—</td><td>✅ 工具卡字段被快照截断时给「加载完整字段」可点提示</td><td>❌ 【新】</td><td>ZCode <code>ToolCallBlocks/ToolSnapshotFieldNotice.tsx</code></td></tr>
+</tbody>
+</table>
+<h3>11.9 已有但可对照打磨（细节差异）</h3>
+<table>
+<thead>
+<tr><th>项</th><th>两家细节</th><th>我们的现状</th></tr>
+</thead>
+<tbody>
+<tr><td>回合状态条</td><td>LA：像素格动画 + 隐藏窗口停表 + <strong>attentionRequired 强制展开（等待你的决定）</strong>；ZCode：整段历史可折叠 + 尊重用户交互的 autoCollapseKey</td><td>我们有状态条/思考折叠；缺 attention 强制展开与停表细节</td></tr>
+<tr><td>文件更改摘要卡</td><td>LA：+A−B Odometer 数字动画、每行三动作（编辑器/文件树/diff）；ZCode：「撤销/重新应用」+ 行内 OpenSplitButton</td><td>我们已有审查/打开/清理 temp；缺逐行三动作与数字动画</td></tr>
+<tr><td>审批卡</td><td>LA ToolApprovalBar：<strong>批量动作下拉（全部允许/全部拒绝）+ 最早 deadline 倒计时 + 超时按拒绝落定</strong>；ZCode PermissionDialog：模态 + 多档作用域（始终允许此命令/本会话/本项目）+ 拒绝可填反馈 + 键盘提示</td><td>我们是输入框上方卡（允许/总是允许/拒绝），缺倒计时/批量/作用域档位</td></tr>
+<tr><td>checkpoint 回退</td><td>ZCode <code>ConversationFileRewindDialog</code>：safe/unsafe/ignored 三段 + 原因（bash_ignored/checkpoint_missing/external_modified…）+ 「仅回退对话」分支</td><td>我们已有 preview→确认→执行链路；缺分段原因明细</td></tr>
+</tbody>
+</table>
+<h3>11.10 本章优先级建议（插入总路线图）</h3>
+<ul>
+<li><strong>P0 追加</strong>：Todo 工具卡（随 Todo 工具同批）；压缩带/分隔线（随 compact 同批）；回合状态条 attention 强制展开（小成本高体验）。</li>
+<li><strong>P1 追加</strong>：子代理卡片与目录侧栏（随子代理系统同批）；AskUserQuestion 卡 + 提问弹窗（随工具同批）；PlanModeCard + 批准按钮 + Plan 模式开关标记；后台任务面板；排队消息面板；任务通知 + 角标。</li>
+<li><strong>P2 追加</strong>：steering、ClarifyPanel、错误归因横幅、审批恢复/待审横幅、产物预览卡、代码评论卡、选区侧聊、工作流卡族、goal 卡、ConversationStatusPanel 分区、回顶按钮、加载更早消息、白板/浏览器 pane、快照字段提示。</li>
+<li><strong>细节打磨</strong>：审批卡倒计时与批量、摘要卡逐行动作与数字动画、文件回退分段原因。</li>
+</ul>
+<hr />
+<h2>十、执行纪律</h2>
+<ul>
+<li>每一项开工前：先读对应参考源码（上表「参考定位」），按本项目 <code>AGENTS.md</code> 铁律（需求前置确认 / No-Fallback / 主题语义变量 / Bun / 双模兼容）落地；</li>
+<li>完成后：本表标 ✅ + 同步 <code>PROJECT_CONTEXT.md</code>（涉及提示词改动同步 <code>PROMPTS.md</code>）；</li>
+<li>每批完成后跑全量验证：<code>tsc</code>、<code>bun run build</code>、<code>test:chat/agent/providers/settings/markdown/hub</code>、<code>cargo test --lib</code>。</li>
+</ul>
+</div>
+    <div class="docs-pager"><span><a href="PROMPTS.html">← 提示词参考与现状</a></span><span></span></div>
+    </div>
+  </div>
+</main>
+<footer class="site-footer">
+  <div class="wrap">
+    <span>© 2026 ReinAgent Contributors · MIT</span>
+    <nav aria-label="页脚导航">
+      <a href="../guide/index.html">文档</a>
+      <a href="https://github.com/web3claw/ReinAgent">GitHub</a>
+      <a href="https://github.com/web3claw/ReinAgent/releases">更新日志</a>
+      <a href="https://github.com/web3claw/ReinAgent/blob/main/AGENTS.md">实现约定</a>
+      <a href="../guide/dev.html">参与开发</a>
+      <a href="../ATTRIBUTION.md">站点署名</a>
+    </nav>
+    <span class="spacer">本地优先 · 三端原生 · 绿色单文件</span>
+    <span class="visit-counter" data-visit-counter title="匿名统计，不使用 Cookie，仅统计浏览人数与浏览量。"><span class="vc-seg" data-visit-segment="visitors" hidden><span class="vc-label">访问人数</span> <b data-visit-visitors>–</b></span><span class="vc-sep" data-visit-sep hidden aria-hidden="true">·</span><span class="vc-seg" data-visit-segment="views" hidden><span class="vc-label">浏览量</span> <b data-visit-views>–</b></span></span>
+  </div>
+</footer>
+<div class="lightbox" data-lightbox aria-hidden="true">
+  <button class="lightbox-close" data-lightbox-close aria-label="关闭">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg>
+  </button>
+  <img alt="">
+  <span class="lightbox-caption"></span>
+</div>
+</body>
+</html>
