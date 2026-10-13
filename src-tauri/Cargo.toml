@@ -1,6 +1,6 @@
 [package]
 name = "ReinAgent"
-version = "0.1.18"
+version = "0.1.19"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -111,7 +111,8 @@ strip = true
 
 # Linux 专属：内嵌浏览器的 WebKitGTK 读通道（run_javascript 取值）与原生截图（snapshot→PNG）
 [target.'cfg(target_os = "linux")'.dependencies]
-# 隧道子进程的 PR_SET_PDEATHSIG / setsid（remote_tunnel.rs）
+# 隧道子进程的 setsid 进程组隔离（remote_tunnel.rs；刻意不用 PR_SET_PDEATHSIG，
+# 该 prctl 绑定 fork 线程而非进程，会误杀子进程——详见该文件 configure_child_lifecycle）
 libc = "0.2"
 notify-rust = "4"
 webkit2gtk = { version = "2", features = ["v2_40"] }
