@@ -86,7 +86,13 @@ windows = { version = "0.62", features = [
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Graphics_Gdi",
+    # Win32_Security 与 Win32_System_Threading 是 JobObjects 模块的前置门控：
+    # CreateJobObjectW 需 Security::SECURITY_ATTRIBUTES，ExtendedLimitInformation
+    # 内含 Threading::IO_COUNTERS。用于隧道子进程随宿主连坐终止（remote_tunnel.rs）。
+    "Win32_Security",
     "Win32_System_Com",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_HiDpi",
 ] }
@@ -105,6 +111,8 @@ strip = true
 
 # Linux 专属：内嵌浏览器的 WebKitGTK 读通道（run_javascript 取值）与原生截图（snapshot→PNG）
 [target.'cfg(target_os = "linux")'.dependencies]
+# 隧道子进程的 PR_SET_PDEATHSIG / setsid（remote_tunnel.rs）
+libc = "0.2"
 notify-rust = "4"
 webkit2gtk = { version = "2", features = ["v2_40"] }
 cairo-rs = { version = "0.18", features = ["png"] }

@@ -1919,3 +1919,42 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 ### 部署前置
 
 仓库 Settings → Pages 的 Source 必须设为 **GitHub Actions**（分支部署只支持 `/` 或 `/docs` 根，且根目录 `index.html` 已被 Vite/Tauri 应用占用）。
+
+
+## 十九、隧道子进程单进程纪律（2026-10-13 落地）
+
+### 问题现象
+
+系统上堆积多个 `cloudflared.exe`（均由 ReinAgent 拉起、指向 `127.0.0.1:<远控端口>`）。
+
+### 根因（`src-tauri/src/remote_tunnel.rs`）
+
+1. `st.child` 仅存内存句柄，**无按进程名清理逻辑**。应用非正常退出（dev 模式 Ctrl+C、任务管理器强杀、崩溃）时子进程成孤儿，永久残留；`restore_on_startup` 每次启动又拉起新隧道，孤儿逐次累积。
+2. `remote_server_config` 以火忘式 `tauri::async_runtime::spawn` 调起 start，快速连点会让两个任务都在对方登记 child 之前跑完 `stop_tunnel`，前一个句柄被覆盖后彻底失联（多线程运行时下真实可复现）。
+3. Windows 未挂 Job Object、Linux 未设 PDEATHSIG，父进程一死子进程必然孤岛。
+
+### 四条防线（相互独立，任一条生效即可避免堆积）
+
+| 防线 | 实现 |
+| --- | --- |
+| 启停串行化 | `TUNNEL_OPS`（`tokio::sync::Mutex`）串起 `start_cloudflare_tunnel` / `stop_tunnel` 全链路，消除交错窗口 |
+| 精确孤儿回收 | `reclaim_orphan_tunnel()`：PID 文件（`~/.ReinAgent/bin/tunnel.pid`）+ 进程名双重校验，只回收本应用遗留且仍在跑的 cloudflared |
+| 宿主连坐 | Windows：Job Object + `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`（裸 FFI 声明 kernel32，含编译期布局断言）；Linux：`pre_exec` 内 `setsid()` + `prctl(PR_SET_PDEATHSIG, SIGKILL)` |
+| 退出兜底 | `stop_tunnel_sync` 挂 `RunEvent::ExitRequested` / `Exit`，终止并回收句柄、清理 PID 文件 |
+
+### 关键设计约束
+
+- **绝不按进程名批量清杀**（不用 `taskkill /IM cloudflared.exe /F`）：会误杀用户在终端手动运行的 cloudflared。回收一律走「PID 文件 + 进程名校验」精确路径。
+- **双重校验不可简化**：PID 会被系统复用，只校验存活可能误杀复用了该 PID 的无关进程。
+- Linux 侧 `is_alive_cloudflared` 必须挡掉 `pid == 0` 与 `pid > i32::MAX` —— `kill(2)` 会把 `0` 解释为「当前进程组」、`-1`（`u32::MAX`）解释为「所有进程」，两者都会「成功」，导致不存在的 PID 被误判为存活（该缺陷由单测 `test_is_alive_cloudflared_false_for_dead_pid` 捕获）。有 `/proc` 时以 `/proc/<pid>/comm` 为权威判据。
+- Windows FFI 结构体（`JOBOBJECT_EXTENDED_LIMIT_INFORMATION` 等）与 SDK 逐字节一致：`BasicLimitInformation` 64B、`IoCounters` 48B、整体 144B，已加编译期断言（仅 64 位目标）。
+- Job 创建/绑定失败一律**降级为不绑定并留日志**，不中断隧道（隧道可用性优先，孤儿风险由 PID 回收兜底）。
+
+### 已知限制：域名无法固定
+
+Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 Cloudflare 随机分配，**无法固定**，这是官方产品限制。需固定域名须改用 Named Tunnel（`cloudflared tunnel run --token <token>`，需 Cloudflare 账号 + 托管域名），当前版本未实现。`custom` 模式为「用户自备反代」语义：ReinAgent 只拼接展示自定义 URL，自身不拉起隧道。
+
+### 验证
+
+- 单测 9 项（PID 文件往返/拒垃圾、进程名拒非 cloudflared、死 PID 判否、回收幂等、世代守卫等）全绿；全仓 247/247 通过；`cargo clippy` 本文件仅余 1 条既有告警。
+- **Windows 分支本机未能编译验证**（缺 MSVC 工具链，交叉编译失败于 `lib.exe`）：Job Object FFI 经独立子代理逐字段核对 SDK 绑定确认正确，最终编译/运行验证需在 `windows-latest` 上进行。

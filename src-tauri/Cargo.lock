@@ -20,6 +20,7 @@ dependencies = [
  "html2text",
  "include_dir",
  "javascriptcore-rs",
+ "libc",
  "notify-rust",
  "portable-pty",
  "regex",

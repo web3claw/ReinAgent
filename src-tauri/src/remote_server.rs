@@ -1297,6 +1297,11 @@ fn restart_server(app: &AppHandle) -> Result<(), String> {
 
 /// 应用启动时恢复持久化配置（main setup 调用）。
 pub fn restore_on_startup(app: &AppHandle) {
+    // 无条件回收上次遗留的孤儿隧道：上次可能崩溃/强杀退出而 PID 文件仍在。
+    // 必须放在模式判断之外——若上次崩溃后用户已把远控改回/关闭非 cloudflare 模式，
+    // 残留的 cloudflared 就不会再被任何启动路径触及，只能在这里收掉。
+    crate::remote_tunnel::reclaim_orphan_tunnel();
+
     if let Some(port) = kv_get(KV_PORT).and_then(|v| v.parse().ok()) {
         state().port.store(port, Ordering::Relaxed);
     }

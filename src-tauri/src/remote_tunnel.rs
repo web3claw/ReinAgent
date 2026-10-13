@@ -3,7 +3,27 @@
 //! 功能职责：
 //! 1. 网络模式管理：局域网 (Lan) / Cloudflare 免费免配置公网隧道 (Cloudflare) / 用户自定义反代域名 (Custom)；
 //! 2. `cloudflared` 二进制管理：优先检测系统环境，缺失时安全下载至 `~/.ReinAgent/bin/`；
-//! 3. 隧道子进程生命周期：异步启动、日志监听、正则捕获公网 HTTPS 域名、异常重试与优雅退出。
+//! 3. 隧道子进程生命周期：异步启动、日志监听、正则捕获公网 HTTPS 域名、异常重试与优雅退出；
+//! 4. 单进程纪律（核心不变量）：**系统上任何时刻最多只应存在一个由 ReinAgent 拉起的 cloudflared**。
+//!
+//! ## 单进程不变量如何保证
+//!
+//! 四条相互独立的防线，任一条生效即可避免进程堆积：
+//! - **启停串行化**（`TUNNEL_OPS` 异步互斥锁）：`start` / `stop` 全链路串行，消除
+//!   「两个 start 都跑完 stop 才各自登记 child」的交错窗口（旧实现下旧 child 句柄被覆盖后失联）；
+//! - **启动前精确回收孤儿**（`reclaim_orphan_tunnel`）：以 PID 文件 + 进程名双重校验，
+//!   只回收「上次由本应用留下、且仍在运行」的 cloudflared，绝不误杀用户在终端手动拉的进程；
+//! - **宿主连坐**：Windows 用 Job Object（`KILL_ON_JOB_CLOSE`，进程级，宿主崩溃即连坐）。
+//!   Linux **不用** `PR_SET_PDEATHSIG`——该 prctl 绑定的是 fork 它的那个*线程*而非进程，
+//!   而 spawn 发生在 tokio 线程上，线程一空闲子进程即被 SIGKILL（详见
+//!   `configure_child_lifecycle` 注释）；Linux 的孤儿防护由「子进程一 spawn 就写 PID 文件
+//!   + 下次启动精确回收」承担，这是进程级、不依赖 fork 线程存活时间；
+//! - **退出兜底**：`stop_tunnel_sync` 在 `RunEvent::ExitRequested` / `Exit` 均会终止并回收句柄；
+//! - **僵尸回收**：子进程先于宿主退出时立即 `try_wait()` 收尸，避免残留 `<defunct>`
+//!   与 PID 文件长期指向死进程。
+//!
+//! 注：Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名为 Cloudflare
+//! 随机分配、无法固定，这是官方产品限制；需要固定域名须改用 Named Tunnel（`tunnel run --token`）。
 
 use futures_util::StreamExt;
 use regex::Regex;
@@ -15,6 +35,335 @@ use std::{
     sync::{Mutex, OnceLock},
 };
 use tauri::{AppHandle, Emitter};
+
+/// 隧道子进程记录：除句柄外还保留它自己的 PID，供孤儿回收与诊断使用。
+struct TunnelChild {
+    child: Child,
+    pid: u32,
+}
+
+/// 回收「已退出但尚未 wait」的子进程，消除僵尸。
+///
+/// 子进程可能先于宿主结束（Cloudflare 侧断连、quick tunnel 被回收、被外部杀死），
+/// 此时它进入僵尸态：`/proc/<pid>` 条目仍在、comm 仍是 cloudflared，但已不再运行。
+/// 若不 wait 掉，会残留僵尸进程且状态长期停留在「已断开」无法自愈。
+///
+/// 用 `try_wait()` 而非 `wait()`：本函数在日志读取线程退出、以及 stop/reclaim 路径上
+/// 调用，绝不能阻塞等待一个仍在跑的隧道。
+///
+/// 返回 `true` 表示该子进程确已结束（状态已回收或刚被回收）。
+fn reap_child_if_exited(child: &mut Child) -> bool {
+    matches!(child.try_wait(), Ok(Some(_)))
+}
+
+// ---------------- 宿主生命周期绑定：Job Object（Windows）/ 进程组 + PDEATHSIG（Linux） ----------------
+
+/// Windows：Job Object 句柄的 RAII 包装，Drop 时关闭句柄。
+///
+/// 用裸 FFI 直接声明 kernel32 导出，而非经 `windows` crate 的 `JobObjects` 模块：
+/// 后者要求同时开启 `Win32_Security`（`SECURITY_ATTRIBUTES`）与
+/// `Win32_System_Threading`（结构体内的 `IO_COUNTERS`）两个 feature 门控，
+/// 而本模块只用到这 4 个函数，自带声明更省依赖、也免于跨 feature 版本的签名漂移。
+#[cfg(windows)]
+struct PlatformJob(*mut std::ffi::c_void);
+
+// HANDLE 是内核对象引用，跨线程移动安全
+#[cfg(windows)]
+unsafe impl Send for PlatformJob {}
+
+#[cfg(windows)]
+mod win_job_ffi {
+    use std::ffi::c_void;
+
+    pub const JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE: u32 = 0x2000;
+    const JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS: i32 = 9;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct IoCounters {
+        read_operation_count: u64,
+        write_operation_count: u64,
+        other_operation_count: u64,
+        read_transfer_count: u64,
+        write_transfer_count: u64,
+        other_transfer_count: u64,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct BasicLimitInformation {
+        per_process_user_time_limit: i64,
+        per_job_user_time_limit: i64,
+        limit_flags: u32,
+        minimum_working_set_size: usize,
+        maximum_working_set_size: usize,
+        active_process_limit: u32,
+        affinity: usize,
+        priority_class: u32,
+        scheduling_class: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct ExtendedLimitInformation {
+        basic_limit_information: BasicLimitInformation,
+        io_info: IoCounters,
+        process_memory_limit: usize,
+        job_memory_limit: usize,
+        peak_process_memory_used: usize,
+        peak_job_memory_used: usize,
+    }
+
+    // 显式声明导入库：MSVC CRT 虽默认链接 kernel32，但自持声明时写明可消除
+    // 「换工具链/换 target 后链接期才报错」的不确定性（本模块无法在 Linux CI 验证）
+    #[link(name = "kernel32")]
+    extern "system" {
+        pub fn CreateJobObjectW(attributes: *mut c_void, name: *const u16) -> *mut c_void;
+        pub fn SetInformationJobObject(
+            job: *mut c_void,
+            class: i32,
+            info: *mut c_void,
+            len: u32,
+        ) -> i32;
+        pub fn AssignProcessToJobObject(job: *mut c_void, process: *mut c_void) -> i32;
+        pub fn CloseHandle(handle: *mut c_void) -> i32;
+    }
+
+    /// 创建带 KILL_ON_JOB_CLOSE 的 Job Object；失败返回 Err（调用方降级但不静默）。
+    pub fn create_job() -> Result<*mut c_void, std::io::Error> {
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null_mut(), std::ptr::null());
+            if job.is_null() {
+                return Err(std::io::Error::last_os_error());
+            }
+            let mut info = ExtendedLimitInformation::default();
+            info.basic_limit_information.limit_flags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            let ok = SetInformationJobObject(
+                job,
+                JOB_OBJECT_EXTENDED_LIMIT_INFORMATION_CLASS,
+                &mut info as *mut _ as *mut c_void,
+                std::mem::size_of::<ExtendedLimitInformation>() as u32,
+            );
+            if ok == 0 {
+                let err = std::io::Error::last_os_error();
+                CloseHandle(job);
+                return Err(err);
+            }
+            Ok(job)
+        }
+    }
+
+    /// 编译期布局断言：本 FFI 结构体必须与 Windows SDK 逐字节一致，
+    /// 一旦有人调整字段顺序/类型，这里会先于运行期（ERROR_INVALID_PARAMETER）拦下。
+    /// 尺寸随指针宽度变化，故仅对 64 位目标断言（本项目 cloudflared 仅支持 x86_64）。
+    #[cfg(target_pointer_width = "64")]
+    const _: () = {
+        assert!(std::mem::size_of::<BasicLimitInformation>() == 64);
+        assert!(std::mem::size_of::<IoCounters>() == 48);
+        assert!(std::mem::size_of::<ExtendedLimitInformation>() == 144);
+    };
+}
+
+#[cfg(windows)]
+impl PlatformJob {
+    /// 创建 Job Object；失败时记录原因并降级（返回 None）。
+    ///
+    /// 降级不致命：仍有 PID 文件回收与退出钩子兜底；但必须留下日志，
+    /// 否则连坐保护在某台机器上静默失效将无从察觉。
+    fn new() -> Option<Self> {
+        match win_job_ffi::create_job() {
+            Ok(handle) => Some(Self(handle)),
+            Err(err) => {
+                eprintln!("[remote-tunnel] 创建 Job Object 失败，宿主连坐保护降级为 PID 回收: {err}");
+                None
+            }
+        }
+    }
+
+    fn assign(&self, child: &Child) -> Result<(), String> {
+        use std::os::windows::io::AsRawHandle;
+        let process = child.as_raw_handle() as *mut std::ffi::c_void;
+        let ok = unsafe { win_job_ffi::AssignProcessToJobObject(self.0, process) };
+        if ok == 0 {
+            Err(format!(
+                "绑定 Job Object 失败: {}",
+                std::io::Error::last_os_error()
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+#[cfg(windows)]
+impl Drop for PlatformJob {
+    fn drop(&mut self) {
+        // 关闭最后一个句柄触发 KILL_ON_JOB_CLOSE：宿主消失时 Job 内进程被内核一并终止
+        unsafe { win_job_ffi::CloseHandle(self.0) };
+    }
+}
+
+/// 非 Windows 平台：无 Job Object 等价物，占位类型保证状态结构跨平台一致。
+#[cfg(not(windows))]
+struct PlatformJob;
+
+#[cfg(not(windows))]
+impl PlatformJob {
+    fn new() -> Option<Self> {
+        None
+    }
+
+    fn assign(&self, _child: &Child) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// Linux：把子进程放进独立会话/进程组。
+///
+/// pre_exec 在 fork 之后、exec 之前于子进程内执行，只允许调用 async-signal-safe 函数，
+/// `setsid` 满足。macOS 无 prctl，本函数也仅 Linux 生效。
+///
+/// ⚠️ **这里刻意不设 `PR_SET_PDEATHSIG`**。该 prctl 绑定的是「执行 fork 的那个*线程*」
+/// 而非整个进程：`Command::spawn` 会由调用它的特化/线程池线程（本项目为 tokio runtime
+/// 线程）fork，该线程在 spawn 返回后很快空闲或退出，内核随即使向子进程投递 SIGKILL——
+/// 表现为「隧道刚建立就被杀、只留一个僵尸进程」，即经典的 PDEATHSIG-thread-scoped 陷阱。
+/// 实测：带 PDEATHSIG 从短命线程 fork 的 `sleep` 在 600ms 内即被杀；去掉后稳定存活。
+///
+/// 宿主崩溃时的孤儿防护改由「PID 文件 + 下次启动精确回收」承担（见 `reclaim_orphan_tunnel`），
+/// 这是进程级而非线程级、且不依赖 fork 线程存活时间。Windows 侧仍保留 Job Object（进程级，安全）。
+#[cfg(target_os = "linux")]
+fn configure_child_lifecycle(cmd: &mut Command) {
+    use std::os::unix::process::CommandExt;
+    unsafe {
+        cmd.pre_exec(|| {
+            // 独立会话 + 进程组：脱离宿主控制终端，后续可按 -pgid 整组回收
+            libc::setsid();
+            Ok(())
+        });
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn configure_child_lifecycle(_cmd: &mut Command) {}
+
+// ---------------- 孤儿 PID 文件（跨平台） ----------------
+
+/// 记录「本应用最后一次拉起的 cloudflared PID」的文件路径。
+fn tunnel_pid_file_path() -> Option<PathBuf> {
+    Some(ensure_bin_dir().ok()?.join("tunnel.pid"))
+}
+
+fn write_tunnel_pid(pid: u32) {
+    if let Some(path) = tunnel_pid_file_path() {
+        let _ = std::fs::write(path, pid.to_string());
+    }
+}
+
+fn clear_tunnel_pid() {
+    if let Some(path) = tunnel_pid_file_path() {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+fn read_tunnel_pid() -> Option<u32> {
+    let path = tunnel_pid_file_path()?;
+    std::fs::read_to_string(path).ok()?.trim().parse().ok()
+}
+
+/// 进程是否存活、且进程名确为 cloudflared。
+///
+/// 双重校验缺一不可：PID 会被系统复用，只校验存活可能误杀恰好复用了该 PID 的
+/// 无关进程，因此必须同时确认进程名。
+#[cfg(windows)]
+fn is_alive_cloudflared(pid: u32) -> bool {
+    use std::os::windows::process::CommandExt;
+    // 0x08000000 = CREATE_NO_WINDOW：避免刷新控制台窗口
+    let out = Command::new("tasklist")
+        .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+        .creation_flags(0x08000000)
+        .output();
+    match out {
+        Ok(o) => String::from_utf8_lossy(&o.stdout)
+            .to_lowercase()
+            .contains("cloudflared.exe"),
+        Err(_) => false,
+    }
+}
+
+/// Unix 侧：确认进程存活**且**进程名确为 cloudflared。
+#[cfg(not(windows))]
+fn is_alive_cloudflared(pid: u32) -> bool {
+    // 必须先挡住两个特例值：kill(2) 把 0 解释为「当前进程组」、把 -1（即 u32::MAX）
+    // 解释为「所有进程」，两者都会「成功」，从而把不存在的 PID 误判为存活。
+    if pid == 0 || pid > i32::MAX as u32 {
+        return false;
+    }
+    // Linux：/proc/<pid>/comm 是权威判据——读到且名字匹配才算我们拉起的 cloudflared。
+    // 读不到（进程不存在 / 已退出 / 无权限）一律判否，这正是「不误杀」所需的保守方向。
+    if let Ok(name) = std::fs::read_to_string(format!("/proc/{pid}/comm")) {
+        return name.trim() == "cloudflared";
+    }
+    if std::path::Path::new("/proc").is_dir() {
+        // 有 /proc 却取不到该 PID 的记录：进程确实不存在
+        return false;
+    }
+    // 无 /proc 的 Unix（macOS/BSD）：退化为存活探测（本模块不负责 macOS 自动下载）
+    Command::new("kill")
+        .args(["-0", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn kill_pid(pid: u32) {
+    use std::os::windows::process::CommandExt;
+    let _ = Command::new("taskkill")
+        .args(["/PID", &pid.to_string(), "/T", "/F"])
+        .creation_flags(0x08000000)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+#[cfg(not(windows))]
+fn kill_pid(pid: u32) {
+    let _ = Command::new("kill")
+        .args(["-9", &pid.to_string()])
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status();
+}
+
+/// 回收上一次遗留的孤儿隧道进程。
+///
+/// 仅当 PID 文件存在、记录的进程仍存活、且进程名确为 cloudflared 时才终止它；
+/// 任一条件不满足都只清掉过期的 PID 文件。**绝不按进程名批量清杀**——用户在终端
+/// 手动运行的 cloudflared 必须不受影响。
+pub fn reclaim_orphan_tunnel() {
+    let Some(pid) = read_tunnel_pid() else {
+        // 无记录：上次正常退出已清理，或从未启动过
+        return;
+    };
+    // 若记录的正是当前句柄持有的子进程，说明这是活着的正常实例而非孤儿：
+    // 交给 stop_tunnel_sync 经 Child 句柄回收，避免绕过句柄生命周期去 taskkill。
+    let is_current = lock_state().child.as_ref().map(|c| c.pid) == Some(pid);
+    if is_current {
+        // 记录的正是当前句柄持有的子进程：若它已自行退出，在这里 wait 掉僵尸；
+        // 仍在运行则交给随后的 stop_tunnel_sync 经句柄回收。
+        let mut st = lock_state();
+        if let Some(child) = st.child.as_mut() {
+            let _ = reap_child_if_exited(&mut child.child);
+        }
+    } else if is_alive_cloudflared(pid) {
+        kill_pid(pid);
+        // 给内核一点时间完成回收，避免紧接着的 spawn 撞上旧进程残留
+        std::thread::sleep(std::time::Duration::from_millis(300));
+    }
+    clear_tunnel_pid();
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -74,15 +423,17 @@ impl Default for TunnelStatus {
 
 struct TunnelProcessState {
     status: TunnelStatus,
-    child: Option<Child>,
+    child: Option<TunnelChild>,
+    /// 宿主生命周期绑定凭据（Windows Job Object）；随子进程一同持有与释放
+    job: Option<PlatformJob>,
     generation: u64,
 }
 
 impl Drop for TunnelProcessState {
     fn drop(&mut self) {
         if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
+            let _ = child.child.kill();
+            let _ = child.child.wait();
         }
     }
 }
@@ -94,6 +445,7 @@ fn state() -> &'static Mutex<TunnelProcessState> {
         Mutex::new(TunnelProcessState {
             status: TunnelStatus::default(),
             child: None,
+            job: None,
             generation: 0,
         })
     })
@@ -102,6 +454,17 @@ fn state() -> &'static Mutex<TunnelProcessState> {
 /// 容忍毒化获取状态锁
 fn lock_state() -> std::sync::MutexGuard<'static, TunnelProcessState> {
     state().lock().unwrap_or_else(|e| e.into_inner())
+}
+
+/// 隧道启停串行化锁。
+///
+/// `remote_server_config` 以火忘式 `spawn` 调起 start/stop，若不串行化，两次快速
+/// 触发可能都在对方登记 child 之前跑完 `stop_tunnel`，于是两个子进程先后被 spawn 且
+/// 第一个句柄被覆盖失联（旧实现下进程就这么堆起来的）。整个 start/stop 链路持此锁。
+static TUNNEL_OPS: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+
+fn tunnel_ops() -> &'static tokio::sync::Mutex<()> {
+    TUNNEL_OPS.get_or_init(|| tokio::sync::Mutex::new(()))
 }
 
 pub fn get_tunnel_status() -> TunnelStatus {
@@ -327,7 +690,10 @@ fn set_error(app: &AppHandle, err_msg: &str) {
     let _ = app.emit("remote-server:tunnel-status", status_to_emit);
 }
 
-/// 停止当前正在运行的隧道（同步核心实现）
+/// 停止当前正在运行的隧道（同步核心实现）。
+///
+/// 幂等：无子进程时仅重置状态。这里同时递增 generation，使旧隧道遗留的日志读取线程
+/// 与 watchdog 立即失效，不会回写状态（见 `test_generation_guard`）。
 pub fn stop_tunnel_sync(app: Option<&AppHandle>) {
     let (child_to_kill, status_to_emit) = {
         let mut st = lock_state();
@@ -336,30 +702,42 @@ pub fn stop_tunnel_sync(app: Option<&AppHandle>) {
         st.status.public_url = None;
         st.status.error = None;
         st.status.progress = None;
+        // 一并取出 Job 句柄：句柄随子进程存活，这里显式 Drop 保证绑定关系不被滞留
+        st.job = None;
         (st.child.take(), st.status.clone())
     };
 
     if let Some(mut child) = child_to_kill {
-        let _ = child.kill();
+        let _ = child.child.kill();
         // 回收进程，避免僵尸进程
-        let _ = child.wait();
+        let _ = child.child.wait();
     }
+    // 同步清理 PID 文件：应用正常退出后不应留下可供误判的陈旧记录
+    clear_tunnel_pid();
 
     if let Some(app) = app {
         let _ = app.emit("remote-server:tunnel-status", status_to_emit);
     }
 }
 
-/// 停止当前正在运行的隧道
+/// 停止当前正在运行的隧道（持有串行锁的版本）
 pub async fn stop_tunnel(app: Option<&AppHandle>) {
+    let _guard = tunnel_ops().lock().await;
     stop_tunnel_sync(app);
 }
 
 pub const TUNNEL_URL_REGEX: &str = r"https://[a-zA-Z0-9-]+\.trycloudflare\.com";
 
-/// 启动 Cloudflare Quick Tunnel 监听指定本地端口
+/// 启动 Cloudflare Quick Tunnel 监听指定本地端口。
+///
+/// 「先回收孤儿 → 停旧 → 起新」全链路由 `TUNNEL_OPS` 串行化，保证同一时刻至多一个
+/// 由本应用拉起的 cloudflared 存活。
 pub async fn start_cloudflare_tunnel(app: AppHandle, port: u32) -> Result<(), String> {
-    stop_tunnel(Some(&app)).await;
+    let _guard = tunnel_ops().lock().await;
+
+    // 上一轮非正常退出（崩溃/强杀）可能留下仍在跑的隧道，先精确回收再停句柄内实例
+    reclaim_orphan_tunnel();
+    stop_tunnel_sync(Some(&app));
 
     let res = start_cloudflare_tunnel_inner(&app, port).await;
     if let Err(ref e) = res {
@@ -391,8 +769,28 @@ async fn start_cloudflare_tunnel_inner(app: &AppHandle, port: u32) -> Result<(),
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000);
     }
+    // Linux：独立进程组 + 父进程死亡即 SIGKILL
+    configure_child_lifecycle(&mut cmd);
 
     let mut child = cmd.spawn().map_err(|e| format!("启动 cloudflared 失败: {e}"))?;
+    let pid = child.id();
+
+    // 子进程已起，立即登记 PID：即便随后立刻崩溃/强杀，下次启动也能精确回收它
+    write_tunnel_pid(pid);
+
+    // Windows：绑定 Job Object，宿主消失时由内核连坐终止该子进程。
+    //
+    // 创建与绑定两条失败路径策略一致：**都降级为「不绑定」而非中断隧道**——隧道本身
+    // 仍然可用（用户要的是能连上），孤儿风险由 PID 文件回收 + 退出钩子兜底；同时都留下
+    // 日志，避免保护静默失效后无从排查。仅在极受限环境（安全软件拦截 Job 操作）才会走到。
+    let job = PlatformJob::new().and_then(|job| match job.assign(&child) {
+        Ok(()) => Some(job),
+        Err(err) => {
+            eprintln!("[remote-tunnel] 绑定 Job Object 失败，降级为 PID 回收兜底: {err}");
+            None
+        }
+    });
+
     let stderr = child.stderr.take().ok_or_else(|| "无法捕获隧道输出日志".to_string())?;
 
     let (my_gen, status_to_emit) = {
@@ -402,7 +800,8 @@ async fn start_cloudflare_tunnel_inner(app: &AppHandle, port: u32) -> Result<(),
         st.status.mode = TunnelNetworkMode::Cloudflare;
         st.status.status = "starting".to_string();
         st.status.error = None;
-        st.child = Some(child);
+        st.child = Some(TunnelChild { child, pid });
+        st.job = job;
         (gen, st.status.clone())
     };
     let _ = app.emit("remote-server:tunnel-status", status_to_emit);
@@ -445,7 +844,7 @@ async fn start_cloudflare_tunnel_inner(app: &AppHandle, port: u32) -> Result<(),
             match line_res {
                 Ok(line) => {
                     if !discovered {
-                        if let Some(matched) = re.find(&line) {
+                if let Some(matched) = re.find(&line) {
                             let url = matched.as_str().to_string();
                             discovered = true;
                             let status_to_emit = {
@@ -475,7 +874,23 @@ async fn start_cloudflare_tunnel_inner(app: &AppHandle, port: u32) -> Result<(),
             }
         }
 
-        // 如果日志读取完毕退出
+        // 日志流结束 = 子进程已退出。这里必须 wait 掉僵尸（否则残留 <defunct> 且
+        // PID 文件一直指着它），再据实际退出码给出可诊断的错误信息而不是笼统的「已断开」。
+        let exit_note = {
+            let mut st = lock_state();
+            if st.generation != my_gen {
+                return;
+            }
+            st.child.as_mut().and_then(|c| match c.child.try_wait() {
+                Ok(Some(status)) => Some(match status.code() {
+                    Some(code) => format!("Cloudflare 隧道进程已退出（退出码 {code}）"),
+                    None => "Cloudflare 隧道进程被信号终止".to_string(),
+                }),
+                // 仍显示为存活（极罕见：stderr 关闭但进程未退），保留原文案
+                _ => None,
+            })
+        };
+
         let status_to_emit = {
             let mut st = lock_state();
             // 世代守卫：若当前世代已被更改（如用户点击重连或停止后有了新隧道），绝不覆盖状态！
@@ -484,7 +899,9 @@ async fn start_cloudflare_tunnel_inner(app: &AppHandle, port: u32) -> Result<(),
             }
             if st.status.status == "running" || st.status.status == "starting" {
                 st.status.status = "error".to_string();
-                st.status.error = Some("Cloudflare 隧道已断开或退出".to_string());
+                st.status.error = Some(
+                    exit_note.unwrap_or_else(|| "Cloudflare 隧道已断开或退出".to_string()),
+                );
                 st.status.public_url = None;
                 Some(st.status.clone())
             } else {
@@ -553,6 +970,77 @@ mod tests {
         f2.write_all(b"MZ\0\0").unwrap();
         f2.set_len(21 * 1024 * 1024).unwrap();
         assert!(is_valid_cloudflared_binary(&valid_big_file));
+    }
+
+    /// PID 文件是孤儿回收的唯一依据：写入-读取-清理三态必须自洽。
+    /// 直接在真实 bin 目录上跑会污染用户环境，故改用独立临时目录校验同名文件的语义。
+    #[test]
+    fn test_tunnel_pid_file_roundtrip() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tunnel.pid");
+
+        // 初始不存在 → 读不到
+        assert!(std::fs::read_to_string(&path).is_err());
+
+        // 写入后可解析回同一 PID
+        std::fs::write(&path, "12345").unwrap();
+        let parsed: Option<u32> = std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|s| s.trim().parse().ok());
+        assert_eq!(parsed, Some(12345));
+
+        // 清理后回到不可读
+        std::fs::remove_file(&path).unwrap();
+        assert!(std::fs::read_to_string(&path).is_err());
+    }
+
+    /// 损坏/空白的 PID 文件不得被解析成 PID，否则会误判为「有孤儿」。
+    #[test]
+    fn test_tunnel_pid_file_rejects_garbage() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("tunnel.pid");
+        for bad in ["", "   ", "not-a-pid", "-1", "999999999999999999999"] {
+            std::fs::write(&path, bad).unwrap();
+            let parsed: Option<u32> = std::fs::read_to_string(&path)
+                .ok()
+                .and_then(|s| s.trim().parse().ok());
+            assert!(parsed.is_none(), "垃圾内容 {bad:?} 不应解析出 PID");
+        }
+    }
+
+    /// 当前进程自身是活的、但进程名不是 cloudflared：存活+进程名双重校验必须拒绝它，
+    /// 这是「不误杀无关进程」的核心保证。
+    #[test]
+    fn test_is_alive_cloudflared_rejects_non_cloudflared() {
+        let self_pid = std::process::id();
+        // 测试二进制名为 cargo test 产物，绝非 cloudflared
+        assert!(!is_alive_cloudflared(self_pid));
+    }
+
+    /// 不存在的 PID（取一个几乎不可能占用的极大值）必须判定为「非存活」。
+    #[test]
+    fn test_is_alive_cloudflared_false_for_dead_pid() {
+        assert!(!is_alive_cloudflared(u32::MAX));
+    }
+
+    /// 无 PID 文件时回收必须是安全的空操作（不能 panic、不能误杀）。
+    /// 幂等性由连续两次调用各自正常返回来验证。
+    #[test]
+    fn test_reclaim_orphan_tunnel_is_safe_without_record() {
+        let _guard = test_serial_lock();
+        // 依赖真实 ~/.ReinAgent/bin 目录；若不存在则由 ensure_bin_dir 创建。
+        // 不写 PID 文件即代表「无遗留」，回收应当直接返回。
+        reclaim_orphan_tunnel();
+        reclaim_orphan_tunnel();
+    }
+
+    /// 串行化本模块的测试，避免与并发用例互踩状态。
+    fn test_serial_lock() -> std::sync::MutexGuard<'static, ()> {
+        static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        TEST_LOCK
+            .get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     #[test]

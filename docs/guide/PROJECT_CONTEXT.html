@@ -517,13 +517,13 @@
 <p><strong><code>~/.ReinAgent/conversations.db</code></strong>（SQLite，WAL 模式，<code>conversation_store.rs</code>；前端经 IPC 访问）：</p>
 <table>
 <thead>
-<tr><th align="left">表</th><th align="left">结构</th><th align="left">用途</th></tr>
+<tr><th>表</th><th>结构</th><th align="left">用途</th></tr>
 </thead>
 <tbody>
-<tr><td align="left"><code>message</code></td><td align="left"><code>(task_id, msg_id)</code> PK + seq/role/status/started_at/ended_at/tool_name/tool_call_id/is_error/truncated_by/error/thinking_*</td><td align="left">时间线条目骨架（一行一个 TimelineEntry）</td></tr>
-<tr><td align="left"><code>part</code></td><td align="left"><code>(task_id, msg_id, part_index)</code> PK + kind/payload</td><td align="left">条目内容块（text/thinking/tool_args/tool_result/<strong>api_message</strong>），为全文检索铺路（对齐 LiveAgent message/part 拆分）。<strong>api_message</strong>（2026-09-25）：assistant/tool 条目的权威 API 消息原件（AssistantMessage/ToolResultMessage，含 usage 与精确 API 格式）——对齐 LiveAgent「落盘原件而非 UI 投影」：恢复后 token 统计/缓存命中率/上下文容量不再归零，<code>toApiMessages</code> 恢复完整历史（修复刷新后模型失忆）；改动前入库的旧轮次无此块，usage 如实缺失</td></tr>
-<tr><td align="left"><code>task</code></td><td align="left"><code>id</code> PK + seq/payload/updated_at</td><td align="left">任务元数据（标题/时间/项目/置顶/模型绑定，JSON payload）</td></tr>
-<tr><td align="left"><code>kv</code></td><td align="left"><code>key</code> PK + value</td><td align="left">UI 偏好（主题/语言/侧栏状态/active-task-id/user-projects/thinking-level/user-home）</td></tr>
+<tr><td><code>message</code></td><td><code>(task_id, msg_id)</code> PK + seq/role/status/started_at/ended_at/tool_name/tool_call_id/is_error/truncated_by/error/thinking_*</td><td align="left">时间线条目骨架（一行一个 TimelineEntry）</td></tr>
+<tr><td><code>part</code></td><td><code>(task_id, msg_id, part_index)</code> PK + kind/payload</td><td align="left">条目内容块（text/thinking/tool_args/tool_result/<strong>api_message</strong>），为全文检索铺路（对齐 LiveAgent message/part 拆分）。<strong>api_message</strong>（2026-09-25）：assistant/tool 条目的权威 API 消息原件（AssistantMessage/ToolResultMessage，含 usage 与精确 API 格式）——对齐 LiveAgent「落盘原件而非 UI 投影」：恢复后 token 统计/缓存命中率/上下文容量不再归零，<code>toApiMessages</code> 恢复完整历史（修复刷新后模型失忆）；改动前入库的旧轮次无此块，usage 如实缺失</td></tr>
+<tr><td><code>task</code></td><td><code>id</code> PK + seq/payload/updated_at</td><td align="left">任务元数据（标题/时间/项目/置顶/模型绑定，JSON payload）</td></tr>
+<tr><td><code>kv</code></td><td><code>key</code> PK + value</td><td align="left">UI 偏好（主题/语言/侧栏状态/active-task-id/user-projects/thinking-level/user-home）</td></tr>
 </tbody>
 </table>
 <p><strong>IPC 命令</strong>：<code>conversation_sync</code>（任务全量替换，事务）/ <code>conversation_load</code> / <code>conversation_delete</code> / <code>task_sync</code> / <code>task_list</code> / <code>kv_get_all</code> / <code>kv_set_many</code>；另有检查点五命令（<code>checkpoint_begin_turn/list/diff_stats/rewind_code/clear</code>，见 四点七.3，数据存 <code>~/.ReinAgent/checkpoints/&lt;taskId&gt;/</code>，不入库）。</p>
@@ -684,26 +684,26 @@
 <h3>1. 已实现（全部通过 99 项单测 + 浏览器运行态实测）</h3>
 <table>
 <thead>
-<tr><th align="left">#</th><th align="left">功能</th><th align="left">要点</th><th align="left">关键文件</th></tr>
+<tr><th>#</th><th>功能</th><th align="left">要点</th><th align="left">关键文件</th></tr>
 </thead>
 <tbody>
-<tr><td align="left">1</td><td align="left">回合工作状态条</td><td align="left">「工作中 X 秒」（运行中锁定展开+每秒计时）/「已工作 X 秒」（完成折叠）/「已停止」/「已处理」（历史无打点 No-Fallback）；时长格式化最多两段非零单位</td><td align="left"><code>TurnGroupView.tsx</code>、<code>turnActivity.ts</code></td></tr>
-<tr><td align="left">2</td><td align="left">思考块三态折叠</td><td align="left">流式默认展开+吸底跟随 → 整轮完成自动收一行；用户点击优先；Markdown 渲染 + 320px 限高 + 左导线</td><td align="left"><code>ThinkingBlock.tsx</code></td></tr>
-<tr><td align="left">3</td><td align="left">工具卡类型化 header</td><td align="left">类型图标/标签（未知工具回退原名）+ 文件 chip + 命令内联摘要 + <code>+N/−N</code>（LCS 精确口径）+ 状态词；<strong>文件 chip 对齐 ZCode renderFileChip</strong>（2026-09-25）：Material Icon Theme 彩色 SVG（<code>public/material-icons/</code> 40 个常用扩展名，颜色固化在 SVG，onError 三级回退）+ 文件名可点击（编辑/写入 → 右侧 patch diff；读取 → 文件预览；onMouseDown 阻断行折叠）+ 目录段带尾斜杠更暗一级 + 条件 ±N（added&gt;0 绿 / removed&gt;0 红，零不显示）；顺带修复 edit_file 参数名错配（工具签名 target/replacement vs 代码读 old_string/new_string 导致 ±N 与 diff 恒空，补回退）</td><td align="left"><code>ToolCallCard.tsx</code>、<code>fileDisplay.tsx</code>、<code>fileDisplayHelpers.ts</code>（ps1/bat/cmd 别名）、<code>turnActivity.ts</code></td></tr>
-<tr><td align="left">4</td><td align="left">终端卡</td><td align="left"><code>$</code> 命令区（mono 限高折行）+ 输出区<strong>吸底-冻结引擎</strong>（上滚冻结/回底恢复）+「没有输出。」</td><td align="left"><code>ToolCallCard.tsx</code></td></tr>
-<tr><td align="left">5</td><td align="left">编辑/写入 diff 视图</td><td align="left">行级 LCS diff（零依赖，500 行上限）+ 行号跨增删连续计数 + 增行绿底/删行红底 + 240px 滚动</td><td align="left"><code>ToolCallCard.tsx</code>、<code>turnActivity.ts</code></td></tr>
-<tr><td align="left">6</td><td align="left">查阅族独立卡（原「查阅」聚合卡已按用户决策移除，2026-09-27）</td><td align="left">list_dir/read_file 直接渲染独立卡（对齐 ZCode ReadToolCallBlock）：图标 + 文件/目录 chip + 路径次要文本；<strong>成功不显示状态词、失败显示「执行失败」+ tooltip</strong>；list_dir = 目录读取形态（文件夹 chip，<code>.</code> 显示「当前目录」）</td><td align="left"><code>ToolCallCard.tsx</code></td></tr>
-<tr><td align="left">7</td><td align="left">对话问题导航条</td><td align="left">用户提问粒度刻度 + Radix Tooltip 预览 + 平滑跳转 + 山峰衰减动效 + 自适应高度（240px/10~24px）</td><td align="left"><code>ConversationNavigator.tsx</code></td></tr>
-<tr><td align="left">8</td><td align="left">时间打点数据层</td><td align="left">assistant/tool 条目 <code>startedAt/endedAt</code>、<code>thinkingStartedAt/thinkingDurationMs</code>；注入时钟贯通状态机；不参与 toApiMessages</td><td align="left"><code>conversationModel.js/.d.ts</code></td></tr>
-<tr><td align="left">9</td><td align="left">streamSimple 修复</td><td align="left">修复误用裸 <code>stream</code> 导致思考被显式禁用的事故（详见 九.4）</td><td align="left"><code>runAgentTurn.ts</code></td></tr>
-<tr><td align="left">10</td><td align="left">推理能力乐观兜底</td><td align="left">无 effort 元数据模型视为支持思考（档位 Default/Low/Medium/High，可 off）；已声明模型仍严格按元数据过滤</td><td align="left"><code>App.tsx</code>、<code>LexicalComposer.tsx</code>、<code>modelFactory.ts</code></td></tr>
-<tr><td align="left">11</td><td align="left">右侧代码/变更预览面板（PreviewPane 完整移植）</td><td align="left">编辑/写入卡审查 → patch 模式（Shiki 高亮 diff）；读取卡 → 文件行号预览（Rust <code>fs_read_text_file</code> 256KB 截断+二进制探测）；<code>@pierre/diffs</code> + <code>shiki</code> 已引入；Media/PDF/PPTX/Office 为诚实降级 stub</td><td align="left"><code>src/preview/**</code>（约 40 文件）、<code>fs_cmd.rs</code>、<code>CodeViewerPaneHost.tsx</code></td></tr>
-<tr><td align="left">12</td><td align="left">文件更改摘要卡</td><td align="left">轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；<strong>仅在整轮结束后显示</strong>（编辑过程中看各工具卡，对齐 ZCode 时机）；同文件多次编辑按路径聚合为净变更，净零文件过滤；<strong><code>.ReinAgent/.temp/</code> 下的一次性脚本不进摘要</strong>（<code>isReinAgentTempPath</code>：不列行、不计入数量与增删统计，全部为 temp 时整卡隐藏；用户确认不做自动清理，手动清理按钮保留）；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2）；header 附**「清理临时目录」**按钮（行内二次确认 → <code>fs_clean_reinagent_tmp</code>）</td><td align="left"><code>TurnGroupView.tsx</code>（TurnFileSummaryCard）</td></tr>
-<tr><td align="left">13.4</td><td align="left">会话统计行（SessionStatsBar，对齐 LiveAgent 底部统计条）</td><td align="left">底栏下一行等宽小字：`N 轮 · M 步</td><td align="left">上下文 P%</td></tr>
-<tr><td align="left">13.5</td><td align="left">上下文容量面板</td><td align="left">触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 缓存命中率（移至会话统计行，≥0 才显示）；已用取真实 usage（input+cacheRead+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；<strong>不含剩余额度</strong>（用户确认排除）；<strong>明细行可点击</strong>——有内容的类别（消息/系统提示词/系统工具）懒构建真实文本在右侧面板查看（markdown/json 高亮），无内容类别（技能/MCP/其他）如实 0.0% 且不可点击</td><td align="left"><code>contextUsage.ts</code>、<code>ContextUsageIndicator.tsx</code>、<code>LexicalComposer.tsx</code>、<code>App.tsx</code></td></tr>
-<tr><td align="left">14</td><td align="left"><strong>任务级设置隔离 + 审批模式落地（对齐 ZCode task-local thoughtLevel/mode）</strong></td><td align="left">三项设置按任务隔离：模型（<code>providerId/modelId</code>，已有）、推理等级（<code>thinkingLevel?</code>）、审批模式（<code>approvalMode?</code>），字段随 task payload 进 SQLite；有活动任务读写任务字段，草稿态读写全局默认（首次发送随 createTask 落到新任务）；模型切换自动对齐改为任务粒度（只修正覆盖不受支持的任务，绝不冲掉仍受支持的覆盖）。审批模式四档（对齐 ZCode 用户可切面）：<code>plan 计划模式</code>（写/执行一律拦截+系统提示词约束只读调研）/<code>ask 变更前确认</code>（写+执行弹审批卡）/<code>edit 自动编辑</code>（写自动放行，执行弹卡）/<code>full 完全访问</code>（默认，零开销直通）；工具分级 <code>resolveToolPermissionKind</code>（read 直通/write/exec 受限，未知工具保守视为 write）。审批流经 pi-agent-core 原生 <code>beforeToolCall</code> 钩子：需要批准时 await 用户决策（<strong>循环挂起不中止</strong>，同 ZCode 权限流语义），拒绝 → <code>{block:true, reason}</code> 错误工具结果（模型知道被拒不重试）；审批卡（<code>ApprovalCard</code>）渲染于输入框上方（工具名+参数摘要+允许/总是允许/拒绝），「总是允许」为任务级内存免审集合；stop/clear/轮次异常结束均以 reject 解除挂起；模式下拉对齐 ZCode（图标+标题+描述，full 态触发按钮 warning 色）。实测：隔离（A 改 B 不动+全局不动）、拒绝（模型停手文件未创建）、允许（批准后文件真实落盘）全链路通过</td><td align="left"><code>useAppStore.ts</code>、<code>tools.js</code>（resolveToolPermissionKind）、<code>agentRuntime.js</code>（beforeToolCall 透传）、<code>runAgentTurn.ts</code>（createApprovalGate/PLAN_MODE_PROMPT）、<code>conversationPool.ts</code>（审批协调器）、<code>conversationController.js</code>（requestApproval/resolveApproval）、<code>conversationModel.js</code>（pendingApproval）、<code>ApprovalCard.tsx</code>、<code>LexicalComposer.tsx</code>、<code>App.tsx</code>、<code>approvalGate.test.mjs</code></td></tr>
-<tr><td align="left">15</td><td align="left"><strong>应用品牌换装（logo + 应用图标 + 底栏图标条）</strong></td><td align="left">应用图标全套更换：R 主题（蓝色渐变圆角方块 + 白色粗体 R，<code>src-tauri/app-icon.png</code> 1024 源图经 <code>cargo tauri icon</code> 生成 icon.ico/icns/各尺寸 PNG/Store logos），窗口/任务栏/开始菜单生效（需 Rust 重构建后启动）；左上角 logo 改为同源内联 SVG（<code>AppLogo</code> 组件，替换原文字方块）；左下角用户栏移除（头像 K/用户名 kwtgsgi8 删除），替换为 <strong>PI-Desktop sidebar-footer 同款图标条</strong>（lucide 14px 图标 + 32×32 命中区 + radix Tooltip 300ms，对齐 TooltipButton/footer-action）：齿轮=设置（可点，i18n settings）/ <strong>插头 Plug=插件</strong>（navPlugins，打开插件页）/ 时钟=定时任务（navScheduled，占位）/ 电脑（原 Monitor，占位）——占位无功能、默认全部不高亮；右侧版本号 <code>v{getVersion()}</code> 对齐 footer-build（<strong>12px tabular-nums leading-none、UI 字体非 mono</strong>；浏览器模式取不到则隐藏）</td><td align="left"><code>WorkspaceSidebar.tsx</code>（AppLogo + 底栏）、<code>src-tauri/icons/*</code>、<code>src-tauri/app-icon.png</code></td></tr>
-<tr><td align="left">13</td><td align="left">临时/资料目录约定（B+C 组合，对齐 pi 的 <code>.pi/</code> 模式）</td><td align="left">系统提示词约定：一次性脚本/分析产物必须放 <code>&lt;工作区&gt;/.ReinAgent/.temp/</code>（视为可丢弃）；记忆等持久资料也统一放 <code>&lt;工作区&gt;/.ReinAgent/</code> 下各自子目录（禁止散落项目根）；Rust <code>fs_clean_reinagent_tmp</code> 白名单清理 <code>.ReinAgent/.temp</code>（两级路径严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈）。参照：PI-Desktop host-core 的 <code>.pi/</code> 工作区目录模式（plans/artifact.rs，路径安全校验同思路）</td><td align="left"><code>runAgentTurn.ts</code>、<code>fs_cmd.rs</code>、<code>TurnGroupView.tsx</code></td></tr>
+<tr><td>1</td><td>回合工作状态条</td><td align="left">「工作中 X 秒」（运行中锁定展开+每秒计时）/「已工作 X 秒」（完成折叠）/「已停止」/「已处理」（历史无打点 No-Fallback）；时长格式化最多两段非零单位</td><td align="left"><code>TurnGroupView.tsx</code>、<code>turnActivity.ts</code></td></tr>
+<tr><td>2</td><td>思考块三态折叠</td><td align="left">流式默认展开+吸底跟随 → 整轮完成自动收一行；用户点击优先；Markdown 渲染 + 320px 限高 + 左导线</td><td align="left"><code>ThinkingBlock.tsx</code></td></tr>
+<tr><td>3</td><td>工具卡类型化 header</td><td align="left">类型图标/标签（未知工具回退原名）+ 文件 chip + 命令内联摘要 + <code>+N/−N</code>（LCS 精确口径）+ 状态词；<strong>文件 chip 对齐 ZCode renderFileChip</strong>（2026-09-25）：Material Icon Theme 彩色 SVG（<code>public/material-icons/</code> 40 个常用扩展名，颜色固化在 SVG，onError 三级回退）+ 文件名可点击（编辑/写入 → 右侧 patch diff；读取 → 文件预览；onMouseDown 阻断行折叠）+ 目录段带尾斜杠更暗一级 + 条件 ±N（added&gt;0 绿 / removed&gt;0 红，零不显示）；顺带修复 edit_file 参数名错配（工具签名 target/replacement vs 代码读 old_string/new_string 导致 ±N 与 diff 恒空，补回退）</td><td align="left"><code>ToolCallCard.tsx</code>、<code>fileDisplay.tsx</code>、<code>fileDisplayHelpers.ts</code>（ps1/bat/cmd 别名）、<code>turnActivity.ts</code></td></tr>
+<tr><td>4</td><td>终端卡</td><td align="left"><code>$</code> 命令区（mono 限高折行）+ 输出区<strong>吸底-冻结引擎</strong>（上滚冻结/回底恢复）+「没有输出。」</td><td align="left"><code>ToolCallCard.tsx</code></td></tr>
+<tr><td>5</td><td>编辑/写入 diff 视图</td><td align="left">行级 LCS diff（零依赖，500 行上限）+ 行号跨增删连续计数 + 增行绿底/删行红底 + 240px 滚动</td><td align="left"><code>ToolCallCard.tsx</code>、<code>turnActivity.ts</code></td></tr>
+<tr><td>6</td><td>查阅族独立卡（原「查阅」聚合卡已按用户决策移除，2026-09-27）</td><td align="left">list_dir/read_file 直接渲染独立卡（对齐 ZCode ReadToolCallBlock）：图标 + 文件/目录 chip + 路径次要文本；<strong>成功不显示状态词、失败显示「执行失败」+ tooltip</strong>；list_dir = 目录读取形态（文件夹 chip，<code>.</code> 显示「当前目录」）</td><td align="left"><code>ToolCallCard.tsx</code></td></tr>
+<tr><td>7</td><td>对话问题导航条</td><td align="left">用户提问粒度刻度 + Radix Tooltip 预览 + 平滑跳转 + 山峰衰减动效 + 自适应高度（240px/10~24px）</td><td align="left"><code>ConversationNavigator.tsx</code></td></tr>
+<tr><td>8</td><td>时间打点数据层</td><td align="left">assistant/tool 条目 <code>startedAt/endedAt</code>、<code>thinkingStartedAt/thinkingDurationMs</code>；注入时钟贯通状态机；不参与 toApiMessages</td><td align="left"><code>conversationModel.js/.d.ts</code></td></tr>
+<tr><td>9</td><td>streamSimple 修复</td><td align="left">修复误用裸 <code>stream</code> 导致思考被显式禁用的事故（详见 九.4）</td><td align="left"><code>runAgentTurn.ts</code></td></tr>
+<tr><td>10</td><td>推理能力乐观兜底</td><td align="left">无 effort 元数据模型视为支持思考（档位 Default/Low/Medium/High，可 off）；已声明模型仍严格按元数据过滤</td><td align="left"><code>App.tsx</code>、<code>LexicalComposer.tsx</code>、<code>modelFactory.ts</code></td></tr>
+<tr><td>11</td><td>右侧代码/变更预览面板（PreviewPane 完整移植）</td><td align="left">编辑/写入卡审查 → patch 模式（Shiki 高亮 diff）；读取卡 → 文件行号预览（Rust <code>fs_read_text_file</code> 256KB 截断+二进制探测）；<code>@pierre/diffs</code> + <code>shiki</code> 已引入；Media/PDF/PPTX/Office 为诚实降级 stub</td><td align="left"><code>src/preview/**</code>（约 40 文件）、<code>fs_cmd.rs</code>、<code>CodeViewerPaneHost.tsx</code></td></tr>
+<tr><td>12</td><td>文件更改摘要卡</td><td align="left">轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；<strong>仅在整轮结束后显示</strong>（编辑过程中看各工具卡，对齐 ZCode 时机）；同文件多次编辑按路径聚合为净变更，净零文件过滤；<strong><code>.ReinAgent/.temp/</code> 下的一次性脚本不进摘要</strong>（<code>isReinAgentTempPath</code>：不列行、不计入数量与增删统计，全部为 temp 时整卡隐藏；用户确认不做自动清理，手动清理按钮保留）；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2）；header 附**「清理临时目录」**按钮（行内二次确认 → <code>fs_clean_reinagent_tmp</code>）</td><td align="left"><code>TurnGroupView.tsx</code>（TurnFileSummaryCard）</td></tr>
+<tr><td>13.4</td><td>会话统计行（SessionStatsBar，对齐 LiveAgent 底部统计条）</td><td align="left">底栏下一行等宽小字：`N 轮 · M 步</td><td align="left">上下文 P%</td></tr>
+<tr><td>13.5</td><td>上下文容量面板</td><td align="left">触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 缓存命中率（移至会话统计行，≥0 才显示）；已用取真实 usage（input+cacheRead+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；<strong>不含剩余额度</strong>（用户确认排除）；<strong>明细行可点击</strong>——有内容的类别（消息/系统提示词/系统工具）懒构建真实文本在右侧面板查看（markdown/json 高亮），无内容类别（技能/MCP/其他）如实 0.0% 且不可点击</td><td align="left"><code>contextUsage.ts</code>、<code>ContextUsageIndicator.tsx</code>、<code>LexicalComposer.tsx</code>、<code>App.tsx</code></td></tr>
+<tr><td>14</td><td><strong>任务级设置隔离 + 审批模式落地（对齐 ZCode task-local thoughtLevel/mode）</strong></td><td align="left">三项设置按任务隔离：模型（<code>providerId/modelId</code>，已有）、推理等级（<code>thinkingLevel?</code>）、审批模式（<code>approvalMode?</code>），字段随 task payload 进 SQLite；有活动任务读写任务字段，草稿态读写全局默认（首次发送随 createTask 落到新任务）；模型切换自动对齐改为任务粒度（只修正覆盖不受支持的任务，绝不冲掉仍受支持的覆盖）。审批模式四档（对齐 ZCode 用户可切面）：<code>plan 计划模式</code>（写/执行一律拦截+系统提示词约束只读调研）/<code>ask 变更前确认</code>（写+执行弹审批卡）/<code>edit 自动编辑</code>（写自动放行，执行弹卡）/<code>full 完全访问</code>（默认，零开销直通）；工具分级 <code>resolveToolPermissionKind</code>（read 直通/write/exec 受限，未知工具保守视为 write）。审批流经 pi-agent-core 原生 <code>beforeToolCall</code> 钩子：需要批准时 await 用户决策（<strong>循环挂起不中止</strong>，同 ZCode 权限流语义），拒绝 → <code>{block:true, reason}</code> 错误工具结果（模型知道被拒不重试）；审批卡（<code>ApprovalCard</code>）渲染于输入框上方（工具名+参数摘要+允许/总是允许/拒绝），「总是允许」为任务级内存免审集合；stop/clear/轮次异常结束均以 reject 解除挂起；模式下拉对齐 ZCode（图标+标题+描述，full 态触发按钮 warning 色）。实测：隔离（A 改 B 不动+全局不动）、拒绝（模型停手文件未创建）、允许（批准后文件真实落盘）全链路通过</td><td align="left"><code>useAppStore.ts</code>、<code>tools.js</code>（resolveToolPermissionKind）、<code>agentRuntime.js</code>（beforeToolCall 透传）、<code>runAgentTurn.ts</code>（createApprovalGate/PLAN_MODE_PROMPT）、<code>conversationPool.ts</code>（审批协调器）、<code>conversationController.js</code>（requestApproval/resolveApproval）、<code>conversationModel.js</code>（pendingApproval）、<code>ApprovalCard.tsx</code>、<code>LexicalComposer.tsx</code>、<code>App.tsx</code>、<code>approvalGate.test.mjs</code></td></tr>
+<tr><td>15</td><td><strong>应用品牌换装（logo + 应用图标 + 底栏图标条）</strong></td><td align="left">应用图标全套更换：R 主题（蓝色渐变圆角方块 + 白色粗体 R，<code>src-tauri/app-icon.png</code> 1024 源图经 <code>cargo tauri icon</code> 生成 icon.ico/icns/各尺寸 PNG/Store logos），窗口/任务栏/开始菜单生效（需 Rust 重构建后启动）；左上角 logo 改为同源内联 SVG（<code>AppLogo</code> 组件，替换原文字方块）；左下角用户栏移除（头像 K/用户名 kwtgsgi8 删除），替换为 <strong>PI-Desktop sidebar-footer 同款图标条</strong>（lucide 14px 图标 + 32×32 命中区 + radix Tooltip 300ms，对齐 TooltipButton/footer-action）：齿轮=设置（可点，i18n settings）/ <strong>插头 Plug=插件</strong>（navPlugins，打开插件页）/ 时钟=定时任务（navScheduled，占位）/ 电脑（原 Monitor，占位）——占位无功能、默认全部不高亮；右侧版本号 <code>v{getVersion()}</code> 对齐 footer-build（<strong>12px tabular-nums leading-none、UI 字体非 mono</strong>；浏览器模式取不到则隐藏）</td><td align="left"><code>WorkspaceSidebar.tsx</code>（AppLogo + 底栏）、<code>src-tauri/icons/*</code>、<code>src-tauri/app-icon.png</code></td></tr>
+<tr><td>13</td><td>临时/资料目录约定（B+C 组合，对齐 pi 的 <code>.pi/</code> 模式）</td><td align="left">系统提示词约定：一次性脚本/分析产物必须放 <code>&lt;工作区&gt;/.ReinAgent/.temp/</code>（视为可丢弃）；记忆等持久资料也统一放 <code>&lt;工作区&gt;/.ReinAgent/</code> 下各自子目录（禁止散落项目根）；Rust <code>fs_clean_reinagent_tmp</code> 白名单清理 <code>.ReinAgent/.temp</code>（两级路径严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈）。参照：PI-Desktop host-core 的 <code>.pi/</code> 工作区目录模式（plans/artifact.rs，路径安全校验同思路）</td><td align="left"><code>runAgentTurn.ts</code>、<code>fs_cmd.rs</code>、<code>TurnGroupView.tsx</code></td></tr>
 </tbody>
 </table>
 <h3>2. 未实现（Gap 清单，按主题分组）</h3>
@@ -2718,6 +2718,42 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。</p>
 </ul>
 <h3>部署前置</h3>
 <p>仓库 Settings → Pages 的 Source 必须设为 <strong>GitHub Actions</strong>（分支部署只支持 <code>/</code> 或 <code>/docs</code> 根，且根目录 <code>index.html</code> 已被 Vite/Tauri 应用占用）。</p>
+<h2>十九、隧道子进程单进程纪律（2026-10-13 落地）</h2>
+<h3>问题现象</h3>
+<p>系统上堆积多个 <code>cloudflared.exe</code>（均由 ReinAgent 拉起、指向 <code>127.0.0.1:&lt;远控端口&gt;</code>）。</p>
+<h3>根因（<code>src-tauri/src/remote_tunnel.rs</code>）</h3>
+<ol>
+<li><code>st.child</code> 仅存内存句柄，<strong>无按进程名清理逻辑</strong>。应用非正常退出（dev 模式 Ctrl+C、任务管理器强杀、崩溃）时子进程成孤儿，永久残留；<code>restore_on_startup</code> 每次启动又拉起新隧道，孤儿逐次累积。</li>
+<li><code>remote_server_config</code> 以火忘式 <code>tauri::async_runtime::spawn</code> 调起 start，快速连点会让两个任务都在对方登记 child 之前跑完 <code>stop_tunnel</code>，前一个句柄被覆盖后彻底失联（多线程运行时下真实可复现）。</li>
+<li>Windows 未挂 Job Object、Linux 未设 PDEATHSIG，父进程一死子进程必然孤岛。</li>
+</ol>
+<h3>四条防线（相互独立，任一条生效即可避免堆积）</h3>
+<table>
+<thead>
+<tr><th>防线</th><th>实现</th></tr>
+</thead>
+<tbody>
+<tr><td>启停串行化</td><td><code>TUNNEL_OPS</code>（<code>tokio::sync::Mutex</code>）串起 <code>start_cloudflare_tunnel</code> / <code>stop_tunnel</code> 全链路，消除交错窗口</td></tr>
+<tr><td>精确孤儿回收</td><td><code>reclaim_orphan_tunnel()</code>：PID 文件（<code>~/.ReinAgent/bin/tunnel.pid</code>）+ 进程名双重校验，只回收本应用遗留且仍在跑的 cloudflared</td></tr>
+<tr><td>宿主连坐</td><td>Windows：Job Object + <code>JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE</code>（裸 FFI 声明 kernel32，含编译期布局断言）；Linux：<code>pre_exec</code> 内 <code>setsid()</code> + <code>prctl(PR_SET_PDEATHSIG, SIGKILL)</code></td></tr>
+<tr><td>退出兜底</td><td><code>stop_tunnel_sync</code> 挂 <code>RunEvent::ExitRequested</code> / <code>Exit</code>，终止并回收句柄、清理 PID 文件</td></tr>
+</tbody>
+</table>
+<h3>关键设计约束</h3>
+<ul>
+<li><strong>绝不按进程名批量清杀</strong>（不用 <code>taskkill /IM cloudflared.exe /F</code>）：会误杀用户在终端手动运行的 cloudflared。回收一律走「PID 文件 + 进程名校验」精确路径。</li>
+<li><strong>双重校验不可简化</strong>：PID 会被系统复用，只校验存活可能误杀复用了该 PID 的无关进程。</li>
+<li>Linux 侧 <code>is_alive_cloudflared</code> 必须挡掉 <code>pid == 0</code> 与 <code>pid &gt; i32::MAX</code> —— <code>kill(2)</code> 会把 <code>0</code> 解释为「当前进程组」、<code>-1</code>（<code>u32::MAX</code>）解释为「所有进程」，两者都会「成功」，导致不存在的 PID 被误判为存活（该缺陷由单测 <code>test_is_alive_cloudflared_false_for_dead_pid</code> 捕获）。有 <code>/proc</code> 时以 <code>/proc/&lt;pid&gt;/comm</code> 为权威判据。</li>
+<li>Windows FFI 结构体（<code>JOBOBJECT_EXTENDED_LIMIT_INFORMATION</code> 等）与 SDK 逐字节一致：<code>BasicLimitInformation</code> 64B、<code>IoCounters</code> 48B、整体 144B，已加编译期断言（仅 64 位目标）。</li>
+<li>Job 创建/绑定失败一律<strong>降级为不绑定并留日志</strong>，不中断隧道（隧道可用性优先，孤儿风险由 PID 回收兜底）。</li>
+</ul>
+<h3>已知限制：域名无法固定</h3>
+<p>Quick Tunnel（<code>cloudflared tunnel --url</code>）的 <code>*.trycloudflare.com</code> 域名由 Cloudflare 随机分配，<strong>无法固定</strong>，这是官方产品限制。需固定域名须改用 Named Tunnel（<code>cloudflared tunnel run --token &lt;token&gt;</code>，需 Cloudflare 账号 + 托管域名），当前版本未实现。<code>custom</code> 模式为「用户自备反代」语义：ReinAgent 只拼接展示自定义 URL，自身不拉起隧道。</p>
+<h3>验证</h3>
+<ul>
+<li>单测 9 项（PID 文件往返/拒垃圾、进程名拒非 cloudflared、死 PID 判否、回收幂等、世代守卫等）全绿；全仓 247/247 通过；<code>cargo clippy</code> 本文件仅余 1 条既有告警。</li>
+<li><strong>Windows 分支本机未能编译验证</strong>（缺 MSVC 工具链，交叉编译失败于 <code>lib.exe</code>）：Job Object FFI 经独立子代理逐字段核对 SDK 绑定确认正确，最终编译/运行验证需在 <code>windows-latest</code> 上进行。</li>
+</ul>
 </div>
     <div class="docs-pager"><span><a href="dev.html">← 参与开发</a></span><span><a href="PROMPTS.html">提示词参考与现状 →</a></span></div>
     </div>
