@@ -44,6 +44,15 @@ test("groupTurns 无 user 消息的历史数据也能成轮（key 用首条活�
   assert.equal(turns[0].userMessage, undefined);
 });
 
+test("groupTurns compact 类型的 assistant 条目不作为 lastAssistant", () => {
+  const compactMsg = msg("c1", "assistant", "摘要内容", "done", { kind: "compact" });
+  const turns = groupTurns([compactMsg]);
+  assert.equal(turns.length, 1);
+  assert.equal(turns[0].key, "c1");
+  assert.equal(turns[0].activity.length, 1);
+  assert.equal(turns[0].lastAssistant, undefined, "compact 摘要条目严禁落入 lastAssistant 造成时间线重复渲染");
+});
+
 test("groupTurns 运行判定与工时聚合", () => {
   const timeline = [
     msg("u1", "user", "Q"),

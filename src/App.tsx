@@ -114,7 +114,7 @@ import { createMemoryOrganizerService, installMemoryOrganizerService } from "./l
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { loadProvidersConfigFromDisk, providerAllowsMissingApiKey, resolveSupportedEffortLevels, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
-  Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe
+  Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe, Gauge, X
 } from "lucide-react";
 
 export default function App() {
@@ -1286,16 +1286,37 @@ export default function App() {
     };
   }, [effectiveWorkspaceRoot]);
 
-  // ---- 压缩事件反馈（/compact 与自动压缩：skipped/failed/done 都给可见反馈）----
+  // ---- 压缩事件与内联提示状态（/compact、/compress 与一键压缩）----
+  const [isCompacting, setIsCompacting] = useState(false);
+  const [contextNotice, setContextNotice] = useState<{ text: string; type: "success" | "warn" | "error" } | null>(null);
+
   useEffect(() => {
-    if (!activeTaskId) return;
+    if (!activeTaskId) {
+      setIsCompacting(false);
+      setContextNotice(null);
+      return;
+    }
+    // 切换任务时重置内联提示
+    setContextNotice(null);
     return onCompactionEvent(activeTaskId, (event) => {
-      if (event.type === "compaction_done") {
-        toast.success(t("compactionDone").replace("{count}", String(event.turnCount ?? 0)), { duration: 4000 });
+      if (event.type === "compaction_started") {
+        setIsCompacting(true);
+      } else if (event.type === "compaction_done") {
+        setIsCompacting(false);
+        const count = event.turnCount ?? 0;
+        setContextNotice({ text: t("compactionSuccess").replace("{count}", String(count)), type: "success" });
+        toast.success(t("compactionDone").replace("{count}", String(count)), { duration: 4000 });
       } else if (event.type === "compaction_failed") {
-        toast.error(t("compactionFailed").replace("{error}", event.error ?? ""), { duration: 6000 });
-      } else if (event.type === "compaction_skipped" && event.manual) {
-        toast.error(t("compactionNothing"), { duration: 4000 });
+        setIsCompacting(false);
+        const err = event.error ?? "";
+        setContextNotice({ text: t("compactionFailedWithReason").replace("{error}", err), type: "error" });
+        toast.error(t("compactionFailed").replace("{error}", err), { duration: 6000 });
+      } else if (event.type === "compaction_skipped") {
+        setIsCompacting(false);
+        if (event.manual) {
+          setContextNotice({ text: t("compactionInsufficient"), type: "warn" });
+          toast.error(t("compactionNothing"), { duration: 4000 });
+        }
       }
     });
   }, [activeTaskId, t]);
@@ -1489,13 +1510,14 @@ export default function App() {
     clearConversation(activeTaskId);
   }, [activeTaskId, confirmDialog, t]);
 
-  /** `/compact`：手动压缩（引擎=批次 D compaction.ts；忙时/无内容如实提示）。 */
+  /** `/compact` / `/compress`：手动压缩（引擎=批次 D compaction.ts；忙时/无内容如实提示）。 */
   const handleCompactRequest = useCallback(() => {
     if (!activeTaskId) return;
     void (async () => {
       const { compactConversation } = await import("./lib/chat/conversationPool");
       const accepted = compactConversation(activeTaskId);
       if (!accepted) {
+        setContextNotice({ text: t("compactionInsufficient"), type: "warn" });
         toast.error(t("compactionNothing"), { duration: 4000 });
       }
     })();
@@ -1507,6 +1529,8 @@ export default function App() {
     userAttachments?: { path: string; name: string; kind: "image" | "file"; previewUrl?: string }[],
     opts?: { explicitTaskId?: string | null; explicitProject?: string | null },
   ) => {
+    // 用户继续发送消息：自动清除上下文通知条（无感流转）
+    setContextNotice(null);
     // F4：当前服务商/模型被禁用 → 明确拦截并提示（禁用是本义上的"不可用"，
     // 绝不能照发请求）。对齐既有 hook-block 的 toast + 早退样式。
     const zh = locale === "zh-CN";
@@ -1918,8 +1942,38 @@ export default function App() {
                     }}
                   />
                 )}
+                {/* 上下文提示条：压缩成功显示绿色，跳过/失败显示琥珀色警告 */}
+                {contextNotice && (
+                  <div
+                    className={`mb-2.5 mx-auto max-w-3xl w-full flex items-start gap-2.5 rounded-xl border px-4 py-2.5 text-xs select-none transition-all ${
+                      contextNotice.type === "success"
+                        ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300"
+                    }`}
+                  >
+                    <Gauge
+                      className={`w-4 h-4 mt-0.5 shrink-0 ${
+                        contextNotice.type === "success" ? "text-emerald-500" : "text-amber-500"
+                      }`}
+                    />
+                    <span className="min-w-0 flex-1 leading-relaxed">{contextNotice.text}</span>
+                    <button
+                      type="button"
+                      onClick={() => setContextNotice(null)}
+                      className={`shrink-0 transition-colors cursor-pointer p-0.5 ${
+                        contextNotice.type === "success"
+                          ? "text-emerald-500/70 hover:text-emerald-500"
+                          : "text-amber-500/70 hover:text-amber-500"
+                      }`}
+                      aria-label="关闭"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                )}
                 <LexicalComposer
                   isStreaming={isStreaming}
+                  isCompacting={isCompacting}
                   taskId={activeTaskId ?? undefined}
                   onSend={handleSend}
                   onStop={stop}
@@ -2231,6 +2285,7 @@ export default function App() {
                 <div className="mt-16 w-full">
                   <LexicalComposer
                     isStreaming={isStreaming}
+                    isCompacting={isCompacting}
                     taskId={activeTaskId ?? undefined}
                     onSend={handleSend}
                     onStop={stop}

@@ -7,6 +7,7 @@
  * - 「剩余额度」区块不在本功能范围（用户已确认排除）。
  */
 import { HoverCard } from "radix-ui";
+import { Loader2 } from "lucide-react";
 import type { ContextUsageData } from "../../lib/chat/contextUsage";
 import { formatCompactTokens } from "../../lib/chat/contextUsage";
 import { useTranslation, type TranslationKey } from "../../i18n";
@@ -29,7 +30,17 @@ function ringColor(pct: number): string {
   return "var(--status-ok)";
 }
 
-export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
+export function ContextUsageIndicator({
+  data,
+  onCompact,
+  isCompacting = false,
+  disabled = false,
+}: {
+  data: ContextUsageData;
+  onCompact?: () => void;
+  isCompacting?: boolean;
+  disabled?: boolean;
+}) {
   const { t, locale } = useTranslation();
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
   const pct = Math.min(100, Math.max(0, data.percent));
@@ -148,6 +159,28 @@ export function ContextUsageIndicator({ data }: { data: ContextUsageData }) {
               );
             })}
           </div>
+
+          {/* 压缩上下文按钮（对齐 Hetu 紫色/品牌色高亮按钮） */}
+          {onCompact && (
+            <div className="mt-3 pt-2.5 border-t border-[var(--border)]">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCompact();
+                }}
+                disabled={isCompacting || disabled}
+                className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-[var(--brand)] px-3 py-1.5 text-[12px] font-medium text-white transition-all hover:brightness-110 active:scale-[0.99] disabled:cursor-not-allowed disabled:opacity-50 cursor-pointer select-none"
+              >
+                {isCompacting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                <span>
+                  {isCompacting
+                    ? (t("contextUsageCompacting" as TranslationKey) || "正在压缩…")
+                    : (t("contextUsageCompactBtn" as TranslationKey) || "压缩上下文")}
+                </span>
+              </button>
+            </div>
+          )}
         </HoverCard.Content>
       </HoverCard.Portal>
     </HoverCard.Root>

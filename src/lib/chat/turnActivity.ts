@@ -12,6 +12,7 @@
 
 import type { TimelineEntry, ToolTimelineEntry } from "./conversationModel";
 import type { LineChangeStat } from "../../preview/shared-src/lineChangeStat.ts";
+import { isCompactEntry } from "./compaction.ts";
 
 export { computeLineChangeStat } from "../../preview/shared-src/lineChangeStat.ts";
 export type { LineChangeStat };
@@ -64,7 +65,7 @@ export function groupTurns(messages: TimelineEntry[]): TurnGroup[] {
       turns.push(current);
     }
     current.activity.push(message);
-    if (message.role === "assistant") current.lastAssistant = message;
+    if (message.role === "assistant" && !isCompactEntry(message)) current.lastAssistant = message;
   }
 
   for (const turn of turns) {

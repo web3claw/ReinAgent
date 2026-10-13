@@ -464,7 +464,7 @@ ReinAgent 架构全景
 | 11 | 右侧代码/变更预览面板（PreviewPane 完整移植） | 编辑/写入卡审查 → patch 模式（Shiki 高亮 diff）；读取卡 → 文件行号预览（Rust `fs_read_text_file` 256KB 截断+二进制探测）；`@pierre/diffs` + `shiki` 已引入；Media/PDF/PPTX/Office 为诚实降级 stub | `src/preview/**`（约 40 文件）、`fs_cmd.rs`、`CodeViewerPaneHost.tsx` |
 | 12 | 文件更改摘要卡 | 轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；**仅在整轮结束后显示**（编辑过程中看各工具卡，对齐 ZCode 时机）；同文件多次编辑按路径聚合为净变更，净零文件过滤；**`.ReinAgent/.temp/` 下的一次性脚本不进摘要**（`isReinAgentTempPath`：不列行、不计入数量与增删统计，全部为 temp 时整卡隐藏；用户确认不做自动清理，手动清理按钮保留）；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2）；header 附**「清理临时目录」**按钮（行内二次确认 → `fs_clean_reinagent_tmp`） | `TurnGroupView.tsx`（TurnFileSummaryCard） |
 | 13.4 | 会话统计行（SessionStatsBar，对齐 LiveAgent 底部统计条） | 底栏下一行等宽小字：`N 轮 · M 步 | 上下文 P% | LLM/工具 耗时 | 输入/输出 tok · 命中 %`；耗时来自时间打点累计（流式段按当前时刻实算）；命中率 = 累计 cacheRead /（累计 input + cacheRead）（全会话口径，修复只取末条的 0%/100% 跳变）；居中、13px、亮色 | `SessionStatsBar.tsx`、`App.tsx` |
-| 13.5 | 上下文容量面板 | 触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 缓存命中率（移至会话统计行，≥0 才显示）；已用取真实 usage（input+cacheRead+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；**不含剩余额度**（用户确认排除）；**明细行可点击**——有内容的类别（消息/系统提示词/系统工具）懒构建真实文本在右侧面板查看（markdown/json 高亮），无内容类别（技能/MCP/其他）如实 0.0% 且不可点击 | `contextUsage.ts`、`ContextUsageIndicator.tsx`、`LexicalComposer.tsx`、`App.tsx` |
+| 13.5 | 上下文容量面板 | 触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 缓存命中率（移至会话统计行，≥0 才显示）；已用取真实 usage（input+cacheRead+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；**不含剩余额度**（用户确认排除）；**明细行可点击**——有内容的类别（消息/系统提示词/系统工具）懒构建真实文本在右侧面板查看（markdown/json 高亮），无内容类别（技能/MCP/其他）如实 0.0% 且不可点击；**底部一键【压缩上下文】按钮**（对齐 Hetu 紫色/品牌色高亮按钮交互，无任务或流式中禁用，压缩中显示【正在压缩…】；支持 `/compact` 与 `/compress` 斜杠命令）；**对话区底部内联通知栏**（对齐 Hetu 圆角通知条，压缩成功为绿色，跳过/失败为琥珀色警告，带 Gauge 图标与 ✕ 关闭按钮；用户继续发送新消息时自动无感关闭清除）；**压缩条目去重隔离**（`kind: compact` 条目仅在轮首由 `CompactionBand` 渲染，`groupTurns` 与 `TurnGroupView` 严格排除其落入 `lastAssistant` 或常规工时条，彻底杜绝下方重复冒出常规气泡与 0 秒已处理条目） | `contextUsage.ts`、`ContextUsageIndicator.tsx`、`LexicalComposer.tsx`、`App.tsx`、`turnActivity.ts`、`TurnGroupView.tsx` |
 | 14 | **任务级设置隔离 + 审批模式落地（对齐 ZCode task-local thoughtLevel/mode）** | 三项设置按任务隔离：模型（`providerId/modelId`，已有）、推理等级（`thinkingLevel?`）、审批模式（`approvalMode?`），字段随 task payload 进 SQLite；有活动任务读写任务字段，草稿态读写全局默认（首次发送随 createTask 落到新任务）；模型切换自动对齐改为任务粒度（只修正覆盖不受支持的任务，绝不冲掉仍受支持的覆盖）。审批模式四档（对齐 ZCode 用户可切面）：`plan 计划模式`（写/执行一律拦截+系统提示词约束只读调研）/`ask 变更前确认`（写+执行弹审批卡）/`edit 自动编辑`（写自动放行，执行弹卡）/`full 完全访问`（默认，零开销直通）；工具分级 `resolveToolPermissionKind`（read 直通/write/exec 受限，未知工具保守视为 write）。审批流经 pi-agent-core 原生 `beforeToolCall` 钩子：需要批准时 await 用户决策（**循环挂起不中止**，同 ZCode 权限流语义），拒绝 → `{block:true, reason}` 错误工具结果（模型知道被拒不重试）；审批卡（`ApprovalCard`）渲染于输入框上方（工具名+参数摘要+允许/总是允许/拒绝），「总是允许」为任务级内存免审集合；stop/clear/轮次异常结束均以 reject 解除挂起；模式下拉对齐 ZCode（图标+标题+描述，full 态触发按钮 warning 色）。实测：隔离（A 改 B 不动+全局不动）、拒绝（模型停手文件未创建）、允许（批准后文件真实落盘）全链路通过 | `useAppStore.ts`、`tools.js`（resolveToolPermissionKind）、`agentRuntime.js`（beforeToolCall 透传）、`runAgentTurn.ts`（createApprovalGate/PLAN_MODE_PROMPT）、`conversationPool.ts`（审批协调器）、`conversationController.js`（requestApproval/resolveApproval）、`conversationModel.js`（pendingApproval）、`ApprovalCard.tsx`、`LexicalComposer.tsx`、`App.tsx`、`approvalGate.test.mjs` |
 | 15 | **应用品牌换装（logo + 应用图标 + 底栏图标条）** | 应用图标全套更换：R 主题（蓝色渐变圆角方块 + 白色粗体 R，`src-tauri/app-icon.png` 1024 源图经 `cargo tauri icon` 生成 icon.ico/icns/各尺寸 PNG/Store logos），窗口/任务栏/开始菜单生效（需 Rust 重构建后启动）；左上角 logo 改为同源内联 SVG（`AppLogo` 组件，替换原文字方块）；左下角用户栏移除（头像 K/用户名 kwtgsgi8 删除），替换为 **PI-Desktop sidebar-footer 同款图标条**（lucide 14px 图标 + 32×32 命中区 + radix Tooltip 300ms，对齐 TooltipButton/footer-action）：齿轮=设置（可点，i18n settings）/ **插头 Plug=插件**（navPlugins，打开插件页）/ 时钟=定时任务（navScheduled，占位）/ 电脑（原 Monitor，占位）——占位无功能、默认全部不高亮；右侧版本号 `v{getVersion()}` 对齐 footer-build（**12px tabular-nums leading-none、UI 字体非 mono**；浏览器模式取不到则隐藏） | `WorkspaceSidebar.tsx`（AppLogo + 底栏）、`src-tauri/icons/*`、`src-tauri/app-icon.png` |
 | 13 | 临时/资料目录约定（B+C 组合，对齐 pi 的 `.pi/` 模式） | 系统提示词约定：一次性脚本/分析产物必须放 `<工作区>/.ReinAgent/.temp/`（视为可丢弃）；记忆等持久资料也统一放 `<工作区>/.ReinAgent/` 下各自子目录（禁止散落项目根）；Rust `fs_clean_reinagent_tmp` 白名单清理 `.ReinAgent/.temp`（两级路径严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈）。参照：PI-Desktop host-core 的 `.pi/` 工作区目录模式（plans/artifact.rs，路径安全校验同思路） | `runAgentTurn.ts`、`fs_cmd.rs`、`TurnGroupView.tsx` |
@@ -1958,3 +1958,27 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 
 - 单测 9 项（PID 文件往返/拒垃圾、进程名拒非 cloudflared、死 PID 判否、回收幂等、世代守卫等）全绿；全仓 247/247 通过；`cargo clippy` 本文件仅余 1 条既有告警。
 - **Windows 分支本机未能编译验证**（缺 MSVC 工具链，交叉编译失败于 `lib.exe`）：Job Object FFI 经独立子代理逐字段核对 SDK 绑定确认正确，最终编译/运行验证需在 `windows-latest` 上进行。
+
+---
+
+## 二十、自进化研发体系（对标 magpie，2026-10-13 落地）
+
+### 机制背景
+全面借鉴 magpie 项目的自主闭环研发模式，解决大型项目中 Agent 规则过度静态膨胀、缺乏量化教训跟踪以及单元测试容易出现“假绿灯”的问题。
+
+### 核心组成（三位一体）
+
+1. **总路由表（`AGENTS.md`）**：
+   - 极简启动路由：`AGENTS.md`（铁律与路由） → `docs/LESSONS.md`（动态错题本） → `docs/PROJECT_CONTEXT.md`（单点真相）。
+   - 明确定位子系统目录路径，避免每次在根规则中堆砌代码细节。
+
+2. **动态错题本与晋升机制（`docs/LESSONS.md`）**：
+   - 跟踪三类场景：**返工失误（Regression）、架构破坏（Bad Merges）、粗糙验证（Shallow Verification）**。
+   - 格式规范：`**<规则>** - <事故与后果> - <修复方案> - Done right: <范例> - Seen N× (日期...)`。
+   - **“事不过三”（Seen 3×）硬规则晋升**：任何经验教训若在 3 个不同日期/任务中重复出现，强制从经验备忘转正升级为 `AGENTS.md` 的系统硬性规范。
+
+3. **交付三铁律（验收与测试标准）**：
+   - **回退与破坏变异测试 (Red Check / Break Check)**：修复 Bug 或新增守护逻辑时，新编写的测试必须在老代码或故意破坏的代码上真实报错，证明测试有效，杜绝“永远绿灯的假测试”。
+   - **真实环境调用 (Real Usage)**：涉及 API 元数据、终端 PTY 交互与文件系统时，必须使用真实链路验证。严禁捏造假数据或用假 Mock 掩盖异常。
+   - **交付报告诚实声明 (Honest Listing / Not Run)**：任务汇报必须区分标注 `Passed`（真实跑通项）、`Red/Break Verified`（破坏性反向验证项）和 `Not run`（未测场景及原因），严禁隐瞒。
+

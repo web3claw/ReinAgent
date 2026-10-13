@@ -352,7 +352,9 @@ function TurnGroupViewImpl({
   const hasIntermediateText = group.activity.some(
     (entry) => entry.role === "assistant" && entry !== lastAssistant && entry.text.length > 0
   );
-  const showHeader = group.activity.length > 0;
+  // 纯 compact 条目（压缩带）已有专属 CompactionBand 渲染，不属于普通活动工时
+  const nonCompactActivity = group.activity.filter((entry) => !isCompactEntry(entry));
+  const showHeader = nonCompactActivity.length > 0 || (!!group.userMessage && isTurnRunning);
   const hasBody = hasThinking || hasTools || hasIntermediateText;
   // 连续 websearch 合并为聚合段（联网搜索聚合行，其余条目逐条渲染）
   const activitySegments = useMemo(() => buildActivitySegments(group.activity), [group.activity]);
@@ -493,8 +495,8 @@ function TurnGroupViewImpl({
         </div>
       ) : null}
 
-      {/* 最终回复：轮结束后外显（运行中正文已在折叠体时间线位置就地渲染，见文件头）。 */}
-      {lastAssistant && !isTurnRunning ? (
+      {/* 最终回复：轮结束后外显（压缩条目不作为助手回复渲染，已在上方 CompactionBand 渲染）。 */}
+      {lastAssistant && !isCompactEntry(lastAssistant) && !isTurnRunning ? (
         <>
           <MessageItem
             message={lastAssistant}

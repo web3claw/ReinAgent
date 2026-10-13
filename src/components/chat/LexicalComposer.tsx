@@ -120,6 +120,8 @@ export interface LexicalComposerProps {
   onClearConversation?: () => void;
   /** `/compact`：手动压缩上下文（App 层执行；未接线时如实提示） */
   onCompactRequest?: () => void;
+  /** 上下文正在压缩中 */
+  isCompacting?: boolean;
   /** 语音输入未配置时引导打开设置「语音输入」tab */
   onOpenSttSettings?: () => void;
   /**
@@ -167,6 +169,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   taskId,
   onClearConversation,
   onCompactRequest,
+  isCompacting = false,
   onOpenSttSettings,
   onRegisterPushToTalk,
   onSend,
@@ -894,7 +897,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       setText("");
       return;
     }
-    if (cmd.name === "compact") {
+    if (cmd.name === "compact" || cmd.name === "compress") {
       if (!taskId) {
         toast.error("当前还没有会话，无法执行 /compact");
         return;
@@ -1405,7 +1408,14 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
 
         {/* 右侧：上下文容量、模型选择、思考深度、发送按钮、语音输入 */}
         <div className="flex items-center gap-2">
-          {contextUsage && <ContextUsageIndicator data={contextUsage} />}
+          {contextUsage && (
+            <ContextUsageIndicator
+              data={contextUsage}
+              onCompact={onCompactRequest}
+              isCompacting={isCompacting}
+              disabled={isStreaming}
+            />
+          )}
           {/* Model Selector Dropdown */}
           <div className="relative">
             <button

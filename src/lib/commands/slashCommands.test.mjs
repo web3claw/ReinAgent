@@ -81,10 +81,11 @@ test("toCustomCommands：防御性解析（脏数据不崩、非法名丢弃）"
   assert.equal(out[2].body, "", "非字符串 body 归一为空串");
 });
 
-test("BUILTIN_COMMANDS：内置命令清单稳定（clear/compact/init/plan/goal/help）", () => {
+test("BUILTIN_COMMANDS：内置命令清单稳定（clear/compact/compress/init/plan/goal/help）", () => {
   assert.deepEqual(BUILTIN_COMMANDS.map((c) => c.name).sort(), [
     "clear",
     "compact",
+    "compress",
     "goal",
     "help",
     "init",
@@ -95,6 +96,7 @@ test("BUILTIN_COMMANDS：内置命令清单稳定（clear/compact/init/plan/goal
 
 test("matchBuiltinCommand：整串精确命中内置命令才执行；路径/未注册/普通文本一律放行", () => {
   assert.equal(matchBuiltinCommand("/compact")?.command.name, "compact");
+  assert.equal(matchBuiltinCommand("/compress")?.command.name, "compress");
   assert.equal(matchBuiltinCommand("  /clear  ")?.command.name, "clear", "trim 后命中");
   assert.deepEqual(matchBuiltinCommand("/compact 额外参数"), {
     command: BUILTIN_COMMANDS.find((c) => c.name === "compact"),

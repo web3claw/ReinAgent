@@ -38,6 +38,12 @@ export const BUILTIN_COMMANDS: SlashCommand[] = [
     kind: "builtin",
   },
   {
+    name: "compress",
+    label: "compress",
+    description: "压缩上下文：把较早的轮次交给摘要模型生成摘要（/compact 别名）",
+    kind: "builtin",
+  },
+  {
     name: "init",
     label: "init",
     description: "创建或更新工作区的 AGENTS.md 项目说明（供后续会话注入，可选备注）",

@@ -24,7 +24,51 @@
 
 ---
 
-## 3. Linux Compilation & Execution Environment (编译与运行规范)
+## 3. Architecture Routing & Document Hierarchy (文档路由与查阅层级)
+
+接手开发或执行任务时，必须遵循以下启动查阅路线：
+
+1. **第一站：[AGENTS.md](./AGENTS.md)**（当前文件）：项目全局铁律、底线规范与执行约束；
+2. **第二站：[docs/LESSONS.md](./docs/LESSONS.md)**：查看动态错题本与近期教训，防止重复踩坑；
+3. **第三站：[docs/PROJECT_CONTEXT.md](./docs/PROJECT_CONTEXT.md)**：系统全景单点真相，获取最完整的状态流转、组件划分与实现细节。
+
+### 子系统定位路由：
+- **前端交互与 UI 组件**：`src/components/`（侧边栏、对话流、输入胶囊、设置页），全局样式见 `src/styles/global.css`
+- **会话调度与状态机**：`src/lib/chat/`（`conversationModel`、`conversationController`、`conversationPool`、`stateBridge`）
+- **模型接入与审批门禁**：`src/lib/providers/`（`runAgentTurn`、`modelFactory`、`approvalGate`、`toolPolicy`）
+- **Agent 运行时与工具**：`src/lib/agent/`（`agentRuntime`、`tools`、`workspace`）
+- **Rust / Tauri 桌面后端**：`src-tauri/`（`src/terminal.rs` PTY 终端、`src/fs_cmd.rs` 异步文件命令）
+
+---
+
+## 4. Dynamic Lessons & Promotion Rule (动态错题本与 Seen 3× 转正机制)
+
+项目遵循对标 magpie 的自进化经验沉淀机制：
+1. **错题即时记录**：任何任务在执行过程中若出现**返工重写、同类遗漏、破坏性测试失效或用户提出纠偏**，任务结束前必须在 [docs/LESSONS.md](./docs/LESSONS.md) 登记一条 Lesson。
+2. **条目规范**：包含规则摘要、具体事故与后果、修复代码位置、正向范例（Done right）及记录日期。
+3. **“事不过三”（Seen 3×）转正硬规则**：
+   - 同一教训在 3 个不同日期/任务中复现（`Seen 3×`），立即触发升级程序；
+   - 该条规则将从 [docs/LESSONS.md](./docs/LESSONS.md) 提拔，正式写入 [AGENTS.md](./AGENTS.md) 的核心硬性红线中，后续所有 Agent 强制逐条对齐。
+
+---
+
+## 5. Testing & Verification Standards (交付三铁律，对标 magpie)
+
+除常规 `bun test` 或 `node --test` 单元测试通过外，交付验证必须严格执行以下三条铁律：
+
+1. **回退与破坏变异测试 (Red Check / Break Check)**：
+   - 修复 Bug 或新增守护逻辑时，新编写的测试必须在老代码或故意破坏的核心逻辑上真实报错（Red），证明测试能够精准捕捉缺陷，杜绝“永远绿灯的假测试”。
+2. **真实场景与 Real Usage 验证**：
+   - 涉及模型供应商元数据、API 响应、终端 PTY 交互与文件系统时，必须使用真实链路验证。严禁捏造假数据或单纯用 Fake Mock 掩盖异常。
+3. **交付报告诚实声明 (Honest Listing / Not Run)**：
+   - 任务验收报告必须分项清晰列出：
+     - `Passed`: 真实跑通的测试项与功能点；
+     - `Red/Break Verified`: 经过破坏性反向验证的测试用例；
+     - `Not run`: 因缺少真实外部环境/凭据未实测的项，必须显式注明并说明原因，严禁隐瞒。
+
+---
+
+## 6. Linux Compilation & Execution Environment (编译与运行规范)
 
 编译测试/运行验证**由 Agent 执行**，命令（仓库根目录）：
 
@@ -39,7 +83,7 @@ bun run tauri dev
 
 ---
 
-## 4. Key Architectural Rules & Pitfalls (架构避坑与开发铁律)
+## 7. Key Architectural Rules & Pitfalls (架构避坑与开发铁律)
 
 1. **包管理器限制 (Package Manager Rule)**：
    - 项目采用 **Bun**（`bun@1.4.2` 与 `bun.lock`）。严禁使用 npm/pnpm 更改锁定文件。
@@ -59,7 +103,7 @@ bun run tauri dev
 
 ---
 
-## 5. Project Context & Real-time Update Rule (核心文档实时同步规范)
+## 8. Project Context & Real-time Update Rule (核心文档实时同步规范)
 
 项目的系统设计分层、组件职责、状态流转、持久化键名及交互细节，完整记录在：
 👉 [PROJECT_CONTEXT.md](./docs/PROJECT_CONTEXT.md)
