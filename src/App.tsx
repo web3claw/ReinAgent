@@ -18,6 +18,9 @@ import { ConversationSearchDialog } from "./components/search/ConversationSearch
 import { CommandPalette, type PaletteCommand } from "./components/chat/CommandPalette";
 import { McpHubPage } from "./components/mcp/McpHubPage";
 import { AssistantsPage } from "./components/assistants/AssistantsPage";
+import { NotesPage } from "./components/notes/NotesPage";
+import type { NoteFileItem } from "./components/notes/notesService";
+import { OrganizeNoteProvider, OrganizeNoteButton, OrganizeNoteDrawer } from "./components/chat/OrganizeNotePanel";
 import { AssistantChip } from "./components/assistants/AssistantChip";
 import { BranchSwitcher } from "./components/git/BranchSwitcher";
 import { MemoryPanel } from "./components/memory/MemoryPanel";
@@ -151,6 +154,7 @@ export default function App() {
   settingsRef.current = settings;
   
   const [providers, setProviders] = useState<ProviderItem[]>([]);
+  const [targetNoteToOpen, setTargetNoteToOpen] = useState<NoteFileItem | null>(null);
   useEffect(() => {
     // F18：读取失败（配置损坏）绝不静默吞掉——如实告警；loadProvidersConfigFromDisk
     // 在解析失败时抛错且不写盘，用户配置保持原样。
@@ -2058,128 +2062,146 @@ export default function App() {
             </button>
           </div>
         ) : null}
-        {/* Topbar */}
-        <div className="h-12 border-b border-[var(--border)] flex items-center justify-between px-4 bg-[var(--bg)] flex-shrink-0">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={toggleSidebar}
-              className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors"
-              title="Toggle Sidebar"
-            >
-              {isSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
-            </button>
-            {/* 当前任务标题（顶栏左侧展示，半粗标题） */}
-            <div className="flex items-center min-w-0" title={activeTask?.title || t("newTask")}>
-              <span className="text-sm font-semibold text-[var(--text)] truncate max-w-[360px] select-none">
-                {activeTask?.title || t("newTask")}
-              </span>
+        {/* Topbar: 仅在工作台（workbench）模式下显示；自动化、助手、笔记等独立页面不显示 */}
+        {currentView === "workbench" ? (
+          <OrganizeNoteProvider
+            messages={state.messages}
+            taskTitle={activeTask?.title || t("newTask")}
+            activeTaskId={activeTaskId}
+            taskProviderId={activeTask?.providerId}
+            taskModelId={activeTask?.modelId}
+            onOpenNote={(noteItem) => {
+              setTargetNoteToOpen(noteItem);
+              setCurrentView("notes");
+            }}
+          >
+            <div className="h-12 border-b border-[var(--border)] flex items-center justify-between px-4 bg-[var(--bg)] flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={toggleSidebar}
+                  className="p-1.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors"
+                  title="Toggle Sidebar"
+                >
+                  {isSidebarOpen ? <PanelLeftClose className="w-4 h-4" /> : <PanelLeft className="w-4 h-4" />}
+                </button>
+                {/* 当前任务标题（顶栏左侧展示，半粗标题） */}
+                <div className="flex items-center min-w-0" title={activeTask?.title || t("newTask")}>
+                  <span className="text-sm font-semibold text-[var(--text)] truncate max-w-[360px] select-none">
+                    {activeTask?.title || t("newTask")}
+                  </span>
+                </div>
+                {/* 对话/轨迹 分段切换（LiveAgent ConversationViewTabs 移植）：仅工作台且有会话消息时显示 */}
+                {activeTaskId && state.messages.length > 0 ? (
+                  <ConversationViewTabs active={activeConversationView} onChange={setActiveConversationView} />
+                ) : null}
+                {/* 当前助手 chip：显示「实际生效」的助手——任务绑定优先，未绑定任务/草稿态都回退全局默认
+                    （与 buildTurnOptions 的运行时解析严格一致，禁止硬编码 GENERAL 造成显示与行为脱节） */}
+                <AssistantChip
+                  assistantId={activeTask?.assistantId ?? globalDefaultAssistantId}
+                  onPick={(id) => {
+                    if (activeTaskId) {
+                      updateTaskAssistant(activeTaskId, id);
+                      void (async () => {
+                        const cat = await import("./lib/assistants/assistantDefs").then((m) => m.loadAssistantCatalog());
+                        const def = cat.assistants.find((d) => d.id === id) ?? null;
+                        const plan = buildAssistantBindingsPlan(def, hubMcpServers.map((srv) => srv.id));
+                        if (plan.taskModel) {
+                          updateTaskModel(activeTaskId, plan.taskModel.providerId, plan.taskModel.modelId);
+                        }
+                        if (plan.taskThinkingLevel) {
+                          updateTaskThinkingLevel(activeTaskId, plan.taskThinkingLevel);
+                        }
+                        if (plan.skillSelection) {
+                          hubSetSettings((prev) => ({
+                            ...prev,
+                            skills: { ...prev.skills, selected: plan.skillSelection! },
+                          }));
+                        }
+                        if (plan.mcpEnabledIds) {
+                          const enabledSet = new Set(plan.mcpEnabledIds);
+                          hubSetSettings((prev) => ({
+                            ...prev,
+                            mcp: {
+                              ...prev.mcp,
+                              servers: prev.mcp.servers.map((srv) => ({
+                                ...srv,
+                                enabled: enabledSet.has(srv.id),
+                              })),
+                            },
+                          }));
+                        }
+                        if (plan.summary) {
+                          toast.success(`已应用助手绑定：${plan.summary}`);
+                        }
+                      })();
+                    } else {
+                      setGlobalDefaultAssistant(id);
+                    }
+                  }}
+                />
+                {/* 分支切换器（ZCode GitBranchSwitcher 移植）：选择即检出（工作区全局）；
+                    非 git 仓库/无工作区自行隐藏；新建任务草稿态与已有任务都可用 */}
+                <BranchSwitcher workspacePath={effectiveWorkspaceRoot || undefined} />
+                {/* 系统文件管理器入口：用系统文件管理器打开当前项目目录（无工作区 → 默认
+                    工作区）；web 模式隐藏（浏览器无系统能力）。目录不存在/命令失败 toast
+                    如实提示（No-Fallback）。 */}
+                {"__TAURI_INTERNALS__" in window ? (
+                  <button
+                    onClick={() => {
+                      void invoke("open_in_file_manager", { path: effectiveWorkspaceRoot ?? null }).catch(
+                        (err: unknown) => toast.error(err instanceof Error ? err.message : String(err)),
+                      );
+                    }}
+                    className="p-1 rounded hover:bg-[var(--surface-hover)] transition-colors"
+                    title="在系统文件管理器中打开项目目录"
+                  >
+                    <FileManagerIcon className="w-5 h-5" />
+                  </button>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-2">
+                {/* 整理笔记功能按钮（100% 对齐原设计与截图） */}
+                <OrganizeNoteButton />
+                <span className="w-px h-3.5 bg-[var(--border)] mx-0.5" />
+
+                {/* Git 面板入口：点击直开 Git 管理（分支/变更/历史） */}
+                <button
+                  onClick={() => openCodeViewer({ type: "git", title: effectiveWorkspaceRoot || "Git" })}
+                  className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "git" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+                  title="Git 管理"
+                >
+                  <GitBranch className="w-4 h-4" />
+                </button>
+                {/* 文件管理器入口：点击直开右侧文件面板（浏览 + 新建/重命名/删除） */}
+                <button
+                  onClick={() => openCodeViewer({ type: "files", title: "文件管理器" })}
+                  className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "files" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+                  title="文件管理器"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                </button>
+                {/* 内嵌浏览器面板（WebView2 子控件，CDP 工具面） */}
+                <button
+                  onClick={() => openCodeViewer({ type: "browser", title: "浏览器" })}
+                  className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "browser" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+                  title="浏览器"
+                >
+                  <Globe className="w-4 h-4" />
+                </button>
+                <button
+                  onClick={toggleTerminal}
+                  className={`p-1.5 rounded transition-colors flex items-center gap-1 text-sm ${isTerminalOpen ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
+                  title="Toggle Terminal"
+                >
+                  <Terminal className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            {/* 对话/轨迹 分段切换（LiveAgent ConversationViewTabs 移植）：仅工作台且有会话消息时显示 */}
-            {currentView === "workbench" && activeTaskId && state.messages.length > 0 ? (
-              <ConversationViewTabs active={activeConversationView} onChange={setActiveConversationView} />
-            ) : null}
-            {/* 当前助手 chip：显示「实际生效」的助手——任务绑定优先，未绑定任务/草稿态都回退全局默认
-                （与 buildTurnOptions 的运行时解析严格一致，禁止硬编码 GENERAL 造成显示与行为脱节） */}
-            <AssistantChip
-              assistantId={activeTask?.assistantId ?? globalDefaultAssistantId}
-              onPick={(id) => {
-                if (activeTaskId) {
-                  updateTaskAssistant(activeTaskId, id);
-                  // 助手 = 一键预设包（2026-10-11 用户定稿）：应用的那一刻一次性套用绑定
-                  // （模型/思考 → 任务字段；技能/MCP → hubSettings 启用集整组替换）。
-                  // 手动改动以手动为准（不持续锁定）；未绑定维度维持现状。
-                  void (async () => {
-                    const cat = await import("./lib/assistants/assistantDefs").then((m) => m.loadAssistantCatalog());
-                    const def = cat.assistants.find((d) => d.id === id) ?? null;
-                    const plan = buildAssistantBindingsPlan(def, hubMcpServers.map((srv) => srv.id));
-                    if (plan.taskModel) {
-                      updateTaskModel(activeTaskId, plan.taskModel.providerId, plan.taskModel.modelId);
-                    }
-                    if (plan.taskThinkingLevel) {
-                      updateTaskThinkingLevel(activeTaskId, plan.taskThinkingLevel);
-                    }
-                    if (plan.skillSelection) {
-                      hubSetSettings((prev) => ({
-                        ...prev,
-                        skills: { ...prev.skills, selected: plan.skillSelection! },
-                      }));
-                    }
-                    if (plan.mcpEnabledIds) {
-                      const enabledSet = new Set(plan.mcpEnabledIds);
-                      hubSetSettings((prev) => ({
-                        ...prev,
-                        mcp: {
-                          ...prev.mcp,
-                          servers: prev.mcp.servers.map((srv) => ({
-                            ...srv,
-                            enabled: enabledSet.has(srv.id),
-                          })),
-                        },
-                      }));
-                    }
-                    if (plan.summary) {
-                      toast.success(`已应用助手绑定：${plan.summary}`);
-                    }
-                  })();
-                } else {
-                  setGlobalDefaultAssistant(id);
-                }
-              }}
-            />
-            {/* 分支切换器（ZCode GitBranchSwitcher 移植）：选择即检出（工作区全局）；
-                非 git 仓库/无工作区自行隐藏；新建任务草稿态与已有任务都可用 */}
-            <BranchSwitcher workspacePath={effectiveWorkspaceRoot || undefined} />
-            {/* 系统文件管理器入口：用系统文件管理器打开当前项目目录（无工作区 → 默认
-                工作区）；web 模式隐藏（浏览器无系统能力）。目录不存在/命令失败 toast
-                如实提示（No-Fallback）。 */}
-            {"__TAURI_INTERNALS__" in window ? (
-              <button
-                onClick={() => {
-                  void invoke("open_in_file_manager", { path: effectiveWorkspaceRoot ?? null }).catch(
-                    (err: unknown) => toast.error(err instanceof Error ? err.message : String(err)),
-                  );
-                }}
-                className="p-1 rounded hover:bg-[var(--surface-hover)] transition-colors"
-                title="在系统文件管理器中打开项目目录"
-              >
-                <FileManagerIcon className="w-5 h-5" />
-              </button>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            {/* Git 面板入口：点击直开 Git 管理（分支/变更/历史） */}
-            <button
-              onClick={() => openCodeViewer({ type: "git", title: effectiveWorkspaceRoot || "Git" })}
-              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "git" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
-              title="Git 管理"
-            >
-              <GitBranch className="w-4 h-4" />
-            </button>
-            {/* 文件管理器入口：点击直开右侧文件面板（浏览 + 新建/重命名/删除） */}
-            <button
-              onClick={() => openCodeViewer({ type: "files", title: "文件管理器" })}
-              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "files" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
-              title="文件管理器"
-            >
-              <FolderOpen className="w-4 h-4" />
-            </button>
-            {/* 内嵌浏览器面板（WebView2 子控件，CDP 工具面） */}
-            <button
-              onClick={() => openCodeViewer({ type: "browser", title: "浏览器" })}
-              className={`p-1.5 rounded transition-colors ${codeViewerSource?.type === "browser" ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
-              title="浏览器"
-            >
-              <Globe className="w-4 h-4" />
-            </button>
-            <button
-              onClick={toggleTerminal}
-              className={`p-1.5 rounded transition-colors flex items-center gap-1 text-sm ${isTerminalOpen ? 'bg-[var(--brand-dim)] text-[var(--brand)]' : 'hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)]'}`}
-              title="Toggle Terminal"
-            >
-              <Terminal className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
+
+            {/* 顶栏下方抽屉与状态条 */}
+            <OrganizeNoteDrawer />
+          </OrganizeNoteProvider>
+        ) : null}
 
         {/* 工作区未知告警条（No-Fallback：主目录不可得时如实告警，绝不编造路径） */}
         {isWorkspaceUnknown && (
@@ -2267,6 +2289,8 @@ export default function App() {
                 <AssistantsPage />
               </div>
             </div>
+          ) : currentView === "notes" ? (
+            <NotesPage initialSelectedNote={targetNoteToOpen} />
           ) : currentView === "mcp" ? (
             <McpHubPage />
           ) : currentView === "memory" ? (

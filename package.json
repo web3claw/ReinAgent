@@ -1,7 +1,7 @@
 {
   "name": "reinagent",
   "private": true,
-  "version": "0.1.19",
+  "version": "0.2.0",
   "type": "module",
   "packageManager": "bun@1.4.2",
   "trustedDependencies": [
@@ -28,9 +28,20 @@
     "test:remote": "node --test src/remote-mobile/lib/remoteMobile.test.mjs"
   },
   "dependencies": {
+    "@codemirror/language": "^6.13.1",
+    "@codemirror/language-data": "^6.5.2",
+    "@codemirror/view": "^6.43.14",
     "@earendil-works/pi-agent-core": "0.86.0",
     "@earendil-works/pi-ai": "0.86.0",
     "@lexical/react": "^0.51.0",
+    "@milkdown/ctx": "^7.21.2",
+    "@milkdown/kit": "^7.21.2",
+    "@milkdown/plugin-diagram": "^7.7.0",
+    "@milkdown/preset-commonmark": "^7.21.2",
+    "@milkdown/preset-gfm": "^7.21.2",
+    "@milkdown/react": "^7.21.2",
+    "@milkdown/theme-nord": "^7.21.2",
+    "@milkdown/utils": "^7.21.2",
     "@pierre/diffs": "1.1.22",
     "@radix-ui/react-dialog": "^1.1.23",
     "@radix-ui/react-dropdown-menu": "^2.1.24",
@@ -53,6 +64,7 @@
     "lexical": "^0.51.0",
     "lucide-react": "^1.47.0",
     "marked": "^18.0.14",
+    "mermaid": "^11.15.0",
     "motion": "^13.4.2",
     "nanoid": "^6.0.1",
     "qrcode": "^1.5.4",

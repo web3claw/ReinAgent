@@ -468,6 +468,7 @@ ReinAgent 架构全景
 | 14 | **任务级设置隔离 + 审批模式落地（对齐 ZCode task-local thoughtLevel/mode）** | 三项设置按任务隔离：模型（`providerId/modelId`，已有）、推理等级（`thinkingLevel?`）、审批模式（`approvalMode?`），字段随 task payload 进 SQLite；有活动任务读写任务字段，草稿态读写全局默认（首次发送随 createTask 落到新任务）；模型切换自动对齐改为任务粒度（只修正覆盖不受支持的任务，绝不冲掉仍受支持的覆盖）。审批模式四档（对齐 ZCode 用户可切面）：`plan 计划模式`（写/执行一律拦截+系统提示词约束只读调研）/`ask 变更前确认`（写+执行弹审批卡）/`edit 自动编辑`（写自动放行，执行弹卡）/`full 完全访问`（默认，零开销直通）；工具分级 `resolveToolPermissionKind`（read 直通/write/exec 受限，未知工具保守视为 write）。审批流经 pi-agent-core 原生 `beforeToolCall` 钩子：需要批准时 await 用户决策（**循环挂起不中止**，同 ZCode 权限流语义），拒绝 → `{block:true, reason}` 错误工具结果（模型知道被拒不重试）；审批卡（`ApprovalCard`）渲染于输入框上方（工具名+参数摘要+允许/总是允许/拒绝），「总是允许」为任务级内存免审集合；stop/clear/轮次异常结束均以 reject 解除挂起；模式下拉对齐 ZCode（图标+标题+描述，full 态触发按钮 warning 色）。实测：隔离（A 改 B 不动+全局不动）、拒绝（模型停手文件未创建）、允许（批准后文件真实落盘）全链路通过 | `useAppStore.ts`、`tools.js`（resolveToolPermissionKind）、`agentRuntime.js`（beforeToolCall 透传）、`runAgentTurn.ts`（createApprovalGate/PLAN_MODE_PROMPT）、`conversationPool.ts`（审批协调器）、`conversationController.js`（requestApproval/resolveApproval）、`conversationModel.js`（pendingApproval）、`ApprovalCard.tsx`、`LexicalComposer.tsx`、`App.tsx`、`approvalGate.test.mjs` |
 | 15 | **应用品牌换装（logo + 应用图标 + 底栏图标条）** | 应用图标全套更换：R 主题（蓝色渐变圆角方块 + 白色粗体 R，`src-tauri/app-icon.png` 1024 源图经 `cargo tauri icon` 生成 icon.ico/icns/各尺寸 PNG/Store logos），窗口/任务栏/开始菜单生效（需 Rust 重构建后启动）；左上角 logo 改为同源内联 SVG（`AppLogo` 组件，替换原文字方块）；左下角用户栏移除（头像 K/用户名 kwtgsgi8 删除），替换为 **PI-Desktop sidebar-footer 同款图标条**（lucide 14px 图标 + 32×32 命中区 + radix Tooltip 300ms，对齐 TooltipButton/footer-action）：齿轮=设置（可点，i18n settings）/ **插头 Plug=插件**（navPlugins，打开插件页）/ 时钟=定时任务（navScheduled，占位）/ 电脑（原 Monitor，占位）——占位无功能、默认全部不高亮；右侧版本号 `v{getVersion()}` 对齐 footer-build（**12px tabular-nums leading-none、UI 字体非 mono**；浏览器模式取不到则隐藏） | `WorkspaceSidebar.tsx`（AppLogo + 底栏）、`src-tauri/icons/*`、`src-tauri/app-icon.png` |
 | 13 | 临时/资料目录约定（B+C 组合，对齐 pi 的 `.pi/` 模式） | 系统提示词约定：一次性脚本/分析产物必须放 `<工作区>/.ReinAgent/.temp/`（视为可丢弃）；记忆等持久资料也统一放 `<工作区>/.ReinAgent/` 下各自子目录（禁止散落项目根）；Rust `fs_clean_reinagent_tmp` 白名单清理 `.ReinAgent/.temp`（两级路径严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈）。参照：PI-Desktop host-core 的 `.pi/` 工作区目录模式（plans/artifact.rs，路径安全校验同思路） | `runAgentTurn.ts`、`fs_cmd.rs`、`TurnGroupView.tsx` |
+| 16 | **双栏笔记系统（对齐 Hetu 功能与视觉，本地 Markdown 文件持久化）** | 导航位于左侧栏「助手」正下方（`BookOpen` 图标）；主界面采用两栏布局：**左栏**为笔记本下拉选择器（默认选中英文名 `default` 文件夹，展示为“默认笔记本”，支持嵌套子笔记本与即时创建）+ 搜索框 + 笔记卡片流（标题/摘要/时间，支持重命名与删除）；**右栏**为全功能 Markdown 编辑器，支持 Hetu 滑动胶囊切换 `预览 (Eye)` / `编辑 (Edit)` / `分栏 (Split)` 三态、大标题编辑、快捷语法工具栏（H2/H3/粗体/斜体/代码/列表/待办等）与防抖自动存盘；后端基于真实物理文件夹与 `.md` 文件（`~/.ReinAgent/notebooks/default`），并带 Web Mock 回退保障；**自动化、助手、笔记等独立页面统一隐藏对话工作台顶栏**，页面拥有整屏干净的工作空间 | `src-tauri/src/notes_fs.rs`、`src/components/notes/*`、`WorkspaceSidebar.tsx`、`App.tsx` |
 
 ### 2. 未实现（Gap 清单，按主题分组）
 
@@ -1981,4 +1982,89 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
    - **回退与破坏变异测试 (Red Check / Break Check)**：修复 Bug 或新增守护逻辑时，新编写的测试必须在老代码或故意破坏的代码上真实报错，证明测试有效，杜绝“永远绿灯的假测试”。
    - **真实环境调用 (Real Usage)**：涉及 API 元数据、终端 PTY 交互与文件系统时，必须使用真实链路验证。严禁捏造假数据或用假 Mock 掩盖异常。
    - **交付报告诚实声明 (Honest Listing / Not Run)**：任务汇报必须区分标注 `Passed`（真实跑通项）、`Red/Break Verified`（破坏性反向验证项）和 `Not run`（未测场景及原因），严禁隐瞒。
+
+---
+
+## 二十一、笔记系统（Hetu 移植与所见即所得纯净双栏体系，2026-10-14 落地）
+
+### 1. 架构定位与物理存储
+- **物理路径**：数据持久化于用户家目录 `~/.ReinAgent/notebooks/`，软件首次启动自动创建 `default` 默认笔记本（不使用中文命名）；
+- **文件夹与笔记映射**：每个笔记本对应一个物理文件夹，支持在笔记本下嵌套子文件夹；每篇笔记对应物理磁盘上的一个真实 `.md` 文件；
+- **Rust 后端持久化命令（`src-tauri/src/notes_fs.rs`）**：
+  - `notes_ensure_root`：初始化根目录并创建默认笔记本与欢迎指南；
+  - `notes_list_notebooks` / `notes_create_notebook`：递归遍历与创建文件夹笔记本；
+  - `notes_list_notes` / `notes_read_note` / `notes_save_note` / `notes_create_note` / `notes_rename_note` / `notes_delete_note`：无状态原子读写与文件名安全重命名/删除。
+
+### 2. 双栏界面布局与树形文件导航
+- **左栏（树形层级目录导航，100% 对齐经典侧边栏）**：
+  - **顶栏操作区**：即时检索输入框（`搜索...`）+ `+ 笔记` 快捷按钮 + `+ 文件夹` 快捷按钮；
+  - **一体化树形目录树（`NotesTree.tsx`）**：
+    - **文件夹节点**：可折叠/展开指示三角箭头（`ChevronDown` / `ChevronRight`）+ 鲜明蓝色线框文件夹图标（`Folder` / `FolderOpen`）+ 文件夹标题；
+    - **子笔记节点**：精确缩进并在左侧附带细腻的垂直对齐辅助线（`w-[1px] bg-white/15`）；
+    - **节点操作悬浮快捷按键**：文件夹节点悬停时支持快速「在此文件夹新建笔记」、「新建子文件夹」、「重命名文件夹」、「删除文件夹」；笔记节点悬停时支持「重命名笔记」与「删除笔记」；
+  - **数据层扩展**：新增 `notes_delete_notebook`、`notes_rename_notebook` 以及 `notes_open_folder`（调用系统资源管理器/Finder/xdg-open 直接打开对应物理文件夹）Rust Tauri 后端 IPC 命令，并在 Web Mock 兼容层中全量跑通。
+- **右栏**：
+  - 一体化纯净所见即所得 Milkdown 编辑器；
+  - **顶部元信息操作栏**：
+    - 文件夹胶囊（如 `📁 测试/456`）：点击直接调起系统文件管理器并定位打开该文件夹目录；
+    - 严格遵循 `YYYY/MM/DD` 标准日期格式（如 `2026/10/14`）；
+    - 严格遵循 **24小时制** 时间格式（`HH:mm:ss`，如 `12:36:43`，彻底剔除 AM / PM）；
+    - 自动保存状态指示（保存中/未保存/已保存）；
+    - 彻底移除冗余的历史与分享图标，保持极简纯净；
+    - **`✨ AI 助手` 渐变胶囊按钮**：精准放置在保存状态右侧；
+    - **顶栏绝对固定不动**：最顶栏为全宽独立 Header，始终固定在顶部不随 AI 弹窗推移；
+  - **右侧全文 AI 助手侧弹窗（`NoteAiSidebar.tsx`，100% 对齐 Hetu 源码结构）**：
+    - 作为编辑器内容主体（标题栏+格式工具条+Milkdown 画布）同级的右侧分流抽屉展开；
+    - **顶栏**：`✨ AI 助手` + `全文` 蓝紫徽标 + `✕` 关闭按钮；
+    - **快捷胶囊行**：`续写`（默认激活态）· `润色` · `翻译` · `精简` · `扩展` · `解释`；
+    - **自定义指令卡片**：深色内嵌卡片（`bg-[#161922]`），支持 Enter 快速执行、Shift+Enter 换行；
+    - **主生成视口**：打字机/等待动效，结果生成后提供一键「替换全文」、「在文末追加」以及「复制结果」；
+    - **底栏模型选择**：左侧联动当前启用的服务商与模型（支持默认模型），右侧渐变蓝紫 `✈ 执行` 按钮，生成中变为 `■ 停止`。
+- **全局顶栏隐藏**：切入笔记（以及助手、自动化）视图时，主工作区的对话顶栏自动隐藏，保持沉浸式写作。
+
+### 3. 所见即所得（WYSIWYG）富文本编辑引擎
+- **彻底剔除预览/分栏冗余代码**：
+  - 彻底移除了 `viewMode`（`preview | edit | split`）状态及切换胶囊按钮；
+  - 删除了右侧/独立 Markdown 预览区域与双向滚动同步逻辑；
+- **Milkdown 核心引擎与流程图集成（`src/components/notes/MilkdownEditor.tsx` & `milkdown.css` & `mermaidTheme.ts`）**：
+  - 采用 `@milkdown/react` 与 `@milkdown/kit`（CommonMark + GFM + History + Nord）；
+  - **集成 Mermaid 流程图（`@milkdown/plugin-diagram` + `mermaid`）**：
+    - 一键插入 Mermaid 模板（`A[开始] --> B{处理} ...`）；
+    - 编辑器内就地渲染为 SVG 图表（`DiagramNodeView`），支持暗黑/浅色模式自适应主题；
+    - 点击流程图就地展开源码编辑，失焦自动编译并刷新渲染，包含错误卡片兜底；
+    - `fitMermaidLabels` 自动扩充 CJK 字符标签宽度，杜绝文字裁剪。
+  - **打字即渲染**：输入 `#` 即刻展示为大标题，输入 `- [ ] ` 自动转为可点击勾选的待办项，输入表格或列表就地排版渲染；
+  - **格式工具条（100% 对齐 Hetu 截图图标与顺序）**：
+    - `H2` · `H3` · `B` · `I` · `S` · `</>` · `""` · `:=` · `1=` · `[x]=` · `[<>]` · `|` · `✨ AI` · `🔗` · `田` · `—` · `⚯ 流程图`；
+    - **H2 / H3 修复**：直调 ProseMirror `state.tr.setBlockType(from, to, nodeType, attrs)`，彻底解决 Milkdown 命令传字符串导致的静默失效问题，点击即刻转为标题，重复点击切回普通段落；
+    - **选区浮动工具条**：划选文本就地浮现快捷格式按钮（通过 `onMouseDown preventDefault` 防止丢失选区）；
+    - **行内 AI 浮动弹窗（100% 还原 Hetu 截图样式）**：
+      - 深色玻璃悬浮卡片（深灰亚克力 `#161922` + 边框高亮 `border-indigo-500/30` + 阴影 `shadow-2xl`），直接定位在选区附近；
+      - 顶栏：`✨ 行内 AI` + `{n} 字` 胶囊徽标（无选区显示“全文”） + 关闭 `✕`；
+      - 快捷胶囊行：`润色` · `翻译` · `精简` · `扩展` · `解释`，点击自动预填提示词并聚焦输入框；
+      - 底栏：左侧模型选择下拉（联动系统真实服务商配置，仅展示已启用的服务商与模型；默认选项对齐系统设置中设置的默认模型，触发按钮直接显示极简的 `🤖 默认模型 ⌄`，下拉内展开详细模型名），右侧渐变蓝 `✈ 执行` 按钮，生成中转为 `■ 停止`；
+      - 真实模型请求调度：调用系统底层的 `completeOneShotText`（基于 `buildModel` 与各服务商 API 适配器），完整支持 DeepSeek、OpenAI、Anthropic、Gemini、Ollama 及本地自定义网关；
+      - 结果展示与采纳（100% 对齐 Hetu 原版图一）：提供横排平铺、永不折行的 `接受替换`（绿色实心胶囊 `bg-emerald-600`）、`追加`（浅蓝半透明文字按钮 `text-indigo-400`）、`重写`（灰色轻量按钮 `text-gray-400`），外层设置 `w-96` + `whitespace-nowrap shrink-0` 防挤压加固；
+  - **防抖自动保存**：编辑内容 1000ms 防抖自动写入物理磁盘，右上角实时反馈「保存中… / 已保存 / 未保存」状态；
+  - **CodeMirror 代码块卡片化就地渲染（100% 对齐 Hetu 原版设计）**：
+    - 底层引入 `@codemirror/language-data`、`@codemirror/language` 与 `@codemirror/view`，由 `@milkdown/kit/component/code-block` 驱动；
+    - 卡片外观：深色高对比度圆角面板（`background: #1e1e2e; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 4px 16px rgba(0,0,0,0.3)`）；
+    - 顶部工具栏（`.tools`）：左侧多语言下拉选择框（`text ⌄`，支持全量 CodeMirror 语言动态切换与高亮），右侧一键复制代码按钮（`📋 复制`，点击带成功反馈）；
+    - **全文 AI 助手侧弹窗（抽屉浮层遮盖，100% 对齐 Hetu 原版设计）**：
+      - **全宽内容静止不挤压**：顶栏（文件夹路径、2026/10/14 日期、24小时制时间、保存状态、`[✨ AI 助手]` 胶囊）位于最顶层固定全宽展示；主体 Markdown 区域占据 100% 容器宽度，在展开或收起 AI 助手时，正文排版、工具栏和标题**完全不动、不发生收缩挤压**；
+      - **绝对定位浮层遮盖**：`NoteAiSidebar` 采用 `absolute top-0 right-0 bottom-0 w-84 z-30 shadow-2xl border-l` 绝对定位遮盖在编辑器右侧之上；
+      - **全文级智能写作流**：支持“续写、润色、翻译、精简、扩展、解释”快捷指令胶囊、自定义指令多行输入框、真实模型选择器及执行/停止控制；支持采纳为“替换全文”（`setMarkdown`）、“在文末追加”（`appendContent`）或“复制结果”；
+      - **全量富文本语法树解析（Parser 驱动）**：无论是“替换全文”还是“在文末追加”，底层均通过 Milkdown 的 `parser(fullMd)` 完整解析为 ProseMirror 富文本语法树，确保追加的标题、加粗、列表、表格和代码块 100% 自动渲染为富文本视图，杜绝原始标记裸露。
+    - **任务对话一键整理笔记（OrganizeNotePanel，100% 对齐原软件 Hetu 体验）**：
+      - **顶栏入口**：工作台顶栏右侧常驻 `[📄 整理笔记 ⌄]` 绿色胶囊按钮，支持展开/收起配置抽屉；
+      - **配置抽屉（OrganizeNoteDrawer）**：
+        - **整理风格**：支持 3 种标准模式——“摘要式”（提炼要点，500字内）、“详细式”（保留完整信息，分章节组织）、“Q&A 式”（改写为问答形式）；
+        - **目标笔记本**：下拉展示层级树形目录，默认选中“默认笔记本”，支持嵌套子目录层级选择；
+        - **操作按钮**：包含绿色 `[开始整理]` 按钮与 `[取消]` 按钮；
+      - **执行与物理落盘**：提取当前任务对话文本，通过 `completeOneShotText` 结合专业整理 Prompt 生成结构化 Markdown，首行提取为标题并调用 `notesService.createNote` + `saveNote` 物理落盘；
+      - **完成联动**：整理完成后顶栏下方提示 `已保存笔记：《...》`，点击 `[查看笔记]` 按钮一键切换至笔记模块并直接高亮打开该篇新建笔记。
+- **Web Mock 双模兼容**：`notesService.ts` 内置完整的浏览器端 Mock，无头环境/单测无缝跑通。
+
+
+
 

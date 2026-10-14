@@ -24,6 +24,7 @@ mod remote_tunnel;
 mod fs_base64;
 mod import_sqlite;
 mod fs_tree;
+mod notes_fs;
 mod git_panel;
 mod hooks;
 mod plugins;
@@ -293,6 +294,18 @@ pub fn run() {
             usage_stats::usage_reset,
             fs_base64::fs_read_base64_file,
             fs_tree::fs_tree_dir,
+            notes_fs::notes_ensure_root,
+            notes_fs::notes_list_notebooks,
+            notes_fs::notes_create_notebook,
+            notes_fs::notes_list_notes,
+            notes_fs::notes_read_note,
+            notes_fs::notes_save_note,
+            notes_fs::notes_create_note,
+            notes_fs::notes_rename_note,
+            notes_fs::notes_delete_note,
+            notes_fs::notes_delete_notebook,
+            notes_fs::notes_rename_notebook,
+            notes_fs::notes_open_folder,
             git_panel::git_status,
             git_panel::git_branch_list,
             git_panel::git_checkout,
