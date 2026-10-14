@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.1.18</span>
+        下载 <span data-latest-version>v0.2.0</span>
       </a>
     </div>
   </div>
@@ -57,7 +57,7 @@
 <main id="main">
   <section class="hero">
     <div class="wrap hero-copy">
-        <span class="tag">当前版本 <span data-latest-version>v0.1.18</span> · MIT · 本地优先</span>
+        <span class="tag">当前版本 <span data-latest-version>v0.2.0</span> · MIT · 本地优先</span>
         <h1>高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台</h1>
         <p class="lede">ReinAgent 把对话、任务、代码改动与模型配置放进同一套本地底座：Tauri 2（Rust）负责系统能力与持久化，React 19 前端负责界面与 Agent 回路，数据落在本地 SQLite WAL。模型调用只发往你自己配置的供应商。</p>
         <div class="hero-cta">
@@ -85,6 +85,10 @@
         <div class="card">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg></span>本地优先与绿色单文件</h3>
           <p>所有会话历史、任务时间线、代码改动快照、模型密钥与配置 100% 留在本地（SQLite WAL + JSON）。提供免装 Node.js / Python / Rust 的独立绿色可执行文件，解压即跑。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>知识库与笔记本系统</h3>
+          <p>本地纯净 Markdown 物理文件夹与真实 .md 文件映射；支持所见即所得双栏编辑、AI 写作助手侧弹窗与对话一键整理笔记沉淀。</p>
         </div>
         <div class="card">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg></span>三端原生融合</h3>
@@ -171,6 +175,7 @@ bun run tauri dev
       <div class="docs-cards">
         <a href="guide/getting-started.html"><strong>快速开始</strong><span>三种运行方式、首次配置与数据落点</span></a>
         <a href="guide/workspace.html"><strong>Agent 工作台</strong><span>输入胶囊、推理强度、任务记忆与子代理</span></a>
+        <a href="guide/notes.html"><strong>知识库与笔记系统</strong><span>纯净 Markdown 物理映射、Milkdown 所见即所得编辑、AI 助手与对话整理笔记</span></a>
         <a href="guide/permissions.html"><strong>审批与检查点</strong><span>四档审批模式、检查点与原子回退</span></a>
         <a href="guide/models.html"><strong>模型与协议</strong><span>四协议接入、元数据解析与统一代理</span></a>
         <a href="guide/memory.html"><strong>本地长期记忆</strong><span>作用域隔离、自动沉淀与审查合并</span></a>

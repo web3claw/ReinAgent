@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.1.18</span>
+        下载 <span data-latest-version>v0.2.0</span>
       </a>
     </div>
   </div>
@@ -61,6 +61,7 @@
     <ol>
       <li><a href="getting-started.html">快速开始</a></li>
       <li><a href="workspace.html">Agent 工作台</a></li>
+      <li><a href="notes.html">知识库与笔记系统</a></li>
       <li><a href="permissions.html">审批与检查点</a></li>
       <li><a href="models.html">模型与协议</a></li>
       <li><a href="memory.html">本地长期记忆</a></li>
@@ -700,10 +701,11 @@
 <tr><td>11</td><td>右侧代码/变更预览面板（PreviewPane 完整移植）</td><td align="left">编辑/写入卡审查 → patch 模式（Shiki 高亮 diff）；读取卡 → 文件行号预览（Rust <code>fs_read_text_file</code> 256KB 截断+二进制探测）；<code>@pierre/diffs</code> + <code>shiki</code> 已引入；Media/PDF/PPTX/Office 为诚实降级 stub</td><td align="left"><code>src/preview/**</code>（约 40 文件）、<code>fs_cmd.rs</code>、<code>CodeViewerPaneHost.tsx</code></td></tr>
 <tr><td>12</td><td>文件更改摘要卡</td><td align="left">轮内 edit/write 客户端现算摘要「N 个文件已更改 +A −B」；每文件行 审查（patch 面板）/ 打开（文件预览）；<strong>仅在整轮结束后显示</strong>（编辑过程中看各工具卡，对齐 ZCode 时机）；同文件多次编辑按路径聚合为净变更，净零文件过滤；<strong><code>.ReinAgent/.temp/</code> 下的一次性脚本不进摘要</strong>（<code>isReinAgentTempPath</code>：不列行、不计入数量与增删统计，全部为 temp 时整卡隐藏；用户确认不做自动清理，手动清理按钮保留）；撤销按钮 gating 未开（需 Rust 写入轨迹日志，阶段 2）；header 附**「清理临时目录」**按钮（行内二次确认 → <code>fs_clean_reinagent_tmp</code>）</td><td align="left"><code>TurnGroupView.tsx</code>（TurnFileSummaryCard）</td></tr>
 <tr><td>13.4</td><td>会话统计行（SessionStatsBar，对齐 LiveAgent 底部统计条）</td><td align="left">底栏下一行等宽小字：`N 轮 · M 步</td><td align="left">上下文 P%</td></tr>
-<tr><td>13.5</td><td>上下文容量面板</td><td align="left">触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 缓存命中率（移至会话统计行，≥0 才显示）；已用取真实 usage（input+cacheRead+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；<strong>不含剩余额度</strong>（用户确认排除）；<strong>明细行可点击</strong>——有内容的类别（消息/系统提示词/系统工具）懒构建真实文本在右侧面板查看（markdown/json 高亮），无内容类别（技能/MCP/其他）如实 0.0% 且不可点击</td><td align="left"><code>contextUsage.ts</code>、<code>ContextUsageIndicator.tsx</code>、<code>LexicalComposer.tsx</code>、<code>App.tsx</code></td></tr>
+<tr><td>13.5</td><td>上下文容量面板</td><td align="left">触发器=输入框工具栏 SVG 圆环（进度弧）；HoverCard 面板：标题（上下文容量 + 紧凑数字摘要）+ 多段进度条（品牌色按排名淡化）+ 分类行（消息/系统工具/系统提示词，字符估算口径与 ZCode 一致：中文×2÷3 取整）+ 缓存命中率（移至会话统计行，≥0 才显示）；已用取真实 usage（input+cacheRead+output），上限取模型 contextWindow 声明值；无数据不渲染（No-Fallback）；<strong>不含剩余额度</strong>（用户确认排除）；<strong>明细行可点击</strong>——有内容的类别（消息/系统提示词/系统工具）懒构建真实文本在右侧面板查看（markdown/json 高亮），无内容类别（技能/MCP/其他）如实 0.0% 且不可点击；<strong>底部一键【压缩上下文】按钮</strong>（对齐 Hetu 紫色/品牌色高亮按钮交互，无任务或流式中禁用，压缩中显示【正在压缩…】；支持 <code>/compact</code> 与 <code>/compress</code> 斜杠命令）；<strong>对话区底部内联通知栏</strong>（对齐 Hetu 圆角通知条，压缩成功为绿色，跳过/失败为琥珀色警告，带 Gauge 图标与 ✕ 关闭按钮；用户继续发送新消息时自动无感关闭清除）；<strong>压缩条目去重隔离</strong>（<code>kind: compact</code> 条目仅在轮首由 <code>CompactionBand</code> 渲染，<code>groupTurns</code> 与 <code>TurnGroupView</code> 严格排除其落入 <code>lastAssistant</code> 或常规工时条，彻底杜绝下方重复冒出常规气泡与 0 秒已处理条目）</td><td align="left"><code>contextUsage.ts</code>、<code>ContextUsageIndicator.tsx</code>、<code>LexicalComposer.tsx</code>、<code>App.tsx</code>、<code>turnActivity.ts</code>、<code>TurnGroupView.tsx</code></td></tr>
 <tr><td>14</td><td><strong>任务级设置隔离 + 审批模式落地（对齐 ZCode task-local thoughtLevel/mode）</strong></td><td align="left">三项设置按任务隔离：模型（<code>providerId/modelId</code>，已有）、推理等级（<code>thinkingLevel?</code>）、审批模式（<code>approvalMode?</code>），字段随 task payload 进 SQLite；有活动任务读写任务字段，草稿态读写全局默认（首次发送随 createTask 落到新任务）；模型切换自动对齐改为任务粒度（只修正覆盖不受支持的任务，绝不冲掉仍受支持的覆盖）。审批模式四档（对齐 ZCode 用户可切面）：<code>plan 计划模式</code>（写/执行一律拦截+系统提示词约束只读调研）/<code>ask 变更前确认</code>（写+执行弹审批卡）/<code>edit 自动编辑</code>（写自动放行，执行弹卡）/<code>full 完全访问</code>（默认，零开销直通）；工具分级 <code>resolveToolPermissionKind</code>（read 直通/write/exec 受限，未知工具保守视为 write）。审批流经 pi-agent-core 原生 <code>beforeToolCall</code> 钩子：需要批准时 await 用户决策（<strong>循环挂起不中止</strong>，同 ZCode 权限流语义），拒绝 → <code>{block:true, reason}</code> 错误工具结果（模型知道被拒不重试）；审批卡（<code>ApprovalCard</code>）渲染于输入框上方（工具名+参数摘要+允许/总是允许/拒绝），「总是允许」为任务级内存免审集合；stop/clear/轮次异常结束均以 reject 解除挂起；模式下拉对齐 ZCode（图标+标题+描述，full 态触发按钮 warning 色）。实测：隔离（A 改 B 不动+全局不动）、拒绝（模型停手文件未创建）、允许（批准后文件真实落盘）全链路通过</td><td align="left"><code>useAppStore.ts</code>、<code>tools.js</code>（resolveToolPermissionKind）、<code>agentRuntime.js</code>（beforeToolCall 透传）、<code>runAgentTurn.ts</code>（createApprovalGate/PLAN_MODE_PROMPT）、<code>conversationPool.ts</code>（审批协调器）、<code>conversationController.js</code>（requestApproval/resolveApproval）、<code>conversationModel.js</code>（pendingApproval）、<code>ApprovalCard.tsx</code>、<code>LexicalComposer.tsx</code>、<code>App.tsx</code>、<code>approvalGate.test.mjs</code></td></tr>
 <tr><td>15</td><td><strong>应用品牌换装（logo + 应用图标 + 底栏图标条）</strong></td><td align="left">应用图标全套更换：R 主题（蓝色渐变圆角方块 + 白色粗体 R，<code>src-tauri/app-icon.png</code> 1024 源图经 <code>cargo tauri icon</code> 生成 icon.ico/icns/各尺寸 PNG/Store logos），窗口/任务栏/开始菜单生效（需 Rust 重构建后启动）；左上角 logo 改为同源内联 SVG（<code>AppLogo</code> 组件，替换原文字方块）；左下角用户栏移除（头像 K/用户名 kwtgsgi8 删除），替换为 <strong>PI-Desktop sidebar-footer 同款图标条</strong>（lucide 14px 图标 + 32×32 命中区 + radix Tooltip 300ms，对齐 TooltipButton/footer-action）：齿轮=设置（可点，i18n settings）/ <strong>插头 Plug=插件</strong>（navPlugins，打开插件页）/ 时钟=定时任务（navScheduled，占位）/ 电脑（原 Monitor，占位）——占位无功能、默认全部不高亮；右侧版本号 <code>v{getVersion()}</code> 对齐 footer-build（<strong>12px tabular-nums leading-none、UI 字体非 mono</strong>；浏览器模式取不到则隐藏）</td><td align="left"><code>WorkspaceSidebar.tsx</code>（AppLogo + 底栏）、<code>src-tauri/icons/*</code>、<code>src-tauri/app-icon.png</code></td></tr>
 <tr><td>13</td><td>临时/资料目录约定（B+C 组合，对齐 pi 的 <code>.pi/</code> 模式）</td><td align="left">系统提示词约定：一次性脚本/分析产物必须放 <code>&lt;工作区&gt;/.ReinAgent/.temp/</code>（视为可丢弃）；记忆等持久资料也统一放 <code>&lt;工作区&gt;/.ReinAgent/</code> 下各自子目录（禁止散落项目根）；Rust <code>fs_clean_reinagent_tmp</code> 白名单清理 <code>.ReinAgent/.temp</code>（两级路径严格校验 + 幂等 + 递归删除 + 条目计数）；摘要卡 header 一键清理（行内二次确认、3 秒回退、成功/失败如实反馈）。参照：PI-Desktop host-core 的 <code>.pi/</code> 工作区目录模式（plans/artifact.rs，路径安全校验同思路）</td><td align="left"><code>runAgentTurn.ts</code>、<code>fs_cmd.rs</code>、<code>TurnGroupView.tsx</code></td></tr>
+<tr><td>16</td><td><strong>双栏笔记系统（对齐 Hetu 功能与视觉，本地 Markdown 文件持久化）</strong></td><td align="left">导航位于左侧栏「助手」正下方（<code>BookOpen</code> 图标）；主界面采用两栏布局：<strong>左栏</strong>为笔记本下拉选择器（默认选中英文名 <code>default</code> 文件夹，展示为“默认笔记本”，支持嵌套子笔记本与即时创建）+ 搜索框 + 笔记卡片流（标题/摘要/时间，支持重命名与删除）；<strong>右栏</strong>为全功能 Markdown 编辑器，支持 Hetu 滑动胶囊切换 <code>预览 (Eye)</code> / <code>编辑 (Edit)</code> / <code>分栏 (Split)</code> 三态、大标题编辑、快捷语法工具栏（H2/H3/粗体/斜体/代码/列表/待办等）与防抖自动存盘；后端基于真实物理文件夹与 <code>.md</code> 文件（<code>~/.ReinAgent/notebooks/default</code>），并带 Web Mock 回退保障；<strong>自动化、助手、笔记等独立页面统一隐藏对话工作台顶栏</strong>，页面拥有整屏干净的工作空间</td><td align="left"><code>src-tauri/src/notes_fs.rs</code>、<code>src/components/notes/*</code>、<code>WorkspaceSidebar.tsx</code>、<code>App.tsx</code></td></tr>
 </tbody>
 </table>
 <h3>2. 未实现（Gap 清单，按主题分组）</h3>
@@ -2753,6 +2755,164 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。</p>
 <ul>
 <li>单测 9 项（PID 文件往返/拒垃圾、进程名拒非 cloudflared、死 PID 判否、回收幂等、世代守卫等）全绿；全仓 247/247 通过；<code>cargo clippy</code> 本文件仅余 1 条既有告警。</li>
 <li><strong>Windows 分支本机未能编译验证</strong>（缺 MSVC 工具链，交叉编译失败于 <code>lib.exe</code>）：Job Object FFI 经独立子代理逐字段核对 SDK 绑定确认正确，最终编译/运行验证需在 <code>windows-latest</code> 上进行。</li>
+</ul>
+<hr />
+<h2>二十、自进化研发体系（对标 magpie，2026-10-13 落地）</h2>
+<h3>机制背景</h3>
+<p>全面借鉴 magpie 项目的自主闭环研发模式，解决大型项目中 Agent 规则过度静态膨胀、缺乏量化教训跟踪以及单元测试容易出现“假绿灯”的问题。</p>
+<h3>核心组成（三位一体）</h3>
+<ol>
+<li>
+<p><strong>总路由表（<code>AGENTS.md</code>）</strong>：</p>
+<ul>
+<li>极简启动路由：<code>AGENTS.md</code>（铁律与路由） → <code>docs/LESSONS.md</code>（动态错题本） → <code>docs/PROJECT_CONTEXT.md</code>（单点真相）。</li>
+<li>明确定位子系统目录路径，避免每次在根规则中堆砌代码细节。</li>
+</ul>
+</li>
+<li>
+<p><strong>动态错题本与晋升机制（<code>docs/LESSONS.md</code>）</strong>：</p>
+<ul>
+<li>跟踪三类场景：<strong>返工失误（Regression）、架构破坏（Bad Merges）、粗糙验证（Shallow Verification）</strong>。</li>
+<li>格式规范：<code>**&lt;规则&gt;** - &lt;事故与后果&gt; - &lt;修复方案&gt; - Done right: &lt;范例&gt; - Seen N× (日期...)</code>。</li>
+<li><strong>“事不过三”（Seen 3×）硬规则晋升</strong>：任何经验教训若在 3 个不同日期/任务中重复出现，强制从经验备忘转正升级为 <code>AGENTS.md</code> 的系统硬性规范。</li>
+</ul>
+</li>
+<li>
+<p><strong>交付三铁律（验收与测试标准）</strong>：</p>
+<ul>
+<li><strong>回退与破坏变异测试 (Red Check / Break Check)</strong>：修复 Bug 或新增守护逻辑时，新编写的测试必须在老代码或故意破坏的代码上真实报错，证明测试有效，杜绝“永远绿灯的假测试”。</li>
+<li><strong>真实环境调用 (Real Usage)</strong>：涉及 API 元数据、终端 PTY 交互与文件系统时，必须使用真实链路验证。严禁捏造假数据或用假 Mock 掩盖异常。</li>
+<li><strong>交付报告诚实声明 (Honest Listing / Not Run)</strong>：任务汇报必须区分标注 <code>Passed</code>（真实跑通项）、<code>Red/Break Verified</code>（破坏性反向验证项）和 <code>Not run</code>（未测场景及原因），严禁隐瞒。</li>
+</ul>
+</li>
+</ol>
+<hr />
+<h2>二十一、笔记系统（Hetu 移植与所见即所得纯净双栏体系，2026-10-14 落地）</h2>
+<h3>1. 架构定位与物理存储</h3>
+<ul>
+<li><strong>物理路径</strong>：数据持久化于用户家目录 <code>~/.ReinAgent/notebooks/</code>，软件首次启动自动创建 <code>default</code> 默认笔记本（不使用中文命名）；</li>
+<li><strong>文件夹与笔记映射</strong>：每个笔记本对应一个物理文件夹，支持在笔记本下嵌套子文件夹；每篇笔记对应物理磁盘上的一个真实 <code>.md</code> 文件；</li>
+<li><strong>Rust 后端持久化命令（<code>src-tauri/src/notes_fs.rs</code>）</strong>：
+<ul>
+<li><code>notes_ensure_root</code>：初始化根目录并创建默认笔记本与欢迎指南；</li>
+<li><code>notes_list_notebooks</code> / <code>notes_create_notebook</code>：递归遍历与创建文件夹笔记本；</li>
+<li><code>notes_list_notes</code> / <code>notes_read_note</code> / <code>notes_save_note</code> / <code>notes_create_note</code> / <code>notes_rename_note</code> / <code>notes_delete_note</code>：无状态原子读写与文件名安全重命名/删除。</li>
+</ul>
+</li>
+</ul>
+<h3>2. 双栏界面布局与树形文件导航</h3>
+<ul>
+<li><strong>左栏（树形层级目录导航，100% 对齐经典侧边栏）</strong>：
+<ul>
+<li><strong>顶栏操作区</strong>：即时检索输入框（<code>搜索...</code>）+ <code>+ 笔记</code> 快捷按钮 + <code>+ 文件夹</code> 快捷按钮；</li>
+<li><strong>一体化树形目录树（<code>NotesTree.tsx</code>）</strong>：
+<ul>
+<li><strong>文件夹节点</strong>：可折叠/展开指示三角箭头（<code>ChevronDown</code> / <code>ChevronRight</code>）+ 鲜明蓝色线框文件夹图标（<code>Folder</code> / <code>FolderOpen</code>）+ 文件夹标题；</li>
+<li><strong>子笔记节点</strong>：精确缩进并在左侧附带细腻的垂直对齐辅助线（<code>w-[1px] bg-white/15</code>）；</li>
+<li><strong>节点操作悬浮快捷按键</strong>：文件夹节点悬停时支持快速「在此文件夹新建笔记」、「新建子文件夹」、「重命名文件夹」、「删除文件夹」；笔记节点悬停时支持「重命名笔记」与「删除笔记」；</li>
+</ul>
+</li>
+<li><strong>数据层扩展</strong>：新增 <code>notes_delete_notebook</code>、<code>notes_rename_notebook</code> 以及 <code>notes_open_folder</code>（调用系统资源管理器/Finder/xdg-open 直接打开对应物理文件夹）Rust Tauri 后端 IPC 命令，并在 Web Mock 兼容层中全量跑通。</li>
+</ul>
+</li>
+<li><strong>右栏</strong>：
+<ul>
+<li>一体化纯净所见即所得 Milkdown 编辑器；</li>
+<li><strong>顶部元信息操作栏</strong>：
+<ul>
+<li>文件夹胶囊（如 <code>📁 测试/456</code>）：点击直接调起系统文件管理器并定位打开该文件夹目录；</li>
+<li>严格遵循 <code>YYYY/MM/DD</code> 标准日期格式（如 <code>2026/10/14</code>）；</li>
+<li>严格遵循 <strong>24小时制</strong> 时间格式（<code>HH:mm:ss</code>，如 <code>12:36:43</code>，彻底剔除 AM / PM）；</li>
+<li>自动保存状态指示（保存中/未保存/已保存）；</li>
+<li>彻底移除冗余的历史与分享图标，保持极简纯净；</li>
+<li><strong><code>✨ AI 助手</code> 渐变胶囊按钮</strong>：精准放置在保存状态右侧；</li>
+<li><strong>顶栏绝对固定不动</strong>：最顶栏为全宽独立 Header，始终固定在顶部不随 AI 弹窗推移；</li>
+</ul>
+</li>
+<li><strong>右侧全文 AI 助手侧弹窗（<code>NoteAiSidebar.tsx</code>，100% 对齐 Hetu 源码结构）</strong>：
+<ul>
+<li>作为编辑器内容主体（标题栏+格式工具条+Milkdown 画布）同级的右侧分流抽屉展开；</li>
+<li><strong>顶栏</strong>：<code>✨ AI 助手</code> + <code>全文</code> 蓝紫徽标 + <code>✕</code> 关闭按钮；</li>
+<li><strong>快捷胶囊行</strong>：<code>续写</code>（默认激活态）· <code>润色</code> · <code>翻译</code> · <code>精简</code> · <code>扩展</code> · <code>解释</code>；</li>
+<li><strong>自定义指令卡片</strong>：深色内嵌卡片（<code>bg-[#161922]</code>），支持 Enter 快速执行、Shift+Enter 换行；</li>
+<li><strong>主生成视口</strong>：打字机/等待动效，结果生成后提供一键「替换全文」、「在文末追加」以及「复制结果」；</li>
+<li><strong>底栏模型选择</strong>：左侧联动当前启用的服务商与模型（支持默认模型），右侧渐变蓝紫 <code>✈ 执行</code> 按钮，生成中变为 <code>■ 停止</code>。</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>全局顶栏隐藏</strong>：切入笔记（以及助手、自动化）视图时，主工作区的对话顶栏自动隐藏，保持沉浸式写作。</li>
+</ul>
+<h3>3. 所见即所得（WYSIWYG）富文本编辑引擎</h3>
+<ul>
+<li><strong>彻底剔除预览/分栏冗余代码</strong>：
+<ul>
+<li>彻底移除了 <code>viewMode</code>（<code>preview | edit | split</code>）状态及切换胶囊按钮；</li>
+<li>删除了右侧/独立 Markdown 预览区域与双向滚动同步逻辑；</li>
+</ul>
+</li>
+<li><strong>Milkdown 核心引擎与流程图集成（<code>src/components/notes/MilkdownEditor.tsx</code> &amp; <code>milkdown.css</code> &amp; <code>mermaidTheme.ts</code>）</strong>：
+<ul>
+<li>采用 <code>@milkdown/react</code> 与 <code>@milkdown/kit</code>（CommonMark + GFM + History + Nord）；</li>
+<li><strong>集成 Mermaid 流程图（<code>@milkdown/plugin-diagram</code> + <code>mermaid</code>）</strong>：
+<ul>
+<li>一键插入 Mermaid 模板（<code>A[开始] --&gt; B{处理} ...</code>）；</li>
+<li>编辑器内就地渲染为 SVG 图表（<code>DiagramNodeView</code>），支持暗黑/浅色模式自适应主题；</li>
+<li>点击流程图就地展开源码编辑，失焦自动编译并刷新渲染，包含错误卡片兜底；</li>
+<li><code>fitMermaidLabels</code> 自动扩充 CJK 字符标签宽度，杜绝文字裁剪。</li>
+</ul>
+</li>
+<li><strong>打字即渲染</strong>：输入 <code>#</code> 即刻展示为大标题，输入 <code>- [ ] </code> 自动转为可点击勾选的待办项，输入表格或列表就地排版渲染；</li>
+<li><strong>格式工具条（100% 对齐 Hetu 截图图标与顺序）</strong>：
+<ul>
+<li><code>H2</code> · <code>H3</code> · <code>B</code> · <code>I</code> · <code>S</code> · <code>&lt;/&gt;</code> · <code>&quot;&quot;</code> · <code>:=</code> · <code>1=</code> · <code>[x]=</code> · <code>[&lt;&gt;]</code> · <code>|</code> · <code>✨ AI</code> · <code>🔗</code> · <code>田</code> · <code>—</code> · <code>⚯ 流程图</code>；</li>
+<li><strong>H2 / H3 修复</strong>：直调 ProseMirror <code>state.tr.setBlockType(from, to, nodeType, attrs)</code>，彻底解决 Milkdown 命令传字符串导致的静默失效问题，点击即刻转为标题，重复点击切回普通段落；</li>
+<li><strong>选区浮动工具条</strong>：划选文本就地浮现快捷格式按钮（通过 <code>onMouseDown preventDefault</code> 防止丢失选区）；</li>
+<li><strong>行内 AI 浮动弹窗（100% 还原 Hetu 截图样式）</strong>：
+<ul>
+<li>深色玻璃悬浮卡片（深灰亚克力 <code>#161922</code> + 边框高亮 <code>border-indigo-500/30</code> + 阴影 <code>shadow-2xl</code>），直接定位在选区附近；</li>
+<li>顶栏：<code>✨ 行内 AI</code> + <code>{n} 字</code> 胶囊徽标（无选区显示“全文”） + 关闭 <code>✕</code>；</li>
+<li>快捷胶囊行：<code>润色</code> · <code>翻译</code> · <code>精简</code> · <code>扩展</code> · <code>解释</code>，点击自动预填提示词并聚焦输入框；</li>
+<li>底栏：左侧模型选择下拉（联动系统真实服务商配置，仅展示已启用的服务商与模型；默认选项对齐系统设置中设置的默认模型，触发按钮直接显示极简的 <code>🤖 默认模型 ⌄</code>，下拉内展开详细模型名），右侧渐变蓝 <code>✈ 执行</code> 按钮，生成中转为 <code>■ 停止</code>；</li>
+<li>真实模型请求调度：调用系统底层的 <code>completeOneShotText</code>（基于 <code>buildModel</code> 与各服务商 API 适配器），完整支持 DeepSeek、OpenAI、Anthropic、Gemini、Ollama 及本地自定义网关；</li>
+<li>结果展示与采纳（100% 对齐 Hetu 原版图一）：提供横排平铺、永不折行的 <code>接受替换</code>（绿色实心胶囊 <code>bg-emerald-600</code>）、<code>追加</code>（浅蓝半透明文字按钮 <code>text-indigo-400</code>）、<code>重写</code>（灰色轻量按钮 <code>text-gray-400</code>），外层设置 <code>w-96</code> + <code>whitespace-nowrap shrink-0</code> 防挤压加固；</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>防抖自动保存</strong>：编辑内容 1000ms 防抖自动写入物理磁盘，右上角实时反馈「保存中… / 已保存 / 未保存」状态；</li>
+<li><strong>CodeMirror 代码块卡片化就地渲染（100% 对齐 Hetu 原版设计）</strong>：
+<ul>
+<li>底层引入 <code>@codemirror/language-data</code>、<code>@codemirror/language</code> 与 <code>@codemirror/view</code>，由 <code>@milkdown/kit/component/code-block</code> 驱动；</li>
+<li>卡片外观：深色高对比度圆角面板（<code>background: #1e1e2e; border-radius: 10px; border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 4px 16px rgba(0,0,0,0.3)</code>）；</li>
+<li>顶部工具栏（<code>.tools</code>）：左侧多语言下拉选择框（<code>text ⌄</code>，支持全量 CodeMirror 语言动态切换与高亮），右侧一键复制代码按钮（<code>📋 复制</code>，点击带成功反馈）；</li>
+<li><strong>全文 AI 助手侧弹窗（抽屉浮层遮盖，100% 对齐 Hetu 原版设计）</strong>：
+<ul>
+<li><strong>全宽内容静止不挤压</strong>：顶栏（文件夹路径、2026/10/14 日期、24小时制时间、保存状态、<code>[✨ AI 助手]</code> 胶囊）位于最顶层固定全宽展示；主体 Markdown 区域占据 100% 容器宽度，在展开或收起 AI 助手时，正文排版、工具栏和标题<strong>完全不动、不发生收缩挤压</strong>；</li>
+<li><strong>绝对定位浮层遮盖</strong>：<code>NoteAiSidebar</code> 采用 <code>absolute top-0 right-0 bottom-0 w-84 z-30 shadow-2xl border-l</code> 绝对定位遮盖在编辑器右侧之上；</li>
+<li><strong>全文级智能写作流</strong>：支持“续写、润色、翻译、精简、扩展、解释”快捷指令胶囊、自定义指令多行输入框、真实模型选择器及执行/停止控制；支持采纳为“替换全文”（<code>setMarkdown</code>）、“在文末追加”（<code>appendContent</code>）或“复制结果”；</li>
+<li><strong>全量富文本语法树解析（Parser 驱动）</strong>：无论是“替换全文”还是“在文末追加”，底层均通过 Milkdown 的 <code>parser(fullMd)</code> 完整解析为 ProseMirror 富文本语法树，确保追加的标题、加粗、列表、表格和代码块 100% 自动渲染为富文本视图，杜绝原始标记裸露。</li>
+</ul>
+</li>
+<li><strong>任务对话一键整理笔记（OrganizeNotePanel，100% 对齐原软件 Hetu 体验）</strong>：
+<ul>
+<li><strong>顶栏入口</strong>：工作台顶栏右侧常驻 <code>[📄 整理笔记 ⌄]</code> 绿色胶囊按钮，支持展开/收起配置抽屉；</li>
+<li><strong>配置抽屉（OrganizeNoteDrawer）</strong>：
+<ul>
+<li><strong>整理风格</strong>：支持 3 种标准模式——“摘要式”（提炼要点，500字内）、“详细式”（保留完整信息，分章节组织）、“Q&amp;A 式”（改写为问答形式）；</li>
+<li><strong>目标笔记本</strong>：下拉展示层级树形目录，默认选中“默认笔记本”，支持嵌套子目录层级选择；</li>
+<li><strong>操作按钮</strong>：包含绿色 <code>[开始整理]</code> 按钮与 <code>[取消]</code> 按钮；</li>
+</ul>
+</li>
+<li><strong>执行与物理落盘</strong>：提取当前任务对话文本，通过 <code>completeOneShotText</code> 结合专业整理 Prompt 生成结构化 Markdown，首行提取为标题并调用 <code>notesService.createNote</code> + <code>saveNote</code> 物理落盘；</li>
+<li><strong>完成联动</strong>：整理完成后顶栏下方提示 <code>已保存笔记：《...》</code>，点击 <code>[查看笔记]</code> 按钮一键切换至笔记模块并直接高亮打开该篇新建笔记。</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+<li><strong>Web Mock 双模兼容</strong>：<code>notesService.ts</code> 内置完整的浏览器端 Mock，无头环境/单测无缝跑通。</li>
 </ul>
 </div>
     <div class="docs-pager"><span><a href="dev.html">← 参与开发</a></span><span><a href="PROMPTS.html">提示词参考与现状 →</a></span></div>

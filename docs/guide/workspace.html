@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.1.18</span>
+        下载 <span data-latest-version>v0.2.0</span>
       </a>
     </div>
   </div>
@@ -61,6 +61,7 @@
     <ol>
       <li><a href="getting-started.html">快速开始</a></li>
       <li><a href="workspace.html" aria-current="page">Agent 工作台</a></li>
+      <li><a href="notes.html">知识库与笔记系统</a></li>
       <li><a href="permissions.html">审批与检查点</a></li>
       <li><a href="models.html">模型与协议</a></li>
       <li><a href="memory.html">本地长期记忆</a></li>
@@ -117,13 +118,14 @@
     <tr><td>问题导航条</td><td><code>ConversationNavigator</code>：浮动于消息区左侧，以用户提问为刻度，支持悬停双段预览与平滑视口定位</td></tr>
     <tr><td>任务清单胶囊</td><td><code>TaskProgressBar</code>：多份 Todo 计划并排展示、圆环进度推进与 Popover 展开</td></tr>
     <tr><td>交互式提问</td><td><code>AskQuestionCard</code>：模型主动提问（<code>ask_user</code>）以单弹窗多 Tab 呈现，可收起为输入框悬浮徽章</td></tr>
+    <tr><td>一键整理笔记</td><td><code>OrganizeNotePanel</code>：顶栏右侧常驻 <code>[📄 整理笔记 ⌄]</code> 绿色胶囊，深度提取当前任务脉络与代码结论，沉淀到笔记本并可一键跳转</td></tr>
     <tr><td>子代理面板</td><td>点击对话流中的 <code>agent</code> / <code>subagent_output</code> 工具卡片，在右侧副边栏查看子代理的思考链与工具轨迹</td></tr>
   </tbody>
 </table></div>
 
 <h2>多智能体协作</h2>
 <p>主 Agent 可在复杂场景下派发独立子代理并行作业（代码审查员、调研员、模块重构员等）。子代理运行在独立会话中，防止主智能体上下文被海量调研结果或长日志污染撑爆。</p>
-    <div class="docs-pager"><span><a href="getting-started.html">← 快速开始</a></span><span><a href="permissions.html">审批与检查点 →</a></span></div>
+    <div class="docs-pager"><span><a href="getting-started.html">← 快速开始</a></span><span><a href="notes.html">知识库与笔记系统 →</a></span></div>
     </div>
   </div>
 </main>

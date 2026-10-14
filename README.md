@@ -136,7 +136,27 @@ ReinAgent 致力于为开发者打造极致轻量、超高响应速度与 100% �
 - **微压缩（Microcompact）**：非侵入式裁剪历史工具结果文本块，不破坏磁盘与 UI 原始数据，确保报文不超限；
 - **动态水位线**：基于 `contextWindow - maxOutputTokens` 计算真实可用空间（70% 水位线自动压缩），本地反代放宽至 32MB 护栏，根除超长会话断连。
 
-### 13. Git 工作台与生态扩展
+### 13. 本地知识库与笔记本系统 (Notebooks & Knowledge Base, v0.2.0)
+- **本地纯净 Markdown 物理映射**：
+  - 数据持久化于用户家目录 `~/.ReinAgent/notebooks/`，首次启动自动生成 `default` 默认笔记本；
+  - 零私有黑盒格式，每个笔记本对应一个物理文件夹，支持无限级嵌套子文件夹与即时检索；每篇笔记对应真实的 `.md` 文件，完美兼容 Obsidian、Typora 等外部工具协同编辑；
+- **双栏交互工作台与目录树**：
+  - 左侧常驻导航栏「笔记」（`BookOpen` 图标）快速切入；
+  - 左栏呈现笔记本层级树、快速新建（`+ 笔记` / `+ 文件夹`）、搜索过滤框与笔记元信息列表（标题、字符数、修改时间、悬浮重命名与删除）；
+- **所见即所得 Markdown 编辑器**：
+  - 基于 Milkdown / ProseMirror 与 Nord 优雅主题，支持所见即所得流畅打字；
+  - 支持 `预览 (Eye)` / `编辑 (Edit)` / `分栏 (Split)` 三态滑动胶囊自由切换；
+  - 顶部常驻快捷格式工具栏（H2、H3、粗体、斜体、删除线、行内代码、引用块、无序/有序列表、任务待办、分割线、代码块），支持防抖自动保存落盘；
+- **AI 写作助手（抽屉式侧弹窗）**：
+  - 编辑器右上角一键唤出 AI 写作助手抽屉（`Sparkles` 图标），覆盖于右侧区域；
+  - 提供全文重构、段落润色、代码解释、要点提炼、自定义提示词等强大指令；
+  - 流式生成与 Token 耗时统计，支持「替换全文」与「在文末追加」精准更新编辑器内容；
+- **任务对话一键整理笔记（OrganizeNotePanel）**：
+  - 对话工作台顶栏右侧常驻 `[📄 整理笔记 ⌄]` 绿色胶囊按钮；
+  - 展开即唤起轻量抽屉，支持选择目标笔记本（层级下拉）、自定义整理 Prompt，由当前任务关联模型深度分析完整对话历史；
+  - 自动提炼任务目标、核心技术方案、踩坑记录与最终代码结论，自动生成高质量 Markdown 并保存为新笔记，支持一键跳转并打开该笔记。
+
+### 14. Git 工作台与生态扩展
 - **Git 工作台集成**：
   - 顶栏分支快速检出与新建、未暂存/已暂存行级差异对比；
   - 集成 AI 提交信息生成（`CommitDialog`）与空目录一键初始化仓库；
@@ -155,10 +175,11 @@ ReinAgent 致力于为开发者打造极致轻量、超高响应速度与 100% �
 ```
 ReinAgent 架构全景
 ├── Frontend (React 19 + TypeScript + Tailwind CSS v4)
-│   ├── src/App.tsx                      # 根容器、全局快捷键、主视口分流 (Workbench / Settings)
+│   ├── src/App.tsx                      # 根容器、全局快捷键、主视口分流 (Workbench / Notes / Settings)
 │   ├── src/store/useAppStore.ts         # 全局响应式状态 (主题、语言、任务、工作区项目)
 │   ├── src/components/
-│   │   ├── chat/                        # 输入胶囊、消息流、回合分组、审批卡、导航条、子代理卡片
+│   │   ├── chat/                        # 输入胶囊、消息流、回合分组、审批卡、导航条、子代理卡片、整理笔记面板
+│   │   ├── notes/                       # 笔记本双栏工作台、目录树、Milkdown 编辑器、AI 写作助手抽屉
 │   │   ├── trajectory/                  # 轨迹视图、时间轴泳道、详情面板
 │   │   ├── git/                         # 分支切换器、Git 图谱、提交对话框
 │   │   ├── sidebar/                     # 侧边栏主体、项目与任务树、长按拖拽重排
@@ -172,6 +193,7 @@ ReinAgent 架构全景
 └── Backend (Tauri 2 / Rust)
     └── src-tauri/src/
         ├── lib.rs                       # Tauri 命令注册、应用生命周期与退出钩子
+        ├── notes_fs.rs                  # 纯净 Markdown 笔记本树形遍历、文件读写与元数据服务
         ├── conversation_store.rs        # SQLite (WAL) 会话与任务持久化
         ├── checkpoint.rs                # 检查点创建、差异比对与代码原子回退引擎
         ├── fs_cmd.rs                    # 异步受控文件操作、原生文件夹选择、系统管理器调起
@@ -190,7 +212,7 @@ ReinAgent 架构全景
 
 - **前端框架**：React 19 + TypeScript 6 + Vite
 - **样式与组件**：Tailwind CSS v4 + Radix UI 原语 + Lucide Icons + Motion
-- **编辑器与渲染**：Lexical 富文本 + Marked + Shiki (代码高亮) + @pierre/diffs
+- **编辑器与渲染**：Milkdown (ProseMirror 所见即所得 Markdown) + Lexical 富文本 + Marked + Shiki (代码高亮) + @pierre/diffs
 - **虚拟化与状态**：@tanstack/react-virtual + Zustand
 - **桌面与后端**：Tauri 2 (Rust) + Axum + SQLite (rusqlite) + Tokio
 - **包管理器**：[Bun](https://bun.sh) (`bun@1.4.2`)
@@ -295,6 +317,7 @@ ReinAgent/
 - **配置存储**：模型 API Key 存储在本地文件 `~/.ReinAgent/provider_config.json`，不会上传任何三方服务器。
 - **对话与任务库**：任务元数据与时间线持久化在本地 SQLite 数据库 `~/.ReinAgent/conversations.db`。
 - **代码检查点**：代码修改前快照保存在 `~/.ReinAgent/checkpoints/<taskId>/`，仅供本机会话回退使用。
+- **知识库与笔记本**：纯净 Markdown 文件持久化在 `~/.ReinAgent/notebooks/`（多层物理文件夹与真实 `.md` 映射）。
 - **默认工作区**：未指定项目时，默认在 `~/.ReinAgent/DefaultProject/` 开展工作。
 
 ---
