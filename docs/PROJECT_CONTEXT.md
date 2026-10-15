@@ -2062,8 +2062,16 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
         - **目标笔记本**：下拉展示层级树形目录，默认选中“默认笔记本”，支持嵌套子目录层级选择；
         - **操作按钮**：包含绿色 `[开始整理]` 按钮与 `[取消]` 按钮；
       - **执行与物理落盘**：提取当前任务对话文本，通过 `completeOneShotText` 结合专业整理 Prompt 生成结构化 Markdown，首行提取为标题并调用 `notesService.createNote` + `saveNote` 物理落盘；
-      - **完成联动**：整理完成后顶栏下方提示 `已保存笔记：《...》`，点击 `[查看笔记]` 按钮一键切换至笔记模块并直接高亮打开该篇新建笔记。
 - **Web Mock 双模兼容**：`notesService.ts` 内置完整的浏览器端 Mock，无头环境/单测无缝跑通。
+
+## 八、社区推广与开源发布（2026-10-15）
+
+### 1. LINUX DO 社区开源发布与审核落地
+- **发布版块与标签**：成功在 LINUX DO 社区 `开发调优` 版块发布并过审，标签挂载 `#开源推广`、`#人工智能`；
+- **合规声明对齐**：严格对齐社区最新 5 项标准开源推广声明（包含开源协议、LINUX DO 社区认可友链声明及项目介绍截图发出说明）；
+- **文档与官网资源更新**：
+  - `README.md` 与项目官网（GitHub Pages）显要位置添加 LINUX DO 社区认可友链；
+  - 清理旧版历史架构图 `docs/ReinAgent.png`，全线更新为 v0.2.0 高清多 Subagent 协作实测工作台全景图 `docs/assets/workbench-subagents-demo.png`。
 
 
 
