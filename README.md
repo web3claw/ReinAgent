@@ -18,7 +18,7 @@
 </p>
 
 <p align="center">
-  <img src="docs/ReinAgent.png" alt="ReinAgent Workbench Interface" width="96%" style="border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,0.25);" />
+  <img src="docs/assets/workbench-subagents-demo.png" alt="ReinAgent Workbench Interface" width="96%" style="border-radius: 12px; box-shadow: 0 12px 36px rgba(0,0,0,0.25);" />
 </p>
 
 ---
@@ -302,7 +302,7 @@ ReinAgent/
 ├── docs/                         # 项目文档专区
 │   ├── PROJECT_CONTEXT.md        # 核心全景架构白皮书 (Single Source of Truth)
 │   ├── PROMPTS.md                # 系统提示词单一真相源
-│   ├── ReinAgent.png             # 界面展示高清预览图
+│   ├── assets/                   # 界面静态资产与高清实测演示图
 │   └── archived/
 │       └── ROADMAP.md            # 历史功能路线图归档
 ├── AGENTS.md                     # Agent 工作区指令与规则单一真相源
@@ -319,6 +319,12 @@ ReinAgent/
 - **代码检查点**：代码修改前快照保存在 `~/.ReinAgent/checkpoints/<taskId>/`，仅供本机会话回退使用。
 - **知识库与笔记本**：纯净 Markdown 文件持久化在 `~/.ReinAgent/notebooks/`（多层物理文件夹与真实 `.md` 映射）。
 - **默认工作区**：未指定项目时，默认在 `~/.ReinAgent/DefaultProject/` 开展工作。
+
+---
+
+## 🤝 社区认可与友情链接
+
+- [LINUX DO](https://linux.do/) - 新的理想型社区
 
 ---
 

@@ -1908,7 +1908,7 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。
 - **功能文档**：`docs/guide/*.html`，共 20 页（功能文档 8、深入实现 4、设计与运维 5、工程文档 3），侧栏按分组列出并自动高亮当前页。
 - **工程文档页**：`guide/PROJECT_CONTEXT.html`、`guide/PROMPTS.html`、`guide/ROADMAP.html` 由仓库 Markdown 原文用 `Bun.markdown.html()` 渲染生成，Markdown 内的相对链接（`./PROMPTS.md`、`src/**` 等）在生成阶段重写为站内 HTML 页或 GitHub 绝对链接。
 - **英文落地页**：`docs/en/index.html`（文档正文目前仅中文，英文页为现状说明）。
-- **图片**：`docs/ReinAgent.png` 为仓库自有界面图；参考站点的截图已移除，不引用任何非 ReinAgent 界面图。
+- **图片**：`docs/assets/workbench-subagents-demo.png` 为仓库自有实测工作台与多 Agent 协作高清图；旧版 `docs/ReinAgent.png` 已移除，所有展示图与 Open Graph 分享图统一指向最新资产。
 
 ### 生成与维护
 
