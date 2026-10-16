@@ -207,6 +207,8 @@ export interface RunAgentTurnParams {
   toolPolicies?: Record<string, "allow" | "ask" | "deny">;
   /** 审批协调器（由会话池注入；缺省时不注入审批门，工具直通）。 */
   approval?: ApprovalCoordinator;
+  /** 当前任务/会话 ID（用于工具及后台工作隔离） */
+  conversationId?: string;
   /** 检查点上下文（对齐 LiveAgent）：本轮写文件前捕获前像，供「回退本轮代码改动」。 */
   checkpoint?: { conversationId: string; turnId: string; root?: string };
   onEvent: (ev: AgentEvent, signal?: AbortSignal) => void | Promise<void>;
@@ -470,6 +472,8 @@ export interface TurnAssemblyParams {
   assistantId?: string;
   approvalMode?: ApprovalMode;
   approval?: ApprovalCoordinator;
+  /** 当前任务/会话 ID */
+  conversationId?: string;
   checkpoint?: { conversationId: string; turnId: string; root?: string };
   /** 会话目标（/goal）：非空时按权威状态块注入 meta_user（见 goalState.formatGoalStateForModel）。 */
   goal?: TaskGoal | null;
@@ -508,14 +512,17 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
     assistantId,
     approvalMode = "full",
     approval,
+    conversationId,
     checkpoint,
     goal,
     runSessionStartHooks,
   } = params;
 
+    const resolvedConversationId = conversationId || checkpoint?.conversationId;
     const tools = getTools({
       ...(workspaceRoot ? { workspaceRoot } : {}),
       ...(checkpoint ? { checkpoint } : {}),
+      ...(resolvedConversationId ? { conversationId: resolvedConversationId } : {}),
     });
     // MCP 工具接入（对齐 LiveAgent：发送时枚举启用服务器的工具并注入工具循环；
     // 枚举失败的服务器如实跳过。整轮发送增加一次串行枚举，与 ZCode/LiveAgent 同语义）。
@@ -730,6 +737,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     approval,
     toolPolicies,
     checkpoint,
+    conversationId,
   } = params;
 
   const assembly = await assembleTurnContext({
@@ -742,6 +750,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     ...(goal === undefined ? {} : { goal }),
     ...(approval === undefined ? {} : { approval }),
     ...(checkpoint === undefined ? {} : { checkpoint }),
+    ...(conversationId ? { conversationId } : {}),
     runSessionStartHooks: true,
   });
   const effectiveSystemPrompt = assembly.systemPrompt;

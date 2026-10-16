@@ -213,6 +213,9 @@ export function createTools(options) {
   const checkpoint = opts.checkpoint && typeof opts.checkpoint === "object"
     ? opts.checkpoint
     : undefined;
+  const conversationId = typeof opts.conversationId === "string" && opts.conversationId.trim()
+    ? opts.conversationId.trim()
+    : undefined;
 
   // 本会话内已 Read 过的文件（edit_file 的 read-before-edit 前置校验依据，对齐 ZCode）。
   const readPaths = new Set();
@@ -658,9 +661,16 @@ export function createTools(options) {
       const { invoke } = await import("@tauri-apps/api/core");
       const cwd = params.cwd ? resolveWorkspacePath(params.cwd, getWorkspace()) : getWorkspace();
       const result = await invoke("bg_spawn", { command: params.command, cwd });
+      if (conversationId && result?.taskId) {
+        try {
+          const { bindTerminalToConversation } = await import("../chat/backgroundWork");
+          bindTerminalToConversation(result.taskId, conversationId);
+        } catch {
+          // ignore in environments where backgroundWork is unavailable
+        }
+      }
       return buildTextToolResult(
-        `Background task started: ${result.taskId}
-` +
+        `Background task started: ${result.taskId}\n` +
           `Read output with task_output(taskId="${result.taskId}"). Stop with task_stop(taskId="${result.taskId}").`,
         { taskId: result.taskId, command: params.command, cwd },
       );

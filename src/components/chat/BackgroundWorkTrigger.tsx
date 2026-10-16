@@ -46,11 +46,11 @@ function outputSummary(tail: string): string {
   return lastLine.length > 40 ? `${lastLine.slice(0, 39)}…` : lastLine;
 }
 
-export function BackgroundWorkTrigger() {
+export function BackgroundWorkTrigger({ conversationId }: { conversationId?: string } = {}) {
   const { t } = useTranslation();
   // 动态 i18n 键（bgWork* 查表）需要 string 签名
   const tf = t as unknown as (key: string) => string;
-  const work = useBackgroundWork();
+  const work = useBackgroundWork(conversationId);
   const [open, setOpen] = useState(false);
   const [stopping, setStopping] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -70,7 +70,7 @@ export function BackgroundWorkTrigger() {
     return () => document.removeEventListener("pointerdown", onPointerDown);
   }, [open]);
 
-  if (total === 0) return null;
+  if (!conversationId || total === 0) return null;
 
   const handleStopTerminal = async (item: BackgroundTerminalWork) => {
     setStopping(item.taskId);

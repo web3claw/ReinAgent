@@ -217,6 +217,8 @@ export interface SubagentToolDeps {
   /** 后台子代理完成回调（系统通知；缺省浏览器环境默认实现）。 */
   notify?: (info: { id: string; type: string; description: string; status: string; summary: string; error?: string }) => void;
   now?: () => number;
+  /** 所属会话 ID（用于按会话隔离后台工作）。 */
+  conversationId?: string;
 }
 
 /** 后台完成通知的浏览器默认实现（系统通知 + 提示音；Node/Web 不可达时静默）。 */
@@ -387,6 +389,7 @@ export async function createSubagentTool(deps: SubagentToolDeps) {
         prompt: params.prompt,
         background: params.run_in_background === true,
         startedAt,
+        conversationId: deps.conversationId,
       });
 
       const effectiveMaxSteps = deps.maxSteps ?? SUBAGENT_MAX_STEPS;

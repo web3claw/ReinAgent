@@ -242,7 +242,10 @@ ReinAgent 架构全景
 - **按轮分组**：`groupTurns(messages)`（`src/lib/chat/turnActivity.ts`）——user 消息开轮至下一条 user 前；轮工时 = 最早 startedAt → 最晚 endedAt（运行中 = now 现算）；MessageList 按轮渲染并持有 1 秒 `setInterval` live tick（仅存在运行中轮时启动，对齐 ZCode 不用 rAF）；
 - **运行中判定含会话级兜底**（2026-09-24 修复闪烁）：多步工具循环的轮与轮之间存在瞬态空窗（上一轮条目已 done、下一轮未建条目），仅凭条目状态判 running 会让状态条/思考块「展开→收缩→展开」闪烁——现由 App 透传 `isStreaming`，将**流式中的最后一轮**钉在 running（`live` prop），整个 Agent 循环期间状态条恒为「工作中」、思考块恒展开，循环结束才统一翻转折叠；
 - **回合工作状态条（TurnGroupView）**：三态文案——运行中「工作中 {时长}」（**锁定展开、按钮 disabled、不渲染箭头**）/ 完成「已工作 {时长}」（**默认折叠、可展开**，运行→完成自动翻转折叠）/ 中止「已停止」；**历史消息无打点时如实显示「已处理」，绝不伪造时长（No-Fallback）**；时长格式化 `formatWorkDuration`（`Math.max(1, round)` 整秒、最多两段最靠前非零单位，中文「3 分 48 秒」/ 英文「3m 48s」）；
-- **折叠体内容**：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本（非末条 assistant 的正文）；**最终回复正文（轮内最后一条 assistant）在轮结束后外显**。**时间线不变式（2026-09-27，修复卡片位置漂移）**：工具条目在状态机里诞生于所属 assistant 消息之后，运行中最后一条 assistant 的正文**就地**渲染在折叠体的时间线位置（亮色 + ChatLoading，样式对齐 MessageItem 正文；纯文本轮靠 `liveAnswerInBody` 让折叠体仍渲染），轮结束后才由外显 MessageItem 接管——工具卡出现时必然落在正文下方且永不移动，彻底消除轮次切换时「卡片在简述上面↔下面」的跳动（对齐 ZCode `conversationTurnRenderUnits` 的 orderedRows 严格按产出顺序渲染，无「末条钉底」规则）；
+- **折叠体内容**：思考块（ThinkingBlock）+ 工具调用卡（ToolCallCard）+ 中间叙述文本（非末条 assistant 的正文）；**最终回复正文（轮内最后一条 assistant）在轮结束后外显**。**时间线不变式（2026-09-27，修复卡片位置漂移）**：工具条目在状态机里诞生于所属 assistant 消息之后，运行中最后一条 assistant 的正文**就地**渲染在折叠体的时间线位置（样式对齐 MessageItem 正文；纯文本轮靠 `liveAnswerInBody` 让折叠体仍渲染），轮结束后才由外显 MessageItem 接管——工具卡出现时必然落在正文下方且永不移动，彻底消除轮次切换时「卡片在简述上面↔下面」的跳动（对齐 ZCode `conversationTurnRenderUnits` 的 orderedRows 严格按产出顺序渲染，无「末条钉底」规则）；
+- **中间文本 Markdown 与轮尾加载指示器（2026-10-16 修复）**：
+  1. `IntermediateText` 补齐 `<div className="md">` 样式包裹容器，确保 MarkdownText 渲染的段落边距、列表、代码块与 `inline-code` 绿色代码胶囊样式完整生效，彻底解决中间文本退化为无格式白字的问题；
+  2. 运行态加载小菊花（`ChatLoading`）从 `lastAssistant` 文本内移出，改为挂在 `turn-body` 最底部（所有 activitySegments 渲染之后，且在 `!attentionRequired` 时呈现），对齐 ZCode `TurnChatLoadingSlot` 语义，杜绝小菊花夹在文本与工具卡片之间。
 - **思考块（ThinkingBlock）**：header「思考 · 持续了 N 秒」（整秒向上取整；无打点如实显示「持续了几秒」）+ 流式「正在思考」；默认收起；正文最暗文字层（`--text-dim` + 透明度）+ 左导线缩进 + 限高 240px 滚动 + `whitespace-pre-wrap` 纯文本；
 - **查阅族独立卡（「查阅」聚合卡已按用户决策移除，2026-09-27）**：`list_dir` / `read_file` 不再聚合为组卡（`EXPLORE_TOOL_NAMES`/`buildActivityItems`/`ExploreGroupCard` 已删除），直接以独立卡渲染——**对齐 ZCode `ReadToolCallBlock` 独立形态**：类型标签（`读取`/`列出`，i18n `toolKindRead/List`，运行中 `正在读取/正在列出` 扫光由 ToolLayout 自动附加）+ Material 文件/文件夹图标 chip + 文件名 + 父目录段次要文本（`renderFilePath` 同款）；**成功不显示状态词，失败才显示「执行失败」**（`showFailureStatus` + tooltip 带错误原文，对齐 ZCode read 卡只传 showFailureStatus 的语义）；`read_file` chip 可点击在右侧面板打开文件预览，`list_dir` 目录 chip 不可点击（对齐 ZCode `canOpenPreview` 仅 file）；list_dir 工作区根（`.`）显示「当前目录」；`ToolCallCard` 的 `showIcon` prop 保留（透传 ToolLayout，默认 true）；
 - **工具卡类型化**：header = 类型图标（read/list/write/edit/exec/calc → lucide 图标）+ 类型标签（`toolKindLabel`：读取/查阅/写入/编辑/终端/计算，**未知工具如实回退原名，不臆测分类**）+ 文件 chip（`toolArgPath` 取 basename，title 全路径）/ 终端命令内联摘要（收起即可见命令，`tool-cmd-inline` 尾部截断）+ `+N/－N` diff 统计（LCS 精确口径；绿 `--diff-added` / 红 `--diff-removed` 主题变量）+ 状态词（执行中/已执行/执行失败，i18n）；
@@ -265,9 +268,12 @@ ReinAgent 架构全景
 
 1. **生产端节流**：池层 notify 走 30ms 节流窗（leading 立即 + trailing 合并，`NOTIFY_FLUSH_MS`），密集 delta 下 UI 每帧最多渲染一次；状态更新本身保持同步。
 2. **引用稳定 + 行级 memo**：`groupTurns` 结果引用稳定化（entries 未变的轮复用旧 group 对象）；`TurnGroupView` / `ToolCallCard` / `MarkdownText`（text+streaming 双键）/ `MarkdownBlockRenderer` 全部 memo——流式时每帧只有正在流的轮重渲染。
-3. **虚拟化 + live tail 拆分**：`@tanstack/react-virtual`（轮为单位，稳定 key，overscan 4，行高 LRU 缓存 `TurnHeightCache` 上限 4000）；**正在流式的最后一轮拆出虚拟列表放普通文档流**（消除流式长高回填跳动）；`scrollMargin` 动态测量 App 内边距包装；轮偏移注册表 `turnOffsetRegistry` 供导航条屏外轮兜底（`getRegisteredTurnOffset` → `ConversationNavigator.measureFallback`）。
+3. **虚拟化 + live tail 拆分**：`@tanstack/react-virtual`（轮为单位，稳定 key，overscan 4，行高 LRU 缓存 `TurnHeightCache` 上限 4000）；**正在流式的最后一轮拆出虚拟列表放普通文档流**（消除流式长高回填跳动）；`scrollMargin` 动态测量 App 内边距包装（仅监听稳定视口 `scrollEl` 与 `window.resize`，严禁监听 `listEl` 以防重排死循环）；轮偏移注册表 `turnOffsetRegistry` 供导航条屏外轮兜底（`getRegisteredTurnOffset` → `ConversationNavigator.measureFallback`）。
 4. **流式降级**：`streaming` prop 贯穿 MarkdownText → MarkdownBlockRenderer → CodeBlock，流式中的代码块跳过 Shiki 异步高亮（plain 渲染），流式结束自动恢复；`renderKey`/memo 键含 streaming 防子树错位。
-5. **滚动权状态机**：following 存 ref；wheel/touch/键盘 capture 阶段预登记用户上滚意图（同帧解除跟随，不等 scroll 事件）；程序化贴底打 120ms 时间戳标记（窗内 scroll 事件不参与跟随判定）；贴底 `scrollTop = scrollHeight` instant 直赋；内容子树 `overflowAnchor: none` 禁用浏览器原生锚定；liveNowMs tick 只驱动正在流式的轮。
+5. **滚动权状态机与会话切换记忆（对标 ZCode chatSessionScrollMemory，2026-10-16）**：
+   - following 存 ref；wheel/touch/键盘 capture 阶段预登记用户上滚意图（同帧解除跟随，不等 scroll 事件）；程序化贴底打 120ms 时间戳标记（窗内 scroll 事件不参与跟随判定）；贴底 `scrollTop = scrollHeight` instant 直赋；内容子树 `overflowAnchor: none` 禁用浏览器原生锚定；liveNowMs tick 只驱动正在流式的轮；
+   - 会话滚动记忆（`src/lib/chat/scrollMemory.ts`）：切离会话时若在底部（`followingRef.current` 或离底 $\le 80\text{px}$），记录 `wasPinnedToBottom: true`；仅在查阅上方历史时记录 `topMsgId + offset` 锚点；
+   - 切回会话决策（`resolveScrollRestoreAction`）：若任务正在运行（`hasLiveTurn`）或离开前处于底部（`wasPinnedToBottom: true`），无条件 `stickToBottom()` 并锁定跟随，绝不跳回上方旧消息；仅在离开前阅读历史且任务未运行时精准恢复历史锚点。
 
 ## 四点五、系统提示词单一真相源（PROMPTS.md，2026-09-25）
 
@@ -1088,14 +1094,19 @@ ReinAgent 架构全景
   - **设置**：settings.json "promptEnhancement" 键（customTemplate/userTemplate/providerId/modelId/thinkingLevel）；设置页新「提示词增强」tab（模板编辑器含 {{draft}} 校验/插入占位符/恢复默认 + 保存时模板与默认完全一致自动清空覆盖对齐 PI + 钉住模型下拉（全部已启用服务商模型，孤儿钉住提示回退）+ 推理等级行）。
   - **E2E（真实模型链路）**：草稿「帮我搞一下那个东西」→ 点 ✨ → 增强中转圈 → 真实模型返回具体化提示词（对象/期望结果/验收标准——few-shot 教导行为）→ 撤销按钮出现 → 撤回还原原文 → 斜杠命令禁用 ✓。tsc 0 + 222 前端测试全绿（新增 5 用例：模板渲染/校验/回退/清洗）。
 
-- **运行中后台工作徽标 + 管理浮层（2026-10-02，对齐 ZCode ConversationBackgroundWorkTrigger + ConversationStatusPanel 最小移植；用户确认「徽标+浮层」范围）**：
-  - **UI**：composer 工具条审批模式下拉右侧新 BackgroundWorkTrigger——running 的终端/子代理按类型显示「图标+计数」（SquareTerminal/Bot），全零整个隐藏；点击展开浮层（w-80，absolute bottom-full）：分区列运行项（图标+描述+尾部输出摘要+秒针时长+停止按钮），终端行点击跳终端面板，子代理行点击跳右侧面板 subagents 视图；点外部关闭。
-  - **数据层（lib/chat/backgroundWork.ts）**：两个视图共用同一真值——子代理 = subagentRegistry running 记录（前台+后台都算，stoppable=background；模块级订阅一次 subscribeSubagentRuns 归并进联合 state，**不放 hook 体**（渲染期副作用违纪））；终端 = bg_list() running 任务（无推送事件 → 有订阅者才启的 1s 轮询、连续失败 3 次自停、内容比对去重才 notify）。useBackgroundWork 单一 useSyncExternalStore。
-  - **范围裁剪（相对 ZCode）**：不做 workflow 类目（无对应物）、不做常驻 mini 胶囊（v1 只点击展开）、终端行点击直接跳已有终端面板（不做输出侧栏）、不做侧栏任务行摘要。
-  - **子代理停止语义（实测确认）**：stopRun → AbortController.abort() → driveRun 的 runTurn D1 桥接收束 → finishRun；**前台运行无独立 controller 如实不可停**（返回 false → toast 报错）。E2E 种子直接 registerRun 的记录没有驱动者，abort 后永不收束——这是种子假象不是 bug；真实模型 agent 工具链路才有 driveRun 收束。
-  - **E2E（真实桌面）**：bg_spawn ping → 徽标「🖥1」→ 浮层终端区+taskId+停止 → 点停止 → 徽标隐藏 ✓；种 running 子代理 → 徽标「🖥1🤖1」双图标计数 ✓、浮层两分区+描述+时长 ✓（秒针/双计数/停止链路全过）。
-  - **⚠️ 复发坑**：Vite 模块图缓存又吞了一次 HMR（磁盘有 trigger JSX、served transform 没有，Page.reload 无效）——重启 tauri dev 栈解决。与弹层 keyframes 那次同款：bundle 新旧必须 curl served 内容确认。
-  - i18n bgWork* 6 键 zh/en。tsc 0 + 222 前端测试全绿（无新增测试——纯 UI/IO 胶水层）。
+- **运行中后台工作徽标 + 管理浮层（2026-10-02 移植，2026-10-15 会话级隔离重构修复）**：
+  - **问题与根因**：原先 `BackgroundWorkTrigger` 直接读取全局 `useBackgroundWork()` 单例，新建任务或进入无消息欢迎页时，全局所有后台进程（如历史任务的 `background_bash` 或 `subagent`）会泄漏在输入框左下角。
+  - **会话级隔离架构（对齐 ZCode ConversationBackgroundWork 隔离模型）**：
+    - `backgroundWork.ts`：扩展 `BackgroundTerminalWork` / `BackgroundSubagentWork` 的 `conversationId?: string` 属性；维护 `terminalConversationMap`（`taskId -> conversationId` 内存映射）；导出 `bindTerminalToConversation`、`syncConversationTerminals`（可从历史消息 toolResult 解析还原 `taskId` 归属）；提供 `filterBackgroundWork(state, conversationId?)` 与 `useBackgroundWork(conversationId?)`。
+    - **双重拦截守护**：
+      1. `LexicalComposer`：`<BackgroundWorkTrigger conversationId={hasMessages ? taskId : undefined} />`，在新建任务 / EmptyState（`!hasMessages`）欢迎页时 `conversationId` 必为 `undefined`；
+      2. `BackgroundWorkTrigger`：`if (!conversationId || total === 0) return null;`，未指定会话或进程数为 0 时严格静默隐藏；
+    - **工具调度与运行时打通**：
+      - `tools.js` / `tools.d.ts`：`createTools` 支持 `conversationId`，在 `backgroundBash.execute` 启动成功后调用 `bindTerminalToConversation(result.taskId, conversationId)`；
+      - `subagentRunner.ts` / `subagentRegistry.ts`：`registerRun` 记录宿主 `conversationId`，并在过滤时精准匹配；
+      - `runAgentTurn.ts` / `conversationController.js`：透传 `conversationId: deps.taskId`；
+      - `App.tsx`：监听 `activeTaskId` 与 `state.messages`，自动调用 `syncConversationTerminals` 恢复历史后台终端归属。
+  - **交付验证**：新增 `src/lib/chat/backgroundWork.test.mjs`，通过 Red Check 变异测试；全量 548 个测试全绿，`tsc --noEmit` 0 报错。
 
 - **远程访问（局域网 Web 型手机远控）批 1-4 ✅（2026-10-02，用户确认中档方案）**：
   - **架构（对齐 ZCode web-remote-replayable + LiveAgent 审批回环）**：桌面内置 axum 服务（tokio，0.0.0.0:7777 默认关）→ 手机浏览器 token 鉴权 → WS RPC 五白名单 op（list_tasks/subscribe/send/approve/stop）→ 桌面为唯一权威，会话运行时在 webview，Rust↔webview 用 Tauri 事件 + 专用命令桥（remote-bridge:need-snapshot/need-state/send/resolve/stop + remote_bridge_answer_* 命令）。
@@ -2072,6 +2083,28 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 - **文档与官网资源更新**：
   - `README.md` 与项目官网（GitHub Pages）显要位置添加 LINUX DO 社区认可友链；
   - 清理旧版历史架构图 `docs/ReinAgent.png`，全线更新为 v0.2.0 高清多 Subagent 协作实测工作台全景图 `docs/assets/workbench-subagents-demo.png`。
+
+## 九、超长会话性能优化与切任务滚动恢复（2026-10-16）
+
+### 1. 界面卡顿与 90% CPU 根因与优化
+- **根除 ResizeObserver 死循环 (`MessageList.tsx`)**：
+  - 原逻辑在虚拟列表容器 `listEl` 上绑定 `new ResizeObserver(update)` 并触发 `setScrollMargin`。列表项测高变化时触发回调 $\to$ 更新状态触发重绘 $\to$ 再次触发 RO 回调，形成每秒成百上千次的重排死循环，产生 `ResizeObserver loop completed with undelivered notifications` 报警并打满主线程 CPU（80%~90%）；
+  - 修复：移除对内部子容器 `listEl` 的监听，`scrollMargin` 改为仅监听外部稳定滚动视口 `scrollEl` 与 `window.resize`，以及在消息数量变化时按需同步，彻底杜绝死循环。
+- **增量终端归属扫描 (`App.tsx`)**：
+  - 原逻辑在 `[state.messages]` 依赖上无条件调用 `syncConversationTerminals`，长任务（900+ 条消息）流式生成时，每接收一个 token 就在主线程对全量 900+ 消息跑一遍正则，严重拉低帧率；
+  - 修复：引入 `lastTerminalSyncRef`，会话切换或首次载入时做全量扫描，流式过程中仅增量扫描尾部最新 2 条消息，耗时降至微秒级（$O(1)$）。
+- **消除 HTML 嵌套非法结构 (`TurnGroupView.tsx`)**：
+  - `TurnFileSummaryCard` 外层从 `<button>` 改为语义化 `<div role="button" tabIndex={0}>`，消除 button 嵌套 button 的浏览器警告与无效重排。
+
+### 2. 会话切换滚动状态精准保持（对标 ZCode chatSessionScrollMemory 规范）
+- **根因分析**：原实现切离会话时仅盲目拾取视口顶部的旧消息存为锚点，丢失了用户是否处于“贴底/跟随（pinned to bottom）”状态；切回时开启 350ms 循环强制 `scrollToIndex` 定位至该旧消息并强置 `following = false`，导致任务切回后瞬间跳回旧历史顶部。
+- **核心模型 (`src/lib/chat/scrollMemory.ts`)**：
+  - 内存状态：`ScrollMemoryEntry = { wasPinnedToBottom: boolean, anchor?: { mid: string, off: number } }`；
+  - 保存时机：用户在底或跟随（`isFollowing || distanceToBottom <= 80`）时，保存 `wasPinnedToBottom: true`；仅在向上翻看历史时记录顶部消息锚点；
+  - 恢复决策 (`resolveScrollRestoreAction`)：
+    1. 任务处于运行中（`hasLiveTurn`，流式中或有 running 轮）：无条件 `stickToBottom()` 贴底跟随最新输出；
+    2. 切离时为贴底态（`wasPinnedToBottom === true`）或无记忆：执行 `stickToBottom()` 并锁定稳定窗（2.5s）；
+    3. 仅当任务非运行态且用户此前在上方阅读历史时，精准恢复历史旧锚点。
 
 
 

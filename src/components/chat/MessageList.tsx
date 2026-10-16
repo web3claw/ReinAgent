@@ -2,6 +2,12 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { useVirtualizer } from "@tanstack/react-virtual";
 import type { TimelineEntry } from "../../lib/chat/conversationModel";
 import { groupTurns, type TurnGroup } from "../../lib/chat/turnActivity";
+import {
+  computeScrollMemoryState,
+  resolveScrollRestoreAction,
+  type ScrollAnchor,
+  type ScrollMemoryEntry,
+} from "../../lib/chat/scrollMemory";
 import { TurnGroupView } from "./TurnGroupView";
 
 /** 距底部小于此像素视为「贴着底部」，此时才自动跟随流式滞底。 */
@@ -10,12 +16,6 @@ const STICK_TO_BOTTOM_PX = 120;
 const TURN_OVERSCAN = 4;
 /** 未测量轮的估算高度（对齐 ZCode estimateSize 兜底）。 */
 const DEFAULT_TURN_HEIGHT = 220;
-interface ScrollAnchor {
-  /** 视口顶部（最近视口顶）可见的消息 id（data-msg-id 锚点）。 */
-  mid: string;
-  /** 锚点消息顶边距滚动视口顶的像素偏移。 */
-  off: number;
-}
 /** 流式 delta 通知节流（对齐 ZCode flushWindowMs=30）由池层负责；此处常量仅注释引用。 */
 
 /**
@@ -153,58 +153,54 @@ export function MessageList({
   /** 编辑重发/重试截断重跑后：强制恢复贴底跟随（对齐 LiveAgent stickToBottom on run start）。 */
   useEffect(() => {
     if (followSignal === undefined || followSignal === 0) return;
+    setPendingRestore(null);
     followingRef.current = true;
     stickToBottom();
   }, [followSignal, stickToBottom]);
 
-  // ---- 任务切换滚动记忆（P2-G2 尾巴，会话内内存版）：
-  //      软件重启后所有任务默认贴底（记忆清空）；软件运行期间任务切换在内存中
-  //      记忆上次阅读位置（锚点消息 + 偏移），切回不重读数据库----
+  // ---- 任务切换滚动记忆（对齐 ZCode chatSessionScrollMemory 规范）：
+  //      软件运行期间任务切换在内存中记忆；切回时若会话正在运行或此前处于贴底态，
+  //      无条件贴底跟随最新输出；仅在离开前阅读上方历史且未运行时恢复锚点。----
   const lastTaskRef = useRef<string | null | undefined>(undefined); // undefined = 尚未初始化
-  const scrollMemoryRef = useRef<Map<string, ScrollAnchor>>(new Map());
+  const scrollMemoryRef = useRef<Map<string, ScrollMemoryEntry>>(new Map());
   /** 待恢复的锚点：内容异步水合后才定位得到锚点消息，由 turns 更新驱动的恢复效应重试。 */
   const [pendingRestore, setPendingRestore] = useState<ScrollAnchor | null>(null);
 
-  /** 保存当前阅读位置：取滚动视口内最顶的 data-msg-id 消息锚点 + 视口顶偏移。 */
+  /** 保存当前会话滚动记忆：
+   * 若处于底部跟随态或离底 <= 80px，保存 wasPinnedToBottom: true；
+   * 仅当用户在上方阅读历史时，保存顶部消息锚点。
+   */
   const saveScrollAnchor = useCallback(() => {
     const el = scrollRef.current;
     if (!el || !activeTaskId) return;
+
+    let topMsgId: string | null = null;
+    let topMsgOffset = 0;
     const elTop = el.getBoundingClientRect().top;
-    let best: ScrollAnchor | null = null;
     for (const node of el.querySelectorAll<HTMLElement>("[data-msg-id]")) {
       const r = node.getBoundingClientRect();
       // 跳过完全滚出视口上方的 overscan 行（DOM 首个 ≠ 视口内首个）；
       // 允许「跨视口顶的长消息」作为锚点（off 为负，恢复时 render-then-place 按负偏移还原）
       if (r.bottom < elTop) continue;
-      best = { mid: node.dataset.msgId ?? "", off: Math.round(r.top - elTop) };
+      topMsgId = node.dataset.msgId ?? null;
+      topMsgOffset = Math.round(r.top - elTop);
       break;
     }
-    if (!best || !best.mid) return;
-    scrollMemoryRef.current.set(activeTaskId, best);
+
+    const state = computeScrollMemoryState({
+      isFollowing: followingRef.current,
+      scrollTop: el.scrollTop,
+      scrollHeight: el.scrollHeight,
+      clientHeight: el.clientHeight,
+      topMsgId,
+      topMsgOffset,
+    });
+    if (state) {
+      scrollMemoryRef.current.set(activeTaskId, state);
+    }
   }, [activeTaskId, scrollRef]);
 
-  useEffect(() => {
-    if (activeTaskId === lastTaskRef.current) return;
-    const firstRun = lastTaskRef.current === undefined;
-    const isNewTask = !firstRun && activeTaskId !== lastTaskRef.current;
-    lastTaskRef.current = activeTaskId ?? null;
-    if (!isNewTask && !firstRun) return; // 同任务刷新（如 messages 更新）：不干预滚动
-    // 进入任务：有记忆（含跨重启）→ 待恢复锚点（水合后由恢复效应定位）；无记忆 → 贴底
-    followingRef.current = !activeTaskId;
-    const saved = activeTaskId ? scrollMemoryRef.current.get(activeTaskId) : undefined;
-    if (activeTaskId && saved) {
-      setPendingRestore(saved);
-    } else {
-      stickToBottom();
-      stickModeRef.current = true; // 贴底钉住：水合/测量风暴期间忽略滚动事件
-      // 进入稳定窗 2.5s：水合（483 条消息一次性加载）与虚拟化测量重排期间的
-      // 滚动修正不解除跟随——「重启/无记忆默认贴底」能站得住的关键
-      entryStickUntilRef.current = Date.now() + 2500;
-      programmaticUntilRef.current = Math.max(programmaticUntilRef.current, Date.now() + 600);
-    }
-  }, [activeTaskId, stickToBottom]);
-
-  // 记录滚动位置（用户滚动/程序化滚动防抖保存锚点 + 落 kv 跨重启）
+  // 记录滚动位置（用户滚动/程序化滚动防抖保存锚点）
   useEffect(() => {
     if (!activeTaskId) return;
     const el = scrollRef.current;
@@ -381,10 +377,17 @@ export function MessageList({
       setScrollMargin((cur) => (Math.abs(cur - top) > 0.5 ? top : cur));
     };
     update();
+    // 严禁 observe(listEl)：虚拟列表项渲染/高度测算会导致 listEl 尺寸变化，
+    // 若监听 listEl 会产生「测高 -> 触发 RO -> setScrollMargin -> 重绘 -> 测高」的死循环，导致 CPU 90% 与主线程卡死。
+    // scrollMargin 仅受滚动视口外部容器尺寸及顶部前置 DOM（如“加载历史”按钮）影响，因此监听 scrollEl 即可。
     const ro = new ResizeObserver(update);
-    ro.observe(listEl);
-    return () => ro.disconnect();
-  }, [scrollRef]);
+    ro.observe(scrollEl);
+    window.addEventListener("resize", update);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [scrollRef, messages.length]);
 
   // ---- 隐藏窗口停表（对齐 LiveAgent）：页面不可见期间不计入运行中轮的工时 ----
   // 全部隐藏时段记在 ref 里（乱序容忍由 effectiveWorkMs 处理），visibilitychange 维护开闭。
@@ -403,8 +406,47 @@ export function MessageList({
     return () => document.removeEventListener("visibilitychange", onVisibility);
   }, []);
 
-  // ---- live tick：只驱动正在流式的轮（历史轮不接收该 prop，避免全列表每秒重渲染）----
+  // ---- live tick 与运行态守护 ----
   const hasRunningTurn = isStreaming || turns.some((turn) => turn.running);
+
+  // 若当前任务正在运行，立即取消任何待恢复的历史旧锚点，始终跟随最新进度
+  useEffect(() => {
+    if (hasRunningTurn && pendingRestore) {
+      setPendingRestore(null);
+    }
+  }, [hasRunningTurn, pendingRestore]);
+
+  // 任务切换滚动恢复决策（对标 ZCode chatSessionScrollMemory 规范）：
+  // 若任务正在运行、此前处于贴底态或无记忆，无条件 stickToBottom 保持跟随；
+  // 仅在任务未运行且此前在阅读上方历史时，恢复历史旧锚点。
+  useEffect(() => {
+    if (activeTaskId === lastTaskRef.current) return;
+    const firstRun = lastTaskRef.current === undefined;
+    const isNewTask = !firstRun && activeTaskId !== lastTaskRef.current;
+    lastTaskRef.current = activeTaskId ?? null;
+    if (!isNewTask && !firstRun) return; // 同任务刷新（如 messages 更新）：不干预滚动
+
+    const saved = activeTaskId ? scrollMemoryRef.current.get(activeTaskId) : undefined;
+    const action = resolveScrollRestoreAction({
+      saved,
+      hasLiveTurn: hasRunningTurn,
+    });
+
+    if (action.type === "stick_bottom") {
+      setPendingRestore(null);
+      followingRef.current = true;
+      stickToBottom();
+      stickModeRef.current = true; // 贴底钉住：水合/测量风暴期间忽略滚动事件
+      // 进入稳定窗 2.5s：水合（483 条消息一次性加载）与虚拟化测量重排期间的
+      // 滚动修正不解除跟随——「重启/无记忆默认贴底」能站得住的关键
+      entryStickUntilRef.current = Date.now() + 2500;
+      programmaticUntilRef.current = Math.max(programmaticUntilRef.current, Date.now() + 600);
+    } else {
+      followingRef.current = false;
+      setPendingRestore(action.anchor);
+    }
+  }, [activeTaskId, hasRunningTurn, stickToBottom]);
+
   const [liveNowMs, setLiveNowMs] = useState(() => Date.now());
   useEffect(() => {
     if (!hasRunningTurn) return;

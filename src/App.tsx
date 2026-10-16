@@ -38,6 +38,7 @@ import {
   onCompactionEvent,
   type TaskTerminalEvent,
 } from "./lib/chat/conversationPool";
+import { syncConversationTerminals } from "./lib/chat/backgroundWork";
 import { useConfirmDialog } from "./components/ui/ConfirmDialog";
 import { toast } from "./components/lw/ui/toast";
 import { invoke } from "@tauri-apps/api/core";
@@ -599,6 +600,27 @@ export default function App() {
 
   // 会话池：每个任务一个独立 controller；切任务只换订阅目标，后台任务照常流式。
   const { state, stop, isStreaming } = useConversationPool(activeTaskId);
+
+  // 恢复/更新当前会话的历史后台终端归属（对齐 ZCode ConversationBackgroundWork 隔离模型）
+  const lastTerminalSyncRef = useRef<{ taskId: string | null; count: number }>({
+    taskId: null,
+    count: 0,
+  });
+  useEffect(() => {
+    if (!activeTaskId || state.messages.length === 0) return;
+    const prev = lastTerminalSyncRef.current;
+    if (prev.taskId !== activeTaskId) {
+      // 切换任务或首次载入：全量扫描该任务历史终端
+      syncConversationTerminals(activeTaskId, state.messages);
+      lastTerminalSyncRef.current = { taskId: activeTaskId, count: state.messages.length };
+    } else {
+      // 同一任务内部更新：仅增量扫描尾部（最新 2 条足以捕获新增的 toolResult/taskId），
+      // 杜绝 900+ 消息在每个 token 流式刷新时跑全量正则扫描导致主线程卡顿
+      const tail = state.messages.slice(-2);
+      syncConversationTerminals(activeTaskId, tail);
+      lastTerminalSyncRef.current = { taskId: activeTaskId, count: state.messages.length };
+    }
+  }, [activeTaskId, state.messages]);
 
   // 提问卡缩小态（2026-10-06 用户定稿）：挂起变化（新问题到达/解决/切任务）即复位展开；
   // activeIndex 一并提升到 App——缩小胶囊要显示当前 Tab 的题文本，恢复后停留在原 Tab。

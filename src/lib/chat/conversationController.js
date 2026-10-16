@@ -308,6 +308,7 @@ export function createConversationController(deps) {
               // 会话目标（/goal）：非空时注入 meta_user 权威状态块
               goal: options.goal,
               approval: options.approval,
+              conversationId: deps.taskId,
               // 检查点上下文：本轮写文件前捕获前像（回退本轮代码改动的数据源）
               checkpoint:
                 deps.taskId && turnId

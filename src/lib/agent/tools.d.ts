@@ -37,6 +37,10 @@ export interface CreateToolsOptions {
    * 动态工作区根目录获取函数（当工作区在运行时切换时自动生效）。
    */
   getWorkspaceRoot?: () => string;
+  /**
+   * 当前会话 ID（用于将启动的后台终端任务绑定至所属会话）。
+   */
+  conversationId?: string;
 }
 
 /**

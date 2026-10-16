@@ -1403,7 +1403,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </div>
 
           {/* 运行中后台工作徽标（终端/子代理图标+计数，点击展开管理浮层） */}
-          <BackgroundWorkTrigger />
+          <BackgroundWorkTrigger conversationId={hasMessages ? taskId : undefined} />
         </div>
 
         {/* 右侧：上下文容量、模型选择、思考深度、发送按钮、语音输入 */}

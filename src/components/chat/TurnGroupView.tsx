@@ -114,7 +114,9 @@ function IntermediateText({ entry }: { entry: TimelineEntry }) {
   if (entry.role !== "assistant" || !entry.text) return null;
   return (
     <div className="turn-intermediate-text font-[450] text-[var(--text)] leading-relaxed">
-      <MarkdownText text={entry.text} streaming={entry.status === "streaming"} />
+      <div className="md">
+        <MarkdownText text={entry.text} streaming={entry.status === "streaming"} />
+      </div>
     </div>
   );
 }
@@ -211,11 +213,18 @@ function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntr
 
   return (
     <div className="turn-file-summary">
-      <button
-        type="button"
+      <div
+        role="button"
+        tabIndex={0}
         className="turn-file-summary-trigger"
         aria-expanded={open}
         onClick={() => setOpen((cur) => !cur)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            setOpen((cur) => !cur);
+          }
+        }}
       >
         <ChevronRight
           className={`w-3.5 h-3.5 shrink-0 transition-transform text-[var(--text-dim)] ${
@@ -241,7 +250,7 @@ function TurnFileSummaryCard({ entries, workspaceRoot }: { entries: TimelineEntr
         >
           {cleanState === "error" ? cleanMsg : cleanupLabel}
         </button>
-      </button>
+      </div>
       {open && (
         <div className="turn-file-summary-rows">
           {visibleFiles.map((file) => (
@@ -476,9 +485,6 @@ function TurnGroupViewImpl({
                               text={entry.text}
                               streaming={entry.status === "streaming"}
                             />
-                            {entry.status === "streaming" ? (
-                              <ChatLoading loading size="sm" className="mt-1" />
-                            ) : null}
                           </div>
                         </div>
                       ) : null}
@@ -490,6 +496,12 @@ function TurnGroupViewImpl({
                 }
                 return null;
               })}
+              {/* 运行态加载指示器：永远在整轮活动项（文本、思考、工具）的最底部（对齐 ZCode TurnChatLoadingSlot） */}
+              {isTurnRunning && !attentionRequired ? (
+                <div className="turn-loading-slot pt-1">
+                  <ChatLoading loading size="sm" />
+                </div>
+              ) : null}
             </div>
           )}
         </div>

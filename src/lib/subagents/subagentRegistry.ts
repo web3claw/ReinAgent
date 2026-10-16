@@ -39,6 +39,8 @@ export interface SubagentRunRecord {
   maxStepsReached?: boolean;
   /** 是否已触发过完成通知（防重）。 */
   notified?: boolean;
+  /** 所属会话 ID（用于按会话隔离后台工作徽标）。 */
+  conversationId?: string;
 }
 
 interface RegistryState {
@@ -88,6 +90,7 @@ export function registerRun(input: {
   prompt: string;
   background: boolean;
   startedAt: number;
+  conversationId?: string;
 }): string {
   seq += 1;
   const id = `sub-${Date.now()}-${seq}`;
@@ -99,6 +102,7 @@ export function registerRun(input: {
     status: "running",
     background: input.background,
     startedAt: input.startedAt,
+    conversationId: input.conversationId,
   };
   state.records = [record, ...state.records];
   if (input.background) {

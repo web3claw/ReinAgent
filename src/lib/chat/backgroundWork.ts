@@ -7,10 +7,15 @@
  * - 终端：bg_list() 的 running 后台任务（background_bash 启动的进程）。
  *   bg_list 无推送事件，用可暂停的 1s 轮询（有订阅者才轮询；对齐 ZCode
  *   BackgroundBashOutputSidePane 的 1s 轮询先例）。
+ *
+ * 会话隔离支持：
+ * - 每个后台任务（终端/子代理）关联启动它的 conversationId；
+ * - useBackgroundWork(conversationId) 默认按当前会话过滤；
+ * - 新建任务（conversationId 为空/未提供）时返回空列表，绝不跨会话串台显示其他任务进程。
  */
 
 import { invoke } from "@tauri-apps/api/core";
-import { useSyncExternalStore } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 import {
   getSubagentRunSnapshot,
   stopRun,
@@ -23,6 +28,8 @@ export interface BackgroundTerminalWork {
   startedAtMs: number;
   /** 尾部输出（bg_list 每次回 2KB 尾部；浮层行做摘要展示）。 */
   outputTail: string;
+  /** 所属会话 ID（未绑定时为 undefined）。 */
+  conversationId?: string;
 }
 
 export interface BackgroundSubagentWork {
@@ -32,11 +39,83 @@ export interface BackgroundSubagentWork {
   startedAt: number;
   /** 后台运行可独立停止；前台运行挂在父轮 signal 上，如实不可停。 */
   stoppable: boolean;
+  /** 所属会话 ID（未绑定时为 undefined）。 */
+  conversationId?: string;
 }
 
-interface BackgroundWorkState {
+export interface BackgroundWorkState {
   terminals: BackgroundTerminalWork[];
   subagents: BackgroundSubagentWork[];
+}
+
+/** 终端后台任务 taskId -> conversationId 映射表。 */
+const terminalConversationMap = new Map<string, string>();
+
+/** 绑定终端后台任务到指定会话。 */
+export function bindTerminalToConversation(taskId: string, conversationId: string): void {
+  if (!taskId || !conversationId) return;
+  terminalConversationMap.set(taskId, conversationId);
+  // 若当前状态中已有该终端，同步更新其 conversationId 并通知监听者
+  let updated = false;
+  const terminals = state.terminals.map((t) => {
+    if (t.taskId === taskId && t.conversationId !== conversationId) {
+      updated = true;
+      return { ...t, conversationId };
+    }
+    return t;
+  });
+  if (updated) {
+    state = { ...state, terminals };
+    notify();
+  }
+}
+
+/** 获取终端后台任务绑定的会话 ID。 */
+export function getTerminalConversation(taskId: string): string | undefined {
+  return terminalConversationMap.get(taskId);
+}
+
+/** 从会话历史消息中同步扫描并绑定 background_bash 终端归属。 */
+export function syncConversationTerminals(conversationId: string, messages: any[]): void {
+  if (!conversationId || !Array.isArray(messages)) return;
+  for (const msg of messages) {
+    const parts = Array.isArray(msg?.content) ? msg.content : Array.isArray(msg?.parts) ? msg.parts : [];
+    for (const part of parts) {
+      // 提取 toolResult 中携带的 taskId
+      let taskId: string | undefined =
+        part?.details?.taskId ??
+        part?.toolResult?.details?.taskId ??
+        part?.outputDetails?.taskId;
+
+      // 若 details 未包含，尝试从文本 "Background task started: bg-xxx" 正则匹配
+      if (!taskId && typeof part?.content === "string") {
+        const m = part.content.match(/Background task started:\s*(bg-[^\s\n]+)/);
+        if (m) taskId = m[1];
+      }
+      if (!taskId && typeof part?.text === "string") {
+        const m = part.text.match(/Background task started:\s*(bg-[^\s\n]+)/);
+        if (m) taskId = m[1];
+      }
+
+      if (taskId) {
+        bindTerminalToConversation(taskId, conversationId);
+      }
+    }
+  }
+}
+
+/** 按会话过滤后台工作：新建任务（conversationId 未提供）一律返回空。 */
+export function filterBackgroundWork(
+  sourceState: BackgroundWorkState,
+  conversationId?: string,
+): BackgroundWorkState {
+  if (!conversationId) {
+    return { terminals: [], subagents: [] };
+  }
+  return {
+    terminals: sourceState.terminals.filter((t) => t.conversationId === conversationId),
+    subagents: sourceState.subagents.filter((s) => s.conversationId === conversationId),
+  };
 }
 
 let state: BackgroundWorkState = { terminals: [], subagents: [] };
@@ -72,10 +151,20 @@ function ensurePolling(): void {
         failures = 0;
         const terminals: BackgroundTerminalWork[] = list
           .filter((t) => t.status === "running")
-          .map((t) => ({ taskId: t.taskId, startedAtMs: t.startedAtMs, outputTail: t.newOutput }));
+          .map((t) => ({
+            taskId: t.taskId,
+            startedAtMs: t.startedAtMs,
+            outputTail: t.newOutput,
+            conversationId: terminalConversationMap.get(t.taskId),
+          }));
         if (
           terminals.length !== state.terminals.length ||
-          terminals.some((t, i) => t.taskId !== state.terminals[i]?.taskId || t.outputTail !== state.terminals[i]?.outputTail)
+          terminals.some(
+            (t, i) =>
+              t.taskId !== state.terminals[i]?.taskId ||
+              t.outputTail !== state.terminals[i]?.outputTail ||
+              t.conversationId !== state.terminals[i]?.conversationId,
+          )
         ) {
           state = { ...state, terminals };
           notify();
@@ -124,6 +213,7 @@ function subagentsToWork(records: SubagentRunRecord[]): BackgroundSubagentWork[]
       description: r.description,
       startedAt: r.startedAt,
       stoppable: r.background,
+      conversationId: r.conversationId,
     }));
 }
 
@@ -132,7 +222,12 @@ function handleSubagentSnapshot(records: SubagentRunRecord[]): void {
   const subagents = subagentsToWork(records);
   if (
     subagents.length !== state.subagents.length ||
-    subagents.some((s, i) => s.id !== state.subagents[i]?.id || s.description !== state.subagents[i]?.description)
+    subagents.some(
+      (s, i) =>
+        s.id !== state.subagents[i]?.id ||
+        s.description !== state.subagents[i]?.description ||
+        s.conversationId !== state.subagents[i]?.conversationId,
+    )
   ) {
     state = { ...state, subagents };
     notify();
@@ -143,10 +238,13 @@ function handleSubagentSnapshot(records: SubagentRunRecord[]): void {
 // 不放 hook 体里——handleSubagentSnapshot 在渲染期调用会违反纯渲染纪律。
 subscribeSubagentRuns(() => handleSubagentSnapshot(getSubagentRunSnapshot()));
 
-export function useBackgroundWork(): BackgroundWorkState {
-  // 单一 store：轮询源 + 推送源都归并进 state，这里只订阅它。
-  useSyncExternalStore(subscribe, getSnapshot);
-  return state;
+/**
+ * 获取后台工作状态。
+ * @param conversationId 可选。传入时按该会话过滤；未传入（如新建任务）时一律返回空。
+ */
+export function useBackgroundWork(conversationId?: string): BackgroundWorkState {
+  const rawState = useSyncExternalStore(subscribe, getSnapshot);
+  return useMemo(() => filterBackgroundWork(rawState, conversationId), [rawState, conversationId]);
 }
 
 /** 停止一个后台终端任务。 */
@@ -163,4 +261,15 @@ export async function stopTerminalWork(taskId: string): Promise<boolean> {
 /** 停止一个子代理运行（后台运行才可停；返回是否存在且已请求）。 */
 export function stopSubagentWork(id: string): boolean {
   return stopRun(id);
+}
+
+/** 仅供测试使用：设置模拟状态。 */
+export function __setMockStateForTests(mockState: BackgroundWorkState): void {
+  state = { ...mockState };
+  notify();
+}
+
+/** 仅供测试使用：重置映射表。 */
+export function __resetTerminalConversationMapForTests(): void {
+  terminalConversationMap.clear();
 }
