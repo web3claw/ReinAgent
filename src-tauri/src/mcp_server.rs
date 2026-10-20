@@ -333,6 +333,36 @@ async fn tool_create_task(app: &AppHandle, args: &Value) -> Result<String, Strin
     .to_string())
 }
 
+pub fn slice_snapshot_messages(snapshot: &mut Value, limit: i64, since_seq: Option<u64>) {
+    let mut total_messages = 0;
+    let mut omitted_messages = 0;
+    let mut returned_messages = 0;
+    let has_messages = if let Some(messages) = snapshot.get_mut("messages").and_then(Value::as_array_mut) {
+        total_messages = messages.len();
+        if let Some(min_seq) = since_seq {
+            messages.retain(|m| {
+                m.get("seq").and_then(Value::as_u64).map(|s| s > min_seq).unwrap_or(true)
+            });
+        } else if limit > 0 && (limit as usize) < messages.len() {
+            let keep_count = limit as usize;
+            omitted_messages = messages.len() - keep_count;
+            messages.drain(0..omitted_messages);
+        }
+        returned_messages = messages.len();
+        true
+    } else {
+        false
+    };
+
+    if has_messages {
+        snapshot["totalMessages"] = json!(total_messages);
+        if omitted_messages > 0 {
+            snapshot["omittedMessages"] = json!(omitted_messages);
+        }
+        snapshot["returnedMessages"] = json!(returned_messages);
+    }
+}
+
 // ---- 3. reinagent_get_task_status ----
 async fn tool_get_task_status(app: &AppHandle, args: &Value) -> Result<String, String> {
     let task_id = args
@@ -340,9 +370,15 @@ async fn tool_get_task_status(app: &AppHandle, args: &Value) -> Result<String, S
         .and_then(Value::as_str)
         .ok_or_else(|| "缺少必填参数: task_id".to_string())?;
 
+    let limit = args.get("limit").and_then(Value::as_i64).unwrap_or(50);
+    let since_seq = args.get("since_seq").and_then(Value::as_u64);
+
     match crate::remote_server::webview_task_state_snapshot(app, task_id).await {
-        Some(snapshot) => Ok(serde_json::to_string_pretty(&snapshot)
-            .unwrap_or_else(|_| snapshot.to_string())),
+        Some(mut snapshot) => {
+            slice_snapshot_messages(&mut snapshot, limit, since_seq);
+            Ok(serde_json::to_string_pretty(&snapshot)
+                .unwrap_or_else(|_| snapshot.to_string()))
+        }
         None => Err(format!(
             "无法获取任务 {task_id} 的状态（任务不存在、尚未水合完成或请求超时）"
         )),
@@ -597,6 +633,14 @@ fn tool_definitions() -> Vec<Value> {
                     "task_id": {
                         "type": "string",
                         "description": "任务 ID（由 reinagent_list_tasks 返回）"
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "description": "返回最近的消息条数（默认 50 条；传 0 或负数返回全量历史）。长任务轮询建议设为 10~20 以极大提升速度并节省上下文。"
+                    },
+                    "since_seq": {
+                        "type": "integer",
+                        "description": "仅返回 seq 大于该值的增量消息（用于增量拉取，避免重复拉取旧消息）"
                     }
                 },
                 "required": ["task_id"]
@@ -867,5 +911,69 @@ mod tests {
     #[test]
     fn session_push_to_nonexistent_session_returns_false() {
         assert!(!push_to_session("nonexistent-session-id", "test".to_string()));
+    }
+
+    #[test]
+    fn slice_snapshot_messages_limit_retains_latest_and_adds_metadata() {
+        let mut snapshot = json!({
+            "taskId": "task-test",
+            "messages": [
+                { "seq": 1, "text": "m1" },
+                { "seq": 2, "text": "m2" },
+                { "seq": 3, "text": "m3" },
+                { "seq": 4, "text": "m4" },
+                { "seq": 5, "text": "m5" },
+            ]
+        });
+
+        // limit = 2
+        slice_snapshot_messages(&mut snapshot, 2, None);
+
+        assert_eq!(snapshot["totalMessages"], 5);
+        assert_eq!(snapshot["omittedMessages"], 3);
+        assert_eq!(snapshot["returnedMessages"], 2);
+        let msgs = snapshot["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["seq"], 4);
+        assert_eq!(msgs[1]["seq"], 5);
+    }
+
+    #[test]
+    fn slice_snapshot_messages_limit_zero_keeps_all() {
+        let mut snapshot = json!({
+            "taskId": "task-test",
+            "messages": [
+                { "seq": 1, "text": "m1" },
+                { "seq": 2, "text": "m2" },
+            ]
+        });
+
+        slice_snapshot_messages(&mut snapshot, 0, None);
+
+        assert_eq!(snapshot["totalMessages"], 2);
+        assert!(snapshot.get("omittedMessages").is_none());
+        assert_eq!(snapshot["returnedMessages"], 2);
+        assert_eq!(snapshot["messages"].as_array().unwrap().len(), 2);
+    }
+
+    #[test]
+    fn slice_snapshot_messages_since_seq_filters_incrementally() {
+        let mut snapshot = json!({
+            "taskId": "task-test",
+            "messages": [
+                { "seq": 10, "text": "m10" },
+                { "seq": 20, "text": "m20" },
+                { "seq": 30, "text": "m30" },
+            ]
+        });
+
+        slice_snapshot_messages(&mut snapshot, 50, Some(15));
+
+        assert_eq!(snapshot["totalMessages"], 3);
+        assert_eq!(snapshot["returnedMessages"], 2);
+        let msgs = snapshot["messages"].as_array().unwrap();
+        assert_eq!(msgs.len(), 2);
+        assert_eq!(msgs[0]["seq"], 20);
+        assert_eq!(msgs[1]["seq"], 30);
     }
 }

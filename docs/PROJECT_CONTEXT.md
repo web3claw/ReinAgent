@@ -2159,3 +2159,16 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
   - `handleCopy` 优先使用正文，若正文为空且存在助手思考回退，则顺位复制 `thinking` 内容，杜绝向剪贴板写入空串；
 - **国际化字典补齐**：`src/i18n/index.ts` 在 `zh` 和 `en` 均补齐 `thinkingOutputFallback`；
 - **测试覆盖**：新增 `src/components/chat/MessageItem.thinkingFallback.test.mjs`，并通过 Red Check 验证。
+
+## 十二、MCP 任务快照增量拉取与长任务性能加固（2026-10-20）
+
+### 1. 痛点场景与网络开销瓶颈
+- 逆向分析、脚本测试等重度长任务（如 500+ 条消息、700+ 序列帧）在调用 `reinagent_get_task_status` 时，原本一次性序列化并传输全量消息，生成超过 **1.5MB** 的 JSON 负载；
+- 外部 MCP 客户端（如 Claude Desktop、Cursor、调度 Agent）在频繁轮询时产生显著的序列化延迟（400ms+）和上下文带宽开销。
+
+### 2. 优化方案与元数据规范
+- **`src-tauri/src/mcp_server.rs` (`reinagent_get_task_status`)**：
+  - 新增 `limit?: i64` 参数：默认返回最近 50 条消息；支持指定 `limit`（如 10~20 条）或传 `0`/负数获取全量；
+  - 新增 `since_seq?: u64` 参数：支持基于序列号的增量过滤，仅返回 `seq > since_seq` 的全新消息，赋能客户端 $O(1)$ 增量轮询；
+  - 元数据自动补全：在快照根节点追加 `totalMessages`、`omittedMessages` 与 `returnedMessages` 字段，客户端清晰可知全局进度与省略条数；
+  - 核心逻辑抽象为 `slice_snapshot_messages` 并配齐 4 项完整 Rust 单元测试（全量/截断/增量/无消息）。
