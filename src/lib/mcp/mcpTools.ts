@@ -14,7 +14,7 @@ import { resolveCuaSelfGuard } from "./cuaSelfGuard";
 import { getCuaAllowSelf, getCuaPolicy } from "./cuaDriverForm";
 
 /** 后端 mcp_list_tools 的条目（LA McpToolInfo 同构） */
-interface McpToolEntry {
+export interface McpToolEntry {
   serverId: string;
   serverLabel: string;
   name: string;
@@ -76,7 +76,7 @@ export async function createMcpTools(): Promise<unknown[]> {
 }
 
 /** 单个 MCP 工具 → pi-agent-core 工具体（name 前缀 mcp__<serverId>__<tool>） */
-function buildMcpTool(server: McpServerConfig, tool: McpToolEntry) {
+export function buildMcpTool(server: McpServerConfig, tool: McpToolEntry) {
   const prefixedName = `mcp__${server.id}__${tool.name}`;
   const description =
     `[MCP:${tool.serverLabel || server.id}] ${tool.description || tool.name}`.slice(0, 500);
@@ -84,8 +84,12 @@ function buildMcpTool(server: McpServerConfig, tool: McpToolEntry) {
     name: prefixedName,
     label: tool.name,
     description,
-    // MCP 工具自带 JSON Schema；无法静态表达 → any 兜底（库侧仍会校验参数合法性）
-    parameters: Type.Object({}, { additionalProperties: true }),
+    // 直接透传 MCP 服务器返回的 JSON Schema；pi-ai 对无 typebox 标记的
+    // schema 会走 coerceWithJsonSchema 校验路径，天然支持标准 JSON Schema
+    parameters:
+      tool.inputSchema && typeof tool.inputSchema === "object"
+        ? (tool.inputSchema as Record<string, unknown>)
+        : Type.Object({}, { additionalProperties: true }),
     execute: async (_toolCallId: string, args: unknown) => {
       if (isCuaDriverServer(server)) {
         const policy = getCuaPolicy();
