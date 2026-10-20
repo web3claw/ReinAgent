@@ -71,6 +71,7 @@ ReinAgent 架构全景
 │       ├── chat/                       # conversationPool（会话池）、conversationController（调度+重试裁决）、
 │       │                               # conversationModel（纯状态机）、stateBridge、errors（错误链展开/诊断）、
 │       │                               # turnActivity（回合分组）、useConversation、titleGenerator、contextUsage
+│       ├── remote/                     # remoteBridge.ts 手机与 MCP 远程双向桥接（need-state 瞬时应答 / 事件派发）
 │       ├── providers/                  # runAgentTurn（系统提示词+审批门）、modelFactory、catalog、fauxSource
 │       └── agent/                      # agentRuntime（Agent 循环）、tools（五工具）、workspace（路径决议）
 └── Backend (Tauri 2 / Rust)
@@ -78,7 +79,14 @@ ReinAgent 架构全景
         ├── src/main.rs                 # Tauri 入口、窗口管理
         ├── src/lib.rs                  # 命令注册
         ├── src/terminal.rs             # 伪终端 (PTY) 会话管理与流转发
-        └── src/fs_cmd.rs               # 异步受控文件与命令执行 (spawn_blocking 隔离防窗口卡死)
+        ├── src/fs_cmd.rs               # 异步受控文件与命令执行 (spawn_blocking 隔离防窗口卡死)
+        ├── src/remote_server.rs        # 远程访问 axum 服务器（手机远控 WS + MCP HTTP/SSE 共享端口）
+        │                               # 新增公开辅助函数：resolve_client_ip_pub / check_auth /
+        │                               # webview_request / webview_task_state_snapshot（供 mcp_server 调用）
+        └── src/mcp_server.rs           # MCP Server（协议 2024-11-05）
+                                        # GET  /mcp/sse     → SSE 长连接（JSON-RPC 响应推送）
+                                        # POST /mcp/message → JSON-RPC 请求接收
+                                        # 15 个 Tools 完整对标手机远控能力集
 ```
 
 ---
@@ -2106,6 +2114,28 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
     2. 切离时为贴底态（`wasPinnedToBottom === true`）或无记忆：执行 `stickToBottom()` 并锁定稳定窗（2.5s）；
     3. 仅当任务非运行态且用户此前在上方阅读历史时，精准恢复历史旧锚点。
 
+## 十、原生内置 MCP Server 与双向开放生态（2026-10-20）
 
+### 1. 架构定位与双向开放设计
+- **从单向 Client 到双向生态**：原系统仅支持通过 Hub -> MCP 作为 Client 接入外部工具；新增原生内置 **MCP Server（Model Context Protocol 2024-11-05 规范）**，使外部大模型（Claude Desktop、Cursor、Continue、Antigravity 等）可将 ReinAgent 作为标准工具箱反向完全操控。
+- **端口与鉴权零开销复用**：
+  - 直接在桌面端 `remote_server.rs` 现有的 axum 路由器上注册两条原生 MCP 路由：
+    - `GET  /mcp/sse`：建立 Server-Sent Events 长连接通道，接收 JSON-RPC 2.0 异步响应帧；
+    - `POST /mcp/message`：接收 JSON-RPC 2.0 请求（`initialize`、`tools/list`、`tools/call`、`ping` 等）。
+  - 完全复用远控服务器的 Token 鉴权（`check_auth`）与 Fail2Ban IP 防护体系；本地回环 `127.0.0.1` 严格豁免封禁。
 
+### 2. 15 项全功能 MCP Tools 全面覆盖
+- **查询能力**：`reinagent_list_tasks`、`reinagent_get_task_status`、`reinagent_list_models`、`reinagent_get_task_options`；
+- **任务创建与推进**：`reinagent_create_task`、`reinagent_send_message`、`reinagent_start_draft`；
+- **控制与审批门禁**：`reinagent_stop_task`、`reinagent_approve_tool`、`reinagent_switch_task`；
+- **运行时调度与配置**：`reinagent_set_model`、`reinagent_set_approval_mode`、`reinagent_set_thinking_level`；
+- **队列与阅读管理**：`reinagent_remove_queued_message`、`reinagent_mark_task_read`。
 
+### 3. 状态等待器修复与瞬时响应加固
+- **双防线解决 `need-state` 等待器**：
+  - `src-tauri/src/remote_server.rs`：`remote_bridge_state` 与 `remote_bridge_answer_state` 同步接入 `state_waiters` 唤醒逻辑，收到任意状态推送即刻解冻等待器；
+  - `src/lib/remote/remoteBridge.ts`：监听 `remote-bridge:need-state` 时立即采集当前快照并通过 `remote_bridge_answer_state` 同步回传，消除原本 200ms 防抖带来的请求超时风险。
+
+### 4. 验证与交付标准
+- **变异反向测试 (Red Check)**：无 Token 与错误 Token 访问 `GET /mcp/sse` 均被 `401 Unauthorized` 严格拦截；
+- **真实全链路测试 (Real Usage)**：通过 SSE 端点握手、初始化、枚举 15 个工具、成功新建真实任务 `task-1792480388704-ns5z4` 并穿透 React webview 实时拉取思考过程与 Context 统计，全链路 100% 实测跑通。

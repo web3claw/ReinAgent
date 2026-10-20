@@ -20,6 +20,7 @@ mod web_tools;
 mod usage_stats;
 mod stt;
 mod remote_server;
+mod mcp_server;
 mod remote_tunnel;
 mod fs_base64;
 mod import_sqlite;

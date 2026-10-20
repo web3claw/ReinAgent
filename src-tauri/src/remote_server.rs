@@ -794,6 +794,17 @@ pub struct BridgeStateArgs {
 
 #[tauri::command]
 pub async fn remote_bridge_state(args: BridgeStateArgs) -> Result<(), String> {
+    let reply = TaskStateReply {
+        revision: args.revision,
+        messages: args.messages.clone(),
+        running: args.running,
+        queued_messages: args.queued_messages.clone(),
+        pending_approval: args.pending_approval.clone(),
+        context_usage: args.context_usage.clone(),
+    };
+    if let Some(waiter) = state_waiters().lock().expect("waiters lock").remove(&args.task_id) {
+        let _ = waiter.send(reply);
+    }
     let _ = bridge_bus().send(BridgeEvent::State {
         task_id: args.task_id,
         revision: args.revision,
@@ -879,6 +890,68 @@ pub struct BridgeSendRejectedArgs {
 pub async fn remote_bridge_send_rejected(args: BridgeSendRejectedArgs) -> Result<(), String> {
     eprintln!("[remote-server] send rejected for task {}", args.task_id);
     Ok(())
+}
+
+// ============================================================
+// MCP Server 可调用的公开辅助接口
+// （mcp_server.rs 通过 crate::remote_server:: 调用，共享鉴权与 webview 桥接）
+// ============================================================
+
+/// 暴露客户端 IP 解析（避免 mcp_server 重复实现 XFF/CF-IP 解析逻辑）。
+pub fn resolve_client_ip_pub(headers: &HeaderMap, addr: &SocketAddr) -> String {
+    resolve_client_ip(headers, addr)
+}
+
+/// 统一鉴权入口（复用 verify_token，屏蔽内部 via_query 返回值细节）。
+pub fn check_auth(
+    query_token: Option<&str>,
+    headers: &HeaderMap,
+    ip: &str,
+) -> Result<(), StatusCode> {
+    verify_token(query_token, headers, ip).map(|_| ())
+}
+
+/// 向 webview 发起通用 reqId 型请求并等待应答（MCP tools 核心桥接函数）。
+/// 复用 REQUEST_WAITERS 与 remote-bridge:request 事件机制，15s 超时。
+pub async fn webview_request(
+    app: &AppHandle,
+    kind: &str,
+    payload: Value,
+) -> Result<Value, String> {
+    let req_id = uuid::Uuid::new_v4().to_string();
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<Value, String>>();
+    request_waiters()
+        .lock()
+        .expect("request waiters lock")
+        .insert(req_id.clone(), tx);
+    let _ = app.emit(
+        "remote-bridge:request",
+        serde_json::json!({ "reqId": &req_id, "kind": kind, "payload": payload }),
+    );
+    let result = match tokio::time::timeout(Duration::from_secs(15), rx).await {
+        Ok(Ok(res)) => res,
+        Ok(Err(_)) => Err("webview dropped the request".to_string()),
+        Err(_) => Err(format!("webview request timed out ({kind})")),
+    };
+    // 无论成功或超时都清理等待器，防止内存泄漏
+    request_waiters()
+        .lock()
+        .expect("request waiters lock")
+        .remove(&req_id);
+    result
+}
+
+/// 拉取单任务状态快照并序列化为 JSON Value（MCP get_task_status 工具使用）。
+pub async fn webview_task_state_snapshot(app: &AppHandle, task_id: &str) -> Option<Value> {
+    let reply = request_task_state_from_webview(app, task_id).await?;
+    Some(serde_json::json!({
+        "revision": reply.revision,
+        "messages": reply.messages,
+        "running": reply.running,
+        "queuedMessages": reply.queued_messages,
+        "pendingApproval": reply.pending_approval,
+        "contextUsage": reply.context_usage,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -1264,6 +1337,12 @@ fn restart_server(app: &AppHandle) -> Result<(), String> {
             .route("/assets/{*path}", get(remote_asset_handler))
             .route("/api/attachment", axum::routing::post(attachment_upload_handler))
             .route("/ws", get(ws_handler))
+            // ---- MCP Server 端点（协议 2024-11-05）----
+            // 外部大模型（Claude Desktop、Cursor 等）通过 SSE 长连接接收响应，
+            // 通过 POST /mcp/message 发送 JSON-RPC 请求。
+            // 鉴权与端口复用手机远控同一基础设施，无需额外配置。
+            .route("/mcp/sse", get(crate::mcp_server::mcp_sse_handler))
+            .route("/mcp/message", axum::routing::post(crate::mcp_server::mcp_message_handler))
             .with_state(app_for_router);
         let listener = match tokio::net::TcpListener::bind(("0.0.0.0", port as u16)).await {
             Ok(l) => l,

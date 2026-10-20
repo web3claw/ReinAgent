@@ -61,6 +61,9 @@ ReinAgent 致力于为开发者打造极致轻量、超高响应速度与 100% �
   - **真实 IP 穿透解析**：穿透 Cloudflare 边缘代理提取客户端真实公网 IP 进行安全审计；
   - **本地白名单保护**：严格豁免本地回环 `127.0.0.1` / `::1`，防止误拉黑本地代理导致服务瘫痪；
   - **世代守卫与进程回收**：内部采用进程世代守卫防状态竞争，应用退出时自动回收隧道子进程，防止孤儿进程暴露端口。
+- **原生 MCP Server 挂载**：
+  - 远控服务同时搭载标准 **Model Context Protocol (2024-11-05)** 协议端点（`GET /mcp/sse` 与 `POST /mcp/message`）；
+  - 共享端口与 Token 鉴权，支持外部大模型（Claude Desktop、Cursor 等）直接远程调用并操控 ReinAgent。
 
 ### 3. 全链路出站网络代理规范 (Unified Proxy Architecture)
 - **全站流量统一走代理**：
@@ -162,9 +165,10 @@ ReinAgent 致力于为开发者打造极致轻量、超高响应速度与 100% �
   - 集成 AI 提交信息生成（`CommitDialog`）与空目录一键初始化仓库；
 - **实时语音输入（STT）**：
   - 支持腾讯云、火山引擎、百度千帆、阿里 DashScope 实时语音 WebSocket 流式转写，输入框草稿无缝接续；
-- **生态导入与 Skills/MCP**：
+- **生态导入与双向 MCP 生态**：
   - 一键从 Claude Code、Codex、OpenCode、Pi 导入历史会话、模型配置、技能与 MCP 服务器；
-  - 支持 Model Context Protocol (MCP) 与 ClawHub 技能生态；
+  - **MCP 客户端**：接入外部任意标准 MCP 服务器（文件、终端、Puppeteer、GitHub 等）与 ClawHub 技能生态；
+  - **原生内置 MCP 服务端**：遵循 MCP 2024-11-05 协议标准，通过 HTTP/SSE 原生暴露 15 个标准 Tools，外部大模型（Claude Desktop、Cursor 等）可像操作本地软件一样反向控制 ReinAgent（新建任务、查阅状态、文件读写、工具审批等）；
 - **双配色主题**：
   - 内置 AntiGravity 与 OpenCode 两种消息配色体系，全系统遵循 Tailwind CSS v4 语义变量换肤。
 
@@ -188,6 +192,7 @@ ReinAgent 架构全景
 │       ├── chat/                        # conversationPool (会话池), conversationModel (状态机)
 │       ├── providers/                   # runAgentTurn, modelFactory, assembleTurnContext
 │       ├── storage/                     # db.ts (SQLite 内存缓存 + 防抖写透)
+│       ├── remote/                      # remoteBridge.ts 手机远控与 MCP 双向桥接
 │       └── agent/                       # agentRuntime, 核心工具集, 路径决议
 │
 └── Backend (Tauri 2 / Rust)
@@ -199,6 +204,7 @@ ReinAgent 架构全景
         ├── fs_cmd.rs                    # 异步受控文件操作、原生文件夹选择、系统管理器调起
         ├── git_panel.rs                 # Git 分支、状态、提交与推送命令
         ├── remote_server.rs             # 远程 Axum HTTP/WebSocket 远控服务与真实 IP 审计
+        ├── mcp_server.rs                # 原生内置 MCP Server（SSE + JSON-RPC，15 项能力直通）
         ├── remote_tunnel.rs             # Cloudflare Quick Tunnel 世代守卫与安全下载管理
         ├── app_proxy.rs                 # 全局出站网络代理配置注入与白名单校验
         ├── browser.rs                   # 内置无头/内嵌浏览器控制与截图

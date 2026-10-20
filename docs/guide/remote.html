@@ -116,6 +116,32 @@
     <tr><td>世代守卫</td><td>进程世代守卫防状态竞争，退出时自动回收隧道子进程，避免孤儿进程暴露端口</td></tr>
   </tbody>
 </table></div>
+
+<h2>原生 MCP Server（供外部大模型反向控制）</h2>
+<p>ReinAgent 内置标准 <strong>Model Context Protocol (2024-11-05)</strong> 服务端，与远控共享同一端口与 Token，让外部大模型（Claude Desktop、Cursor、Continue 等）如同真人操作桌面界面一样完整接管 ReinAgent。</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>协议端点</th><th>方法</th><th>作用</th></tr></thead>
+  <tbody>
+    <tr><td><code>/mcp/sse?token=&lt;TOKEN&gt;</code></td><td>GET</td><td>建立 SSE 长连接通道，接收 JSON-RPC 异步响应帧</td></tr>
+    <tr><td><code>/mcp/message?session_id=&lt;ID&gt;</code></td><td>POST</td><td>发送 JSON-RPC 2.0 请求（初始化、工具发现与调用）</td></tr>
+  </tbody>
+</table></div>
+
+<p>涵盖 15 项全功能 MCP 工具：<code>reinagent_list_tasks</code>（查询任务）、<code>reinagent_create_task</code>（新建并启动任务）、<code>reinagent_get_task_status</code>（获取思考流与消息）、<code>reinagent_approve_tool</code>（审批高危操作）、<code>reinagent_set_model</code> / <code>reinagent_set_thinking_level</code>（运行时动态配置）等。</p>
+
+<h3>外部客户端配置示例（以 Claude Desktop 为例）</h3>
+<div class="code-block"><pre><code>{
+  "mcpServers": {
+    "reinagent": {
+      "type": "sse",
+      "url": "http://127.0.0.1:7778/mcp/sse",
+      "headers": {
+        "Authorization": "Bearer &lt;你在设置中查看的Token&gt;"
+      }
+    }
+  }
+}</code></pre></div>
     <div class="docs-pager"><span><a href="desktop.html">← 桌面与三端适配</a></span><span><a href="data.html">数据与安全 →</a></span></div>
     </div>
   </div>

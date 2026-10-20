@@ -100,7 +100,7 @@
 │   ├── src/App.tsx                      # 根容器、全局快捷键、主视口分流
 │   ├── src/store/useAppStore.ts         # 全局响应式状态
 │   ├── src/components/                  # chat / trajectory / git / sidebar / settings
-│   └── src/lib/                         # conversationPool / providers / storage / agent
+│   └── src/lib/                         # conversationPool / providers / storage / agent / remote
 │
 └── Backend (Tauri 2 / Rust)
     └── src-tauri/src/
@@ -110,6 +110,7 @@
         ├── fs_cmd.rs                    # 受控文件操作与原生文件夹选择
         ├── git_panel.rs                 # Git 分支、状态、提交与推送
         ├── remote_server.rs             # 远控 HTTP/WebSocket 与真实 IP 审计
+        ├── mcp_server.rs                # 原生内置 MCP Server（SSE + JSON-RPC，15 工具）
         ├── remote_tunnel.rs             # Cloudflare 隧道世代守卫
         ├── app_proxy.rs                 # 出站代理注入与白名单校验
         ├── browser.rs                   # 内置无头/内嵌浏览器

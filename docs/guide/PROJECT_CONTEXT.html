@@ -2914,6 +2914,44 @@ Shiki 配色（黄/绿）全部消失、变成白色纯文本。</p>
 </li>
 <li><strong>Web Mock 双模兼容</strong>：<code>notesService.ts</code> 内置完整的浏览器端 Mock，无头环境/单测无缝跑通。</li>
 </ul>
+<h2>十、原生内置 MCP Server 与双向开放生态（2026-10-20）</h2>
+<h3>1. 架构定位与双向开放设计</h3>
+<ul>
+<li><strong>从单向 Client 到双向生态</strong>：原系统仅支持通过 Hub -&gt; MCP 作为 Client 接入外部工具；新增原生内置 <strong>MCP Server（Model Context Protocol 2024-11-05 规范）</strong>，使外部大模型（Claude Desktop、Cursor、Continue、Antigravity 等）可将 ReinAgent 作为标准工具箱反向完全操控。</li>
+<li><strong>端口与鉴权零开销复用</strong>：
+<ul>
+<li>直接在桌面端 <code>remote_server.rs</code> 现有的 axum 路由器上注册两条原生 MCP 路由：
+<ul>
+<li><code>GET  /mcp/sse</code>：建立 Server-Sent Events 长连接通道，接收 JSON-RPC 2.0 异步响应帧；</li>
+<li><code>POST /mcp/message</code>：接收 JSON-RPC 2.0 请求（<code>initialize</code>、<code>tools/list</code>、<code>tools/call</code>、<code>ping</code> 等）。</li>
+</ul>
+</li>
+<li>完全复用远控服务器的 Token 鉴权（<code>check_auth</code>）与 Fail2Ban IP 防护体系；本地回环 <code>127.0.0.1</code> 严格豁免封禁。</li>
+</ul>
+</li>
+</ul>
+<h3>2. 15 项全功能 MCP Tools 全面覆盖</h3>
+<ul>
+<li><strong>查询能力</strong>：<code>reinagent_list_tasks</code>、<code>reinagent_get_task_status</code>、<code>reinagent_list_models</code>、<code>reinagent_get_task_options</code>；</li>
+<li><strong>任务创建与推进</strong>：<code>reinagent_create_task</code>、<code>reinagent_send_message</code>、<code>reinagent_start_draft</code>；</li>
+<li><strong>控制与审批门禁</strong>：<code>reinagent_stop_task</code>、<code>reinagent_approve_tool</code>、<code>reinagent_switch_task</code>；</li>
+<li><strong>运行时调度与配置</strong>：<code>reinagent_set_model</code>、<code>reinagent_set_approval_mode</code>、<code>reinagent_set_thinking_level</code>；</li>
+<li><strong>队列与阅读管理</strong>：<code>reinagent_remove_queued_message</code>、<code>reinagent_mark_task_read</code>。</li>
+</ul>
+<h3>3. 状态等待器修复与瞬时响应加固</h3>
+<ul>
+<li><strong>双防线解决 <code>need-state</code> 等待器</strong>：
+<ul>
+<li><code>src-tauri/src/remote_server.rs</code>：<code>remote_bridge_state</code> 与 <code>remote_bridge_answer_state</code> 同步接入 <code>state_waiters</code> 唤醒逻辑，收到任意状态推送即刻解冻等待器；</li>
+<li><code>src/lib/remote/remoteBridge.ts</code>：监听 <code>remote-bridge:need-state</code> 时立即采集当前快照并通过 <code>remote_bridge_answer_state</code> 同步回传，消除原本 200ms 防抖带来的请求超时风险。</li>
+</ul>
+</li>
+</ul>
+<h3>4. 验证与交付标准</h3>
+<ul>
+<li><strong>变异反向测试 (Red Check)</strong>：无 Token 与错误 Token 访问 <code>GET /mcp/sse</code> 均被 <code>401 Unauthorized</code> 严格拦截；</li>
+<li><strong>真实全链路测试 (Real Usage)</strong>：通过 SSE 端点握手、初始化、枚举 15 个工具、成功新建真实任务 <code>task-1792480388704-ns5z4</code> 并穿透 React webview 实时拉取思考过程与 Context 统计，全链路 100% 实测跑通。</li>
+</ul>
 </div>
     <div class="docs-pager"><span><a href="dev.html">← 参与开发</a></span><span><a href="PROMPTS.html">提示词参考与现状 →</a></span></div>
     </div>

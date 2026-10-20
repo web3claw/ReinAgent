@@ -107,12 +107,13 @@
   </tbody>
 </table></div>
 
-<h2>Skills 与 MCP</h2>
+<h2>Skills 与双向 MCP 生态</h2>
 <div class="table-wrap"><table>
-  <thead><tr><th>扩展方式</th><th>说明</th></tr></thead>
+  <thead><tr><th>扩展方式</th><th>角色</th><th>说明</th></tr></thead>
   <tbody>
-    <tr><td>Model Context Protocol</td><td>支持 MCP 服务器接入，扩展工具能力</td></tr>
-    <tr><td>ClawHub 技能生态</td><td>内置 / 自定义技能与磁盘目录技能</td></tr>
+    <tr><td>MCP 客户端（Client）</td><td>ReinAgent → 外部工具</td><td>连接外部 MCP Server（本地进程 / SSE），供工作台内部模型调用扩展工具</td></tr>
+    <tr><td>MCP 服务端（Server）</td><td>外部大模型 → ReinAgent</td><td>遵循 MCP 2024-11-05 协议，通过 HTTP/SSE 暴露 15 个工具，供 Claude Desktop、Cursor 等外部 AI 反向直接操控 ReinAgent</td></tr>
+    <tr><td>ClawHub 技能生态</td><td>技能扩展</td><td>支持一键安装内置/自定义技能与磁盘目录技能体系</td></tr>
   </tbody>
 </table></div>
 
