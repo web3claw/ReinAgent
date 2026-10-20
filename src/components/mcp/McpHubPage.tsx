@@ -6,7 +6,7 @@
 //   embedded 不传（LA 本页组件体仅消费 embedded，isAgentMode 未使用）。
 // - 主题作用域：根 div 追加 hub-scope（弹层 Portal 内容在各自文件里单独追加）。
 import { useMemo, useState } from "react";
-import { Cloud, Download, Plus, Search, Server, AlertTriangle } from "lucide-react";
+import { Cloud, Download, FileCode, Plus, Search, Server, AlertTriangle } from "lucide-react";
 
 import { HubHeader } from "../lw/hub/HubChrome";
 import { Badge } from "../lw/ui/badge";
@@ -20,6 +20,7 @@ import type { McpServerConfig } from "../../lib/hub/mcpTypes";
 import { useHubSettings, type HubAppSettings } from "../../store/hubSettingsStore";
 import { cn } from "../lw/lib/utils";
 import { McpImportView } from "./McpImportView";
+import { McpJsonImportModal } from "./McpJsonImportModal";
 import { McpRegistryBrowser } from "./McpRegistryBrowser";
 import { McpServerEditModal, McpServersForm } from "./McpServersForm";
 import { updateMcp } from "./hubSettingsAdapter";
@@ -40,6 +41,7 @@ function McpHubPageInner(props: {
   const { t } = useHubTranslation();
   const [view, setView] = useState<McpHubView>("installed");
   const [editing, setEditing] = useState<EditingState | null>(null);
+  const [jsonImportOpen, setJsonImportOpen] = useState(false);
   const [searchQueries, setSearchQueries] = useState<Record<McpHubView, string>>({
     installed: "",
     store: "",
@@ -107,6 +109,18 @@ function McpHubPageInner(props: {
                   ? `${enabledCount}/${serverCount} ${t("mcpHub.enabled")}`
                   : t("mcpHub.statusEmpty")}
               </Badge>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-8 gap-1.5 px-3"
+                onClick={() => setJsonImportOpen(true)}
+                title={t("mcpHub.importJson", "从 JSON 导入")}
+              >
+                <FileCode className="size-3.5" />
+                <span className="hidden whitespace-nowrap sm:inline">
+                  {t("mcpHub.importJson", "从 JSON 导入")}
+                </span>
+              </Button>
               <Button
                 variant="outline"
                 size="sm"
@@ -182,6 +196,7 @@ function McpHubPageInner(props: {
                     query={searchQueries.installed}
                     onAddServer={openAdd}
                     onEditServer={openEdit}
+                    onOpenJsonImport={() => setJsonImportOpen(true)}
                   />
                 </TabsContent>
                 <TabsContent value="store" className="h-full min-h-0">
@@ -196,6 +211,7 @@ function McpHubPageInner(props: {
                     settings={settings}
                     setSettings={setSettings}
                     query={searchQueries.import}
+                    onOpenJsonImport={() => setJsonImportOpen(true)}
                   />
                 </TabsContent>
               </div>
@@ -203,6 +219,17 @@ function McpHubPageInner(props: {
           </div>
         </div>
       </div>
+
+      <McpJsonImportModal
+        open={jsonImportOpen}
+        onClose={() => setJsonImportOpen(false)}
+        existingServers={settings.mcp.servers}
+        onImport={(newServers) => {
+          setSettings((prev) =>
+            updateMcp(prev, { servers: [...prev.mcp.servers, ...newServers] }),
+          );
+        }}
+      />
 
       {editing ? (
         <McpServerEditModal

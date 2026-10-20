@@ -7,7 +7,7 @@
 //   不渲染策略切换。TODO(phase2)：引入策略存储后按 LA 原样恢复
 //   serverPolicyKey("server:<id>") 写回逻辑。
 import { type FormEvent, useEffect, useMemo, useState } from "react";
-import { AlertTriangle, Blocks, Plug, Plus, Save, Server } from "lucide-react";
+import { AlertTriangle, Blocks, FileCode, Plug, Plus, Save, Server } from "lucide-react";
 
 import { Button } from "../lw/ui/button";
 import { useHubTranslation } from "./i18n";
@@ -26,10 +26,11 @@ type McpServersFormProps = {
   query: string;
   onAddServer?: () => void;
   onEditServer?: (server: McpServerConfig, idx: number) => void;
+  onOpenJsonImport?: () => void;
 };
 
 export function McpServersForm(props: McpServersFormProps) {
-  const { settings, setSettings, query, onAddServer, onEditServer } = props;
+  const { settings, setSettings, query, onAddServer, onEditServer, onOpenJsonImport } = props;
   const { t } = useHubTranslation();
   // 由专属设置页托管的 server 不在 Hub 里露面（ReinAgent 无受管条目，过滤恒全量）。
   // 过滤后仍需拿到原始下标：McpServerCard 的编辑/删除都按 settings.mcp.servers 的
@@ -72,12 +73,20 @@ export function McpServersForm(props: McpServersFormProps) {
             </div>
             <p className="mt-4 text-sm font-medium text-foreground">{t("mcpHub.noServers")}</p>
             <p className="mt-1 text-xs text-muted-foreground">{t("mcpHub.noServersHint")}</p>
-            {onAddServer ? (
-              <Button variant="outline" size="sm" className="mt-4 gap-1.5" onClick={onAddServer}>
-                <Plus className="size-3.5" />
-                {t("mcpHub.add")}
-              </Button>
-            ) : null}
+            <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
+              {onAddServer ? (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={onAddServer}>
+                  <Plus className="size-3.5" />
+                  {t("mcpHub.add")}
+                </Button>
+              ) : null}
+              {onOpenJsonImport ? (
+                <Button variant="outline" size="sm" className="gap-1.5" onClick={onOpenJsonImport}>
+                  <FileCode className="size-3.5" />
+                  {t("mcpHub.importJson", "从 JSON 导入")}
+                </Button>
+              ) : null}
+            </div>
           </div>
         ) : null}
 

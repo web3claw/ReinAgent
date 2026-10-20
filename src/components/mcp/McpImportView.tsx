@@ -13,6 +13,7 @@ import {
   AlertTriangle,
   Check,
   Download,
+  FileCode,
   FileText,
   Globe2,
   Loader2,
@@ -66,6 +67,7 @@ export function McpImportView(props: {
   settings: HubAppSettings;
   setSettings: (updater: (prev: HubAppSettings) => HubAppSettings) => void;
   query: string;
+  onOpenJsonImport?: () => void;
 }) {
   const { settings, setSettings, query } = props;
   const { t } = useHubTranslation();
@@ -317,6 +319,18 @@ export function McpImportView(props: {
               />
 
               <div className="flex shrink-0 items-center gap-2">
+                {props.onOpenJsonImport ? (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5 rounded-full"
+                    onClick={props.onOpenJsonImport}
+                    title={t("mcpHub.importJson", "从 JSON 导入")}
+                  >
+                    <FileCode className="size-3.5" />
+                    {t("mcpHub.importJson", "从 JSON 导入")}
+                  </Button>
+                ) : null}
                 <Button
                   variant="outline"
                   size="sm"
