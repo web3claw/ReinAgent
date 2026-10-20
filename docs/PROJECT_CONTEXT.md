@@ -2144,3 +2144,18 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 ### 4. 验证与交付标准
 - **变异反向测试 (Red Check)**：无 Token 与错误 Token 访问 `GET /mcp/sse` 均被 `401 Unauthorized` 严格拦截；
 - **真实全链路测试 (Real Usage)**：通过 SSE 端点握手、初始化、枚举 15 个工具、成功新建真实任务 `task-1792480388704-ns5z4` 并穿透 React webview 实时拉取思考过程与 Context 统计，全链路 100% 实测跑通。
+
+## 十一、模型纯思考输出兜底展示与复制增强（2026-10-20）
+
+### 1. 痛点场景与根因分析
+- **模型格式特异性**：部分大模型服务商（如 GLM-5.3-flash 经网关转换为 Anthropic Messages 协议）在进行深度思考与推理时，将全部思维链以及最终中文总结均封装于 `type: "thinking"` 数据块中，未单独开启 `type: "text"` 块输出（导致最终生成 `message.text = ""`，`message.thinking.length > 0`）；
+- **前端外显断层**：按对话流通用设计，一轮结束后中间过程（含工时条与 `ThinkingBlock`）自动折叠为单行摘要，外层由 `MessageItem` 负责呈现最终正文。当 `text` 为空时，外层无任何内容外显，给用户造成“模型未输出就突然挂停”的视觉假象，且复制按钮取不到任何内容。
+
+### 2. 双重保底解决方案
+- **`MessageItem.tsx` 正文回退渲染 (Thinking Fallback)**：
+  - 增加 `isThinkingFallback` 判定：仅当 `message.role === "assistant"`、最终渲染文本为空、且 `message.thinking` 存在有效非空字符串时触发；
+  - 触发后在正文区渲染 `message.thinking` 内容，并在顶部显示语义化微标（`<Brain /> 思考过程输出（模型未区分独立正文）`），确保模型产生的任何结论 100% 直观可见；
+- **复制按钮保底 (Copy Fallback)**：
+  - `handleCopy` 优先使用正文，若正文为空且存在助手思考回退，则顺位复制 `thinking` 内容，杜绝向剪贴板写入空串；
+- **国际化字典补齐**：`src/i18n/index.ts` 在 `zh` 和 `en` 均补齐 `thinkingOutputFallback`；
+- **测试覆盖**：新增 `src/components/chat/MessageItem.thinkingFallback.test.mjs`，并通过 Red Check 验证。

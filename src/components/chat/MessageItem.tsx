@@ -3,7 +3,7 @@ import * as Popover from "@radix-ui/react-popover";
 import type { TimelineEntry, ToolTimelineEntry } from "../../lib/chat/conversationModel";
 import { MarkdownText } from "./MarkdownText";
 import { ToolCallCard } from "./ToolCallCard";
-import { Copy, Check, Pencil, Play, RotateCw, Undo2, Loader2, GitBranch } from "lucide-react";
+import { Copy, Check, Pencil, Play, RotateCw, Undo2, Loader2, GitBranch, Brain } from "lucide-react";
 import { useTranslation } from "../../i18n";
 import { errorCategory } from "../../lib/chat/errors.js";
 import { ImageLightbox } from "./ImageLightbox";
@@ -120,9 +120,15 @@ function MessageItemImpl({
   }, [userImages, previewMap]);
 
   const handleCopy = useCallback(async () => {
-    // 错误轮次助手无正文（text 为空）——回退复制错误原文（与红色展示一致，含 hint）
+    // 优先复制渲染正文或原始正文；若均为空且为助手且存在思考输出，则回退复制思考内容；最后回退错误原文
+    const candidate = renderText ?? message.text;
+    const thinkingText =
+      message.role === "assistant" && "thinking" in message && typeof (message as { thinking?: unknown }).thinking === "string"
+        ? ((message as { thinking: string }).thinking || "")
+        : "";
     const text =
-      message.text ||
+      (candidate && candidate.trim().length > 0 ? candidate : "") ||
+      thinkingText ||
       [
         message.error,
         message.errorHint && message.errorHint !== message.error ? ` · ${message.errorHint}` : "",
@@ -137,7 +143,7 @@ function MessageItemImpl({
     } catch {
       // 忽略复制异常
     }
-  }, [message.text, message.error, message.errorHint]);
+  }, [message, renderText]);
 
   if (isToolEntry(message)) {
     return <ToolCallCard entry={message} />;
@@ -281,14 +287,31 @@ function MessageItemImpl({
   }
 
   // ===================== 助手消息分支 =====================
+  const rawText = renderText ?? message.text;
+  const assistantThinking =
+    "thinking" in message && typeof (message as { thinking?: unknown }).thinking === "string"
+      ? ((message as { thinking: string }).thinking || "")
+      : "";
+  const isThinkingFallback =
+    message.role === "assistant" &&
+    !rawText.trim() &&
+    assistantThinking.trim().length > 0;
+  const displayText = isThinkingFallback ? assistantThinking : rawText;
+
   return (
     <div
       className={`group/assistant-row flex flex-col items-start w-full ${highlight ? "msg-search-hit" : ""}`}
       data-msg-id={message.id}
     >
       <div className="w-full text-sm text-[var(--text)] leading-relaxed">
+        {isThinkingFallback && (
+          <div className="mb-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--text-secondary)] font-medium select-none">
+            <Brain className="w-3.5 h-3.5 text-[var(--text-dim)] shrink-0" />
+            <span>{t("thinkingOutputFallback") || "思考过程输出（模型未区分独立正文）"}</span>
+          </div>
+        )}
         <div className="md">
-          <MarkdownText text={renderText ?? message.text} streaming={message.status === "streaming"} />
+          <MarkdownText text={displayText} streaming={message.status === "streaming"} />
           {message.status === "streaming" ? <ChatLoading loading size="sm" className="mt-1" /> : null}
         </div>
 
