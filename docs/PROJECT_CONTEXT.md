@@ -2621,7 +2621,7 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 
 ---
 
-## 四十五、 待发送消息（Steering Queue）架构修复与 Android 纯协议战略推进（2026-10-21）
+## 四十五、 待发送消息（Steering Queue）Bug 根因修复与强制发送打断上线（2026-10-21）
 
 ### 1. 待发送消息（Steering Queue）Bug 根因与修复
 - **会话中途排队消息消失根因**：
@@ -2640,54 +2640,6 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
   - 编写 Red Check 变异测试（故意恢复 `abortRef === controller`，确认单元测试真实变红报错后恢复）；
   - 全套 204 个单元测试全量绿灯通过。
 
-### 2. 远端 Android 纯协议重大推进与现状裁决
-- **彻底封杀 xclient.node 捷径**：
-  - 严禁任何脚本与方案依赖 Windows 原生 C++ 模块 `xclient.node` 或 Frida 注入；
-  - 确认收群消息模块（`/v1/group/get-group-history-message` + `ChaCha20-Poly1305 draft-agl` + LZ4 解密）为 **100% 纯 HTTP 与纯算法**，已完全脱离客户端独立运作；
-- **发群消息签名体系攻克**：
-  - Android 逆向定位到服务端自 2026-10-16 起强制启用的 Ed25519 签名验证体系：
-    - ① `/v1/message/get_msg_sign`（纯 HTTP）获取服务端的 Ed25519 私钥 `msgKey`；
-    - ② 纯算法 `ChatMsgSignManager.sign(明文)` 完成签名生成；
-    - ③ `CMessage` protobuf 封包 + `ChaCha20-Poly1305 draft-agl` 加密容器已完全还原。
-- **最终关卡提报与项目管理员自主决策（P1 路线）**：
-  - 发送消息原版必须经由网易云信 NIM 的 TLS 私有长连通道；复刻裸 TLS 长连协议难度与周期高；
-  - 远端完成资产盘点：消息层完整算法（CMessage protobuf + ChaCha20-Poly1305 draft-agl + LZ4）已 100% 纯 Python 复现；未纯化的 HTTP 传输层包含四个操作（`ZSTD level3 + ChaCha20` 封包 `BODY`、protobuf 转 `X-Request`、`X-Seed + X-Hash` 签名、`ExchangeCodecNative.decode` 响应解密）；
-  - **项目管理员自主决策**：遵循 Rule 11 自主决断权，全力批准【路径 P1：黑盒抓包样本对拟合路线】。利用已知的 32 字节 `projectPk`、ZSTD level 3 与现有 `okhttp*.log` / `login-flow` 海量样本对，分两步走：
-    - ① 第一步：优先攻克“响应解密纯化（ExchangeCodecNative.decode）”，使纯 `fetch` 拉取群历史消息直接脱机解密为明文；
-    - ② 第二步：攻克请求加密与 MAC 签名（`X-Request`、`X-Seed`、`X-Hash`），打通全链路脱机纯协议！
-
----
-
-## 四十六、 项目三大核心目标确立与发指令前同步铁律落地（2026-10-21）
-
-### 1. 项目三大不可动摇核心目标
-1. **目标一（纯协议底线与官方 SDK 明确允许）**：
-   - 彻底废除 `xclient.node` 与 Frida 外挂注入；
-   - **明确允许使用网易云信官方标准网络通信 SDK（如 Windows 纯净网络库 `nim_c_sdk.dll`）** 维持长连通道，杜绝无意义造轮子与不可维护的裸私有协议复刻。
-2. **目标二（高效快速与网络长连通信库优先）**：
-   - 保证软件高效快速与低延迟；
-   - **网络长连通信库（WebSocket / TCP / NIM 官方 SDK 长连）在实时性、心跳保活与资源消耗上远优于高频 HTTP 轮询**；
-   - 彻底终止对旺商聊自定义私有 HTTP 传输层（`X-Seed`/`X-Hash`/`ZSTD`）加解密的死磕。
-3. **目标三（客户交付完整性与 30 账号多开挂机）**：
-   - 必须 100% 跑通四大基本核心（登录、加解密、发群消息、收群消息）；
-   - 必须保证多账号并发登录与稳定挂机（**30 个账号在 2核8G Windows Server 2022 服务器上稳定挂机 5~7 天**）。
-
-### 2. 每次发指令前双步闭环铁律（Pre-Directive Sync Pipeline）
-- **步骤一（拉取最新会话）**：每次发令前必须调用 `scripts/dump_remote_full_dialogue.mjs` 拉取远端任务最新 50 条消息，通读全部思考与工具执行结果；
-- **步骤二（更新台账文档）**：将最新研究进展、已攻克项与避坑项实时同步至 [docs/REMOTE_RESEARCH_PROGRESS.md](./REMOTE_RESEARCH_PROGRESS.md)，严禁让远端在已知死胡同里重复转圈；
-- **步骤三（对照目标精准下令）**：对照项目三大目标、规划与进度台账，下达精准调度指令。
-
-### 3. 当前远端会话全量复盘结论与避坑指导
-- **已攻克（严禁重复研究）**：
-  - 免滑块登录与账密换取 192 字符 Token 及二级安全码（`verify_safe_code`）验证；
-  - 业务消息层 `ChaCha20-Poly1305 draft-agl` + `xxHash64` Nonce + LZ4 解压 + `CMessage` protobuf 纯 Python 还原；
-  - HTTP `/v1/message/get_msg_sign` 获取 Ed25519 签名算法；
-- **已推翻封存（死胡同）**：
-  - 私有 HTTP 传输层 `d.c`/`d.b` 黑盒拟合：尝试数十轮未能命中 Nonce 规则，属于非标准复杂私有实现，全面终止死磕；
-- **终局决战路线**：
-  - 引入网易云信官方 Windows 纯净动态库（`nim_c_sdk.dll`）；
-  - 单账号内存 3~5MB，30 账号内存 < 200MB，完美契合 2核8G 挂机指标；
-  - 直接在云信长连上收发消息，内容直接对接我们已攻克的消息层纯算法，彻底跳过私有 HTTP 传输层加密！
 
 
 

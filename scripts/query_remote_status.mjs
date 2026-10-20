@@ -110,8 +110,8 @@ async function doQuery() {
   });
 
   console.log("Initialized session:", sessionId);
-  const optRes = await callTool("reinagent_get_task_options", { task_id: "task-1792414088636-h92ti" });
-  console.log("Task options:", JSON.stringify(optRes.result, null, 2));
+  const stopRes = await callTool("reinagent_stop_task", { task_id: "task-1792414088636-h92ti" });
+  console.log("Stop task result:", JSON.stringify(stopRes.result, null, 2));
 
   req.destroy();
   process.exit(0);
