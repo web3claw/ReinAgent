@@ -298,16 +298,38 @@ async fn tool_list_tasks(app: &AppHandle) -> Result<String, String> {
     Ok(serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string()))
 }
 
+// ============================================================
+// 四点一、MCP 参数解析辅助函数（宽松支持 snake_case 与 camelCase）
+// ============================================================
+
+/// 从 JSON 参数对象中宽容提取字符串（优先 snake_case，缺省兼容 camelCase）
+pub fn extract_str_param<'a>(args: &'a Value, snake: &str, camel: &str) -> Option<&'a str> {
+    args.get(snake)
+        .or_else(|| args.get(camel))
+        .and_then(Value::as_str)
+}
+
+/// 从 JSON 参数对象中宽容提取任意 Value（优先 snake_case，缺省兼容 camelCase）
+pub fn extract_val_param(args: &Value, snake: &str, camel: &str) -> Option<Value> {
+    args.get(snake)
+        .or_else(|| args.get(camel))
+        .cloned()
+}
+
+/// 从 JSON 参数对象中宽容提取 u64（优先 snake_case，缺省兼容 camelCase）
+pub fn extract_u64_param(args: &Value, snake: &str, camel: &str) -> Option<u64> {
+    args.get(snake)
+        .or_else(|| args.get(camel))
+        .and_then(Value::as_u64)
+}
+
 // ---- 2. reinagent_create_task ----
 async fn tool_create_task(app: &AppHandle, args: &Value) -> Result<String, String> {
     let prompt = args
         .get("prompt")
         .and_then(Value::as_str)
         .ok_or_else(|| "缺少必填参数: prompt".to_string())?;
-    let workspace_key = args
-        .get("workspace_key")
-        .and_then(Value::as_str)
-        .unwrap_or("");
+    let workspace_key = extract_str_param(args, "workspace_key", "workspaceKey").unwrap_or("");
 
     // 若提供了工作区 key，先切换到该工作区并打开草稿态
     if !workspace_key.is_empty() {
@@ -365,13 +387,11 @@ pub fn slice_snapshot_messages(snapshot: &mut Value, limit: i64, since_seq: Opti
 
 // ---- 3. reinagent_get_task_status ----
 async fn tool_get_task_status(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args
-        .get("task_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: task_id".to_string())?;
+    let task_id = extract_str_param(args, "task_id", "taskId")
+        .ok_or_else(|| "缺少必填参数: task_id (或 taskId)".to_string())?;
 
     let limit = args.get("limit").and_then(Value::as_i64).unwrap_or(50);
-    let since_seq = args.get("since_seq").and_then(Value::as_u64);
+    let since_seq = extract_u64_param(args, "since_seq", "sinceSeq");
 
     match crate::remote_server::webview_task_state_snapshot(app, task_id).await {
         Some(mut snapshot) => {
@@ -388,7 +408,7 @@ async fn tool_get_task_status(app: &AppHandle, args: &Value) -> Result<String, S
 // ---- 4. reinagent_send_message ----
 async fn tool_send_message(app: &AppHandle, args: &Value) -> Result<String, String> {
     // task_id 可为 null（向草稿态发送）
-    let task_id = args.get("task_id").cloned().unwrap_or(Value::Null);
+    let task_id = extract_val_param(args, "task_id", "taskId").unwrap_or(Value::Null);
     let text = args
         .get("text")
         .and_then(Value::as_str)
@@ -405,10 +425,8 @@ async fn tool_send_message(app: &AppHandle, args: &Value) -> Result<String, Stri
 
 // ---- 5. reinagent_stop_task ----
 async fn tool_stop_task(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args
-        .get("task_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: task_id".to_string())?;
+    let task_id = extract_str_param(args, "task_id", "taskId")
+        .ok_or_else(|| "缺少必填参数: task_id (或 taskId)".to_string())?;
 
     app.emit("remote-bridge:stop", json!({ "taskId": task_id }))
         .map_err(|e| format!("emit remote-bridge:stop 失败: {e}"))?;
@@ -418,10 +436,8 @@ async fn tool_stop_task(app: &AppHandle, args: &Value) -> Result<String, String>
 
 // ---- 6. reinagent_approve_tool ----
 async fn tool_approve_tool(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args
-        .get("task_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: task_id".to_string())?;
+    let task_id = extract_str_param(args, "task_id", "taskId")
+        .ok_or_else(|| "缺少必填参数: task_id (或 taskId)".to_string())?;
     let decision = args
         .get("decision")
         .cloned()
@@ -438,10 +454,8 @@ async fn tool_approve_tool(app: &AppHandle, args: &Value) -> Result<String, Stri
 
 // ---- 7. reinagent_switch_task ----
 async fn tool_switch_task(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args
-        .get("task_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: task_id".to_string())?;
+    let task_id = extract_str_param(args, "task_id", "taskId")
+        .ok_or_else(|| "缺少必填参数: task_id (或 taskId)".to_string())?;
 
     let result = crate::remote_server::webview_request(
         app,
@@ -461,15 +475,11 @@ async fn tool_list_models(app: &AppHandle) -> Result<String, String> {
 
 // ---- 9. reinagent_set_model ----
 async fn tool_set_model(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args.get("task_id").cloned();
-    let provider_id = args
-        .get("provider_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: provider_id".to_string())?;
-    let model_id = args
-        .get("model_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: model_id".to_string())?;
+    let task_id = extract_val_param(args, "task_id", "taskId");
+    let provider_id = extract_str_param(args, "provider_id", "providerId")
+        .ok_or_else(|| "缺少必填参数: provider_id (或 providerId)".to_string())?;
+    let model_id = extract_str_param(args, "model_id", "modelId")
+        .ok_or_else(|| "缺少必填参数: model_id (或 modelId)".to_string())?;
 
     let result = crate::remote_server::webview_request(
         app,
@@ -487,7 +497,7 @@ async fn tool_set_model(app: &AppHandle, args: &Value) -> Result<String, String>
 
 // ---- 10. reinagent_get_task_options ----
 async fn tool_get_task_options(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args.get("task_id").cloned();
+    let task_id = extract_val_param(args, "task_id", "taskId");
     let result = crate::remote_server::webview_request(
         app,
         "get_task_options",
@@ -499,7 +509,7 @@ async fn tool_get_task_options(app: &AppHandle, args: &Value) -> Result<String, 
 
 // ---- 11. reinagent_set_approval_mode ----
 async fn tool_set_approval_mode(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args.get("task_id").cloned();
+    let task_id = extract_val_param(args, "task_id", "taskId");
     let mode = args
         .get("mode")
         .and_then(Value::as_str)
@@ -517,7 +527,7 @@ async fn tool_set_approval_mode(app: &AppHandle, args: &Value) -> Result<String,
 
 // ---- 12. reinagent_set_thinking_level ----
 async fn tool_set_thinking_level(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args.get("task_id").cloned();
+    let task_id = extract_val_param(args, "task_id", "taskId");
     let level = args
         .get("level")
         .and_then(Value::as_str)
@@ -535,10 +545,8 @@ async fn tool_set_thinking_level(app: &AppHandle, args: &Value) -> Result<String
 
 // ---- 13. reinagent_remove_queued_message ----
 async fn tool_remove_queued_message(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args
-        .get("task_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: task_id".to_string())?;
+    let task_id = extract_str_param(args, "task_id", "taskId")
+        .ok_or_else(|| "缺少必填参数: task_id (或 taskId)".to_string())?;
     let index = args
         .get("index")
         .and_then(Value::as_u64)
@@ -556,10 +564,8 @@ async fn tool_remove_queued_message(app: &AppHandle, args: &Value) -> Result<Str
 
 // ---- 14. reinagent_mark_task_read ----
 async fn tool_mark_task_read(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let task_id = args
-        .get("task_id")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: task_id".to_string())?;
+    let task_id = extract_str_param(args, "task_id", "taskId")
+        .ok_or_else(|| "缺少必填参数: task_id (或 taskId)".to_string())?;
 
     let result = crate::remote_server::webview_request(
         app,
@@ -573,10 +579,8 @@ async fn tool_mark_task_read(app: &AppHandle, args: &Value) -> Result<String, St
 
 // ---- 15. reinagent_start_draft ----
 async fn tool_start_draft(app: &AppHandle, args: &Value) -> Result<String, String> {
-    let workspace_key = args
-        .get("workspace_key")
-        .and_then(Value::as_str)
-        .ok_or_else(|| "缺少必填参数: workspace_key".to_string())?;
+    let workspace_key = extract_str_param(args, "workspace_key", "workspaceKey")
+        .ok_or_else(|| "缺少必填参数: workspace_key (或 workspaceKey)".to_string())?;
 
     let result = crate::remote_server::webview_request(
         app,
@@ -976,4 +980,40 @@ mod tests {
         assert_eq!(msgs[0]["seq"], 20);
         assert_eq!(msgs[1]["seq"], 30);
     }
+
+    #[test]
+    fn extract_param_red_check_proves_old_logic_fails_and_new_logic_succeeds() {
+        let camel_args = json!({
+            "taskId": "task-999",
+            "workspaceKey": "ws-root",
+            "providerId": "provider-deepseek",
+            "modelId": "model-v3",
+            "sinceSeq": 42
+        });
+
+        // 1. Red Check：老逻辑只读 snake_case，面对 camelCase 必然返回 None（报错）
+        let old_task_id = camel_args.get("task_id").and_then(Value::as_str);
+        assert_eq!(old_task_id, None, "[Red Check] 验证老逻辑确实无法识别 taskId 导致缺必填参数错误");
+
+        let old_workspace = camel_args.get("workspace_key").and_then(Value::as_str);
+        assert_eq!(old_workspace, None, "[Red Check] 验证老逻辑确实无法识别 workspaceKey");
+
+        // 2. Green Check：新逻辑兼容 camelCase 与 snake_case
+        assert_eq!(extract_str_param(&camel_args, "task_id", "taskId"), Some("task-999"));
+        assert_eq!(extract_str_param(&camel_args, "workspace_key", "workspaceKey"), Some("ws-root"));
+        assert_eq!(extract_str_param(&camel_args, "provider_id", "providerId"), Some("provider-deepseek"));
+        assert_eq!(extract_str_param(&camel_args, "model_id", "modelId"), Some("model-v3"));
+        assert_eq!(extract_u64_param(&camel_args, "since_seq", "sinceSeq"), Some(42));
+
+        // 3. 同时对原本的 snake_case 保持 100% 正向兼容
+        let snake_args = json!({
+            "task_id": "task-888",
+            "workspace_key": "ws-snake",
+            "since_seq": 88
+        });
+        assert_eq!(extract_str_param(&snake_args, "task_id", "taskId"), Some("task-888"));
+        assert_eq!(extract_str_param(&snake_args, "workspace_key", "workspaceKey"), Some("ws-snake"));
+        assert_eq!(extract_u64_param(&snake_args, "since_seq", "sinceSeq"), Some(88));
+    }
 }
+

@@ -2172,3 +2172,19 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
   - 新增 `since_seq?: u64` 参数：支持基于序列号的增量过滤，仅返回 `seq > since_seq` 的全新消息，赋能客户端 $O(1)$ 增量轮询；
   - 元数据自动补全：在快照根节点追加 `totalMessages`、`omittedMessages` 与 `returnedMessages` 字段，客户端清晰可知全局进度与省略条数；
   - 核心逻辑抽象为 `slice_snapshot_messages` 并配齐 4 项完整 Rust 单元测试（全量/截断/增量/无消息）。
+
+## 十三、MCP 工具参数宽容反序列化（对齐前端命名与生态调用习惯，2026-10-20）
+
+### 1. 痛点场景
+- 外部 MCP 客户端、自动化脚本或调度 Agent 在调用 `reinagent_get_task_status`、`reinagent_stop_task` 等工具时，习惯沿用前端标准驼峰命名（如 `taskId`、`workspaceKey`、`sinceSeq`）；
+- `mcp_server.rs` 内部严格读取下划线命名（如 `task_id`），导致出现 `缺少必填参数: task_id` 的调用报错，降低了生态接入容错度。
+
+### 2. 解决方案
+- **`src-tauri/src/mcp_server.rs`** 引入参数提取辅助函数：
+  - `extract_str_param(args, snake, camel)`：字符串参数提取，优先 snake_case，缺省兼容 camelCase；
+  - `extract_val_param(args, snake, camel)`：Value 参数提取（可为 null）；
+  - `extract_u64_param(args, snake, camel)`：整数序列提取；
+- 全量覆盖 15 个 MCP 原生工具的入参提取；
+- **交付三铁律覆盖**：
+  - 编写 `extract_param_red_check_proves_old_logic_fails_and_new_logic_succeeds` 单元测试，反向验证旧逻辑在 camelCase 下必然判定为 `None`，新逻辑 100% 正向解析。
+
