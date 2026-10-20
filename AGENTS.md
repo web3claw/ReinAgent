@@ -130,3 +130,50 @@ bun run tauri dev
    - 等待新版本 GitHub Actions 构建就绪；
    - 监控到远端连接的 ReinAgent 任务停止/空闲后，提示/协助更新远端 ReinAgent 实例到最新版；
    - 随后继续循环角色一、角色二与代码优化自进化，形成永不停歇的自主研发与运维闭环。
+
+---
+
+## 10. Session Wakeup & Daemon Self-Healing Rule (会话唤醒与守护自愈铁律)
+
+为彻底解决“远端任务完成而本地会话停止导致的双向死锁沉默”，Agent 必须终身恪守以下守护与自愈铁律：
+
+1. **每次进入会话必首检 (First Action Inspection)**：
+   - 无论每日首次进入会话、上下文中断重置、或是收到用户任意新指令，Agent 在执行任何业务前，**必须首先调用 `manage_task(Action='list')` 检查后台对话守护任务（`wait_remote_dialogue`）的运行状态**。
+2. **掉线无感自愈 (Auto Resume Without Prompting)**：
+   - 若检测到守护任务未运行或已终止，**严禁等待用户提醒，必须立即自动使用 `run_command`（配置 `IsDaemon: true`）重新拉起后台守护任务**：
+     ```bash
+     systemd-run --user --wait --pipe node /home/web3claw/GitCode/ReinAgent/scripts/wait_remote_dialogue.mjs
+     ```
+   - 保持对远端 ReinAgent 任务执行的持续监听与唤醒响应。
+3. **状态连带主动汇报 (Active Status Reporting)**：
+   - 回复用户时，必须附带远端 ReinAgent 任务的最新心跳、执行状态及当前守护任务 ID，确保项目管理员与远端开发者永远处于实时互通状态。
+
+---
+
+## 11. Autonomous Steering & Independent Decision Rule (自主决策与推进铁律)
+
+为彻底贯彻“无人值守、自主闭环”的项目管理原则，Agent 必须终身恪守以下决策铁律：
+
+1. **项目管理员自主决策权 (Full Autonomy in Engineering Decisions)**：
+   - 当清晰掌握客户需求与当前阶段目标后，**严禁将纯技术分支、执行细节与方案选型抛给用户让用户拍板**；
+   - 本端项目管理员必须基于当前阻碍与系统最优解，**独立果断做出技术决策**；
+2. **全程主动指导与协助 (End-to-End Autonomous Steering)**：
+   - 自动生成最精准的下级调度指令并推送到远端 ReinAgent，持续闭环监控、纠偏、协助与验证；
+   - 绝不因等待用户拍板而让任务停滞，一管到底，直至四大核心（免滑块登录、解密与加密、发群消息、收群消息）及客户整体框架 100% 跑通交付。
+
+---
+
+## 12. Remote Model Steering & Magpie Exclusivity Rule (远端模型调度与 Magpie 唯一铁律)
+
+1. **服务商唯一指定铁律 (Magpie Exclusivity)**：
+   - 调度局域网远端 ReinAgent（`http://192.168.3.27:7777`）时，**必须且只能选择 Magpie 服务商下的模型类型**；
+   - 当前核心基准模型为：`trae-cn/DeepSeek-V4-Flash-Official-max`（服务商 ID：`custom-1791417182102`）；
+   - 严禁擅自切换至 WorkBuddy、GonkaRouter 或其他未授权服务商，杜绝 429 频控与调用断连。
+2. **切换模型三连穿透机制 (Triple-Penetration Switch)**：
+   - 在远端切换模型时，必须严格执行三连穿透操作：
+     - ① **任务模型绑定**：`reinagent_set_model(task_id, provider_id, model_id)`；
+     - ② **全局默认绑定**：`reinagent_set_model(null, provider_id, model_id)` 写入 `settings.json`；
+     - ③ **跳板式状态击穿**：由于 `App.tsx` 内部依赖 `[activeTaskId]` 变更才同步模型至 React 内存态，同一任务下改模型不会触发 Hook。**必须通过 `reinagent_switch_task` 临时切至其他任务再立即切回**，强制重挂并刷新会话状态，确保界面与后台 100% 生效。
+
+
+

@@ -285,3 +285,19 @@ test("toApiMessages：正常配对的 toolCall/toolResult 完整保留", () => {
   assert.equal(api[2].role, "toolResult", "toolResult 保留");
   assert.equal(api[3].role, "assistant");
 });
+
+test("steerQueue 保留：turn_start 与 appendUser 状态转移不得冲掉排队队列", () => {
+  let state = {
+    ...initialState(),
+    steerQueue: ["排队消息 1", "排队消息 2"],
+  };
+
+  // 1. turn_start 事件
+  state = applyEvent(state, { type: "turn_start" });
+  assert.deepEqual(state.steerQueue, ["排队消息 1", "排队消息 2"], "turn_start 后 steerQueue 不得丢失");
+
+  // 2. appendUser
+  state = appendUser(state, "用户追加消息");
+  assert.deepEqual(state.steerQueue, ["排队消息 1", "排队消息 2"], "appendUser 后 steerQueue 不得丢失");
+});
+

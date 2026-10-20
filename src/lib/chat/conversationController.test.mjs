@@ -270,3 +270,61 @@ test("S7 · maxSteps 未触顶（反例）：末条助手**没有** truncatedBy"
   assert.equal(last.role, "assistant");
   assert.equal(last.truncatedBy, undefined, "未触顶时不得出现 maxSteps 标注");
 });
+
+test("Steering 队列：首轮自然完成后自动弹出并作为新轮续跑", async () => {
+  const { ctrl, getState } = makeHarness({
+    makeCore: () => faux.createFauxCore({ api: "faux", tokensPerSecond: 10, tokenSize: { min: 1, max: 1 } }),
+  });
+
+  assert.equal(ctrl.send("第一轮问题"), true);
+  // 在流式中排队一条
+  assert.equal(ctrl.send("排队追问"), true);
+  assert.deepEqual(getState().steerQueue, ["排队追问"]);
+
+  // 等待第一轮自然结束，并等待排队第二轮也跑完
+  await waitUntilIdle(getState);
+  // 排队触发的新轮次可能在下一个 tick 开始，稍微等待它进入或完成
+  let deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    if (getState().messages.some((m) => m.role === "user" && m.text === "排队追问") && getState().status === "idle") {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+
+  assert.deepEqual(getState().steerQueue, [], "排队消息应已被消费出队");
+  const userMessages = getState().messages.filter((m) => m.role === "user").map((m) => m.text);
+  assert.deepEqual(userMessages, ["第一轮问题", "排队追问"], "排队追问必须被作为第二轮正式发送并在时间线留痕");
+});
+
+test("Steering 队列：steerNow 强制发送立即打断当前轮次并处理排队消息", async () => {
+  const { ctrl, getState } = makeHarness({
+    makeCore: () => faux.createFauxCore({ api: "faux", tokensPerSecond: 5, tokenSize: { min: 1, max: 1 } }),
+  });
+
+  assert.equal(ctrl.send("慢任务"), true);
+  assert.equal(ctrl.send("紧急插队指令"), true);
+  assert.deepEqual(getState().steerQueue, ["紧急插队指令"]);
+
+  // 此时首轮正在流式中，调用 steerNow(0)
+  const sent = ctrl.steerNow(0);
+  assert.equal(sent, true, "steerNow 应当成功受理");
+  assert.deepEqual(getState().steerQueue, [], "队列中的消息被立即移除");
+
+  // 等待执行完成
+  await waitUntilIdle(getState);
+  let deadline = Date.now() + 3000;
+  while (Date.now() < deadline) {
+    if (getState().messages.some((m) => m.role === "user" && m.text === "紧急插队指令") && getState().status === "idle") {
+      break;
+    }
+    await new Promise((r) => setTimeout(r, 20));
+  }
+
+  // 首轮助手行应被打断标记为 stopped
+  const firstAssistant = getState().messages.find((m) => m.role === "assistant");
+  assert.equal(firstAssistant.status, "stopped", "第一轮执行应被立即中止（stopped）");
+  // 第二轮用户消息成功存在
+  const hasUrgent = getState().messages.some((m) => m.role === "user" && m.text === "紧急插队指令");
+  assert.equal(hasUrgent, true, "紧急插队指令必须已作为新轮次发出");
+});

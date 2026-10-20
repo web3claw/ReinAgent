@@ -5,15 +5,17 @@
  * 每条可 × 撤回；轮收敛后自动逐条续跑。挂载在 composer 上方。
  */
 
-import { X } from "lucide-react";
+import { Zap, X } from "lucide-react";
 import { useTranslation } from "../../i18n";
 
 export function SteerQueuePanel({
   queue,
   onRemove,
+  onSendNow,
 }: {
   queue: string[];
   onRemove: (index: number) => void;
+  onSendNow?: (index: number) => void;
 }) {
   const { t } = useTranslation();
   if (queue.length === 0) return null;
@@ -31,6 +33,18 @@ export function SteerQueuePanel({
           <span className="min-w-0 flex-1 truncate text-xs text-[var(--text-secondary)]">
             {text}
           </span>
+          {onSendNow ? (
+            <button
+              type="button"
+              aria-label={t("steerSendNow")}
+              title={t("steerSendNow")}
+              onClick={() => onSendNow(index)}
+              className="flex shrink-0 items-center gap-1 rounded bg-[var(--surface-hover)] px-2 py-0.5 text-[11px] font-medium text-[var(--text)] hover:bg-[var(--primary)] hover:text-white transition-colors"
+            >
+              <Zap className="h-3 w-3 fill-current" />
+              <span>{t("steerSendNowBtn")}</span>
+            </button>
+          ) : null}
           <button
             type="button"
             aria-label={t("steerRemove")}

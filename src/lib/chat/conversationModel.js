@@ -53,6 +53,7 @@ export function restoreState(messages) {
     nextMessageSeq: Math.max(maxSeq, sanitized.length),
     // 审批挂起是纯内存态：恢复/切换会话时一律清空（被挂起的轮次本身也已中断）。
     pendingApproval: null,
+    steerQueue: [],
   };
 }
 
@@ -103,6 +104,7 @@ export function appendUser(state, text, attachments, apiUserMessage) {
     ...(apiUserMessage ? { apiMessage: apiUserMessage } : {}),
   };
   return {
+    ...state,
     messages: [...state.messages, message],
     status: "idle",
     error: undefined,
@@ -478,6 +480,7 @@ export function applyLibraryEvent(state, ev, nowMs) {
       };
       // 同时把顶层状态推进到 streaming，使随后的 `applyEvent` 能生效。
       return {
+        ...state,
         messages: [...state.messages, entry],
         status: "streaming",
         error: undefined,

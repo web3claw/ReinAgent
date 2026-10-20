@@ -84,6 +84,8 @@ export interface ConversationController {
   compactNow: () => boolean;
   /** P2-F1：撤回一条排队中的 steering 消息（按下标）。 */
   removeSteerMessage: (index: number) => void;
+  /** 强制发送排队中的 steering 消息（打断当前轮次并立即作为新轮次发送）。 */
+  steerNow: (index: number) => boolean;
   requestApproval: (req: import("./conversationModel").PendingApproval) => Promise<
     import("../providers/runAgentTurn").ApprovalDecision
   >;

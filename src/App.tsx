@@ -4,6 +4,7 @@ import { useConversationPool } from "./hooks/useConversationPool";
 import {
   getEntrySnapshot,
   removeSteerMessage as poolRemoveSteerMessage,
+  steerNow as poolSteerNow,
   getHistoryLoadState,
   loadOlderMessages,
   send as poolSend,
@@ -1900,6 +1901,9 @@ export default function App() {
                     queue={state.steerQueue}
                     onRemove={(index) =>
                       poolRemoveSteerMessage(activeTaskId, index)
+                    }
+                    onSendNow={(index) =>
+                      poolSteerNow(activeTaskId, index)
                     }
                   />
                 ) : null}

@@ -547,6 +547,11 @@ export function removeSteerMessage(taskId: string, index: number): void {
   entries.get(taskId)?.controller.removeSteerMessage(index);
 }
 
+/** 强制发送排队中的 steering 消息（打断当前轮次并立即作为新轮次发送）。 */
+export function steerNow(taskId: string, index: number): boolean {
+  return entries.get(taskId)?.controller.steerNow(index) ?? false;
+}
+
 /** 手动压缩指定任务的历史（controller.compactNow；忙时返回 false）。 */
 export function compactConversation(taskId: string): boolean {
   return entries.get(taskId)?.controller.compactNow() ?? false;

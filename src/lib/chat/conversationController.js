@@ -181,6 +181,22 @@ export function createConversationController(deps) {
     });
   }
 
+  /** 强制发送排队中的 steering 消息（打断当前轮次并立即作为新轮次发送）。 */
+  function steerNow(index) {
+    const queue = getState().steerQueue ?? [];
+    if (index < 0 || index >= queue.length) return false;
+    const text = queue[index];
+    // 1. 先从队列中移除此消息
+    removeSteerMessage(index);
+    // 2. 打断当前执行中的轮次（如果正在流式中）
+    if (getState().status === "streaming" || abortRef !== null) {
+      stop();
+    }
+    // 3. 立即作为新的一轮发送
+    void Promise.resolve().then(() => send(text));
+    return true;
+  }
+
   function stop() {
     // 先解除审批挂起（拒绝语义），再中止轮次——顺序保证钩子等待先有终值。
     resolveApproval("reject");
@@ -493,8 +509,9 @@ export function createConversationController(deps) {
           setState((prev) => finish(prev, undefined, message, now()));
         }
       } finally {
+        const isCurrent = abortRef === controller;
         // 仅当自己仍是当前轮次（未被新一轮取代）时才清空，避免覆盖新一轮的句柄。
-        if (abortRef === controller) {
+        if (isCurrent) {
           // 异常路径兜底：轮次已结束但审批仍挂起（未被 stop/clear 解除）→ 以 reject 收场，
           // 防止审批卡悬挂、钩子 Promise 永不 settle。
           if (pendingApprovalRef !== null) {
@@ -508,7 +525,7 @@ export function createConversationController(deps) {
         // P2-F1 steering：轮收敛后若引导队列非空 → 取一条作为新轮续跑（其余留队）。
         // 失败/停止/清空的收敛同样续跑吗？不——只有「自然完成」才续跑；停止是用户
         // 明确中断（队列保留在时间线上方提示可重发），错误行也停下让用户看清楚。
-        if (abortRef === controller) {
+        if (isCurrent) {
           const queue = getState().steerQueue ?? [];
           const outcome = getState();
           const finished =
@@ -731,5 +748,5 @@ export function createConversationController(deps) {
   }
 
   return { send,
-    removeSteerMessage, editResend, stop, clear, loadState, requestApproval, resolveApproval, compactNow };
+    removeSteerMessage, steerNow, editResend, stop, clear, loadState, requestApproval, resolveApproval, compactNow };
 }
