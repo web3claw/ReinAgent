@@ -2188,3 +2188,21 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 - **交付三铁律覆盖**：
   - 编写 `extract_param_red_check_proves_old_logic_fails_and_new_logic_succeeds` 单元测试，反向验证旧逻辑在 camelCase 下必然判定为 `None`，新逻辑 100% 正向解析。
 
+## 十四、MCP 同步对话与任务完成阻塞等待机制（2026-10-20）
+
+### 1. 痛点场景
+- 远程 Agent 跑完一轮后停下待命，外部 AI 工具（Claude Code、Codex、Cursor、Antigravity）若仅使用非阻塞发送消息（`reinagent_send_message`），两端都会因为回合收尾而陷入双向停滞；
+- 外部工具在没有事件通知机制时只能依赖低效轮询，且 Claude Code / Codex 等以单次工具调用推进的 Agent 无法直接获得“发消息并等待结果继续思考”的标准对话体验。
+
+### 2. 解决方案
+- **`src-tauri/src/remote_server.rs`**：
+  - 新增 `wait_for_task_completed(app, task_id, timeout)`：事件驱动阻塞等待机制。若任务已完成直接返回当前快照；若在运行中则订阅内部广播总线 `bridge_bus`，并在收到 `running == false` 时即时返回，并有 `Lagged` 兜底检查；
+  - 新增 `extract_latest_assistant_reply(snapshot)`：从任务历史快照中倒序精准解析最新一条 Assistant 正文内容；
+- **`src-tauri/src/mcp_server.rs`**：
+  - 新增 `reinagent_wait_task` 工具（#16）：阻塞等待指定任务执行完成并返回状态与最新输出，支持超时配置（默认 600s）；
+  - 新增 `reinagent_chat` 工具（#17）：发送用户消息并自动阻塞等待 Agent 执行完毕，直接返回最新回复文本，支持 Claude Code / Codex / Cursor 单步调用自动形成“提问 -> 等待执行 -> 获得结果并决策”的自主闭环；
+- **测试覆盖**：
+  - 覆盖工具总数扩充为 17 项完整性检查与唯一性校验；
+  - 编写 `extract_latest_assistant_reply_finds_latest_message_and_red_checks_empty`，Red Check 覆盖空列表与无 assistant 场景。
+
+

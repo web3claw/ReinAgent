@@ -954,6 +954,96 @@ pub async fn webview_task_state_snapshot(app: &AppHandle, task_id: &str) -> Opti
     }))
 }
 
+/// 从快照中提取最新一条 Assistant 的正文内容
+pub fn extract_latest_assistant_reply(snapshot: &Value) -> Option<String> {
+    let messages = snapshot.get("messages")?.as_array()?;
+    for msg in messages.iter().rev() {
+        if msg.get("role").and_then(Value::as_str) == Some("assistant") {
+            // 优先从 parts 提取 text
+            if let Some(parts) = msg.get("parts").and_then(Value::as_array) {
+                let mut accumulated = String::new();
+                for part in parts {
+                    if let Some(payload_str) = part.get("payload").and_then(Value::as_str) {
+                        if let Ok(payload_json) = serde_json::from_str::<Value>(payload_str) {
+                            if let Some(t) = payload_json.get("text").and_then(Value::as_str) {
+                                if !t.trim().is_empty() {
+                                    accumulated.push_str(t);
+                                }
+                            }
+                        }
+                    }
+                }
+                if !accumulated.trim().is_empty() {
+                    return Some(accumulated);
+                }
+            }
+            // 兜底提取 msg 本身的 text 字段
+            if let Some(t) = msg.get("text").and_then(Value::as_str) {
+                if !t.trim().is_empty() {
+                    return Some(t.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
+/// 阻塞等待指定任务执行完成（running == false），基于内部事件广播总线，超时自动返回。
+pub async fn wait_for_task_completed(
+    app: &AppHandle,
+    task_id: &str,
+    timeout: std::time::Duration,
+) -> Result<Value, String> {
+    // 1. 若当前任务已经处于非运行态，直接返回当前快照
+    if let Some(snapshot) = webview_task_state_snapshot(app, task_id).await {
+        let is_running = snapshot.get("running").and_then(Value::as_bool).unwrap_or(false);
+        if !is_running {
+            return Ok(snapshot);
+        }
+    }
+
+    // 2. 订阅广播总线
+    let mut rx = bridge_bus().subscribe();
+    let start = std::time::Instant::now();
+
+    loop {
+        let remaining = timeout.checked_sub(start.elapsed());
+        let Some(rem) = remaining else {
+            return Err(format!("等待任务 {task_id} 完成超时（超过 {} 秒）", timeout.as_secs()));
+        };
+
+        tokio::select! {
+            _ = tokio::time::sleep(rem) => {
+                return Err(format!("等待任务 {task_id} 完成超时（超过 {} 秒）", timeout.as_secs()));
+            }
+            event = rx.recv() => {
+                match event {
+                    Ok(BridgeEvent::State { task_id: ev_task, running, .. }) => {
+                        if ev_task == task_id && !running {
+                            if let Some(snapshot) = webview_task_state_snapshot(app, task_id).await {
+                                return Ok(snapshot);
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {
+                        if let Some(snapshot) = webview_task_state_snapshot(app, task_id).await {
+                            let is_running = snapshot.get("running").and_then(Value::as_bool).unwrap_or(false);
+                            if !is_running {
+                                return Ok(snapshot);
+                            }
+                        }
+                    }
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => {
+                        return Err("总线通道已关闭".to_string());
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BridgeAnswerStateArgs {

@@ -273,6 +273,8 @@ async fn handle_tools_call(app: &AppHandle, params: &Value) -> Result<Value, (i3
         "reinagent_remove_queued_message" => tool_remove_queued_message(app, &args).await,
         "reinagent_mark_task_read"      => tool_mark_task_read(app, &args).await,
         "reinagent_start_draft"         => tool_start_draft(app, &args).await,
+        "reinagent_wait_task"           => tool_wait_task(app, &args).await,
+        "reinagent_chat"                => tool_chat(app, &args).await,
         _ => Err(format!("Unknown tool: {name}")),
     };
 
@@ -592,8 +594,74 @@ async fn tool_start_draft(app: &AppHandle, args: &Value) -> Result<String, Strin
     Ok(serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string()))
 }
 
+// ---- 16. reinagent_wait_task ----
+async fn tool_wait_task(app: &AppHandle, args: &Value) -> Result<String, String> {
+    let task_id = extract_str_param(args, "task_id", "taskId")
+        .ok_or_else(|| "缺少必填参数: task_id (或 taskId)".to_string())?;
+    let timeout_secs = extract_u64_param(args, "timeout_seconds", "timeoutSeconds")
+        .unwrap_or(600)
+        .clamp(1, 3600);
+
+    let snapshot = crate::remote_server::wait_for_task_completed(
+        app,
+        task_id,
+        Duration::from_secs(timeout_secs),
+    )
+    .await?;
+
+    let latest_reply = crate::remote_server::extract_latest_assistant_reply(&snapshot);
+
+    Ok(json!({
+        "status": "completed",
+        "taskId": task_id,
+        "latestReply": latest_reply,
+        "snapshot": snapshot
+    }).to_string())
+}
+
+// ---- 17. reinagent_chat ----
+async fn tool_chat(app: &AppHandle, args: &Value) -> Result<String, String> {
+    let task_id = extract_str_param(args, "task_id", "taskId")
+        .ok_or_else(|| "缺少必填参数: task_id (或 taskId)".to_string())?;
+    let text = args
+        .get("message")
+        .or_else(|| args.get("text"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| "缺少必填参数: message (或 text)".to_string())?;
+    let timeout_secs = extract_u64_param(args, "timeout_seconds", "timeoutSeconds")
+        .unwrap_or(600)
+        .clamp(1, 3600);
+
+    // 1. 发送消息
+    app.emit(
+        "remote-bridge:send",
+        json!({ "taskId": task_id, "text": text, "attachments": [] }),
+    )
+    .map_err(|e| format!("emit remote-bridge:send 失败: {e}"))?;
+
+    // 稍等 150ms 确保前端收到并在总线上拉起 running
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    // 2. 阻塞等待完成
+    let snapshot = crate::remote_server::wait_for_task_completed(
+        app,
+        task_id,
+        Duration::from_secs(timeout_secs),
+    )
+    .await?;
+
+    let latest_reply = crate::remote_server::extract_latest_assistant_reply(&snapshot);
+
+    Ok(json!({
+        "status": "completed",
+        "taskId": task_id,
+        "reply": latest_reply,
+        "snapshot": snapshot
+    }).to_string())
+}
+
 // ============================================================
-// 八、Tool Definitions（15 个工具的 JSON Schema）
+// 八、Tool Definitions（17 个工具的 JSON Schema）
 // ============================================================
 
 fn tool_definitions() -> Vec<Value> {
@@ -863,6 +931,48 @@ fn tool_definitions() -> Vec<Value> {
                 "required": ["workspace_key"]
             }
         }),
+        // ---- 16 ----
+        json!({
+            "name": "reinagent_wait_task",
+            "description": "阻塞等待指定任务执行完成（即 running 转为 false），返回任务完成状态及 Agent 最新的回复内容。支持超时时间配置（默认 600 秒）。极其适合 Claude Code、Codex、Cursor 或外部脚本进行长轮询等待，零轮询开销，事件驱动即时响应。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "目标任务 ID（支持 taskId 别名）"
+                    },
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "最长等待超时秒数（可选，默认 600 秒，范围 1~3600，支持 timeoutSeconds 别名）"
+                    }
+                },
+                "required": ["task_id"]
+            }
+        }),
+        // ---- 17 ----
+        json!({
+            "name": "reinagent_chat",
+            "description": "向指定任务发送一条用户消息，并阻塞等待 Agent 执行完成该轮次，直接返回 Agent 最新的回复文本（对齐真人对话模式）。非常适合 Claude Code、Codex、Cursor 与 ReinAgent 进行连续自主对弈对话，发送后等待任务完成直接获得输出报告并继续下一轮决策。",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "task_id": {
+                        "type": "string",
+                        "description": "目标任务 ID（支持 taskId 别名）"
+                    },
+                    "message": {
+                        "type": "string",
+                        "description": "发送给 Agent 的消息内容（支持 text 别名）"
+                    },
+                    "timeout_seconds": {
+                        "type": "integer",
+                        "description": "最长等待超时秒数（可选，默认 600 秒，范围 1~3600，支持 timeoutSeconds 别名）"
+                    }
+                },
+                "required": ["task_id", "message"]
+            }
+        }),
     ]
 }
 
@@ -877,7 +987,7 @@ mod tests {
     #[test]
     fn tool_definitions_are_well_formed() {
         let tools = tool_definitions();
-        assert_eq!(tools.len(), 15, "应有 15 个工具");
+        assert_eq!(tools.len(), 17, "应有 17 个工具");
         for tool in &tools {
             assert!(tool.get("name").is_some(), "工具缺少 name 字段");
             assert!(tool.get("description").is_some(), "工具缺少 description 字段");
@@ -899,7 +1009,7 @@ mod tests {
     fn tools_list_response_contains_all_tools() {
         let result = handle_tools_list().expect("tools/list 应成功");
         let tools = result["tools"].as_array().expect("tools 应为数组");
-        assert_eq!(tools.len(), 15);
+        assert_eq!(tools.len(), 17);
     }
 
     #[test]
@@ -1014,6 +1124,48 @@ mod tests {
         assert_eq!(extract_str_param(&snake_args, "task_id", "taskId"), Some("task-888"));
         assert_eq!(extract_str_param(&snake_args, "workspace_key", "workspaceKey"), Some("ws-snake"));
         assert_eq!(extract_u64_param(&snake_args, "since_seq", "sinceSeq"), Some(88));
+    }
+
+    #[test]
+    fn extract_latest_assistant_reply_finds_latest_message_and_red_checks_empty() {
+        // 1. Red Check：空消息列表或无 assistant 消息时必须返回 None
+        let empty_snapshot = json!({ "messages": [] });
+        assert_eq!(crate::remote_server::extract_latest_assistant_reply(&empty_snapshot), None);
+
+        let user_only_snapshot = json!({
+            "messages": [
+                { "role": "user", "text": "你好" }
+            ]
+        });
+        assert_eq!(crate::remote_server::extract_latest_assistant_reply(&user_only_snapshot), None);
+
+        // 2. Green Check：正确从 parts 累积或 msg.text 中提取最新一条 assistant 回复
+        let complex_snapshot = json!({
+            "messages": [
+                {
+                    "role": "assistant",
+                    "parts": [
+                        { "payload": "{\"text\":\"第一条旧回复\"}" }
+                    ]
+                },
+                {
+                    "role": "user",
+                    "text": "继续"
+                },
+                {
+                    "role": "assistant",
+                    "parts": [
+                        { "payload": "{\"text\":\"第二条\"}" },
+                        { "payload": "{\"text\":\"新回复，完成！\"}" }
+                    ]
+                }
+            ]
+        });
+
+        assert_eq!(
+            crate::remote_server::extract_latest_assistant_reply(&complex_snapshot),
+            Some("第二条新回复，完成！".to_string())
+        );
     }
 }
 
