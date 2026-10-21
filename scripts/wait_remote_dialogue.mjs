@@ -242,7 +242,8 @@ async function startWatchLoop() {
     try {
       const data = JSON.parse(res.result?.content?.[0]?.text || "{}");
       const isRunning = data.running === true;
-      const currentSeq = data.seq ?? 0;
+      const lastMsgSeq = data.messages?.[data.messages.length - 1]?.seq;
+      const currentSeq = data.revision ?? lastMsgSeq ?? data.totalMessages ?? 0;
 
       if (isRunning) hasSeenRunning = true;
 

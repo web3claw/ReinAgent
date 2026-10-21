@@ -2,11 +2,17 @@ import type { ProviderItem, ModelItem } from "./types";
 import { providerAllowsMissingApiKey } from "./types";
 import { cleanBaseUrl, ensureV1BaseUrl } from "../../../lib/providers/modelFactory";
 import { proxiedFetch } from "../../../lib/web/proxiedFetch";
+import {
+  isOpenCodeZenUrl,
+  isOpenCodeZenFreeModel,
+  OPENCODE_USER_AGENT,
+} from "../../../lib/providers/opencodeZenAdapter";
 
 export interface FetchModelsResult {
   success: boolean;
   models?: ModelItem[];
   newCount?: number;
+  removedCount?: number;
   totalCount?: number;
   error?: string;
 }
@@ -151,15 +157,20 @@ export function parseProviderRawModels(data: unknown): ModelItem[] {
 }
 
 /**
- * 增量合并新拉取的模型：
- * 绝不使用臆测兜底填充未返回的字段
+ * 权威对齐与合并新拉取的模型：
+ * 1. 本次拉取的模型作为权威清单；
+ * 2. 匹配已有模型并继承其配置（enabled、name 等），并更新官方最新元数据；
+ * 3. 对于已有模型中未出现在本次拉取且为非自定义模型（isCustom !== true）的项，予以清理（淘汰失效/更名旧模型）；
+ * 4. 用户手动添加的自定义模型（isCustom: true）予以无条件保留；
+ * 5. 绝不使用臆测兜底填充未返回的字段（No-Fallback 铁律）。
  */
 export function mergeFetchedModels(
   existing: ModelItem[],
   fetchedModels: Array<ModelItem | string>
-): { merged: ModelItem[]; newCount: number } {
+): { merged: ModelItem[]; newCount: number; removedCount: number } {
   const existingMap = new Map(existing.map((m) => [m.id, m]));
-  const merged: ModelItem[] = [...existing];
+  const merged: ModelItem[] = [];
+  const fetchedIdSet = new Set<string>();
   let newCount = 0;
 
   for (const raw of fetchedModels) {
@@ -168,39 +179,52 @@ export function mergeFetchedModels(
         ? { id: raw, name: raw, enabled: false, isCustom: false }
         : raw;
 
+    if (!fetched.id || fetchedIdSet.has(fetched.id)) {
+      continue;
+    }
+    fetchedIdSet.add(fetched.id);
+
     const existingModel = existingMap.get(fetched.id);
     if (!existingModel) {
       merged.push({ ...fetched });
-      existingMap.set(fetched.id, fetched);
       newCount++;
     } else {
       // 已有模型：保留用户开关和名称，如果官方接口带来了真实元数据则如实更新
-      let updated = false;
-      const next = { ...existingModel };
-      if (existingModel.contextWindow === undefined && fetched.contextWindow !== undefined) {
-        next.contextWindow = fetched.contextWindow;
-        updated = true;
+      const next: ModelItem = {
+        ...fetched,
+        name: existingModel.name || fetched.name,
+        enabled: existingModel.enabled,
+        isCustom: existingModel.isCustom ?? false,
+      };
+      if (existingModel.contextWindow !== undefined && fetched.contextWindow === undefined) {
+        next.contextWindow = existingModel.contextWindow;
       }
-      if (existingModel.supportsImage === undefined && fetched.supportsImage !== undefined) {
-        next.supportsImage = fetched.supportsImage;
-        updated = true;
+      if (existingModel.supportsImage !== undefined && fetched.supportsImage === undefined) {
+        next.supportsImage = existingModel.supportsImage;
       }
-      if (existingModel.maxOutputTokens === undefined && fetched.maxOutputTokens !== undefined) {
-        next.maxOutputTokens = fetched.maxOutputTokens;
-        updated = true;
+      if (existingModel.maxOutputTokens !== undefined && fetched.maxOutputTokens === undefined) {
+        next.maxOutputTokens = existingModel.maxOutputTokens;
       }
-      if (existingModel.effort === undefined && fetched.effort !== undefined) {
-        next.effort = fetched.effort;
-        updated = true;
+      if (existingModel.effort !== undefined && fetched.effort === undefined) {
+        next.effort = existingModel.effort;
       }
-      if (updated) {
-        const idx = merged.findIndex((m) => m.id === fetched.id);
-        if (idx >= 0) merged[idx] = next;
+      merged.push(next);
+    }
+  }
+
+  // 保留用户手动添加的自定义模型（isCustom: true），并统计被淘汰的非自定义模型
+  let removedCount = 0;
+  for (const item of existing) {
+    if (!fetchedIdSet.has(item.id)) {
+      if (item.isCustom === true) {
+        merged.push({ ...item });
+      } else {
+        removedCount++;
       }
     }
   }
 
-  return { merged, newCount };
+  return { merged, newCount, removedCount };
 }
 
 /**
@@ -241,8 +265,22 @@ export async function fetchProviderModels(
     // （如 GonkaRouter 类）只认 Bearer，协议分支判断不出却是同一套鉴权。
     const authHeaders = buildModelListAuthHeaders(apiKey);
 
+    // 0. OpenCode Zen Free 服务商
+    if (provider.id === "opencode-zen-free" || isOpenCodeZenUrl(cleanedBase)) {
+      const endpoint = `${ensureV1BaseUrl(cleanedBase)}/models`;
+      const zenAuthHeaders = buildModelListAuthHeaders(apiKey || "public");
+      res = await proxiedFetch(endpoint, {
+        method: "GET",
+        headers: {
+          ...zenAuthHeaders,
+          "x-opencode-client": "cli",
+          "user-agent": OPENCODE_USER_AGENT,
+        },
+        signal: controller.signal,
+      });
+    }
     // 1. Ollama 服务商
-    if (provider.id === "ollama") {
+    else if (provider.id === "ollama") {
       try {
         const tagsRes = await proxiedFetch(`${cleanedBase}/api/tags`, {
           headers: { ...authHeaders },
@@ -317,7 +355,12 @@ export async function fetchProviderModels(
     }
 
     const data = await res.json();
-    const fetchedModels = parseProviderRawModels(data);
+    let fetchedModels = parseProviderRawModels(data);
+
+    // 对于 OpenCode Zen 免费服务商，严格过滤出免费模型（杜绝返回需要付费 key 的模型）
+    if (provider.id === "opencode-zen-free" || isOpenCodeZenUrl(cleanedBase)) {
+      fetchedModels = fetchedModels.filter((m) => isOpenCodeZenFreeModel(m.id));
+    }
 
     if (fetchedModels.length === 0) {
       return {
@@ -326,12 +369,13 @@ export async function fetchProviderModels(
       };
     }
 
-    const { merged, newCount } = mergeFetchedModels(provider.models, fetchedModels);
+    const { merged, newCount, removedCount } = mergeFetchedModels(provider.models, fetchedModels);
 
     return {
       success: true,
       models: merged,
       newCount,
+      removedCount,
       totalCount: merged.length,
     };
   } catch (error) {

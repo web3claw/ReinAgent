@@ -100,7 +100,7 @@ export function providerAllowsMissingApiKey(
   provider: Pick<ProviderItem, "id" | "isCustom" | "baseUrl"> | null | undefined,
 ): boolean {
   if (!provider) return false;
-  if (provider.id === "ollama") return true;
+  if (provider.id === "ollama" || provider.id === "opencode-zen-free") return true;
   return Boolean(provider.isCustom && provider.baseUrl?.trim());
 }
 
@@ -159,6 +159,16 @@ export const PRESET_PROVIDERS: ProviderItem[] = [
     apiKey: "",
     enabled: true,
     apiKeyUrl: "https://aistudio.google.com/app/apikey",
+    defaultModelId: "",
+    models: [],
+  },
+  {
+    id: "opencode-zen-free",
+    name: "OpenCode Zen (Free)",
+    apiFormat: "openai-chat-completions",
+    baseUrl: "https://opencode.ai/inference/v1",
+    apiKey: "public",
+    enabled: true,
     defaultModelId: "",
     models: [],
   },

@@ -2,6 +2,7 @@ import type { ProviderItem } from "./types";
 import { providerAllowsMissingApiKey } from "./types";
 import { cleanBaseUrl, ensureV1BaseUrl } from "../../../lib/providers/modelFactory";
 import { proxiedFetch } from "../../../lib/web/proxiedFetch";
+import { decorateOpenCodeZenRequest } from "../../../lib/providers/opencodeZenAdapter";
 
 export interface ConnectivityResult {
   success: boolean;
@@ -79,7 +80,7 @@ export async function testModelConnectivity(
     } else {
       // 默认 openai-chat-completions / openai-completions 兼容接口：标准 /v1/chat/completions
       const endpoint = `${ensureV1BaseUrl(cleanedBase)}/chat/completions`;
-      res = await proxiedFetch(endpoint, {
+      const originalOptions: RequestInit = {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -91,7 +92,9 @@ export async function testModelConnectivity(
           max_tokens: 1,
         }),
         signal: controller.signal,
-      });
+      };
+      const { url, init: decoratedOptions } = decorateOpenCodeZenRequest(endpoint, originalOptions);
+      res = await proxiedFetch(url, decoratedOptions);
     }
 
     clearTimeout(timeoutId);

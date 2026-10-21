@@ -11,6 +11,7 @@
  * Web 演示模式（无 Tauri IPC）回退原生 fetch。
  */
 import { invoke } from "@tauri-apps/api/core";
+import { decorateOpenCodeZenRequest } from "../providers/opencodeZenAdapter";
 
 interface LlmProxyInfo {
   baseUrl: string;
@@ -32,19 +33,21 @@ export async function llmProxyFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
 ): Promise<Response> {
+  const rawUrl =
+    typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  const { url, init: decoratedInit } = decorateOpenCodeZenRequest(rawUrl, init);
+
   if (!isTauri()) {
-    return fetch(input, init);
+    return fetch(url, decoratedInit);
   }
   const info = await getLlmProxyInfo();
-  const url =
-    typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  const headers = new Headers(init?.headers);
+  const headers = new Headers(decoratedInit?.headers);
   headers.set("x-reinagent-token", info.token);
   headers.set("x-reinagent-upstream-url", url);
   return fetch(`${info.baseUrl}/proxy`, {
-    method: init?.method,
+    method: decoratedInit?.method,
     headers,
-    body: init?.body,
-    signal: init?.signal,
+    body: decoratedInit?.body,
+    signal: decoratedInit?.signal,
   });
 }

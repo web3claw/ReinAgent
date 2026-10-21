@@ -16,9 +16,14 @@ fn get_default_workspace() -> PathBuf {
     }
 }
 
+fn is_windows_drive_path(p: &str) -> bool {
+    let bytes = p.as_bytes();
+    bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && (bytes[2] == b'\\' || bytes[2] == b'/')
+}
+
 fn resolve_path(raw_path: &str) -> PathBuf {
     let p = Path::new(raw_path);
-    if p.is_absolute() {
+    if p.is_absolute() || is_windows_drive_path(raw_path) {
         p.to_path_buf()
     } else {
         let default_dir = get_default_workspace();
@@ -26,21 +31,34 @@ fn resolve_path(raw_path: &str) -> PathBuf {
     }
 }
 
+/// 将目录路径清洗为适合 Windows explorer.exe 的原生反斜杠格式。
+/// 严禁包含正斜杠 '/'，否则 explorer.exe 会将正斜杠误解析为命令行开关导致回退打开「文档」。
+#[allow(dead_code)]
+pub fn sanitize_explorer_path(p: &Path) -> String {
+    p.to_string_lossy().replace('/', "\\")
+}
+
 /// 用系统文件管理器打开目录（Windows explorer / Linux xdg-open / macOS open）。
-/// path 为空时打开默认工作区（~/.ReinAgent/DefaultProject）。目录不存在或启动
-/// 失败时如实返回错误（前端 toast 提示，No-Fallback）。
+/// path 为空时打开默认工作区（~/.ReinAgent/DefaultProject）。若目录尚未创建则自动创建。
+/// 启动失败时如实返回错误（前端 toast 提示，No-Fallback）。
 #[tauri::command]
 pub async fn open_in_file_manager(path: Option<String>) -> Result<(), String> {
     let dir = match path.as_deref().map(str::trim).filter(|p| !p.is_empty()) {
         Some(p) => resolve_path(p),
         None => get_default_workspace(),
     };
+    if !dir.exists() {
+        let _ = fs::create_dir_all(&dir);
+    }
     if !dir.is_dir() {
-        return Err(format!("目录不存在：{}", dir.display()));
+        return Err(format!("目录不存在或不是文件夹：{}", dir.display()));
     }
     tauri::async_runtime::spawn_blocking(move || {
         #[cfg(target_os = "windows")]
-        let result = Command::new("explorer.exe").arg(&dir).spawn().map(|_| ());
+        let result = {
+            let win_path = sanitize_explorer_path(&dir);
+            Command::new("explorer.exe").arg(&win_path).spawn().map(|_| ())
+        };
         #[cfg(target_os = "linux")]
         let result = Command::new("xdg-open").arg(&dir).spawn().map(|_| ());
         #[cfg(target_os = "macos")]

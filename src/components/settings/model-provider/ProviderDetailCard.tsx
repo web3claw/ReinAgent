@@ -138,11 +138,14 @@ export function ProviderDetailCard({
           ...provider,
           models: res.models,
         });
-        if (res.newCount && res.newCount > 0) {
+        const addedText = res.newCount ? (isZh ? `新增 ${res.newCount} 个模型` : `added ${res.newCount} new`) : "";
+        const removedText = res.removedCount ? (isZh ? `清理 ${res.removedCount} 个已更名/下线模型` : `cleaned ${res.removedCount} obsolete`) : "";
+        const changes = [addedText, removedText].filter(Boolean).join(isZh ? "，" : ", ");
+        if (changes) {
           setRefreshSuccessMsg(
             isZh
-              ? `刷新完成，发现并添加了 ${res.newCount} 个新模型 (共 ${res.totalCount} 个)`
-              : `Refreshed: added ${res.newCount} new model(s) (${res.totalCount} total)`
+              ? `刷新完成：${changes} (当前共 ${res.totalCount} 个)`
+              : `Refreshed: ${changes} (${res.totalCount} total)`
           );
         } else {
           setRefreshSuccessMsg(
@@ -566,11 +569,6 @@ export function ProviderDetailCard({
                         <span className="text-sm font-medium truncate text-[var(--text-primary)]">
                           {model.name}
                         </span>
-                        {isCurrentDefault && (
-                          <span className="px-1.5 py-0.5 text-[10px] font-semibold bg-emerald-500/15 text-emerald-500 rounded border border-emerald-500/20 shrink-0">
-                            {isZh ? "当前默认" : "Default"}
-                          </span>
-                        )}
                       </div>
                       <span className="text-xs text-[var(--text-secondary)] font-mono block truncate">
                         {model.id}
@@ -691,12 +689,19 @@ export function ProviderDetailCard({
                       />
                     </button>
 
-                    {/* Set as Default Button */}
-                    {!isCurrentDefault && (
+                    {/* Set as Default Button / Current Default Badge */}
+                    {isCurrentDefault ? (
+                      <span
+                        className="ml-1 px-2 py-1 text-xs font-medium rounded border border-emerald-500/20 bg-emerald-500/15 text-emerald-500 shrink-0 select-none flex items-center justify-center min-w-[56px]"
+                        title={isZh ? "当前默认模型" : "Current Default Model"}
+                      >
+                        {isZh ? "当前默认" : "Default"}
+                      </span>
+                    ) : (
                       <button
                         type="button"
                         onClick={() => onSetAsDefault(provider.id, model.id)}
-                        className="ml-1 px-2 py-1 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+                        className="ml-1 px-2 py-1 text-xs rounded border border-[var(--border)] hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer shrink-0 min-w-[56px] text-center"
                         title={isZh ? "设为当前默认模型" : "Set as Default Model"}
                       >
                         {isZh ? "设为默认" : "Set Default"}

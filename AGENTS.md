@@ -175,6 +175,27 @@ bun run tauri dev
      - ② **全局默认绑定**：`reinagent_set_model(null, provider_id, model_id)` 写入 `settings.json`；
      - ③ **跳板式状态击穿**：由于 `App.tsx` 内部依赖 `[activeTaskId]` 变更才同步模型至 React 内存态，同一任务下改模型不会触发 Hook。**必须通过 `reinagent_switch_task` 临时切至其他任务再立即切回**，强制重挂并刷新会话状态，确保界面与后台 100% 生效。
 
+---
+
+## 13. Pre-Directive Documentation Pipeline Rule (发令前文档更新与读取铁律)
+
+为彻底避免重复研究、偏离客户需求与盲目试错，项目管理员向远端 ReinAgent 发出任何下级调度指令前，**必须严格执行四步发令流水线（严禁跳步直发）**：
+
+1. **第一步（会话拉取）**：
+   - 使用宿主直连命令将远端任务的最新全量对话抓取落盘：
+     ```bash
+     systemd-run --user --wait --pipe node /home/web3claw/GitCode/ReinAgent/scripts/dump_remote_full_dialogue.mjs /home/web3claw/GitCode/ReinAgent/.ReinAgent/remote_wangshangliao/SESSION_SNAPSHOT.json
+     ```
+2. **第二步（更新台账）**：
+   - 深入分析远端最新执行日志、阻碍与实测结论；
+   - 同步更新 `.ReinAgent/remote_wangshangliao/RESEARCH_PROGRESS_LEDGER.md`（进度台账），登记攻关突破与新增的避坑红线。
+3. **第三步（对照目标）**：
+   - 完整通读 `.ReinAgent/remote_wangshangliao/PROJECT_OBJECTIVES_AND_PLAN.md`（项目目标与规划），对照“纯协议官方SDK允许”、“高效长连通信库优先”、“30 账号稳定挂机”三大原则，校验技术路线是否走偏。
+4. **第四步（决策施令与自愈拉起）**：
+   - 制定最切中要害的技术决策指令并通过 `systemd-run --user --wait --pipe node scripts/send_directive.mjs` 推送至远端；
+   - 施令完成后，**必须立即以 `IsDaemon: true` 重新拉起后台监控守护任务（`wait_remote_dialogue`）**，确保实时无感监听。
+
+
 
 
 

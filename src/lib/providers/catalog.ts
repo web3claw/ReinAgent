@@ -1,4 +1,4 @@
-export type ProviderType = "deepseek" | "openai" | "anthropic" | "gemini" | "ollama" | "custom";
+export type ProviderType = "deepseek" | "openai" | "anthropic" | "gemini" | "opencode-zen-free" | "ollama" | "custom";
 
 export interface ProviderMeta {
   id: ProviderType;
@@ -56,6 +56,14 @@ export const PROVIDERS: ProviderMeta[] = [
       { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash" },
       { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro" },
     ],
+  },
+  {
+    id: "opencode-zen-free",
+    name: "OpenCode Zen (Free)",
+    defaultBaseUrl: "https://opencode.ai/inference/v1",
+    defaultModelId: "",
+    api: "openai-completions",
+    models: [],
   },
   {
     id: "ollama",

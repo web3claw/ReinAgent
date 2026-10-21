@@ -33,6 +33,29 @@ test("mergeFetchedModels: retains existing models state and appends new ones", (
   assert.equal(o1.enabled, false);
 });
 
+test("mergeFetchedModels: prunes removed non-custom models while preserving user custom models", () => {
+  const existing = [
+    { id: "old-discontinued-model", name: "Old Discontinued", enabled: true, isCustom: false },
+    { id: "gpt-4o", name: "GPT-4o", enabled: true, isCustom: false },
+    { id: "my-custom-model", name: "Custom Fine-tuned", enabled: true, isCustom: true },
+  ];
+
+  const fetched = ["gpt-4o", "gpt-4o-mini"];
+
+  const { merged, newCount, removedCount } = mergeFetchedModels(existing, fetched);
+
+  // old-discontinued-model should be pruned
+  assert.equal(merged.find((m) => m.id === "old-discontinued-model"), undefined);
+  // gpt-4o should be retained with user state preserved
+  assert.equal(merged.find((m) => m.id === "gpt-4o")?.enabled, true);
+  // my-custom-model (isCustom: true) must be preserved even if not in fetched
+  assert.ok(merged.find((m) => m.id === "my-custom-model"));
+  // gpt-4o-mini is new
+  assert.ok(merged.find((m) => m.id === "gpt-4o-mini"));
+  assert.equal(newCount, 1);
+  assert.equal(removedCount, 1);
+});
+
 test("mergeFetchedModels: deduplicates identical IDs gracefully", () => {
   const existing = [{ id: "claude-3-5-sonnet", name: "Claude 3.5 Sonnet", enabled: true }];
   const fetched = ["claude-3-5-sonnet", "claude-3-5-sonnet"];
@@ -42,13 +65,17 @@ test("mergeFetchedModels: deduplicates identical IDs gracefully", () => {
   assert.equal(merged.length, 1);
 });
 
-test("PRESET_PROVIDERS: all 5 mainstream providers have empty models array by default", async () => {
+test("PRESET_PROVIDERS: all 6 mainstream providers have empty models array by default", async () => {
   const { PRESET_PROVIDERS } = await import("./types.ts");
-  assert.equal(PRESET_PROVIDERS.length, 5);
+  assert.equal(PRESET_PROVIDERS.length, 6);
   for (const provider of PRESET_PROVIDERS) {
     assert.deepEqual(provider.models, [], `${provider.id} should have empty models`);
     assert.equal(provider.defaultModelId, "", `${provider.id} should have empty defaultModelId`);
   }
+  const zenFree = PRESET_PROVIDERS.find((p) => p.id === "opencode-zen-free");
+  assert.ok(zenFree, "opencode-zen-free provider must exist");
+  assert.equal(zenFree.apiKey, "public");
+  assert.equal(zenFree.baseUrl, "https://opencode.ai/inference/v1");
 });
 
 test("parseProviderRawModels: accurately extracts real API metadata without guessing", async () => {

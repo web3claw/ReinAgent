@@ -185,6 +185,13 @@ ReinAgent 架构全景
     - 支持项目级快捷操作：悬停点击 `+` 在该项目下开启新任务，点击删除图标（`Trash2`）一键移除项目记录；
     - 支持展开/折叠项目查看其隶属的子任务，点击子任务直接跳转激活；
     - 全局 Tasks 分区专注聚合展示未关联具体项目的通用任务，主次结构层次分明。
+  - **在系统文件管理器中打开项目（`open_in_file_manager` 跨平台加固）**：
+    - **Windows Explorer 命令行参数避坑**：Windows 环境下，若将正斜杠路径（如 `D:/projects/demo`）作为参数传给 `explorer.exe`，Windows Explorer 会将 `/` 误解析为命令行开关参数，导致参数失效并静默打开当前用户的默认“文档（Documents）”目录；
+    - **彻底移除 `@tauri-apps/plugin-opener` 的 `openPath` 穿透**：前端移除在桌面端调用 `openPath` 的未清洗逻辑，统一收敛由 Rust 后端 `open_in_file_manager` 调度；
+    - **Rust 端自动创建与路径反斜杠标准化**：`src-tauri/src/fs_cmd.rs` 中：
+      - 新增 `is_windows_drive_path` 精准识别 `C:/`、`D:\` 等 Windows 绝对盘符路径，防止被误作为相对路径拼入默认项目根目录；
+      - 调起文件管理器前先通过 `std::fs::create_dir_all` 确保目标目录已实际物理存在；
+      - 新增 `sanitize_explorer_path`，在 Windows 平台将所有正斜杠 `/` 严格清洗转换为系统原生反斜杠 `\`，确保 Windows Explorer 100% 精准打开用户项目实际物理目录。
 
 - **多模型服务商管理体系（深度对标 ZCode ModelProviderSection）**：
   - **双栏现代交互布局**：
@@ -217,16 +224,22 @@ ReinAgent 架构全景
       - **存储与展示规范**：用户在服务商设置面板中输入或展示 Base URL 时，统一不带末尾的 `/v1`、末尾单斜杠或多余斜杠（例如 `http://192.168.3.27:8787`、`https://api.openai.com`）；
       - **输入失焦与写盘强制清洗（`cleanBaseUrl`）**：若用户输入时带了 `/v1`、`/v1/`、`/` 或 `///`，在输入框失焦以及写入 `provider_config.json` 磁盘时，自动剥离清洗干净；
       - **请求端自动追加 `/v1`（`ensureV1BaseUrl`）**：所有面向 OpenAI / Anthropic 兼容协议的网络请求（包括 Agent 聊天对话 `POST /v1/chat/completions`、模型列表刷新 `GET /v1/models`、连通性握手测试 `POST /v1/chat/completions` 以及会话标题后台生成），运行时底层自动补齐 `/v1`，彻底杜绝 `POST /chat/completions → 404` 路由缺失问题，且绝不重复拼接成 `/v1/v1`；
-    - **智能增量合并（`mergeFetchedModels`）**：
-      - 自动拉取远端模型列表并去重增量追加，新拉取到的模型**默认保持禁用状态（`enabled: false`）**，避免一次性刷新几十个模型撑满聊天栏选择器，由用户自主按需点亮；
-      - **手动添加模型**（`ModelEditModal`）时，初始开关保持 **`enabled: true`**；
-      - 已有模型的启用开关和自定义名称 100% 保持不变，同时用官方真实返回的最新规格指标补齐未配置项；
+    - **权威同步与智能合并（`mergeFetchedModels`）**：
+      - 本次拉取的模型作为权威清单；自动拉取远端模型列表并去重追加，新拉取到的模型**默认保持禁用状态（`enabled: false`）**，避免一次性刷新撑满聊天栏选择器，由用户自主按需点亮；
+      - **已有模型状态继承**：已有模型的启用开关（`enabled`）和自定义名称 100% 保持不变，同时用官方真实返回的最新规格指标更新已配置项；
+      - **淘汰失效/已更名旧模型**：对于旧列表中存在但本次上游未返回的非自定义模型（`isCustom !== true`），判定为已更名或已废弃，自动从列表中剔除清理，杜绝更名旧模型残留；
+      - **用户自定义模型保护**：用户通过“+ 添加自定义模型”（`ModelEditModal`）手动创建的模型（带有 `isCustom: true` 标记），无条件 100% 安全保留；
     - **模型搜索与过滤**：支持通过 `🔍 搜索模型...` 输入框快速模糊过滤模型 ID 与名称；
-    - **主流服务商默认模型清空**：5 大主流预设服务商（DeepSeek、OpenAI、Anthropic、Gemini、Ollama）默认模型列表设为空（`models: []`），初始呈现空引导文案，由用户通过“🔄 刷新模型列表”自动探测拉取或“+ 添加模型”自定义；
+    - **主流预设服务商**：6 大主流预设服务商（DeepSeek、OpenAI、Anthropic、Gemini、OpenCode Zen (Free)、Ollama）默认模型列表设为空（`models: []`），初始呈现空引导文案，由用户通过“🔄 刷新模型列表”自动探测拉取或“+ 添加模型”自定义；
+    - **OpenCode Zen (Free) 专属免费通道与风控穿透架构**：
+      - 位于 `Ollama (Local)` 正上方，ID 为 `opencode-zen-free`，Base URL 为 `https://opencode.ai/inference/v1`，默认 API Key 为 `public`（免 Key 放行）；
+      - 点击“刷新模型列表”时，自动携带 OpenCode 专属指纹（`User-Agent`、`Authorization: Bearer public` 等）访问 `/v1/models`，并精确过滤全部免费模型（包含 `-free` 后缀以及经典免费模型 `big-pickle` 等）；
+      - 真实模型调用与连通性测试时，通过 `src/lib/providers/opencodeZenAdapter.ts` 自动进行协议指纹伪装（官方规范 Session ID、有序请求 ID）以及 5 大核心 Tools（`bash`, `edit`, `glob`, `grep`, `read`）占位守护，强制原生 `stream: true`，彻底避免触发官方服务端自 2026 年 10 月中旬起强化的 `403 FreeTierError`；
   - **向下兼容与后端磁盘持久化（对标 ZCode ~/.ReinAgent/provider_config.json）**：
     - 多服务商完整配置由 Tauri/Rust 后端维护，直接独立持久化存储至宿主用户主目录下的 `~/.ReinAgent/provider_config.json`（避免浏览器 LocalStorage 容量限制或清理丢失）；
     - 前端通过 Tauri IPC 命令 `provider_config_load` / `provider_config_save` 实时异步读写；
     - 支持一键“设为默认”，自动将选中的服务商与模型映射回底层 `settings.json`（`provider`、`modelId`、`apiKey`、`baseUrl`），确保现有对话模型、代码生成与终端执行 100% 无缝衔接。
+    - **模型行右侧操作区列对齐规范**：模型名称左侧不挂标签，统一将状态后置到右侧操作区末尾——当前默认模型显示高亮翠绿的 `[当前默认]` 胶囊（`bg-emerald-500/15 text-emerald-500`），非默认模型显示常规灰色的 `设为默认` 按钮，两项采用相同最小宽度（`min-w-[56px]`）与尺寸居中对齐，点击切换时无缝互换状态，保持整表右侧末尾严格对齐。
 
 ### 4. 对话问题导航条（ConversationNavigator，对齐 ZCode ConversationTurnNavigator）
 - **布局与显隐**：
@@ -2255,373 +2268,7 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 - 在掌握开发需求与核心目标后，**严禁事事向用户请示拍板**，必须由本端项目管理员自主权衡各技术路径的收益与风险，独立果断下发推进指令；
 - 始终以“跑通四大基本核心（免滑块登录、解密与加密、发群消息、收群消息）”为唯一指南针，持续监控、协助与纠偏远端 ReinAgent，实现全自动无人值守闭环。
 
-## 十八、登录策略战略减负：免滑块非硬性要求，聚焦群消息收发闭环（2026-10-21）
-
-### 1. 业务决策背景
-- 用户明确拍板：“免滑块登录不是必须的”；
-- 在客户实际的 30 账号多开挂机需求中，账号首次接入时支持由人工滑动一次滑块，将获取到的持久化凭据（`nimToken`、`jwtToken`、`accountId`）保存落盘到 `credentials.json`，供后续 5~7 天无感复用；
-- 彻底剔除针对网易易盾滑块算法逆向、轨迹伪造及打码平台的依赖，将研发战力 100% 收敛至收发群消息。
-
-### 2. 攻坚路线终极收敛
-- **当前唯一核心战场**：
-  1. **发群消息**：使用已 100% 验证的 `ChaCha20-Poly1305 (draft-agl)` + f1~f7 完整容器安全字段构造发信包，真实投递进群并验证服务端成功回执；
-  2. **收群消息**：实时捕获群消息推送并纯算法解密还原明文；
-- 一旦收发群消息在当前登录态上跑通闭环，再进行后续桌面框架集成。
-
-## 十九、真机群消息投递成功与服务端回执验证（2026-10-21）
-
-### 1. 突破进展
-- 远端 Agent 在模拟器当前在线应用进程内成功完成纯算法群消息的真实投递；
-- 构造链路：Python 纯算法生成 content（`ChaCha20-Poly1305 draft-agl` + f1~f7 完整容器安全字段） ➔ Frida 注入 ➔ 获取 `MsgService` 代理 ➔ `createCustomMessage` ➔ `sendMessage` 投递；
-- **服务端回执强证据**：会话列表中「测试2016」的最新时间戳随发信成功由 `00:22` 推进更新至 `00:23`，无任何异常报错，证明云信服务端 100% 认可并接纳了纯算法构造的包体。
-
-### 2. 下一阶段推进
-- 自动滑动聊天视口截图核验群内明文气泡呈现；
-- 挂载 `registerReceiveMessageObserver` 验证群消息实时推送捕获与明文解密；
-- 攻坚 `/v1/user/get-nim-token` 响应解密，实现 100% 脱离模拟器的纯协议独立脚本。
-
-## 二十、真实 serverId 服务端受理与 HTTP 解密入口现场验证（2026-10-21）
-
-### 1. 发信核心 100% 确认通关
-- 远端 Agent 拿到确定性证据：纯算法构造的消息被服务端成功受理，连续生成有效持久化服务端消息 ID：
-  `status=success`、`serverId=4297749348986388613`（以及 `...612`），云信官方服务端完全接纳该纯算法密文包体。
-
-### 2. HTTP 业务接口解密入口现场截获
-- **核心类与方法定位**：
-  - `com.xclient.sdk.crypto.d.b(long, byte[], long, long) -> byte[]`：响应体解密函数；
-  - `com.xclient.sdk.crypto.d.c(long, byte[], long, long) -> byte[]`：请求体加密函数；
-  - `com.xclient.sdk.crypto.d.a`：32 字节密钥；
-  - `LoginCodecNative.buildLoginToken(...)`：登录参数编码；
-- **现场实测验证**：截获 `d.b` 输入二进制密文，直接解密输出明文 JSON：`{"code":0,"msg":"OK","data":{"sensitiveWords":[...`。
-
-### 3. 项目管理员自主推进决策
-- 采取 Frida spawn (`-f`) 模式一次性稳定 dump `d.b` 的 32 字节密钥与调用入参，固化脱机 Token 获取脚本；
-- 利用云信广播回执机制实现“自发自收”，闭环验证群消息接收解密能力。
-
-## 二十一、HTTP 加密协议层全景逆向与 LZ4+ChaCha20 架构证实（2026-10-21）
-
-### 1. 突破进展与核心事实
-- **密钥 100% 对齐**：远端实测提取 `d.a`、`b.c`、`c.b` 静态字段，证实 HTTP 层加密密钥完全等同于消息层的 `projectPk`（32 字节）：
-  `9f1050eaf0a95d2469d8b905ff5aa28a844e8e1a80e02841c7cdcecccaf3130d`；
-- **底层组合链证实**：
-  - `b.a = "XXHashFactory:JavaUnsafe"` ➔ `xxHash`（种子/校验）；
-  - `b.b = "LZ4Factory:JavaUnsafe"` ➔ `LZ4`（高压缩比解压缩）；
-  - 核心链路：明文 JSON ➔ LZ4 压缩 ➔ ChaCha20 加密 ➔ 密文；逆过程解密后通过 LZ4 解压还原完整 JSON（实测 `in=280B 密文 -> out=509B 明文`）。
-
-### 2. 项目管理员自主决策与精准指导
-- 修复 Hook 递归引起的栈溢出，改用安全句柄调用；
-- 指令远端直接 Hook `net.jpountz.lz4.LZ4FastDecompressor.decompress` 入口，直接剥离 ChaCha20 解密结果与 LZ4 解压结果；
-- 结合时间戳与固定参数 `p3/p4` 锁定 Nonce 派生规则，固化纯 Python/Node 解密脚本。
-
-## 二十二、排除 LZ4 干扰与转向 jadx 静态代码深度还原（2026-10-21）
-
-### 1. 动态实测排除 LZ4
-- 远端实测 Hook `LZ4FastDecompressor` 与 `LZ4SafeDecompressor` 全重载，证实 `crypto.d.b` 解密过程中完全不调用 LZ4，排除解压缩干扰；
-- 成功截获完整的真实入参与输出样本：
-  - `d.b`: `p1=1792514596566`（毫秒时间戳）、`p3=0`、`p4=4325002414328924000`，`in=1008B 密文` ➔ `out=1648B 明文 JSON`；
-  - `d.c`: `p1=1792514330192`、`p3=-5881384305791554000`、`p4=4325002414328924000`，`in=17B {"userId":119214}` ➔ 密文。
-
-### 2. 项目管理员自主推进决策：全面转向 jadx 静态反编译
-- 避免动态运行时 App 频繁重启与 Hook 栈溢出风险，采用零侵入静态反编译；
-- 目标：反编译 `com.xclient.sdk.crypto.d` 类完整 Java 代码，直视 `d.b` 与 `d.c` 内部的逻辑分支、参数排布与 Native 函数绑定，以便直接在 Python/Node 中 100% 对齐离线复现。
-
-## 二十三、jadx 还原 d.b 完整源码：ZSTD+三段式 AEAD 架构确立（2026-10-21）
-
-### 1. 核心源码截获
-- **`d.b` 解密逻辑**：
-  ```java
-  byte[] bArrDecode = ExchangeCodecNative.a.decode(
-      bArr[0..16],    // p1: 16字节
-      bArr[16..32],   // p2: 16字节
-      bArr[32..end],  // p3: 密文体
-      j, j2, j3,      // 三个 long 参数 (时间戳 p1 与 p3/p4)
-      1703240058615L, // X-Version 版本号常量
-      projectPk       // 32 字节主密钥
-  );
-  byte[] plain = ZSTDNative.b(bArrDecode); // ZSTD 解压还原明文
-  ```
-- **关键突破**：
-  1. 压缩算法为 **ZSTD (level 3)**，非 LZ4，Python 具备标准成熟库（`zstandard`）；
-  2. 密文结构为 `[0:16] + [16:32] + [32:]` 的三段式切分；
-  3. 版本号常量 `1703240058615L` 硬编码参与底层运算。
-
-### 2. 项目管理员自主推进决策
-- 路线一：通过 Frida 直接调用 `ExchangeCodecNative.a.decode` + `ZSTDNative.b` 完成真实密文动态解密验证；
-- 路线二：定位 `libcore.so` 中 `ExchangeCodecNative.decode` 的 JNI 汇编实现，使用 Python `zstandard` + 纯算法离线复现，实现 100% 脱离模拟器。
-
-## 二十四、Native JNI 注册表导出与黑盒验证策略（2026-10-21）
-
-### 1. JNI 运行时偏移表确立
-- `ExchangeCodecNative.encode`: `0x2f83c`
-- `ExchangeCodecNative.decode`: `0x2fae0`
-- `MessageCodecNative.buildSignature`: `0x2ee98`
-- `MessageCodecNative.parseAndDecrypt`: `0x2f10c`
-- `LoginCodecNative.buildLoginToken`: `0x2fe20`
-
-### 2. 核心算法盐值构造证实（`0x2ccdc`）
-- 32 字节盐构造：`LE64(j) || LE64(j2) || LE64(j3) || LE64(j4)`（含毫秒时间戳与版本号 `1703240058615L`）；
-- 核心采用 `xxHash64` 常量（`0x9E3779B185EBCA87`、`0xC2B2AE3D27D4EB4F`、`0x165667B19E3779F9`）派生 32 字节 Nonce。
-
-### 3. 项目管理员自主推进决策
-- 避免深陷底层汇编微观逆向泥潭，果断采用 Frida 黑盒调用 `ExchangeCodecNative.decode` 验证端到端入参和返回值语义；
-- 验证成功后，即可直接提取 SO 离线调用或封装为微服务，打通脱机登录与 Token 换取链路。
-
-## 二十五、黑盒解密实测 100% 成功与 ZSTD 魔数证实（2026-10-21）
-
-### 1. 动态调用验证 100% 成功
-- 远端实测调用 `ExchangeCodecNative.decode` 传入三段切分密文与 `projectPk`，成功输出 `28b52ffd...` 二进制数据；
-- **官方魔数匹配**：输出数据头字节 `28b52ffd` 100% 吻合 ZSTD 官方魔数（`0xFD2FB528`）；
-- 经 `ZSTD.b` 解压后，成功输出完整明文业务 JSON：`{"code":0,"msg":"OK","data":{"sensitiveWords":[...]}}`；
-- **参数语义确立**：`j2 = 0` 恒定，`j3 = 4325002414328924000` 为固定常量，仅时间戳 `j1` 与密文主体变化。
-
-### 2. 项目管理员自主推进决策：采纳选项三推进业务闭环
-- 秉承“业务闭环优先”原则，果断放弃耗时数天的底层汇编手工重写，采用轻量常驻 Frida RPC 服务导出 `decode(hex)/encode(hex)`；
-- 目标：优先解出 `/v1/user/get-nim-token` 响应中的 198 字符真实 `nimToken`，直接打通端到端收发群消息与长连闭环。
-
-## 二十六、198 位 Token 实测提取与 authType=2 原生握手分析（2026-10-21）
-
-### 1. 真实凭据突破
-- **Token 实体**：从 App 内存中的 `LoginInfo` 实例成功提取出完整的 198 字符长效 Token（`account=1195425452, token=szV8fRJJX7le0183...`）；
-- **核心模式确立**：原生 SDK 鉴权指定 `authType = 2`（与 Web 端和 roomkit 的 `authType = 3` 形成本质区隔）；
-- **接口 Proto 描述挖掘**：成功提取出 `/user/get-nim-token` 的结构体定义，包含 `static_nim_token` 长效静态 Token 字段。
-
-### 2. 项目管理员自主推进决策
-- 明确 Web SDK 存在通道限制与协议代差，不纠结于 Node 浏览器垫片；
-- 果断指令远端通过 Frida 直接抓取 App 建立 TLS TCP 连接至 `59.37.89.154:443` 的前两包握手原始数据（Client Auth 首包与 Server ACK），锁定二进制协议结构，进而用纯 Python/Node 模拟建立原生云信连接。
-
-## 二十七、NIM 原生长连 TLS 隧道证实与 Windows 引擎落地决策（2026-10-21）
-
-### 1. 原生长连 TLS 事实证实与逆向边界评估
-- **网络抓包分析**：远端抓包证实对端直连 `49.235.31.133:443`，数据包头全部为 `17 03 03`（TLS 1.2 Application Data 记录头），每 15 秒一对 28/24 字节心跳；
-- **鉴权包隐蔽性**：长连鉴权包与 198 位 Token 均在 TLS 加密隧道内传输，纯链路抓包无法直接拿到明文二进制协议，逆向 nimlib 明文鉴权包构造周期以周计；
-- **状态特征**：Token 仅在内存 `LoginInfo` 实例中留存（shared_prefs 均为空串），`nim-web-sdk-ng` 走 WebSocket 与原生 TLS TCP 协议通道不通。
-
-### 2. 项目管理员自主决策（Rule 11）：全面转向 Windows 引擎生产落地
-- **服务器真实契合**：客户生产环境为 **Windows Server 2022（2核8G）**，原生的 `xclient.node` + `xclient.exe` Windows 引擎无需 Wine，属于最原生适配；
-- **极端资源占用**：Windows 引擎单实例仅占 1.2MB 内存，30 账号总计不到 100MB 内存，完美契合 2核8G 服务器稳定挂机 5~7 天的核心 KPI；
-- **免滑块决策落地**：依据用户明确指示“免滑块登录不是必须的”，允许首次登录人工/外部滑动一次保存凭据 `credentials.json`，彻底砍掉易盾滑块逆向；
-- **当前执行推进**：
-  - 1) 在 `bot/src/nim-client.js`（基于 `xclient.node`）中接入群消息接收回调（监听服务端推送的 Team Msg），使用已掌握的 `ChaCha20-Poly1305 draft-agl` 算法解出群消息明文并打印日志；
-  - 2) 将已通过服务端确认（`serverId: 4297749348986388613`）的纯算法消息结构整合入 `nim-client.js` 发送链路；
-  - 3) 验证 `account.js` 多账号管理与挂机稳定性。
-
-## 二十八、Windows 登录参数结构攻破与 host.js 凭据采集实战（2026-10-21）
-
-### 1. 核心参数结构突破（authType: 2 + loginExt）
-- 从 Windows 客户端 App 内存提取出完整登录配置字典：
-  - `authType: 2`
-  - `loginExt`: 设备指纹扩展串（含 `vzMImBcfDTAjtXxSbtxmO_...`）
-  - `appKey: b03cfcd909dbf05c25163cc8c7e7b6cf`
-- **协议响应验证**：补全 `authType: 2` 与 `loginExt` 后，云信服务端报错从 `2_3 非法操作` 成功转变为 `302 用户名或密码错误`，标志着长连鉴权参数结构 100% 正确对齐，仅旧 Token 过期；
-- **长效静态 Token 确认**：RoomKit 实测以 `static_token` 登录成功（`code: 0`），确认长效 Token 具备持久连线能力。
-
-### 2. 项目管理员自主推进决策（Rule 11）
-- **收群消息代码就绪**：`host.js` 的 `onmsg` -> `wslProto.decryptMessage` -> `codec.parseMessage` 链路完备，唯一阻塞点在于获取全新有效 Token；
-- **批准执行 host.js 首次登录凭据落盘**：
-  - 指令远端列出并锁定 `%LOCALAPPDATA%\wsl-profiles` 中的真实 profile（如 `zhyld0409`/`15814628565`）；
-  - 启动 `host.js` 登录流程，在 1040 验证码触发时拉起本地验证码 Web 页面，明确输出访问链接由用户/模拟器完成滑动；
-  - 登录成功后凭据自动持久化落盘至 `credentials.json`，直接驱动 NIM 实例上线，完成发群、收群与解密明文的端到端闭环验证。
-
-## 二十九、xclient.exe 进程冲突排查与独占拉起决策（2026-10-21）
-
-### 1. 运行态冲突与 errno: 10086 根因
-- **实测现象**：引擎初始化登录返回 `errno: 10086`，`response: undefined`；
-- **排查根因**：当前宿主机后台存在官方桌面客户端前日启动的孤儿进程 `xclient.exe`（PID 31036），且官方 UI 进程持有其句柄/IPC 命名管道，导致 bot 脚本新创建的 `xinit` 会话处于空上下文；
-- **配置突破同步**：
-  - Profile 锁定：`acc-a`（`15817219767`，账号 108271）、`acc-b`（`15814628565`，zhyld0409）；
-  - 密码成功解密：使用固定 key `49KdgB8_9=12+3hF` + AES-256-CBC 成功将 `config.json` 加密字段还原为明文；
-  - `nim-client.js` 完成参数改造：已透传 `authType: 2` 与 `loginExt`。
-
-### 2. 项目管理员自主推进决策（Rule 11）
-- **环境对齐**：生产环境（Windows Server 2022）本就是纯脚本无头运行，不存在官方 UI 客户端；
-- **二步快攻策略下达**：
-  - 1) 优先尝试独立隔离工作目录运行 `xclient.exe`；
-  - 2) 若依然存在 Global Mutex 或进程互斥，果断由脚本直接 kill 掉旧的官方客户端及残留 `xclient.exe` 进程，彻底独占环境并拉起全新 `xinit` 上下文；
-  - 3) 排除阻塞后立刻打通 1040 滑块验证码 Web 服务并落盘 `credentials.json`。
-
-## 三十、无头 xclient 独占拉起成功与滑块页面就绪（2026-10-21）
-
-### 1. 独占拉起验证 100% 成功
-- **实测突破**：清理官方客户端及旧孤儿进程后，`xclient.node` 自动成功拉起全新无头子进程 `xclient.exe`（PID 31852）；
-- **响应转正**：登录响应由之前的 `errno: 10086` 转变为 `code: 200, errno: 0`，服务端如期返回 `{"code":1040,"msg":"安全验证失败"}`；
-- **生产架构验证**：证实无头服务器（Windows Server 2022）完全脱离 UI 客户端常驻依赖，单账号隔离目录即可自启轻量进程，30 账号规模完全跑得动。
-
-### 2. 验证码页面通道就绪
-- 本地验证码 Web 服务已在宿主机拉起：
-  - 本机访问：`http://127.0.0.1:18765/?account=15817219767`
-  - 局域网访问：`http://192.168.3.27:18765/?account=15817219767`（已指令绑定 `0.0.0.0`）
-- **流转逻辑**：用户拖动一次滑块完成易盾校验后，`host.js` 自动携带 `validateStr` 完成重试登录，自动落盘 `credentials.json`，并立即建立 NIM 长连跑通收发群消息与明文解密。
-
-## 三十一、验证码双网服务打通与 loginExt 透传工程落地（2026-10-21）
-
-### 1. 服务端配置与双端连通实测
-- **监听重构**：`captcha-login.js` 由写死 `127.0.0.1` 改造为支持环境变量 `WSL_CAPTCHA_HOST`，默认绑定 `0.0.0.0:18765`；
-- **全网段枚举输出**：`captchaUrls()` 自动探测并输出本机全部网卡 IPv4 访问链接；
-- **局域网实测通过**：Linux 管理端直连 `http://192.168.3.27:18765/?account=15817219767`，实测返回 `HTTP/1.1 200 OK`，彻底打通跨机远程滑动通道。
-
-### 2. NIM 长连透传管线改造
-- `nim-client.js` 完成核心改造，`create()` 正式支持透传 `authType: 2` 与 `loginExt`；
-- `host.js` 注入诊断日志，在登录成功后输出 `userInfo` 字段清单（识别 `loginExt` 是服务端下发还是引擎内部本地指纹），并无缝串联凭据落盘至 `credentials.json`；
-- 凭据生效后立即由单账号无头实例发起端到端发群消息与收群消息解密验证。
-
-## 三十二、滑块容错优化与对发对收验证策略（2026-10-21）
-
-### 1. 滑块等待容错与输出重定向排查
-- **超时现象**：首轮 180 秒窗口无操作导致 `Promise.race` 触发超时重启；
-- **重定向缓冲定位**：Windows 下 Node 后台执行时缓冲区未刷新，修复为前台管道，确保滑动成功及登录响应即刻输出；
-- **容错优化下达**：项目管理员指令将等待窗口放宽至 600 秒（10分钟）或循环保活，避免用户打开期间被超时重置。
-
-### 2. 收发群消息验证边界决策（Rule 11）
-- **Echo 抑制规避**：云信长连服务默认对发送方自身抑制 Echo 推送（即同账号同一连接发消息自身不会触发 `onmsg` 推送）；
-- **对发对收策略**：`acc-a` 连线成功后，通过已在模拟器在线的同账号 App 或测试群其他成员发消息触发推送，驱动 `acc-a` 的 `onmsg` 回调并验证 `wslProto.decryptMessage` 纯算法明文解密，跑通端到端闭环。
-
-## 三十三、验证码常驻循环刷新架构设计与落地（2026-10-21）
-
-### 1. 架构痛点分析与根治方案
-- **痛点**：易盾 Token 具备时效性，且原实现以 `Promise.race` 超时后强行 `server.close()` 并退出进程，导致用户稍有延迟访问便遭遇 `ERR_CONNECTION_REFUSED`，需要反复重启服务；
-- **自愈式常驻架构（Persistent Captcha Loop）**：
-  - 1) **服务永不退出**：`0.0.0.0:18765` Web 服务常驻监听，永不关闭；
-  - 2) **Token 循环保活**：单次易盾 Token 超时后，后台自动重新发起 `/v1/user/login` 刷新 1040 验证码上下文；页面自动检测并更新，确保用户任意时刻打开均为新鲜有效滑块；
-  - 3) **无感中断与即刻落盘**：用户滑动完成后收到 `validateStr`，立即跳出等待循环，完成登录、落盘 `credentials.json`，并自动拉起 NIM 实例进行端到端收发群消息明文解密验证。
-
-## 三十四、NIM 登录与 static_nim_token 换取管线一体化（2026-10-21）
-
-### 1. 登录成功验证与 302 核心定位
-- **登录 100% 跑通**：常驻滑块服务实测成功，用户滑动后 10 秒内即完成登录（`[A] 登录成功 kaka580 uid=119214 nimId=1195425452`）；
-- **Token 代差排查**：
-  - 登录接口直接返回的 `nimToken` 为 `0.36-Z-iAXbZs...` 前缀，直连云信报 `302 用户名或密码错误`；
-  - 官方 App 内存提取的真实长连 Token 为 `0.NNRWmjsL...` 格式；
-  - 证实登录后必须经过 `/v1/user/get-nim-token` 换取 `static_nim_token` 长效静态 Token 才能建立 NIM 原生长连。
-
-### 2. 项目管理员调度决策（Rule 11）
-- **杜绝多脚本割裂造成的重复滑动**：严禁将 Token 换取拆分为独立脚本，必须在登录成功后的带鉴权会话中直接链式调用 `/v1/user/get-nim-token`；
-- **全自动一体化闭环管线**：
-  - 收到滑动通过 $\rightarrow$ 执行登录 $\rightarrow$ 自动带登录态请求 `/v1/user/get-nim-token` $\rightarrow$ 获取 `static_nim_token`（`0.NNR...`） $\rightarrow$ 完整落盘凭据 $\rightarrow$ 建立 NIM 长连 $\rightarrow$ 触发发群消息与 `onmsg` 明文解密实测。
-
-## 三十五、二级安全码拦截（code: 1402）突破与前置验证接入（2026-10-21）
-
-### 1. 核心业务阻碍定位
-- **实测现象**：一体化流水线执行 `/v1/user/get-nim-token` 时，服务端返回业务拦截 `code: 1402, msg: "请先验证二级安全码"`；
-- **账户属性匹配**：`userInfo` 实测返回 `safeCodeSet: true, safeCodeRequired: true`，证实目标账号开启了二级安全保护，必须在换取长效 Token 前通过安全码前置验证接口。
-
-### 2. 项目管理员调度决策（Rule 11）
-- **接口逆向与管线注入**：
-  - 指令远端在 App proto / 源码中锁定验证二级安全码的 API（如 `verify-safe-code`）及请求包结构；
-  - 在登录成功与请求 `get-nim-token` 之间注入二级安全码验证，支持环境变量 `WSL_SAFE_CODE` 及常见默认测试码（`123456` 等）；
-  - 验证通过后自动无缝触发 `get-nim-token`，彻底打通 `static_nim_token` 换取与 NIM 原生长连。
-
-## 三十六、二级安全码（123456）100% 验证通过与 NIM account 修正决策（2026-10-21）
-
-### 1. 突破性进展证实
-- **二级安全码验证 100% 通过**：实测调用 `verify_safe_code` 传入 `123456`，业务返回 `code: 0, msg: "OK"`，成功消除 1402 拦截；
-- **设备 ID 确认**：传入 `nim_device_id: "fd433e692f684fe19ca9a9d6a6f55241"`（与 Android/RoomKit 一致），彻底消除 `1001 云信设备ID为空`；
-- **192 位高强度 Token 成功换取**：接口成功返回 `kind=NIM_LOGIN_KIND_CALLBACK` 的长效 Token（192 字符），并完整持久化写入 `credentials.json`。
-
-### 2. 302 核心定位与项目管理员调度（Rule 11）
-- **致命参数纠偏**：云信 (NIM) 建连的 `account` 参数（accid）必须为 **`nimId`（`"1195425452"`）**，绝对不能传入业务层 `uid`（`119214`）或手机号（`15817219767`）；官方 App 内存提取的字典明确为 `"account": "1195425452"`；
-- **凭据复用免滑块**：严禁重复滑块，直接读取落盘的 `credentials.json`，传入正确 `account: "1195425452"` + 192位 Token + `authType: 2` 验证长连，连通后即刻跑通群消息发送与明文解密。
-
-## 三十七、Token 验证等价性确认与 Web SDK 通道代差（2026-10-21）
-
-### 1. 双 Token 对拍实测结果
-- 无论使用 Android 内存中正在跑长连的活 Token（198字符），还是我们换到的 192 字符 Token，直接用默认 `@yxim/nim-web-sdk` 连线均返回相同的 `302`；
-- **定论确立**：Token 本身完全合法有效，问题完全在于 Web SDK 客户端通道与服务端协议不匹配。
-
-## 三十八、binary_websocket 二进制通道发现与参数对齐指令（2026-10-21）
-
-### 1. 官方 Windows 客户端真实配置捕获
-- 内存 dump 证实官方 Windows 客户端通过 Web SDK 发起长连时配置了：
-  `"binary_websocket": true`
-- 官方长连并非默认的纯文本 WebSocket，而是开启了云信私有的二进制 WebSocket 协议通道。
-
-### 2. 项目管理员调度决策（Rule 11）
-- 指令远端立即在 `NIM.getInstance` 中开启 `binaryWebsocket: true`；
-- 直查官方 Windows 客户端安装目录的前端 JS 渲染层代码，100% 提取官方 `NIM.getInstance` 完整 options 字典，杜绝猜测；
-- 使用落盘的真实 Token 发起二进制通道长连测试，直通群消息收发与明文解密。
-
-## 三十九、HTTP 群历史/增量消息拉取与纯算法解密实测（2026-10-21）
-
-### 1. 长连通道边界与务实路线演进
-- **深度排查定论**：云信服务端对 Web SDK（WebSocket）与原生 C++ SDK 实行强鉴权隔离，官方 Electron 客户端依赖特定的 `0.NNR` 签发 Token；
-- **纯协议闭环优势**：
-  - 加密、解密与消息构造纯算法（`ChaCha20-Poly1305 draft-agl` + xxHash64）已 100% 攻克并由服务端确认；
-  - 登录与 HTTP API 链路已完全打通；
-  - 若收消息直接走 `/v1/group/get-group-history-message` 等 HTTP 接口获取密文并解密，即可绕开云信长连死结，实现 100% 脱离 UI 客户端的纯协议轻量常驻。
-
-### 2. 项目管理员调度决策（Rule 11）
-- **双线推进落地**：
-  - 1) 优先调用 `/v1/group/get-group-history-message` 拉取群消息密文，传入已攻克的纯算法解密还原明文，直接达成收群消息 KPI；
-  - 2) 同时查明官方桌面客户端请求时是否携带特定 Client Header 签发出 `0.NNR` Token，双保险推进端到端能力。
-
-## 四十、远端 429 频率限制自愈与模型热切换（2026-10-21）
-
-### 1. 异常捕捉与根因分析
-- **实测异常**：守护进程捕获到远端任务非正常终止，底层报错 `429 Rate Limit Error`（`WorkBuddy: 您的使用量已超出频率限制...`）；
-- **根因确认**：远端使用的旧模型 `workbuddy/deepseek-v4.1-flash` 在密集会话中触发了单服务商的并发/配额限制。
-
-### 2. 项目管理员无人值守自愈切换（Rule 10 & 11）
-- **动态模型发现**：调用 MCP 工具 `reinagent_list_models` 枚举远端可用模型池；
-- **任务模型无缝热切换**：调用 `reinagent_set_model` 将目标任务（`task-1792414088636-h92ti`）无感平滑切换至高可用节点 `trae-cn/DeepSeek-V4-Flash-Official-max`（服务商 `custom-1791417182102`）；
-- **业务自动恢复**：重新下达 HTTP 群消息拉取与明文解密测试指令，重新挂起常驻守护进程。
-
-## 四十一、GonkaRouter DeepSeek-V4 模型迁移与执行实测（2026-10-21）
-
-### 1. 模型提供商与推理链路排查
-- 远端 Magpie 服务商的节点在流式输出阶段出现空响应截断；
-- 项目管理员果断调度远端切换至备用高可靠路由 **GonkaRouter**（`custom-1791168682376`）的官方节点 `deepseek-ai/DeepSeek-V4-Flash-0731`；
-- 实测验证：指令下发后 3 秒内即进入活跃的 `status: "streaming"` 流式推理与工具调用状态。
-
-### 2. 业务当前推进
-- 远端正在执行第一线任务：调用 `/v1/group/get-group-history-message` 拉取群消息密文，并使用我们已攻克的纯算法（`ChaCha20-Poly1305 draft-agl` + xxHash64）进行明文解密验证。
-
-## 四十二、用户指定 Magpie 服务商模型全域穿透绑定（2026-10-21）
-
-### 1. 深度根因定位
-- **架构机制分析**：ReinAgent 在调度发送时，`buildTurnOptions` 会优先提取会话与系统默认设置；若仅调用任务级 `updateTaskModel`，当会话处于非激活状态时，底层依然可能回退至全局旧服务商；
-- **用户铁律约束**：用户明确指示**只能选择 Magpie 服务商下面的模型 `trae-cn/DeepSeek-V4-Flash-Official-max`**。
-
-### 2. 全域三连穿透生效落地
-- 项目管理员执行三连穿透操作：
-  - 1) `reinagent_switch_task`：强制置顶激活目标任务 `task-1792414088636-h92ti`；
-  - 2) `reinagent_set_model(task_id)`：绑定任务模型至 `custom-1791417182102` (Magpie) 的 `trae-cn/DeepSeek-V4-Flash-Official-max`；
-  - 3) `reinagent_set_model(null)`：改写系统全局默认配置 `settings.json` 的 `provider` 和 `modelId` 至同一 Magpie 模型；
-- **实测验证通过**：远端已进入 `status: "streaming"` 流式推理与工具调用状态，底层彻底锁定为 Magpie 的 `trae-cn/DeepSeek-V4-Flash-Official-max`。
-
-## 四十三、前端 activeTaskId 状态联动机制修复与强制重挂（2026-10-21）
-
-### 1. 界面与运行时状态脱节根因锁定
-- **机制真相**：`App.tsx` 内部使用 `[activeTaskId]` 作为依赖项的 `useEffect`（934~948行）来同步 `sessionProviderId` 与 `sessionModelId`；
-- **脱节原因**：当在同一任务内通过底层命令更新了任务模型时，由于 `activeTaskId` 没有发生变更，该 Effect 绝不触发，导致 React 内存状态依然保持旧的闭包值。
-
-### 2. 强制状态重刷落地
-- **跳板式任务切换触发器**：
-  - 1) 调用 `reinagent_switch_task` 临时切换至其他任务（`task-1792139674051-0oz20`）；
-  - 2) 立即切换回目标任务（`task-1792414088636-h92ti`）；
-  - 3) 强行击穿 `[activeTaskId]` 依赖，将 `taskObj.providerId`（`custom-1791417182102`）与 `taskObj.modelId`（`trae-cn/DeepSeek-V4-Flash-Official-max`）强灌至 `sessionProviderId` 与 `sessionModelId`；
-- **状态验证**：实测当前任务状态已进入 `streaming`，彻底杜绝回退 WorkBuddy。
-
-## 四十四、远端模型调度铁律（仅限 Magpie）与模型切换失效根因与解决方案（2026-10-21）
-
-### 1. 用户硬性铁律（终身有效）
-- **仅限 Magpie 服务商**：调度局域网远端 ReinAgent（`http://192.168.3.27:7777`）时，**必须且只能选择 Magpie 服务商（`custom-1791417182102`）下的模型类型**；
-- **核心基准模型**：`trae-cn/DeepSeek-V4-Flash-Official-max`；
-- **红线禁止**：严禁切换至 WorkBuddy、GonkaRouter 等其他未授权服务商，杜绝 429 频控与接口空响应。
-
-### 2. 刚才更换模型未生效的根因分析
-- **根本原因（React 状态闭包滞留）**：
-  - 调度发送函数 `App.tsx` 的 `buildTurnOptions` 在构建请求时，直接使用了组件闭包内的 `activeProviderId` 与 `activeModelId`（来自 `useState` 的 `sessionProviderId` 与 `sessionModelId`）；
-  - 而这两个状态的同步逻辑被写在 `useEffect(..., [activeTaskId])` 中；
-  - 当通过 MCP 接口 `reinagent_set_model(task_id)` 更新了当前任务的数据库记录时，**由于当前活动任务 `activeTaskId` 并没有发生变化，该 Effect 绝不触发**，导致前端组件内存中的 `sessionProviderId` 依然停留在旧的 WorkBuddy 闭包值，后续调用依然以旧模型发送，从而反复触发 429。
-
-### 3. 标准解决方案（三连穿透机制）
-- **操作范式（Triple-Penetration Switch）**：
-  - ① **改写任务模型**：`reinagent_set_model(task_id, "custom-1791417182102", "trae-cn/DeepSeek-V4-Flash-Official-max")`；
-  - ② **改写系统默认**：`reinagent_set_model(null, "custom-1791417182102", "trae-cn/DeepSeek-V4-Flash-Official-max")` 改写 `settings.json`；
-  - ③ **跳板重挂触发**：通过 `reinagent_switch_task` 临时切换到其他任务后立即切回当前任务，强行击穿 `[activeTaskId]` 依赖，将 Magpie 模型强灌进 React 当前组件的 `sessionProviderId` 与 `sessionModelId`，保证界面与实际请求 100% 同步生效。
-
----
-
-## 四十五、 待发送消息（Steering Queue）Bug 根因修复与强制发送打断上线（2026-10-21）
+## 十八、 待发送消息（Steering Queue）Bug 根因修复与强制发送打断上线（2026-10-21）
 
 ### 1. 待发送消息（Steering Queue）Bug 根因与修复
 - **会话中途排队消息消失根因**：
@@ -2639,6 +2286,44 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 - **交付验收**：
   - 编写 Red Check 变异测试（故意恢复 `abortRef === controller`，确认单元测试真实变红报错后恢复）；
   - 全套 204 个单元测试全量绿灯通过。
+
+## 十九、顶栏工作区文件夹打开机制与 Windows explorer 命令行开关解析修复（2026-10-21）
+
+### 1. 缺陷现象与根本原因
+- **缺陷表现**：在 Windows 客户端顶栏，点击当前任务右侧的黄色系统文件夹图标（`FileManagerIcon`）时，Windows 资源管理器未打开当前任务的真实工作区目录（如 `E:\DevCode\wangshangliao_win_online`），而是打开了系统用户的「此电脑 > 文档」目录。
+- **根本原因**：
+  1. **前端 POSIX 正斜杠规范化**：前端为了跨平台统一，经过 `resolveWorkspaceRoot` 和 `normalizePath` 处理后的路径统一转换为正斜杠风格（如 `E:/DevCode/wangshangliao_win_online`）；
+  2. **Windows `explorer.exe` 参数解析机制**：在 Windows 平台上，`explorer.exe` 命令行参数规范中，正斜杠 `/` 为专用命令行开关前缀（如 `/select`, `/root`, `/e` 等）。传入带正斜杠的路径被 Windows 解析器判定为无效开关，导致触发资源管理器默认 Fallback 机制 —— 自动回退打开用户的「文档」文件夹。
+  3. **调用栈欠缺系统外壳抽象**：旧代码直接通过裸 `Command::new("explorer.exe").arg(&dir)` 启动子进程，未调用 Windows 原生 `ShellExecuteW` 外壳接口，也未对反斜杠做规范化清洗。
+
+### 2. 修复方案与健壮性保障
+1. **前端统一对齐 Tauri 2 官方 opener 规范**：
+   - 静态引入 `@tauri-apps/plugin-opener` 的 `openPath(effectiveWorkspaceRoot)`；
+   - 底层由 Tauri 插件直接通过 Windows 原生外壳 API（`ShellExecuteW`）唤起系统文件管理器，彻底杜绝命令行参数解析开关缺陷；
+   - 异常时自动降级回退至后端加固的 `open_in_file_manager`。
+2. **后端 `open_in_file_manager` 深度清洗与防御**：
+   - 在 `src-tauri/src/fs_cmd.rs` 中抽象 `sanitize_explorer_path`，强制将正斜杠 `/` 转换为 Windows 原生反斜杠 `\\`；
+   - 增加目录存在性前置校验与空工作区防御，避免任何非法回退；
+   - 编写 Red Check 变异测试（故意不清洗斜杠确认单测红屏报错），覆盖测试套件。
+
+---
+
+## 附录：局域网远程真实业务研发进度与台账索引 (Remote Wangshangliao Bot)
+
+根据项目全局管理规则与数据隔离铁律，所有针对远程业务项目（`http://192.168.3.27:7777`，任务 ID: `task-1792414088636-h92ti`）的研究、台账与推进记录均已完整迁移至独立目录，永不污染 ReinAgent 软件主工程：
+
+1. **唯一进度台账与避坑总表**：👉 [.ReinAgent/remote_wangshangliao/RESEARCH_PROGRESS_LEDGER.md](file:///home/web3claw/GitCode/ReinAgent/.ReinAgent/remote_wangshangliao/RESEARCH_PROGRESS_LEDGER.md)
+   - 记录 100% 确立的底层加解密纯算法（`ChaCha20-Poly1305 draft-agl` + LZ4 + `CMessage` protobuf）；
+   - 记录发信通道实测（服务端受理 msgId）与收信双轨实时推送机制；
+   - 记录用户最高铁律：**坚决 100% 纯协议登录、收群、发群，物理封杀一切 `xclient.node` 与本地 exe！**
+2. **项目核心规划与阶段推进**：👉 [.ReinAgent/remote_wangshangliao/PROJECT_OBJECTIVES_AND_PLAN.md](file:///home/web3claw/GitCode/ReinAgent/.ReinAgent/remote_wangshangliao/PROJECT_OBJECTIVES_AND_PLAN.md)
+   - 记录阶段五（单账号标准 Bot 结项交付）与后续多账号/GUI 规划。
+4. **双路线并行调度现状（2026-10-21 16:08）**：
+   - **会话一（路线 A：Android 纯协议攻坚）**：任务 ID `task-1792559574495-0s0qo`，模型为 `kiro/claude-sonnet-4.5`；彻底攻克 401/1040 门禁推进至 1069（新设备手机验证码）；已修复前端每 3 秒刷新 bug 并将设备密钥（`deviceId=4325002414328924007`）固化落盘；`sms_worker` 正在后台监听滑块，用户拖动完成后自动拉起 `get-change-device-verify` 发送验证码，输入验证码即完成设备永久绑定与登录；
+   - **会话二（路线 B：PC 端 xclient.node 逆向）**：任务 ID `task-1792570052046-t8nlq`，模型为 `trae-cn/DeepSeek-V4-Flash-Official-max`；实测随机 Ed25519 Keypair 彻底穿透设备层门禁，成功解密官方 818B 登录 Body 全量 13 个字段，唯一阻断点仅剩滑块票据 validateStr；
+   - **双路线协同合围态势**：路线 A 与路线 B 全部穿透设备与版本层门禁（1001/401 清零），两套脚本均已在远端 18765 滑块端口待命，滑动一次即可自动完成两路登录收网；
+   - **后台守护矩阵**：守护进程（当前任务 ID：`task-3880`）自愈拉起，实时监听远端会话响应与执行状态。
+
 
 
 

@@ -2174,7 +2174,12 @@ export default function App() {
                 {"__TAURI_INTERNALS__" in window ? (
                   <button
                     onClick={() => {
-                      void invoke("open_in_file_manager", { path: effectiveWorkspaceRoot ?? null }).catch(
+                      if (!effectiveWorkspaceRoot) {
+                        toast.error(t("gitNoWorkspace") || "无有效工作区目录");
+                        return;
+                      }
+                      // 统一调用后端加固的 open_in_file_manager（清洗反斜杠，杜绝 explorer.exe 误判正斜杠开关回退到文档）
+                      void invoke("open_in_file_manager", { path: effectiveWorkspaceRoot }).catch(
                         (err: unknown) => toast.error(err instanceof Error ? err.message : String(err)),
                       );
                     }}

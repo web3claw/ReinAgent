@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.2</span>
+        下载 <span data-latest-version>v0.2.7</span>
       </a>
     </div>
   </div>
@@ -120,6 +120,22 @@
   </tbody>
 </table></div>
 <div class="note note--warn">若上游接口未返回某个指标，UI 会明确展示为未提供 / 未知并提示用户，绝不臆造。</div>
+
+<h2>OpenCode Zen (Free) 免费模型通道（开箱即用）</h2>
+<p>为了让所有用户无需任何付费门槛即可体验顶级编程大模型，ReinAgent 内置预设了 <strong>OpenCode Zen (Free)</strong> 服务商：</p>
+<ul>
+  <li><strong>免 API Key 放行</strong>：端点预设为 <code>https://opencode.ai/inference/v1</code>，默认 API Key 为 <code>public</code>，完全无需绑卡或申请权限；</li>
+  <li><strong>一键动态拉取最新免费清单</strong>：点击「🔄 刷新模型列表」，ReinAgent 自动携带指纹访问官方端点拉取全量免费大模型（如 <code>big-pickle</code> 与各主流厂商开源的 <code>-free</code> 序列）；</li>
+  <li><strong>全自动协议指纹与风控穿透</strong>：底层内置 <code>opencodeZenAdapter</code>，在模型调用时自动注入符合规范的会话 Session ID 与 5 大核心 Tools（<code>bash</code>、<code>edit</code>、<code>glob</code>、<code>grep</code>、<code>read</code>）占位守护，强制原生流式（<code>stream: true</code>），彻底根除官方服务端的 <code>403 FreeTierError</code> 限制。</li>
+</ul>
+
+<h2>权威同步与智能模型合并</h2>
+<p>在任意服务商点击「🔄 刷新模型列表」时，ReinAgent 采用先进的权威同步算法：</p>
+<ul>
+  <li><strong>淘汰更名/失效模型</strong>：官方不再返回的旧模型会被自动清理剔除，杜绝历史过期模型残留；</li>
+  <li><strong>保护用户自定义模型</strong>：凡是用户手动添加并标记为自定义的模型（<code>isCustom: true</code>），100% 受到安全保护，绝不被覆盖或删除；</li>
+  <li><strong>对齐视觉规范</strong>：当前默认模型在操作栏右侧同一列以高亮翠绿徽标 <code>[当前默认]</code> 呈现，非默认模型显示 <code>设为默认</code> 按钮，整齐统一。</li>
+</ul>
 
 <h2>统一出站代理</h2>
 <p>在应用中配置 HTTP / SOCKS 代理后，软件内所有出站请求严格走代理：大模型 API 交互、远程模型列表拉取、自更新检查、云端实时语音 STT、Web 抓取、Cloudflare 隧道组件下载。以下地址按白名单自动直连：<code>localhost</code>、<code>127.0.0.1</code>、内部 Ollama 服务等。代理设置会自动同步给 WebView2 / 内置浏览器及终端拉起的子进程环境变量。</p>

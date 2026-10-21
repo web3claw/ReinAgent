@@ -4,7 +4,7 @@ import fs from "node:fs";
 const HOST = process.env.REINAGENT_HOST || "192.168.3.27";
 const PORT = parseInt(process.env.REINAGENT_PORT || "7777", 10);
 const TOKEN = process.env.REINAGENT_TOKEN || "508ba64c24664b369d2114bc18356022";
-const TASK_ID = process.env.REINAGENT_TASK_ID || "task-1792414088636-h92ti";
+const TASK_ID = process.argv[3] || process.env.REINAGENT_TASK_ID || "task-1792559574495-0s0qo";
 const OUTPUT_FILE = process.argv[2] || "/tmp/remote_full_dialogue.json";
 
 console.log(`Connecting to ${HOST}:${PORT} to dump all messages of ${TASK_ID}...`);

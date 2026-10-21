@@ -46,3 +46,25 @@ fn gitignore_ensured_for_writes_under_reinagent_any_depth() {
     assert!(!ws.join("project/.gitignore").exists());
     let _ = fs::remove_dir_all(&ws);
 }
+
+#[test]
+fn sanitize_explorer_path_replaces_all_forward_slashes() {
+    let p = Path::new("E:/DevCode/wangshangliao_win_online");
+    assert_eq!(
+        crate::fs_cmd::sanitize_explorer_path(p),
+        "E:\\DevCode\\wangshangliao_win_online"
+    );
+    assert!(!crate::fs_cmd::sanitize_explorer_path(p).contains('/'));
+}
+
+#[test]
+fn sanitize_explorer_path_windows_drive_variations() {
+    let p1 = Path::new("D:/MyProjects/Test");
+    assert_eq!(crate::fs_cmd::sanitize_explorer_path(p1), "D:\\MyProjects\\Test");
+
+    let p2 = Path::new("C:/Users/Admin/.ReinAgent/DefaultProject");
+    assert_eq!(
+        crate::fs_cmd::sanitize_explorer_path(p2),
+        "C:\\Users\\Admin\\.ReinAgent\\DefaultProject"
+    );
+}
