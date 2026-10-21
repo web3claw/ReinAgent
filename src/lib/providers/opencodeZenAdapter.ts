@@ -75,17 +75,31 @@ export function isOpenCodeZenFreeModel(id: string | undefined | null): boolean {
 }
 
 /**
+ * 规范化 OpenCode Zen 端点：
+ * 强制重写至 https://opencode.ai/inference/v1（自 2026-10-13 起 /zen/v1 对免费层返回 403 FreeTierError）
+ */
+export function normalizeOpenCodeUrl(url: string): string {
+  if (!isOpenCodeZenUrl(url)) return url;
+  return url
+    .replace("https://opencode.ai/zen/v1", "https://opencode.ai/inference/v1")
+    .replace("http://opencode.ai/zen/v1", "https://opencode.ai/inference/v1")
+    .replace("https://opencode.ai/v1", "https://opencode.ai/inference/v1")
+    .replace("http://opencode.ai/v1", "https://opencode.ai/inference/v1");
+}
+
+/**
  * 为发往 OpenCode Zen 的请求进行请求头、会话指纹与工具占位装饰，
  * 彻底避免 403 FreeTierError
  */
 export function decorateOpenCodeZenRequest(
-  url: string,
+  rawUrl: string,
   init?: RequestInit,
 ): { url: string; init: RequestInit } {
   const options: RequestInit = { ...(init ?? {}) };
-  if (!isOpenCodeZenUrl(url)) {
-    return { url, init: options };
+  if (!isOpenCodeZenUrl(rawUrl)) {
+    return { url: rawUrl, init: options };
   }
+  const url = normalizeOpenCodeUrl(rawUrl);
 
   const headers = new Headers(options.headers);
   const session = opencodeID("ses", true);
@@ -106,7 +120,7 @@ export function decorateOpenCodeZenRequest(
     headers.set("authorization", "Bearer public");
   }
 
-  // 处理请求体（Tools 占位守护与 stream 保证）
+  // 处理请求体（5 个核心 Tools 占位守护与 stream 保证）
   if (options.body && typeof options.body === "string") {
     try {
       const parsed = JSON.parse(options.body);
@@ -117,10 +131,16 @@ export function decorateOpenCodeZenRequest(
           parsed.stream = true;
           changed = true;
         }
-        // 保证 tools 字段非空（Zen 免费层必须携带 tools，否则报 403）
-        if (!Array.isArray(parsed.tools) || parsed.tools.length === 0) {
-          parsed.tools = OPENCODE_CORE_TOOLS;
-          changed = true;
+        // 保证 5 个核心 tools 齐备（Zen 免费层缺少任意一个核心工具均报 403）
+        parsed.tools = Array.isArray(parsed.tools) ? parsed.tools : [];
+        const presentNames = new Set(
+          parsed.tools.map((t: any) => t?.function?.name || t?.name).filter(Boolean),
+        );
+        for (const coreTool of OPENCODE_CORE_TOOLS) {
+          if (!presentNames.has(coreTool.function.name)) {
+            parsed.tools.push(coreTool);
+            changed = true;
+          }
         }
         if (changed) {
           options.body = JSON.stringify(parsed);
@@ -134,3 +154,4 @@ export function decorateOpenCodeZenRequest(
   options.headers = headers;
   return { url, init: options };
 }
+

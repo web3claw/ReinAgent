@@ -153,6 +153,7 @@ async fn handle_proxy(
     };
 
     // ---- 转发请求（剥离本代专属头与 hop-by-hop 头）----
+    let is_opencode = upstream_url.to_ascii_lowercase().contains("opencode.ai");
     let mut req = client.request(method.clone(), &upstream_url);
     for (name, value) in headers.iter() {
         let lower = name.as_str().to_ascii_lowercase();
@@ -163,11 +164,28 @@ async fn handle_proxy(
             || lower == "origin"
             || lower == "referer"
             || lower == "accept-encoding"
+            || (is_opencode
+                && (lower.starts_with("sec-")
+                    || lower == "user-agent"
+                    || lower.starts_with("x-stainless-")
+                    || lower == "x-session-affinity"))
         {
             continue;
         }
         req = req.header(name.clone(), value.clone());
     }
+
+    if is_opencode {
+        req = req.header(
+            "user-agent",
+            "opencode/1.19.0 ai-sdk/provider-utils/4.0.23 runtime/bun/1.3.14",
+        );
+        req = req.header("x-opencode-client", "cli");
+        if !headers.contains_key("x-opencode-project") {
+            req = req.header("x-opencode-project", "global");
+        }
+    }
+
     if !body.is_empty() {
         req = req.body(body);
     }

@@ -1,6 +1,6 @@
 [package]
 name = "ReinAgent"
-version = "0.2.7"
+version = "0.2.8"
 description = "A Tauri App"
 authors = ["you"]
 edition = "2021"
@@ -44,7 +44,7 @@ tauri-plugin-notification = "2"
 tauri-plugin-http = "2"
 # LLM 本地流式反代（llm_proxy.rs）：bytes_stream 流式回传 + 按kv代理出网。
 # 版本与 tauri-plugin-http 的 reqwest 对齐（0.13），feature 并集共享同一编译单元
-reqwest = { version = "0.13", default-features = false, features = ["stream", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["stream", "json", "native-tls"] }
 serde = { version = "1", features = ["derive"] }
 rusqlite = { version = "0.32", features = ["bundled"] }
 serde_json = { version = "1", features = ["raw_value"] }

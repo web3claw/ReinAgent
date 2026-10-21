@@ -230,11 +230,10 @@ ReinAgent 架构全景
       - **淘汰失效/已更名旧模型**：对于旧列表中存在但本次上游未返回的非自定义模型（`isCustom !== true`），判定为已更名或已废弃，自动从列表中剔除清理，杜绝更名旧模型残留；
       - **用户自定义模型保护**：用户通过“+ 添加自定义模型”（`ModelEditModal`）手动创建的模型（带有 `isCustom: true` 标记），无条件 100% 安全保留；
     - **模型搜索与过滤**：支持通过 `🔍 搜索模型...` 输入框快速模糊过滤模型 ID 与名称；
-    - **主流预设服务商**：6 大主流预设服务商（DeepSeek、OpenAI、Anthropic、Gemini、OpenCode Zen (Free)、Ollama）默认模型列表设为空（`models: []`），初始呈现空引导文案，由用户通过“🔄 刷新模型列表”自动探测拉取或“+ 添加模型”自定义；
-    - **OpenCode Zen (Free) 专属免费通道与风控穿透架构**：
+    - **主流预设服务商**：6 大主流预设服务商（DeepSeek、OpenAI、Anthropic、Gemini、OpenCodeZen、Ollama）默认模型列表设为空（`models: []`），初始呈现空引导文案，由用户通过“🔄 刷新模型列表”自动探测拉取或“+ 添加模型”自定义；
+    - **OpenCodeZen 专属免费通道与风控穿透架构**：
       - 位于 `Ollama (Local)` 正上方，ID 为 `opencode-zen-free`，Base URL 为 `https://opencode.ai/inference/v1`，默认 API Key 为 `public`（免 Key 放行）；
-      - 点击“刷新模型列表”时，自动携带 OpenCode 专属指纹（`User-Agent`、`Authorization: Bearer public` 等）访问 `/v1/models`，并精确过滤全部免费模型（包含 `-free` 后缀以及经典免费模型 `big-pickle` 等）；
-      - 真实模型调用与连通性测试时，通过 `src/lib/providers/opencodeZenAdapter.ts` 自动进行协议指纹伪装（官方规范 Session ID、有序请求 ID）以及 5 大核心 Tools（`bash`, `edit`, `glob`, `grep`, `read`）占位守护，强制原生 `stream: true`，彻底避免触发官方服务端自 2026 年 10 月中旬起强化的 `403 FreeTierError`；
+      - 真实模型调用与连通性测试时，通过 `src/lib/providers/opencodeZenAdapter.ts` 自动进行协议指纹伪装（官方规范 Session ID、有序请求 ID）以及 5 大核心 Tools（`bash`, `edit`, `glob`, `grep`, `read`）占位守护，强制原生 `stream: true` 并将端点规范化至 `/inference/v1`；针对 Webview（浏览器环境）对 User-Agent 静默剥离的问题，Rust 本地反代（`src-tauri/src/llm_proxy.rs`）在核心转发层针对 `opencode.ai` 强制重写注入官方 CLI `User-Agent`，并彻底剥离暴露浏览器身份的全部 `sec-*` 与跨域头，确保出网报文与官方 CLI 字节级一致，彻底攻克官方服务端自 2026 年 10 月中旬起强化的 `403 FreeTierError`；
   - **向下兼容与后端磁盘持久化（对标 ZCode ~/.ReinAgent/provider_config.json）**：
     - 多服务商完整配置由 Tauri/Rust 后端维护，直接独立持久化存储至宿主用户主目录下的 `~/.ReinAgent/provider_config.json`（避免浏览器 LocalStorage 容量限制或清理丢失）；
     - 前端通过 Tauri IPC 命令 `provider_config_load` / `provider_config_save` 实时异步读写；
@@ -1551,7 +1550,8 @@ ReinAgent 架构全景
      - 按钮文本变为「下载中」(`updaterDownloading`)；
      - 按钮内展示 SVG 圆圈进度条 (`CircularProgress`)，中间实时显示百分比数值 `{percent}%`。
 
-**验证**：`tsc` 0；`cargo check` 0 警告；Rust 单测 `self_update` 6 例全部通过（包含版本比较、产物命名、代理分流、小文件拒绝、截断 ELF 段表检测预检）；`bun test` 492 项全绿。
+- **HTTPS 通信协议栈修复（2026-10-22）**：`src-tauri/Cargo.toml` 中 `reqwest` 依赖之前配置了 `default-features = false, features = ["stream", "json"]`，缺少 TLS 协议栈支持；导致 `self_update.rs` 访问 `https://` 官方更新源时 hyper 抛出 `ConnectError("invalid URL, scheme is not http")`，界面误亮黄色「获取更新信息失败」感叹号。在 `Cargo.toml` 中为 `reqwest` 补齐 `native-tls`，并在 `self_update.rs` 增加 `build_client_supports_https_scheme` 守护单测，直连 GitHub 官方 Release `latest.json` 响应 200 OK 恢复正常。
+**验证**：`tsc` 0；`cargo check` 0 警告；Rust 单测 `self_update` 7 例全部通过（包含 HTTPS 协议支持、版本比较、产物命名、代理分流、小文件拒绝、截断 ELF 段表检测预检）；`bun test` 492 项全绿。
 
 ### macOS 编译适配与验证（2026-10-10 修复完成）
 

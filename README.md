@@ -117,9 +117,9 @@ ReinAgent 致力于为开发者打造极致轻量、超高响应速度与 100% �
 - **代码改动检查点与原子回退（Checkpoint & Rewind）**：
   - 文件修改前由 Rust 后端自动留存前像，UI 支持逐轮代码改动撤销，具备 SHA-256 指纹 TOCTOU 冲突防护。
 
-### 9. 真实多协议接入、零猜测铁律与 OpenCode Zen (Free) 开箱即用
-- **OpenCode Zen (Free) 专属免费模型通道（开箱即用，免配置 Key）**：
-  - **默认免 Key 放行**：内置预设服务商 `OpenCode Zen (Free)`（Base URL 为 `https://opencode.ai/inference/v1`，默认 API Key 为 `public`），无需充值、无需绑定任何外部信用卡；
+### 9. 真实多协议接入、零猜测铁律与 OpenCodeZen 开箱即用
+- **OpenCodeZen 专属免费模型通道（开箱即用，免配置 Key）**：
+  - **默认免 Key 放行**：内置预设服务商 `OpenCodeZen`（Base URL 为 `https://opencode.ai/inference/v1`，默认 API Key 为 `public`），无需充值、无需绑定任何外部信用卡；
   - **一键动态拉取全部免费模型**：点击「🔄 刷新模型列表」即可直连官方 `/v1/models` 端点拉取并过滤所有可用免费模型（包含 `big-pickle` 及各类 `-free` 官方免费大模型序列）；
   - **全自动协议指纹与风控穿透**：运行时自动注入官方客户端规范的会话指纹（Session ID、有序请求 ID）与 5 大内置工具占位（`bash`, `edit`, `glob`, `grep`, `read`），强制原生流式（`stream: true`），彻底杜绝 `403 FreeTierError`，普通用户启动软件即可免费畅快使用！
 - **动态模型刷新权威同步与自定义模型保护**：
@@ -128,7 +128,7 @@ ReinAgent 致力于为开发者打造极致轻量、超高响应速度与 100% �
   - 操作区视觉对齐：高亮翠绿的 `[当前默认]` 胶囊与常规灰色 `设为默认` 按钮在右侧同一列严格对齐，点击切换丝滑直观。
 - **多协议原生适配**：支持 `Chat Completions (/chat/completions)`、`Anthropic Messages (/v1/messages)`、`Responses (/responses)` 与 `Google Generative AI (/models)` 协议；
 - **Fail-Fast 连通性探测**：切换 API 格式即发起真实握手探测，Base URL 规范化清洗与自动追加 `/v1`；
-- **主流预设与自定义端点**：预设 DeepSeek、OpenAI、Anthropic Claude、Google Gemini、OpenCode Zen (Free)、Ollama 等，并支持自由添加自定义兼容服务商。
+- **主流预设与自定义端点**：预设 DeepSeek、OpenAI、Anthropic Claude、Google Gemini、OpenCodeZen、Ollama 等，并支持自由添加自定义兼容服务商。
 
 ### 10. 内置浏览器与 Web 自动化
 - **无头与内嵌双模式**：

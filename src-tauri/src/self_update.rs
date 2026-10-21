@@ -785,5 +785,25 @@ mod tests {
 
         let _ = std::fs::remove_file(&elf_file);
     }
+
+    /// 回归守护测试（2026-10-22）：验证 build_client 构建的 reqwest 客户端必须具备 TLS 支持，
+    /// 严禁因缺少 TLS feature 抛出 "invalid URL, scheme is not http" 错误。
+    #[tokio::test]
+    async fn build_client_supports_https_scheme() {
+        let client = build_client(DEFAULT_FEED).expect("build_client 应当成功");
+        let resp = client.get(DEFAULT_FEED).header("Accept", "application/json").send().await;
+        match resp {
+            Ok(r) => {
+                assert!(r.status().is_success() || r.status().is_redirection());
+            }
+            Err(e) => {
+                let err_str = e.to_string();
+                assert!(
+                    !err_str.contains("scheme is not http"),
+                    "reqwest 客户端缺少 TLS feature，导致无法发起 HTTPS 请求: {err_str}"
+                );
+            }
+        }
+    }
 }
 

@@ -59,7 +59,7 @@ export const PROVIDERS: ProviderMeta[] = [
   },
   {
     id: "opencode-zen-free",
-    name: "OpenCode Zen (Free)",
+    name: "OpenCodeZen",
     defaultBaseUrl: "https://opencode.ai/inference/v1",
     defaultModelId: "",
     api: "openai-completions",

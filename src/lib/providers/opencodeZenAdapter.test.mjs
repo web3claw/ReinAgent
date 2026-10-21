@@ -75,3 +75,48 @@ test("decorateOpenCodeZenRequest: decorates opencode requests with headers, tool
   assert.equal(body.tools.length, OPENCODE_CORE_TOOLS.length);
   assert.equal(body.tools[0].function.name, "bash");
 });
+
+test("normalizeOpenCodeUrl: rewrites legacy /zen/v1 to /inference/v1", () => {
+  const { normalizeOpenCodeUrl } = require("./opencodeZenAdapter.ts");
+  assert.equal(
+    normalizeOpenCodeUrl("https://opencode.ai/zen/v1/chat/completions"),
+    "https://opencode.ai/inference/v1/chat/completions"
+  );
+  assert.equal(
+    normalizeOpenCodeUrl("https://opencode.ai/v1/chat/completions"),
+    "https://opencode.ai/inference/v1/chat/completions"
+  );
+  assert.equal(
+    normalizeOpenCodeUrl("https://api.deepseek.com/v1"),
+    "https://api.deepseek.com/v1"
+  );
+});
+
+test("decorateOpenCodeZenRequest: supplements missing core tools into existing tools", () => {
+  const customTool = {
+    type: "function",
+    function: { name: "my_custom_tool", description: "custom", parameters: {} }
+  };
+  const originalInit = {
+    method: "POST",
+    headers: {},
+    body: JSON.stringify({
+      model: "big-pickle",
+      messages: [{ role: "user", content: "hi" }],
+      tools: [customTool]
+    })
+  };
+
+  const { init } = decorateOpenCodeZenRequest("https://opencode.ai/inference/v1/chat/completions", originalInit);
+  const body = JSON.parse(init.body);
+  // 1 custom tool + 5 core tools = 6 tools
+  assert.equal(body.tools.length, 6);
+  const names = body.tools.map((t) => t.function.name);
+  assert.ok(names.includes("my_custom_tool"));
+  assert.ok(names.includes("bash"));
+  assert.ok(names.includes("edit"));
+  assert.ok(names.includes("glob"));
+  assert.ok(names.includes("grep"));
+  assert.ok(names.includes("read"));
+});
+

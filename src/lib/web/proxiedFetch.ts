@@ -13,6 +13,7 @@
  */
 import { fetch as pluginFetch, type ClientOptions } from "@tauri-apps/plugin-http";
 import { kvGet } from "../storage/db";
+import { llmProxyFetch } from "./llmProxyFetch";
 
 export const WEB_PROXY_KEY = "reinagent-web-proxy";
 export const WEB_PROXY_NO_PROXY_KEY = "reinagent-web-proxy-no-proxy";
@@ -53,10 +54,13 @@ function isTauri(): boolean {
 
 /** 与全局 fetch 同形；Tauri 下走 Rust reqwest 并注入应用内代理设置。 */
 export async function proxiedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+  if (url.toLowerCase().includes("opencode.ai")) {
+    return llmProxyFetch(input, init);
+  }
   if (!isTauri()) {
     return fetch(input, init);
   }
-  const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
   const proxyUrl = (kvGet(WEB_PROXY_KEY) ?? "").trim();
   const noProxy = (kvGet(WEB_PROXY_NO_PROXY_KEY) ?? "").trim();
   const useProxy = proxyUrl !== "" && !matchesNoProxy(url, noProxy);

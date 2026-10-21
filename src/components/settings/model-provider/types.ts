@@ -164,7 +164,7 @@ export const PRESET_PROVIDERS: ProviderItem[] = [
   },
   {
     id: "opencode-zen-free",
-    name: "OpenCode Zen (Free)",
+    name: "OpenCodeZen",
     apiFormat: "openai-chat-completions",
     baseUrl: "https://opencode.ai/inference/v1",
     apiKey: "public",
@@ -262,7 +262,7 @@ export async function loadProvidersConfigFromDisk(currentSettings?: Settings): P
       console.warn("[provider_config] Failed to initialize provider_config.json on disk", err);
     });
   } else {
-    // 补齐缺失的预设提供商
+    // 补齐缺失的预设提供商，并同步官方最新预设名称
     for (const preset of PRESET_PROVIDERS) {
       const existing = list.find((p) => p.id === preset.id);
       if (!existing) {
@@ -270,6 +270,8 @@ export async function loadProvidersConfigFromDisk(currentSettings?: Settings): P
           ...preset,
           models: preset.models.map((m) => ({ ...m })),
         });
+      } else if (!existing.isCustom && existing.name !== preset.name) {
+        existing.name = preset.name;
       }
     }
   }

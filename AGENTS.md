@@ -165,15 +165,17 @@ bun run tauri dev
 
 ## 12. Remote Model Steering & Magpie Exclusivity Rule (远端模型调度与 Magpie 唯一铁律)
 
-1. **服务商唯一指定铁律 (Magpie Exclusivity)**：
-   - 调度局域网远端 ReinAgent（`http://192.168.3.27:7777`）时，**必须且只能选择 Magpie 服务商下的模型类型**；
-   - 当前核心基准模型为：`trae-cn/DeepSeek-V4-Flash-Official-max`（服务商 ID：`custom-1791417182102`）；
+1. **服务商与模型唯一指定铁律 (Magpie DeepSeek & GLM Exclusivity)**：
+   - 调度局域网远端 ReinAgent（`http://192.168.3.27:7777`）时，**必须且只能选择 Magpie 服务商（ID：`custom-1791417182102`）下的模型类型**；
+   - **模型选型受限列表**：当模型遇到频控、报错或性能瓶颈需要切换时，**只能更换 Magpie 服务商下的 DeepSeek 和 GLM 系列模型**（如 `trae-cn/DeepSeek-V4-Flash-Official-max`、GLM-4 系列等）；
    - 严禁擅自切换至 WorkBuddy、GonkaRouter 或其他未授权服务商，杜绝 429 频控与调用断连。
 2. **切换模型三连穿透机制 (Triple-Penetration Switch)**：
    - 在远端切换模型时，必须严格执行三连穿透操作：
      - ① **任务模型绑定**：`reinagent_set_model(task_id, provider_id, model_id)`；
      - ② **全局默认绑定**：`reinagent_set_model(null, provider_id, model_id)` 写入 `settings.json`；
      - ③ **跳板式状态击穿**：由于 `App.tsx` 内部依赖 `[activeTaskId]` 变更才同步模型至 React 内存态，同一任务下改模型不会触发 Hook。**必须通过 `reinagent_switch_task` 临时切至其他任务再立即切回**，强制重挂并刷新会话状态，确保界面与后台 100% 生效。
+3. **即时记录铁律 (Instant Documentation of Confirmed Research)**：
+   - 任何环节分析研究确认出的结论、接口参数、加密规范与避坑要点，**必须第一时间记录落盘**（远端同步至 `PROJECT_PROGRESS.md`，本端同步至 `.ReinAgent/remote_wangshangliao/RESEARCH_PROGRESS_LEDGER.md` 和 `PROJECT_CONTEXT.md`），严禁口头带过或滞后遗忘。
 
 ---
 
