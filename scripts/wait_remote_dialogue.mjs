@@ -1,10 +1,11 @@
 import http from "node:http";
 
-const HOST = process.env.REINAGENT_HOST || process.argv[2] || "192.168.3.27";
-const PORT = parseInt(process.env.REINAGENT_PORT || process.argv[3] || "7777", 10);
-const TOKEN = process.env.REINAGENT_TOKEN || process.argv[4] || "508ba64c24664b369d2114bc18356022";
-let targetTaskId = process.env.REINAGENT_TASK_ID || process.argv[5] || "";
-const CHECK_INTERVAL_MINS = parseFloat(process.env.REINAGENT_CHECK_INTERVAL_MINS || process.argv[6] || "10");
+const posArgs = process.argv.slice(2).filter((a) => !a.startsWith("--"));
+const HOST = process.env.REINAGENT_HOST || posArgs[0] || "192.168.3.27";
+const PORT = parseInt(process.env.REINAGENT_PORT || posArgs[1] || "7777", 10);
+const TOKEN = process.env.REINAGENT_TOKEN || posArgs[2] || "508ba64c24664b369d2114bc18356022";
+let targetTaskId = process.env.REINAGENT_TASK_ID || posArgs[3] || "";
+const CHECK_INTERVAL_MINS = parseFloat(process.env.REINAGENT_CHECK_INTERVAL_MINS || posArgs[4] || "10");
 const CHECK_INTERVAL_MS = CHECK_INTERVAL_MINS * 60 * 1000;
 
 console.log(`[WAIT-DAEMON] Initializing with HOST=${HOST}:${PORT}, CHECK_INTERVAL=${CHECK_INTERVAL_MINS}m...`);
@@ -212,6 +213,7 @@ async function startWatchLoop() {
   const startTime = Date.now();
   let lastActivityTime = Date.now();
   let startSeq = null;
+  let startMsgCount = null;
   let lastSeq = null;
   let pollCount = 0;
   let hasSeenRunning = false;
@@ -244,10 +246,14 @@ async function startWatchLoop() {
       const isRunning = data.running === true;
       const lastMsgSeq = data.messages?.[data.messages.length - 1]?.seq;
       const currentSeq = data.revision ?? lastMsgSeq ?? data.totalMessages ?? 0;
+      const currentMsgCount = data.totalMessages ?? data.messages?.length ?? 0;
+
+      const waitForNewTurn = process.env.WAIT_NEW_TURN === "1" || process.argv.includes("--wait-new-turn");
 
       if (isRunning) hasSeenRunning = true;
 
       if (startSeq === null) startSeq = currentSeq;
+      if (startMsgCount === null) startMsgCount = currentMsgCount;
 
       // 活跃度与序号递增检测
       if (lastSeq === null || currentSeq > lastSeq) {
@@ -257,12 +263,18 @@ async function startWatchLoop() {
 
       if (pollCount % 10 === 0) {
         const elapsedMins = ((Date.now() - startTime) / 60000).toFixed(1);
-        console.log(`[WAIT-DAEMON] Heartbeat: elapsed=${elapsedMins}m, seq=${currentSeq}, running=${isRunning}`);
+        console.log(`[WAIT-DAEMON] Heartbeat: elapsed=${elapsedMins}m, msgs=${currentMsgCount}, running=${isRunning}, waitForNewTurn=${waitForNewTurn}`);
       }
 
-      // 如果尚未看到任务运行且处于前 3 次轮询，等待任务启动
-      if (!isRunning && !hasSeenRunning && pollCount <= 2) {
-        console.log(`[WAIT-DAEMON] Task is currently not running. Waiting for startup (check ${pollCount}/2)...`);
+      // 如果开启了等待新回合模式，且尚未看到任务启动且消息条数未增加，则持续等待外部触发
+      if (waitForNewTurn && !hasSeenRunning && !isRunning && currentMsgCount <= startMsgCount) {
+        await new Promise((r) => setTimeout(r, 3000));
+        continue;
+      }
+
+      // 如果尚未看到任务运行且处于前 10 次轮询（20秒内），等待任务启动
+      if (!isRunning && !hasSeenRunning && pollCount <= 10) {
+        console.log(`[WAIT-DAEMON] Task is currently not running. Waiting for startup (check ${pollCount}/10)...`);
         await new Promise((r) => setTimeout(r, 2000));
         continue;
       }

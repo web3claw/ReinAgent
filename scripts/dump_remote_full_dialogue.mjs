@@ -112,7 +112,7 @@ async function doDump() {
   });
 
   console.log("Initialized session:", sessionId);
-  const statusRes = await callTool("reinagent_get_task_status", { task_id: TASK_ID });
+  const statusRes = await callTool("reinagent_get_task_status", { task_id: TASK_ID, limit: 50 });
   const raw = JSON.parse(statusRes.result.content[0].text);
   
   fs.writeFileSync(OUTPUT_FILE, JSON.stringify(raw, null, 2), "utf-8");
