@@ -134,6 +134,19 @@
     <tr><td>替换全文 / 文末追加</td><td>生成完毕后一键应用，精准触达编辑器文档模型并自动保存</td></tr>
   </tbody>
 </table></div>
+
+<h2>RAG 语义检索（v0.2.9 新增）</h2>
+<p>笔记与导入的外部会话会自动分块并向量化，进入本地知识库索引；模型可通过语义检索利用这些内容回答问题，而不只是关键词匹配。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>环节</th><th>机制与用法</th></tr></thead>
+  <tbody>
+    <tr><td>绑定 embedding 服务商</td><td>设置 ▸ 知识库 ▸ 绑定任意 OpenAI 兼容 <code>/embeddings</code> 服务商（Qwen3-Embedding、本地 Ollama 等均实测可用），「测试 embeddings」即发真实请求验证并学习向量维度</td></tr>
+    <tr><td>索引与增量</td><td>「扫描并索引」按内容指纹增量向量化（未变内容不重复计费）；笔记保存与外部会话导入后 1.5s 自动重索引；换 embedding 模型会提示清空重建，严禁混维检索</td></tr>
+    <tr><td>每轮自动注入</td><td>输入胶囊左侧 <code>Library</code> 图标开启（任务级开关，全局默认兜底）：发送前以你的消息为查询做语义检索，命中块以 <code>&lt;knowledge-source&gt;</code> 并入上下文，请求预览的「用户上下文」节可查看命中明细</td></tr>
+    <tr><td>模型主动检索</td><td><code>search_knowledge</code> 工具始终挂载：对话里直接让模型「查一下知识库」，它会自主检索并引用来源标题与相关度</td></tr>
+    <tr><td>存储与安全</td><td>索引存于本地 <code>~/.ReinAgent/knowledge/knowledge-index.sqlite3</code>（可随时清空重建，原文零损失、不进备份）；注意对话类内容纳入索引时会发往所选 embedding 服务商做向量化</td></tr>
+  </tbody>
+</table></div>
     <div class="docs-pager"><span><a href="workspace.html">← Agent 工作台</a></span><span><a href="permissions.html">审批与检查点 →</a></span></div>
     </div>
   </div>

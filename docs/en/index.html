@@ -77,6 +77,7 @@
   <tbody>
     <tr><td>Local-first</td><td>All history, task timelines, code snapshots and API keys stay on your machine (<code>~/.ReinAgent/</code>).</td></tr>
     <tr><td>Notebooks & Knowledge Base</td><td>Local pure-Markdown physical directory mapping (<code>~/.ReinAgent/notebooks/</code>), WYSIWYG editor powered by Milkdown, AI writing assistant drawer, and one-click chat note extraction.</td></tr>
+    <tr><td>RAG semantic retrieval</td><td>Notes and imported sessions are chunked and embedded automatically (any OpenAI-compatible embedding provider — Qwen3-Embedding and local Ollama verified). Toggle per-turn semantic injection from the composer, or let the model call <code>search_knowledge</code>; vectors live in a local SQLite store and the index is rebuildable at any time.</td></tr>
     <tr><td>Portable single binary</td><td>No Node.js, Python or Rust runtime required — unzip and run.</td></tr>
     <tr><td>Approval &amp; rewind</td><td>Four approval modes (plan / ask / edit / full) plus per-round checkpoint rewind with SHA-256 conflict protection.</td></tr>
     <tr><td>Real protocol support</td><td>Chat Completions, Anthropic Messages, Responses and Google Generative AI, with fail-fast handshakes and no guessed metadata.</td></tr>

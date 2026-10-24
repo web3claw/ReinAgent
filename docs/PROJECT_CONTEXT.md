@@ -2,7 +2,7 @@
 
 > **文档定位**：供后续开发 Agent 与工程师快速接手本项目的**单点真相全景指南（Single Source of Truth）**。涵盖系统定位、架构分层、核心交互规范、最新进度、关键状态流转及避坑指南。
 >
-> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./archived/ROADMAP.md)（功能差距分析与历史路线图归档）**。
+> **配套文档**：[PROMPTS.md](./PROMPTS.md)（提示词单一真相源）、**[ROADMAP.md](./ROADMAP.md)（当前路线图：vs Hetu 借鉴分析与排期；LA/ZCode 历史归档见 [archived/ROADMAP.md](./archived/ROADMAP.md)）**。
 
 ---
 
@@ -2354,6 +2354,14 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
      - **报文协议格式**：外层报文采用 `{"b":"<base64>"}` 封装，内部序列化为标准 Protobuf 结构；
      - **业务层模型解析**：`xclient.exe` 的 `sub_1400D03E0` 统一解析 `uid`、`nimId`、`accountId`、`groupId`、`jwtToken`、`token`，群消息实时通信基于官方同款 Web SDK 长连或纯协议实现。
 
+## 十二、导入面板外部会话删除修复：workbuddy 缺分支 + cursor 双 case 死代码 + fixture 修复（2026-10-24）
+
+- **背景**：用户实测「设置 ▸ 导入 ▸ 会话」删除 WorkBuddy 外部会话报「删除失败: delete not supported for source: workbuddy」。
+- **根因与修复（`src/lib/import/importers.ts` 的 `deleteSessionBySource`）**：
+  1. **workbuddy 漏配删除分支**：删除 switch 只写了 `case "codebuddy"`，孪生实例 `workbuddy` 落入 default 抛错（扫描/导入共用 `createCodebuddyLikeImporter`，删除侧却漏配）。已并入同一 case（jsonl + `.meta.json` + 同名目录三连删）。
+  2. **cursor 双 case 死代码**：`cursor` 同时出现在「一目录一会话」文件型分组（与 kimi/grok/craft/dsh 同组）与 IDE 库 SQL 型分支，switch 首匹配生效使后者永不可达；且死分支自身还有 bug——`execDelete` 的库路径传的是 jsonl 转录文件而非 `state.vscdb`。已合并为单一分支：**主删除 = CLI 转录父目录整删**（scan 只列 CLI 转录会话，IDE-only 空壳不列，文件型主删除覆盖全部可列会话）；**IDE 库残留（composerData/bubbleId）best-effort 清理**——按 `cursorStateDbPath(home)`（`~/.config/Cursor/User/globalStorage/state.vscdb`，与导入器 `composerFacts` 同源）发 DELETE，CLI-only / Windows 缺库（官方装 %APPDATA%）/ 缺表一律不阻断主删除。
+- **既有测试修复（main 既有失败，非本次引入）**：`importFixtures.test.mjs` 的「WorkBuddy fixture：孪生解析、独立数据根」自 0ceee8c 起在 fresh clone 必红——`.gitignore` 的全局 `.workbuddy/` 规则把 `src/lib/import/fixtures/home/.workbuddy/` fixture **静默排除在 git 之外**（作者本机存在未跟踪 fixture 故本机绿）。已补孪生 fixture（`.workbuddy/projects/Users-fixture-src-wakefx/wb000001-*.jsonl`）并在 `.gitignore` 加路径级反排除两行（必须先反排除目录本身 git 才会继续下探）。
+- **测试**：`test:import` 41/41 全绿。新增 3 条删除测试：workbuddy/codebuddy 孪生三连删、cursor 转录目录整删 + IDE 库按 `state.vscdb` 路径清（校验 SQL 与参数）、cursor 无 db / 库删除失败时主删除仍成功不抛。Red Check：stash importers.ts 用老代码跑新测试，cursor 测试 `0 !== 1` 报红（死代码精准命中）、workbuddy 测试报 `delete not supported`（新代码下过）。tsc 39 错均为 main 既有（`MilkdownEditor.tsx` 等 notes 组件），本次改动零新增。
 
 
 
@@ -2371,3 +2379,43 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 
 
 
+
+
+## 十三、知识库（RAG v1，对标 Hetu，2026-10-24 落地，随 v0.2.9 发布）
+
+> 借鉴来源与调研结论见 [ROADMAP.md](./ROADMAP.md) ①；本节为实现定稿（Single Source of Truth）。
+
+### 架构分工
+- **TS 编排层**（`src/lib/knowledge/`）：分块、增量比对、embedding HTTP、进度与触发。
+- **Rust 存储层**（`src-tauri/src/knowledge_index.rs`）：数据源指纹扫描、向量存储（f32 LE BLOB）、余弦 top-K。**v1 不用 sqlite-vec**（用户拍板暴力余弦；虚表升级位已预留——`knowledge_chunks.embedding/dims` 列语义与 vec0 一致，后续只加虚表 + 双写）。
+
+### 存储（独立库，不动主库）
+- 库文件：`~/.ReinAgent/knowledge/knowledge-index.sqlite3`（WAL + schema_version + integrity_check 损坏隔离重建，照 memory 模块）。
+- 表：`knowledge_sources`（source_id PK，source_type 'note'|'import'，title/source_path/fingerprint/chunk_count/status ok|error/error/model_id/dims/last_indexed_at）、`knowledge_chunks`（source_id FK CASCADE，chunk_index，heading_path，content，embedding BLOB，UNIQUE(source_id,chunk_index)）、`knowledge_state`（key: `embedding_model_id` / `embedding_dims`——换 embedding 模型/维度 → upsert 与 search 双向 fail-fast，要求清空重建，严禁混维）。
+- 数据源与指纹：笔记 = `~/.ReinAgent/notebooks` 下 `.md/.markdown`（跳过 `.` 目录），source_id=`"{notebookRel}:{fileName}"`（正斜杠），fingerprint=`mtimeMs:size`；导入任务 = 主库 `task.id LIKE 'import-%'`，fingerprint=`消息数:最大seq`。正文不落知识库（笔记读原文件、导入任务经 `conversation_load` 抽 text part），索引只是派生数据，**不进 WebDAV 备份**。
+
+### Rust 命令（8 个，invoke_handler 已注册）
+`knowledge_scan_sources` / `knowledge_list_sources` / `knowledge_index_upsert`（整源事务替换）/ `knowledge_get_chunks` / `knowledge_index_delete_source` / `knowledge_index_clear` / `knowledge_search`（进程内向量缓存 RwLock，写失效；spawn_blocking 余弦）/ `knowledge_stats`。
+
+### TS 模块（src/lib/knowledge/）
+- `chunker.ts`：结构化分块——Markdown 标题段（headingPath="## A > ### B"）→ 空行段落累积 ≤1500 字 → 超长按句子（。！？.!?\n）硬切 + 100 字尾部重叠 → 段末 <200 字小块并前块；embedding 输入 = headingPath + "\n\n" + content。
+- `embeddingClient.ts`：通用 OpenAI 兼容 `POST {ensureV1BaseUrl}/embeddings`（proxiedFetch 出站、Bearer、60s 超时、16/批顺序）；维度从真实响应学习、批间一致性校验；错误文案口径同 testConnectivity（401/404 细分、服务端 message 原文）。**dims 无任何静态预设（No-Fallback）**。
+- `providerBinding.ts`：hubSettings `settings.knowledge {providerId, modelId, injectEnabledGlobal, topK}`（kv 键 `reinagent-knowledge-settings`）→ provider_config.json 解析；未配置/服务商不存在/停用/缺 baseUrl 均显式抛错。
+- `indexingService.ts`：sweep = scan → computeIndexPlan（指纹变更或上次 error 的源重索引；消失源删行）→ 取正文（单源正文硬上限 20 万字符、chunk 硬上限 2000，超出截断 console.warn）→ chunk → diffChunks（**块内容未变复用旧向量**，位置无关）→ 仅新块分批 embed → 整源 upsert；单源失败记 status=error + 原文继续。`knowledgeIndexSingleSource` 供自动触发。
+- `injection.ts`：`buildKnowledgeSection(userQuery)`——以最后一条用户消息（截 2000 字符）检索 topK（默认 5，上限 20），命中格式化在 `knowledgeFormat.ts`（`<knowledge-source>` 标签 + 防注入免责句 + 单块 1200/总量 24KB 截断标注）；空态（未配置/空索引/空 query）返回空串；**检索失败 toast.warning 原文 + 返回空串（不阻断回合）**。
+- `searchTool.ts`：`search_knowledge` 工具（typebox schema `{query, topK?}`），**恒挂载、与注入开关无关**；未配置返回说明文本；`indexingService` 失败路径如实上抛转 isError。
+- `autoIndex.ts`：防抖 1.5s 单源索引调度（Map 计时器合并；失败仅 console.warn）。
+
+### 接线点
+- 注入：`runAgentTurn.assembleTurnContext` 新增 `knowledgeSection` part（memorySection 之后、skillsSection 之前进 meta_user）；`TurnAssemblyParams/RunAgentTurnParams` 增 `knowledgeEnabled`；`requestPreview` 用户上下文节新增 Knowledge (RAG) 行。
+- 开关：composer 工具栏 Library 图标按钮（审批模式下拉旁）；三态语义=任务 `AppTask.knowledgeEnabled` 显式 true/false / undefined 跟随全局默认（`updateTaskKnowledgeEnabled`，null 清除）；草稿态写全局默认；`App.tsx buildTurnOptions` 透传 `task?.knowledgeEnabled ?? injectEnabledGlobal`；conversationController 透传。
+- 自动索引：`notesService.saveNote` 后与 `runSessionImport` 成功后 `scheduleKnowledgeIndex(sourceId)`（未配置时静默跳过=合法空态）；设置页手动 sweep + 模型变更警示条（清空重建按钮）。
+- 设置页：`SettingsPage` 新 tab `knowledge`（navItems 记忆之后，Library 图标）+ `KnowledgeSection.tsx`（绑定 ModelPicker + 模型 id 手填 + 测试 embeddings（真实 POST 显示维度/延迟）/ 状态卡 / 扫描并索引（进度）/ 清空索引（3.2s 二次确认）/ topK / 全局默认开关）；i18n 键 `knowledge*`（zh+en）。
+
+### 测试与验证（交付三铁律）
+- `test:knowledge`（node --test，src/lib/knowledge/knowledge.test.mjs）：18 用例（chunker 空/无标题/标题路径/累积/硬切重叠/合并/CRLF/embedding 输入；embeddingClient 批次/形状异常/空输入 fail-fast/HTTP 错误口径；indexPlan/diffChunks 复用；knowledgeFormat 截断与免责句）。
+- cargo test 269 全绿（含 knowledge_index 10 用例：余弦正交/同向/反向/零向量、LE BLOB 往返、整源替换、排序与类型过滤、空索引、维度不符、模型变更拒绝、级联删除、error 源、stats）。
+- **Red Check**：TS chunker 去掉重叠语义 → 重叠用例真实报红；Rust l2_norm 破坏 → 首次未红（**教训：全单位向量时 norm²==norm，破坏不可见**）→ 补非单位向量断言（[2,0] vs [1,0] 余弦恒 1）后真实报红。
+- CDP E2E（Tauri 实测 10/10）：真实 invoke 链路 stats/scan、探针源 upsert→search 排序（甲>乙>丙）→维度不符如实报错→delete 归零、composer 开关点击翻转 + kv `reinagent-knowledge-settings` 持久化 + 还原。
+- **Not run**：embedding 真链路（Ollama 本机未装、局域网 `192.168.3.27:7863` 拒连）——`embedInputs` 真实 HTTP、sweep 全链路、注入真实召回待 Ollama 就绪后补验（设置页「测试 embeddings」按钮即验证入口）。
+- **Real Usage 补验完成（2026-10-24 同日，SiliconFlow + Qwen3-Embedding-8B）**：真实服务商绑定 → 测试 embeddings `OK · 4096 维 · 690ms` → sweep 真实索引（2 源 32 块 0 错误）→ 语义检索直测（查询「北极星计划的内部代号」top1 分 0.7589 精准命中目标笔记，无关笔记 0.42 干净分离）→ **经内置 MCP Server（`reinagent_create_task`/`reinagent_wait_task`/`reinagent_get_task_status`）驱动真实任务端到端**：模型自主调用 `search_knowledge` 工具并正确回答「内部代号是银河办公室」，引用来源与相关度如实。⚠️ 顺带修复一个**潜在 pre-existing bug**：`hubSettingsStore` 的 skills/memory/knowledge 三 kv 切片在模块求值期（早于 `initStorage()` 填充 kv 缓存）读初值，**重启后永远回落默认**——`main.tsx` bootstrap 现于 `initStorage()` 后调 `rehydrateHubKvSlices()` 补读（修复前 skills 选集/记忆整理模型等 kv 设置同样不生效，历史未暴露只因用户设置恰与默认一致）。MCP POST 鉴权：token 放 query（`?session_id=..&token=..`），SSE GET 与 POST 同参。

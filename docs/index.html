@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ReinAgent · 高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台</title>
-<meta name="description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问与本地长期记忆。">
+<meta name="description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问、本地长期记忆与 RAG 语义检索知识库。">
 <meta name="theme-color" content="#4f46e5">
 <link rel="canonical" href="https://web3claw.github.io/ReinAgent/">
 <link rel="alternate" hreflang="zh-CN" href="https://web3claw.github.io/ReinAgent/">
@@ -13,7 +13,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="ReinAgent">
 <meta property="og:title" content="ReinAgent · 高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台">
-<meta property="og:description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问与本地长期记忆。">
+<meta property="og:description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问、本地长期记忆与 RAG 语义检索知识库。">
 <meta property="og:url" content="https://web3claw.github.io/ReinAgent/">
 <meta property="og:image" content="https://web3claw.github.io/ReinAgent/assets/workbench-subagents-demo.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -89,6 +89,10 @@
         <div class="card">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg></span>知识库与笔记本系统</h3>
           <p>本地纯净 Markdown 物理文件夹与真实 .md 文件映射；支持所见即所得双栏编辑、AI 写作助手侧弹窗与对话一键整理笔记沉淀。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/></svg></span>RAG 知识库与语义检索</h3>
+          <p>笔记与导入会话自动分块向量化，接入任意 OpenAI 兼容 embedding 服务商（Qwen3-Embedding、Ollama 本地实测）；输入胶囊一键开启每轮语义注入，模型可自主调用 search_knowledge 检索，本地 SQLite 向量库，索引可随时重建。</p>
         </div>
         <div class="card">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="7" rx="2"/><rect x="4" y="13" width="16" height="7" rx="2"/><path d="M8 7.5h.01M8 16.5h.01"/></svg></span>三端原生融合</h3>
