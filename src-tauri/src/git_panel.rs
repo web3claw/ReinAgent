@@ -84,7 +84,7 @@ fn no_window(cmd: &mut Command) -> &mut Command {
     cmd
 }
 
-fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
+pub(crate) fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
     let mut cmd = Command::new("git");
     cmd.args(args).current_dir(cwd);
     #[cfg(windows)]

@@ -33,6 +33,13 @@ export interface AppTask {
   goal?: import("../lib/goals/goalState").TaskGoal;
   /** 任务级知识库注入开关（RAG v1）；true/false=显式选择，undefined=跟随全局默认。 */
   knowledgeEnabled?: boolean;
+  /** 会话级 worktree 隔离（ROADMAP ②）：三态开关（undefined=跟随全局默认）。 */
+  worktreeEnabled?: boolean;
+  /** 已创建的 worktree 信息（git_worktree_ensure 成功后回填；懒创建，任务态才有）。 */
+  worktreePath?: string;
+  worktreeBranch?: string;
+  worktreeBase?: string;
+  worktreeCreatedAt?: number;
 }
 
 interface AppState {
@@ -85,6 +92,13 @@ interface AppState {
   updateTaskApprovalMode: (id: string, mode: ApprovalMode) => void;
   /** 任务级知识库注入开关（三态：true/false 显式选择，null=清除回退全局默认）。 */
   updateTaskKnowledgeEnabled: (id: string, enabled: boolean | null) => void;
+  /** 会话级 worktree 隔离三态开关。 */
+  updateTaskWorktreeEnabled: (id: string, enabled: boolean | null) => void;
+  /** worktree 创建信息回填（ensure 成功后）与清除（合并/删除后传 null）。 */
+  updateTaskWorktreeInfo: (
+    id: string,
+    info: { path: string; branch: string; base: string } | null,
+  ) => void;
   /** 会话目标（/goal）：null = 清除目标。 */
   updateTaskGoal: (id: string, goal: import("../lib/goals/goalState").TaskGoal | null) => void;
   updateTaskToolPolicy: (id: string, toolName: string, policy: "allow" | "ask" | "deny" | null) => void;
@@ -450,6 +464,49 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const nextTasks = state.tasks.map((t) =>
         t.id === id ? { ...t, thinkingLevel: level, updatedAt: Date.now() } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  updateTaskWorktreeEnabled: (id, enabled) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id
+          ? { ...t, worktreeEnabled: enabled === null ? undefined : enabled, updatedAt: Date.now() }
+          : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  updateTaskWorktreeInfo: (id, info) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id
+          ? {
+              ...t,
+              worktreePath: info?.path,
+              worktreeBranch: info?.branch,
+              worktreeBase: info?.base,
+              worktreeCreatedAt: info ? Date.now() : undefined,
+              updatedAt: Date.now(),
+            }
+          : t
       );
       if (typeof window !== "undefined") {
         try {

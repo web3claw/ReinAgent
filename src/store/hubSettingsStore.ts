@@ -54,16 +54,24 @@ export interface KnowledgeSettings {
   topK: number;
 }
 
+/** 会话级 worktree 隔离（ROADMAP ②）全局默认 */
+export interface WorktreeSettings {
+  /** 新任务默认启用 worktree 隔离（仅 git 仓库生效；任务级显式选择优先） */
+  enabledByDefault: boolean;
+}
+
 export interface HubAppSettings {
   skills: SkillsSettings;
   mcp: McpSettings;
   memory: MemorySettings;
   knowledge: KnowledgeSettings;
+  worktree: WorktreeSettings;
 }
 
 const SKILLS_KEY = "reinagent-skills-settings";
 const MEMORY_KEY = "reinagent-memory-settings";
 const KNOWLEDGE_KEY = "reinagent-knowledge-settings";
+const WORKTREE_KEY = "reinagent-worktree-settings";
 
 /**
  * 旧版「恒启用」内置技能名（迁移用）：2026-10-06 之前这两枚会被强制并入 selected；
@@ -139,6 +147,25 @@ function defaultKnowledgeSettings(): KnowledgeSettings {
   return defaultKnowledgeShape();
 }
 
+function defaultWorktreeSettings(): WorktreeSettings {
+  const saved = kvGet(WORKTREE_KEY);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved) as Partial<WorktreeSettings>;
+      return { ...defaultWorktreeShape(), ...parsed };
+    } catch {
+      console.error("[hubSettings] worktree settings parse failed");
+    }
+  }
+  return defaultWorktreeShape();
+}
+
+function defaultWorktreeShape(): WorktreeSettings {
+  return {
+    enabledByDefault: false,
+  };
+}
+
 function defaultKnowledgeShape(): KnowledgeSettings {
   return {
     providerId: "",
@@ -160,6 +187,7 @@ export function rehydrateHubKvSlices(): void {
       skills: defaultSkillsSettings(),
       memory: defaultMemorySettings(),
       knowledge: defaultKnowledgeSettings(),
+      worktree: defaultWorktreeSettings(),
     },
   }));
 }
@@ -196,6 +224,7 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
     mcp: { servers: [] },
     memory: defaultMemorySettings(),
     knowledge: defaultKnowledgeSettings(),
+    worktree: defaultWorktreeSettings(),
   },
 
   hydrateMcp: async () => {
@@ -224,6 +253,7 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
     kvSetJSON(SKILLS_KEY, next.skills);
     kvSetJSON(MEMORY_KEY, next.memory);
     kvSetJSON(KNOWLEDGE_KEY, next.knowledge);
+    kvSetJSON(WORKTREE_KEY, next.worktree);
     // mcp 切片整表写回 Rust（防抖由调用频度决定：页面级操作非高频，直接写）
     // F19：读取失败态下跳过写盘，避免用空表覆盖用户真实配置。
     if (get().mcpDegradedError) {

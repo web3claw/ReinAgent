@@ -46,6 +46,9 @@ import { invoke } from "@tauri-apps/api/core";
 import { FileManagerIcon } from "./components/icons/FileManagerIcon";
 import { getMessageTheme, subscribeMessageTheme, type MessageTheme } from "./lib/settings/messageTheme";
 import { useHubSettings } from "./store/hubSettingsStore";
+import { ensureTaskWorktree, resolveTaskEffectiveRoot } from "./lib/worktree/service";
+import { WorktreeBadge } from "./components/worktree/WorktreeBadge";
+import { createWorktreeCleanupService } from "./lib/worktree/cleanup";
 import { createDreamService } from "./lib/memory/dreamService";
 import { memoryEmbedSweep } from "./lib/memory/embeddingService";
 
@@ -566,7 +569,8 @@ export default function App() {
   // 不依赖 UI 态 selectedProject 的同步时机——修复重启水合后自动恢复的任务回退 DefaultProject）；
   // 草稿态（无活动任务）才使用 selectedProject（侧边栏/输入框所选项目）。
   const workspaceProject = activeTask ? activeTask.project : selectedProject;
-  const effectiveWorkspaceRoot = resolveWorkspaceRoot(workspaceProject);
+  // 会话级 worktree 隔离（ROADMAP ②）：任务开启且已建 worktree → 全部消费方（终端/Files/Git/预览/hooks/提及）无感跟随
+  const effectiveWorkspaceRoot = resolveTaskEffectiveRoot(activeTask, resolveWorkspaceRoot(workspaceProject));
   const isWorkspaceUnknown = !workspaceProject && !userHome;
 
 
@@ -919,7 +923,12 @@ export default function App() {
       console.warn("[memory] 启动向量化 sweep 失败:", err instanceof Error ? err.message : err),
     );
     (window as any).__dreamPoke = () => service.poke();
-    (window as any).__memoryEmbedSweep = () => memoryEmbedSweep();
+    return () => service.dispose();
+  }, []);
+
+  // worktree 自动清理（ROADMAP ②）：启动 + 每小时扫描（已合并+干净+空闲>24h 才移除）
+  useEffect(() => {
+    const service = createWorktreeCleanupService();
     return () => service.dispose();
   }, []);
 
@@ -1005,6 +1014,11 @@ export default function App() {
       const task = taskId ? store.tasks.find((item) => item.id === taskId) ?? null : null;
       const turnApprovalMode = task?.approvalMode ?? activeApprovalMode;
       const turnAssistantId = task?.assistantId ?? activeTask?.assistantId ?? globalDefaultAssistantId;
+      // worktree 隔离：workspaceRoot 按 taskId 实时解析（草稿提升首轮的渲染闭包值会过期）
+      const effectiveRootRealtime = resolveTaskEffectiveRoot(
+        taskId ? store.tasks.find((item) => item.id === taskId) ?? null : null,
+        effectiveWorkspaceRoot,
+      );
       return {
         source,
         config: {
@@ -1023,7 +1037,7 @@ export default function App() {
         },
         systemPrompt: DEFAULT_SYSTEM_PROMPT,
         maxSteps,
-        workspaceRoot: effectiveWorkspaceRoot,
+        workspaceRoot: effectiveRootRealtime,
         assistantId: turnAssistantId,
         thinkingLevel: effectiveThinkingLevel,
         approvalMode: turnApprovalMode,
@@ -1751,7 +1765,25 @@ export default function App() {
     // P2-C1：发送即消费选区引用——正文尾部拼 userselect 尾块（taskId 确定后）。
     const finalText = buildPromptWithSelections(targetTaskId, text);
     consumeSelectionReferences(targetTaskId);
-    return poolSend(targetTaskId, finalText, buildTurnOptions(images, userAttachments, targetTaskId));
+    const dispatchTurn = () =>
+      poolSend(targetTaskId, finalText, buildTurnOptions(images, userAttachments, targetTaskId));
+    // worktree 懒创建（ROADMAP ②）：onSend 契约是同步 boolean，而建工作树是异步
+    // IPC——需要建时先受理再延迟派发（首回合工具必须落在工作树里，不能主区先行）。
+    const pendingTask = useAppStore.getState().tasks.find((x) => x.id === targetTaskId);
+    if (pendingTask?.worktreeEnabled && !pendingTask.worktreePath) {
+      void ensureTaskWorktree(targetTaskId)
+        .catch((err) => {
+          console.warn(
+            "[worktree] 懒创建失败（本轮回退主工作区）:",
+            err instanceof Error ? err.message : err,
+          );
+        })
+        .finally(() => {
+          void dispatchTurn();
+        });
+      return true;
+    }
+    return dispatchTurn();
   };
 
   // 远程访问桥 V2：手机发送走与本地完全一致的链路（handleSend：UserPromptSubmit hooks、
@@ -2132,6 +2164,7 @@ export default function App() {
                   <span className="text-sm font-semibold text-[var(--text)] truncate max-w-[360px] select-none">
                     {activeTask?.title || t("newTask")}
                   </span>
+                  {activeTaskId ? <WorktreeBadge taskId={activeTaskId} /> : null}
                 </div>
                 {/* 对话/轨迹 分段切换（LiveAgent ConversationViewTabs 移植）：仅工作台且有会话消息时显示 */}
                 {activeTaskId && state.messages.length > 0 ? (

@@ -28,6 +28,7 @@ mod fs_tree;
 mod notes_fs;
 mod knowledge_index;
 mod git_panel;
+mod git_worktree;
 mod hooks;
 mod plugins;
 mod clipboard_image;
@@ -317,6 +318,10 @@ pub fn run() {
             knowledge_index::knowledge_search,
             knowledge_index::knowledge_stats,
             git_panel::git_status,
+            git_worktree::git_worktree_ensure,
+            git_worktree::git_worktree_merge,
+            git_worktree::git_worktree_remove,
+            git_worktree::git_worktree_eligibility,
             git_panel::git_branch_list,
             git_panel::git_checkout,
             git_panel::git_log,

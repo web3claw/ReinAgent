@@ -67,6 +67,7 @@ import {
   Sparkles,
   Undo2,
   Library,
+  GitBranch,
 } from "lucide-react";
 import { MOCK_PROJECTS } from "../sidebar/WorkspaceSidebar";
 import {
@@ -235,6 +236,22 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       useHubSettings.getState().setSettings((prev) => ({
         ...prev,
         knowledge: { ...prev.knowledge, injectEnabledGlobal: !knowledgeEnabled },
+      }));
+    }
+  };
+
+  // worktree 隔离开关（ROADMAP ②）：同款三态语义；仅 git 仓库的任务有意义
+  // （非 git 时打开会在首条消息 ensure 时 toast 报错，不静默假装生效）。
+  const worktreeGlobalDefault = useHubSettings((s) => s.settings.worktree.enabledByDefault);
+  const worktreeEnabled = activeTask?.worktreeEnabled ?? worktreeGlobalDefault;
+  const updateTaskWorktreeEnabled = useAppStore((s) => s.updateTaskWorktreeEnabled);
+  const handleToggleWorktree = () => {
+    if (activeTaskId) {
+      updateTaskWorktreeEnabled(activeTaskId, !worktreeEnabled);
+    } else {
+      useHubSettings.getState().setSettings((prev) => ({
+        ...prev,
+        worktree: { ...prev.worktree, enabledByDefault: !worktreeEnabled },
       }));
     }
   };
@@ -1437,6 +1454,25 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             }
           >
             <Library className="w-4 h-4" />
+          </button>
+
+          {/* worktree 隔离开关（ROADMAP ②）：开启后任务的文件改动进独立工作树与分支 */}
+          <button
+            type="button"
+            onClick={handleToggleWorktree}
+            disabled={stt.active}
+            className={`p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center cursor-pointer ${
+              worktreeEnabled
+                ? "text-[var(--accent)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+            title={
+              worktreeEnabled
+                ? "Worktree 隔离：开（任务改动进独立工作树与分支；仅 git 仓库可用）"
+                : "Worktree 隔离：关（任务直接在主工作区改动）"
+            }
+          >
+            <GitBranch className="w-4 h-4" />
           </button>
 
           {/* 运行中后台工作徽标（终端/子代理图标+计数，点击展开管理浮层） */}
