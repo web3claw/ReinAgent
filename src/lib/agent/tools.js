@@ -29,6 +29,7 @@
 
 import { Type } from "typebox";
 import { resolveWorkspacePath, resolveWorkspaceRoot } from "./workspace.ts";
+import { compressToolText } from "./compressPipeline.ts";
 
 /**
  * 工具硬闸上限（导出供测试与上层消费）——**按工具分设**（对齐 ZCode
@@ -95,27 +96,8 @@ function utf8ByteLength(text) {
   return utf8Encoder.encode(text).length;
 }
 
-/**
- * 取 UTF-8 字节序列的前 `maxBytes` 字节，并**保证不切断多字节字符**。
- *
- * 做法：先取到 `maxBytes`，若切点落在某个多字节字符中间（即第 `maxBytes` 个字节
- * 是 UTF-8 续字节 `0b10xxxxxx`），则向左回退到该字符的起始字节，从而整段是合法
- * UTF-8，`decode` 不会产生替换字符 U+FFFD。
- *
- * @param {Uint8Array} bytes 原始 UTF-8 字节序列。
- * @param {number} maxBytes 允许的最大字节数。
- * @returns {string} 解码后的安全前缀（字节长度 ≤ maxBytes）。
- */
-function utf8SafeSlice(bytes, maxBytes) {
-  let end = Math.min(maxBytes, bytes.length);
-  if (end < bytes.length) {
-    // 回退跨越续字节，直到落在某个字符的首字节之前。
-    while (end > 0 && (bytes[end] & 0xc0) === 0x80) {
-      end -= 1;
-    }
-  }
-  return utf8Decoder.decode(bytes.subarray(0, end));
-}
+// （UTF-8 安全截取已上移 compressPipeline.ts 的 utf8SafeSliceByBytes——超限结果
+// 全部走压缩管线，headtail 内部保证多字节字符不被劈断。）
 
 /**
  * 构造一个「文本类」工具结果，并在**出口**按 `maxBytes` 做 UTF-8 字节截断。
@@ -143,20 +125,20 @@ export function buildTextToolResult(text, details = {}, maxBytes = TOOL_LIMITS.l
     };
   }
 
-  const marker = `\n…[truncated: 原 ${originalLength} 字节，已截断至 ${maxBytes}]`;
-  const markerBytes = utf8ByteLength(marker);
-  // 预留标记的字节预算，保证「前缀 + 标记」整体不超上限。
-  const budget = Math.max(0, maxBytes - markerBytes);
-  const head = utf8SafeSlice(utf8Encoder.encode(text), budget);
-  const finalText = head + marker;
-
+  // 超限 → 压缩管线（ROADMAP ⑥）：先折噪音（结构化块/重复行/近重复行/空白），
+  // 仍超限才保首尾（headtail 替代旧「只保头部」截断——尾部 stack trace 不再丢）。
+  // 小文本（≤管线最小阈值）节点 1-4 实际不会命中，headtail 语义与旧头切兼容。
+  const compressed = compressToolText(text, maxBytes);
   return {
-    content: [{ type: "text", text: finalText }],
+    content: [{ type: "text", text: compressed.text }],
     details: {
       ...details,
-      length: utf8ByteLength(finalText),
+      length: compressed.finalBytes,
       originalLength,
-      truncated: true,
+      truncated: compressed.truncated,
+      compressedFrom: compressed.originalBytes,
+      compressedTo: compressed.finalBytes,
+      compressNodes: compressed.stats,
     },
   };
 }

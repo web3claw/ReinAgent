@@ -411,20 +411,30 @@ test("6 · 结果超 8KB 被截断：UTF-8 字节安全（全对齐组合）、�
     // (2) 长度上限（截断标记也计入预算）。
     assert.ok(outBytes <= TOOL_LIMITS.listDirBytes, `[${label}] content 必须 ≤ 8KB（实际 ${outBytes} 字节）`);
 
-    // (4) 截断标记 + details 真值。
-    const markerIdx = out.lastIndexOf("\n…[truncated:");
-    assert.ok(markerIdx >= 0, `[${label}] 应含截断标记`);
-    assert.match(out.slice(markerIdx), /8192/, `[${label}] 截断标记应写明上限 8192`);
+    // (4) 压缩标记 + details 真值（管线 v1：超限走压缩管线，headtail 标记为 compressed）。
+    const markerIdx = out.lastIndexOf("…[compressed:");
+    assert.ok(markerIdx >= 0, `[${label}] 应含压缩标记`);
+    assert.match(out.slice(markerIdx), /8192/, `[${label}] 标记应写明上限 8192`);
     assert.equal(toolResult.details.truncated, true, `[${label}] details.truncated 应为 true`);
     assert.equal(toolResult.details.originalLength, originalBytes, `[${label}] details.originalLength 应为真值`);
     assert.equal(toolResult.details.length, outBytes, `[${label}] details.length 应为截断后字节数`);
     assert.equal(toolResult.details.kind, "big", `[${label}] 业务字段应被保留`);
+    assert.ok(
+      Array.isArray(toolResult.details.compressNodes),
+      `[${label}] details.compressNodes 应为数组（管线节点统计）`,
+    );
 
-    // (5) 内容正确性（一般性质）：去掉标记后，剩余部分必须是原文的合法前缀。
-    //     用 startsWith 而非等长比较 —— 末字符可能被回退整段丢弃。
-    const head = out.slice(0, markerIdx);
+    // (5) 内容正确性（管线 headtail 语义）：标记前是原文合法前缀，标记后是原文合法后缀
+    //     （首尾保留——尾部 stack trace 不再丢，这是对旧「只保头部」截断的升级）。
+    //     marker 以 \n 开头：边界用 "\n…[compressed:" 定位，head 不含该换行。
+    const markerLineIdx = out.lastIndexOf("\n…[compressed:");
+    const markerEnd = out.indexOf("]\n", markerLineIdx);
+    const head = out.slice(0, markerLineIdx);
+    const tail = out.slice(markerEnd >= 0 ? markerEnd + 2 : out.length);
     assert.ok(head.length > 0, `[${label}] 截断后应仍保留内容`);
-    assert.ok(ORIGINAL.startsWith(head), `[${label}] 截断内容必须是原文的合法前缀（不得切错位置）`);
+    assert.ok(ORIGINAL.startsWith(head), `[${label}] 头部必须是原文的合法前缀（不得切错位置）`);
+    assert.ok(tail.length === 0 || ORIGINAL.endsWith(tail), `[${label}] 尾部必须是原文的合法后缀`);
+    assert.ok(tail.length > 0, `[${label}] headtail 应保留尾部（不再只保头部）`);
   }
 
   // 对照：短文本不截断。
@@ -481,21 +491,31 @@ test("6b · applyReadLineCap：超 2000 行截断并注明总行数；按工具�
   assert.equal(single.totalLines, 1);
 
   // 按工具字节上限：exec 30KB / read 256KB / listDir 缺省 8KB。
-  const big = "x".repeat(40_000);
-  const execOut = buildTextToolResult(big, {}, TOOL_LIMITS.execBytes);
+  // 管线 v1 语义：可折叠文本（如纯 base64 字符集）直接被折叠装下（truncated=false，
+  // 这是新能力——噪音块不再需要截断）；不可折叠文本才 headtail（truncated=true）。
+  const foldable = "x".repeat(40_000);
+  const foldOut = buildTextToolResult(foldable, {}, TOOL_LIMITS.execBytes);
+  assert.ok(
+    foldOut.content[0].text.includes("[folded:base64,40000B]"),
+    "base64 字符集长串应被折叠为占位符",
+  );
+  assert.equal(foldOut.details.truncated, false, "折叠后装下即不截断");
+  // 字母也逐行变化（base36）——仅数字扰动会被 SimHash 数字归一化折叠成风暴
+  const unfoldable = Array.from({ length: 5000 }, (_, i) => `L${i.toString(36)} unique-${(i * 7919).toString(36)}-line\n`).join("");
+  const execOut = buildTextToolResult(unfoldable, {}, TOOL_LIMITS.execBytes);
   assert.ok(
     utf8.encode(execOut.content[0].text).length <= TOOL_LIMITS.execBytes,
     "exec 结果必须 ≤ 30KB",
   );
-  assert.equal(execOut.details.truncated, true);
+  assert.equal(execOut.details.truncated, true, "不可折叠超限文本应 headtail 截断");
   assert.match(
-    execOut.content[0].text.slice(execOut.content[0].text.lastIndexOf("\n…[truncated:")),
+    execOut.content[0].text.slice(execOut.content[0].text.lastIndexOf("…[compressed:")),
     /30000/,
-    "exec 截断标记应写明上限 30000",
+    "exec 压缩标记应写明上限 30000",
   );
-  const readOut = buildTextToolResult(big, {}, TOOL_LIMITS.readFileBytes);
-  assert.equal(readOut.details.truncated, false, "40KB 文本在 256KB read 闸内不截断");
-  const defaultOut = buildTextToolResult(big, {});
+  const readOut = buildTextToolResult(unfoldable, {}, TOOL_LIMITS.readFileBytes);
+  assert.equal(readOut.details.truncated, false, "不可折叠文本在 256KB read 闸内不截断");
+  const defaultOut = buildTextToolResult(unfoldable, {});
   assert.ok(
     utf8.encode(defaultOut.content[0].text).length <= TOOL_LIMITS.listDirBytes,
     "缺省上限 = listDirBytes 8KB",
