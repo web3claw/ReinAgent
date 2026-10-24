@@ -98,6 +98,7 @@ export type ExtractionPlanItem = {
   supersedes?: string;
   conflicts_with?: string[];
   override_reject?: string;
+  importance?: number;
 };
 
 export type ExtractionPlanSubmission = {
@@ -115,6 +116,7 @@ export type ValidatedPlanItem = {
   body?: string;
   mode?: MemoryUpdateMode;
   evidence?: MemoryEvidenceFields;
+  importance?: number;
 };
 
 export const PLAN_ITEM_REJECTION_CODES = [
@@ -159,6 +161,8 @@ export type ApplyDecision = {
   reason?: string;
   groupId?: string;
   evidence?: MemoryEvidenceFields;
+  /** 记忆升级包：初始重要度 0.05-1.0（仅 upsert 新建生效） */
+  importance?: number;
 };
 
 // ---------------------------------------------------------------------------

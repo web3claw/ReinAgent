@@ -194,7 +194,7 @@ pub struct KnowledgeStats {
 
 /// 余弦相似度。`vec_norm` 为 `b` 的预计算 L2 范数（缓存期算好），
 /// `a`（查询向量）的范数在调用方算一次。
-fn cosine_with_norm(a: &[f32], b: &[f32], b_norm: f32) -> f32 {
+pub(crate) fn cosine_with_norm(a: &[f32], b: &[f32], b_norm: f32) -> f32 {
     if a.len() != b.len() || b_norm <= 0.0 {
         return 0.0;
     }
@@ -209,15 +209,15 @@ fn cosine_with_norm(a: &[f32], b: &[f32], b_norm: f32) -> f32 {
     dot / (a_norm * b_norm)
 }
 
-fn l2_norm(v: &[f32]) -> f32 {
+pub(crate) fn l2_norm(v: &[f32]) -> f32 {
     v.iter().map(|x| x * x).sum::<f32>().sqrt()
 }
 
-fn f32_vec_to_le_bytes(v: &[f32]) -> Vec<u8> {
+pub(crate) fn f32_vec_to_le_bytes(v: &[f32]) -> Vec<u8> {
     v.iter().flat_map(|x| x.to_le_bytes()).collect()
 }
 
-fn le_bytes_to_f32_vec(bytes: &[u8]) -> Vec<f32> {
+pub(crate) fn le_bytes_to_f32_vec(bytes: &[u8]) -> Vec<f32> {
     bytes
         .chunks_exact(4)
         .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))

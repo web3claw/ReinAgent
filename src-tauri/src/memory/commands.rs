@@ -188,3 +188,33 @@ pub async fn memory_quota_summary(
 pub async fn memory_wipe_all() -> Result<MemoryPathsInfo, String> {
     memory_spawn_blocking("memory_wipe_all", || store().wipe_all()).await
 }
+
+// ==================== 记忆升级包（ROADMAP ③）：向量召回 + Dream ====================
+
+#[tauri::command]
+pub async fn memory_embed_scan() -> Result<MemoryEmbedScanResponse, String> {
+    memory_spawn_blocking("memory_embed_scan", move || store().embed_scan()).await
+}
+
+#[tauri::command]
+pub async fn memory_embed_upsert(args: MemoryEmbedUpsertArgs) -> Result<usize, String> {
+    memory_spawn_blocking("memory_embed_upsert", move || store().embed_upsert(args)).await
+}
+
+#[tauri::command]
+pub async fn memory_embed_delete_keys(keys: Vec<MemoryEntryKey>) -> Result<usize, String> {
+    memory_spawn_blocking("memory_embed_delete_keys", move || store().embed_delete_keys(&keys)).await
+}
+
+#[tauri::command]
+pub async fn memory_semantic_search(
+    args: MemorySemanticSearchArgs,
+) -> Result<Vec<MemorySemanticHit>, String> {
+    memory_spawn_blocking("memory_semantic_search", move || store().semantic_search(args)).await
+}
+
+#[tauri::command]
+pub async fn memory_dream_run(args: Option<MemoryDreamArgs>) -> Result<MemoryDreamReport, String> {
+    let resolved = args.unwrap_or(MemoryDreamArgs { dry_run: false, trigger: None });
+    memory_spawn_blocking("memory_dream_run", move || store().dream_run(resolved)).await
+}

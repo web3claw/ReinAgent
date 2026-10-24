@@ -85,6 +85,16 @@ impl MemoryStore {
         };
         let mut conn = self.lock_conn()?;
         index_parsed_file(&mut conn, &parsed, &target, false)?;
+        // 记忆升级包：显式携带 importance（提取计划/手动写入）时覆盖 type 默认
+        if let Some(importance) = options.importance {
+            conn.execute(
+                "INSERT INTO memory_access_stats (scope, workdir_hash, slug, importance, access_count, last_accessed_at)
+                 VALUES (?1, ?2, ?3, ?4, 0, 0)
+                 ON CONFLICT(scope, workdir_hash, slug) DO UPDATE SET importance = ?4",
+                params![&scope, &workdir_hash, &slug, importance],
+            )
+            .map_err(|e| format!("写入记忆重要度失败：{e}"))?;
+        }
         insert_audit_log(
             &mut conn,
             if existed_before { "update" } else { "write" },

@@ -5,6 +5,8 @@
 // to the connected desktop agent.
 
 import { invoke } from "@tauri-apps/api/core";
+import { scheduleMemoryEmbed } from "./embeddingService";
+import type { MemoryDreamReport } from "./dreamTypes";
 import type {
   ApplyDecision,
   MemoryConfidence,
@@ -357,7 +359,9 @@ export async function memoryWrite(args: {
   model?: string;
   evidence?: MemoryEvidenceFields;
 }) {
-  return invoke<MemoryMutationResponse>("memory_write", { args });
+  const result = await invoke<MemoryMutationResponse>("memory_write", { args });
+  scheduleMemoryEmbed();
+  return result;
 }
 
 export async function memoryUpdate(args: {
@@ -374,7 +378,9 @@ export async function memoryUpdate(args: {
   model?: string;
   evidence?: MemoryEvidenceFields;
 }) {
-  return invoke<MemoryMutationResponse>("memory_update", { args });
+  const result = await invoke<MemoryMutationResponse>("memory_update", { args });
+  scheduleMemoryEmbed();
+  return result;
 }
 
 export async function memoryDelete(args: {
@@ -387,7 +393,9 @@ export async function memoryDelete(args: {
   conversationId?: string;
   model?: string;
 }) {
-  return invoke<MemoryMutationResponse>("memory_delete", { args });
+  const result = await invoke<MemoryMutationResponse>("memory_delete", { args });
+  scheduleMemoryEmbed();
+  return result;
 }
 
 export async function memoryDeleteProject(args: {
@@ -395,7 +403,9 @@ export async function memoryDeleteProject(args: {
   actor?: "user" | "tool" | "extractor" | "reconcile";
   reason?: string;
 }) {
-  return invoke<MemoryDeleteProjectResponse>("memory_delete_project", { args });
+  const result = await invoke<MemoryDeleteProjectResponse>("memory_delete_project", { args });
+  scheduleMemoryEmbed();
+  return result;
 }
 
 export async function memoryAccept(args: {
@@ -404,7 +414,9 @@ export async function memoryAccept(args: {
   workdir?: string;
   workdirHash?: string;
 }) {
-  return invoke<MemoryMutationResponse>("memory_accept", { args });
+  const result = await invoke<MemoryMutationResponse>("memory_accept", { args });
+  scheduleMemoryEmbed();
+  return result;
 }
 
 export async function memoryApplyBatch(args: {
@@ -418,7 +430,9 @@ export async function memoryApplyBatch(args: {
   };
   decisions?: ApplyDecision[];
 }) {
-  return invoke<MemoryBatchResponse>("memory_apply_batch", { args });
+  const result = await invoke<MemoryBatchResponse>("memory_apply_batch", { args });
+  scheduleMemoryEmbed();
+  return result;
 }
 
 export async function memoryOrganizeRunCreate(args: {
@@ -528,4 +542,14 @@ export async function memoryTodayDaily(rolloverHour?: number) {
 
 export async function memoryWipeAll() {
   return invoke<MemoryPathsInfo>("memory_wipe_all");
+}
+
+// ==================== 记忆升级包（ROADMAP ③）====================
+
+export async function memoryDreamRunApi(args: { dryRun: boolean; trigger?: "scheduled" | "manual" }) {
+  return invoke<MemoryDreamReport>("memory_dream_run", { args });
+}
+
+export async function memoryEmbedScan() {
+  return invoke<unknown>("memory_embed_scan");
 }

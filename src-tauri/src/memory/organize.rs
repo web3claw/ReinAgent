@@ -382,6 +382,8 @@ fn normalize_organize_mode(input: Option<&str>) -> String {
     match input.unwrap_or("standard").trim() {
         "conservative" => "conservative".to_string(),
         "aggressive" => "aggressive".to_string(),
+        // Dream 数值巩固（记忆升级包）复用 organize_runs 记录运行史
+        "dream" => "dream".to_string(),
         _ => "standard".to_string(),
     }
 }

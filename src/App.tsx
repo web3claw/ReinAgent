@@ -46,6 +46,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { FileManagerIcon } from "./components/icons/FileManagerIcon";
 import { getMessageTheme, subscribeMessageTheme, type MessageTheme } from "./lib/settings/messageTheme";
 import { useHubSettings } from "./store/hubSettingsStore";
+import { createDreamService } from "./lib/memory/dreamService";
+import { memoryEmbedSweep } from "./lib/memory/embeddingService";
 
 // 上下文面板 MCP 分类枚举缓存（60s TTL；避免 HoverCard 反复触发服务器连接）
 const MCP_BREAKDOWN_TTL_MS = 60_000;
@@ -908,6 +910,18 @@ export default function App() {
       service.dispose();
     };
   }, [providers, effectiveWorkspaceRoot]);
+
+  // 记忆升级包（ROADMAP ③）：Dream 巩固服务（24h 周期 + 启动补跑）+
+  // 启动时记忆向量 sweep（知识库 embedding 未绑定时内部如实跳过）。
+  useEffect(() => {
+    const service = createDreamService();
+    void memoryEmbedSweep().catch((err) =>
+      console.warn("[memory] 启动向量化 sweep 失败:", err instanceof Error ? err.message : err),
+    );
+    (window as any).__dreamPoke = () => service.poke();
+    (window as any).__memoryEmbedSweep = () => memoryEmbedSweep();
+    return () => service.dispose();
+  }, []);
 
   const currentMessagesRef = useRef(state.messages);
   currentMessagesRef.current = state.messages;

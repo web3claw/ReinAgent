@@ -421,6 +421,8 @@ pub struct MemoryWriteArgs {
     pub conversation_id: Option<String>,
     pub model: Option<String>,
     pub evidence: Option<MemoryEvidenceArgs>,
+    /// 记忆升级包：初始重要度（0.05-1.0）；缺省按 type 默认（user 0.8/feedback 0.7/project 0.6/reference 0.5）
+    pub importance: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -502,6 +504,8 @@ pub struct MemoryDecisionArgs {
     pub reason: Option<String>,
     pub group_id: Option<String>,
     pub evidence: Option<MemoryEvidenceArgs>,
+    /// 记忆升级包：Dream/召回体系的初始重要度（提取计划可携带）
+    pub importance: Option<f32>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -563,6 +567,7 @@ struct ResolvedEntry {
 #[derive(Debug, Clone)]
 struct WriteOptions {
     actor: String,
+    importance: Option<f32>,
     conversation_id: Option<String>,
     trigger: Option<String>,
     model: Option<String>,

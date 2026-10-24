@@ -521,7 +521,7 @@ mod tests {
                 |row| row.get::<_, i64>(0),
             )
             .expect("schema version");
-        assert_eq!(version, 4);
+        assert_eq!(version, 5);
         let meta_columns = table_columns(&conn, "memory_meta").expect("memory_meta columns");
         assert!(meta_columns.contains("archived"));
         let trigram_columns = table_columns(&conn, "memory_fts_tri").expect("trigram columns");
@@ -534,6 +534,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-name".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -589,6 +590,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-style".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -603,6 +605,7 @@ mod tests {
             .expect("write global memory");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-purpose".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_text.clone()),
@@ -667,6 +670,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-a-note".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_a_text.clone()),
@@ -681,6 +685,7 @@ mod tests {
             .expect("write project a memory");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-b-note".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_b_text.clone()),
@@ -742,6 +747,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "global-note".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -756,6 +762,7 @@ mod tests {
             .expect("write global memory");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-a-note".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_a_text.clone()),
@@ -770,6 +777,7 @@ mod tests {
             .expect("write project a memory");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-b-note".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_b_text.clone()),
@@ -851,6 +859,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "symlink-project-note".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(link_text.clone()),
@@ -1069,6 +1078,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-beijing-trip-plan".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1151,6 +1161,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-beijing-trip-plan".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1207,6 +1218,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-major".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1277,6 +1289,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-beijing-trip-plan".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1303,6 +1316,7 @@ mod tests {
                 local_date: None,
                 daily_append: None,
                 decisions: Some(vec![MemoryDecisionArgs {
+            importance: None,
                     op: "upsert".to_string(),
                     slug: "user-beijing-trip-plan".to_string(),
                     scope: Some("global".to_string()),
@@ -1343,6 +1357,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "kevin-accent".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1411,6 +1426,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-concurrency".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1460,6 +1476,7 @@ mod tests {
         let store = Arc::new(test_store());
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-parallel-search".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1581,6 +1598,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-style".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1595,6 +1613,7 @@ mod tests {
             .expect("write global");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-style".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_text.clone()),
@@ -1624,6 +1643,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-major-unreviewed".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1647,6 +1667,7 @@ mod tests {
             .expect("write unreviewed user");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "feedback-unreviewed".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1661,6 +1682,7 @@ mod tests {
             .expect("write unreviewed feedback");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "reference-unreviewed".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1695,6 +1717,7 @@ mod tests {
         let store = test_store();
         let hard = store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "secret-token".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1711,6 +1734,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "soft-risk-note".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1752,6 +1776,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-alpha".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_a.clone()),
@@ -1766,6 +1791,7 @@ mod tests {
             .expect("write project a");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-beta".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_b),
@@ -1816,6 +1842,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-career".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1843,6 +1870,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-plan".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_a.clone()),
@@ -1870,6 +1898,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-plan".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_b.clone()),
@@ -1897,6 +1926,7 @@ mod tests {
 
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "tool-removed".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -1962,6 +1992,7 @@ mod tests {
                 local_date: Some("2026-05-13".to_string()),
                 daily_append: None,
                 decisions: Some(vec![MemoryDecisionArgs {
+            importance: None,
                     op: "upsert".to_string(),
                     slug: "user-test-major".to_string(),
                     scope: Some("global".to_string()),
@@ -2000,6 +2031,7 @@ mod tests {
                 local_date: Some("2026-05-13".to_string()),
                 daily_append: None,
                 decisions: Some(vec![MemoryDecisionArgs {
+            importance: None,
                     op: "upsert".to_string(),
                     slug: "user-test-major".to_string(),
                     scope: Some("global".to_string()),
@@ -2023,6 +2055,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "organize-target".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2037,6 +2070,7 @@ mod tests {
             .expect("write organize target");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "organize-delete".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2059,6 +2093,7 @@ mod tests {
                 local_date: None,
                 daily_append: None,
                 decisions: Some(vec![MemoryDecisionArgs {
+            importance: None,
                     op: "upsert".to_string(),
                     slug: "organize-target".to_string(),
                     scope: Some("global".to_string()),
@@ -2095,6 +2130,7 @@ mod tests {
                 local_date: None,
                 daily_append: None,
                 decisions: Some(vec![MemoryDecisionArgs {
+            importance: None,
                     op: "delete".to_string(),
                     slug: "organize-delete".to_string(),
                     scope: Some("global".to_string()),
@@ -2124,6 +2160,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "organize-large-target".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2138,6 +2175,7 @@ mod tests {
             .expect("write large target");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "organize-large-source".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2161,6 +2199,7 @@ mod tests {
                 daily_append: None,
                 decisions: Some(vec![
                     MemoryDecisionArgs {
+            importance: None,
                         op: "upsert".to_string(),
                         slug: "organize-large-target".to_string(),
                         scope: Some("global".to_string()),
@@ -2174,6 +2213,7 @@ mod tests {
                         mode: None,
                     },
                     MemoryDecisionArgs {
+            importance: None,
                         op: "delete".to_string(),
                         slug: "organize-large-source".to_string(),
                         scope: Some("global".to_string()),
@@ -2219,6 +2259,7 @@ mod tests {
         // high + sufficient quote stays high
         let high = store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "pref-editor".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2242,6 +2283,7 @@ mod tests {
         // high + short quote downgrades to medium
         let downgraded = store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "pref-shell".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2264,6 +2306,7 @@ mod tests {
         // medium + empty quote downgrades to low
         let low = store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "pref-theme".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2338,6 +2381,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "team-workflow".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2360,6 +2404,7 @@ mod tests {
                 local_date: None,
                 daily_append: None,
                 decisions: Some(vec![MemoryDecisionArgs {
+            importance: None,
                     op: "accept".to_string(),
                     slug: "team-workflow".to_string(),
                     scope: Some("global".to_string()),
@@ -2401,6 +2446,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "reviewed-entry".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2415,6 +2461,7 @@ mod tests {
             .expect("write reviewed");
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "unreviewed-entry".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2444,6 +2491,7 @@ mod tests {
         let workdir_path = workdir.path().to_string_lossy().to_string();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "project-entry".to_string(),
                 scope: "project".to_string(),
                 workdir: Some(workdir_path.clone()),
@@ -2560,6 +2608,7 @@ mod tests {
         let store = test_store();
         store
             .write(MemoryWriteArgs {
+            importance: None,
                 slug: "user-editor".to_string(),
                 scope: "global".to_string(),
                 workdir: None,
@@ -2583,6 +2632,7 @@ mod tests {
                 local_date: None,
                 daily_append: None,
                 decisions: Some(vec![MemoryDecisionArgs {
+            importance: None,
                     op: "update".to_string(),
                     slug: "user-editor".to_string(),
                     scope: Some("global".to_string()),

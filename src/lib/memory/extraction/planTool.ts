@@ -103,6 +103,14 @@ const PLAN_ITEM_SCHEMA = Type.Object({
         "Required when re-writing a slug listed in <recent-rejections>: why this overrides the user's recent rejection.",
     }),
   ),
+  importance: Type.Optional(
+    Type.Number({
+      minimum: 0.05,
+      maximum: 1,
+      description:
+        "Initial importance for writes per the rubric: 0.9-1.0 core identity, 0.7-0.8 strong habits/feedback, 0.5-0.6 ordinary facts, 0.3-0.4 minor details. Omit for updates.",
+    }),
+  ),
 });
 
 export function createSubmitMemoryPlanTool(): Tool {
@@ -309,6 +317,13 @@ export function validateSubmittedPlan(
         description,
         body,
         evidence: evidenceFromItem(item),
+        importance:
+          typeof item.importance === "number" &&
+          Number.isFinite(item.importance) &&
+          item.importance >= 0.05 &&
+          item.importance <= 1
+            ? item.importance
+            : undefined,
       });
       return;
     }
@@ -371,6 +386,7 @@ export function planToApplyBatchArgs(items: readonly ValidatedPlanItem[]): {
           description: item.description,
           body: item.body,
           evidence: item.evidence,
+          importance: item.importance,
         });
         break;
       case "update":

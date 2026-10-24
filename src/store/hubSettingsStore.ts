@@ -38,6 +38,8 @@ export interface MemorySettings {
   organizerMode: "conservative" | "standard" | "aggressive";
   organizerLastRunAt?: number | null;
   organizerNextRunAt?: number | null;
+  /** 记忆升级包：Dream 数值巩固开关（24h 自动 + 手动；纯数值零 token） */
+  dreamEnabled: boolean;
 }
 
 /** 知识库（RAG v1，docs/ROADMAP.md ①）：embedding 绑定 + 注入参数 */
@@ -120,6 +122,7 @@ function defaultMemoryShape(): MemorySettings {
     organizerMode: "standard",
     organizerLastRunAt: null,
     organizerNextRunAt: null,
+    dreamEnabled: true,
   };
 }
 

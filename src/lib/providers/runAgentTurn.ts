@@ -557,6 +557,9 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
     // 记忆注入（对齐 LiveAgent）：`# Memory Index` 分桶索引 + `## Memory` 工具规则段，
     // 并挂载 MemoryManager 工具（list/read/search/write/update/delete/accept）。
     // 后端不可达（Web 模式）时注入为空段、工具调用如实报错（No-Fallback）。
+    // 记忆升级包（ROADMAP ③）：知识库 embedding 已绑定时优先走**语义召回**
+    // （buildMemoryRecallSection：相似度/重要度/衰减/频次打分 + 命中回写），
+    // 返回 null（未绑定/失败）回退静态分桶索引——诚实降级，非造假。
     let memorySection = "";
     let memoryManagerTool: unknown = null;
     try {
@@ -565,7 +568,26 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
           import("../memory/prompts/injection"),
           import("../memory/memoryManagerTool"),
         ]);
-      const overview = await buildMemoryOverviewSection(workspaceRoot || undefined);
+      let recallSection: string | null = null;
+      try {
+        const { buildMemoryRecallSection } = await import("../memory/recall");
+        const lastUser = [...(messages ?? [])].reverse().find((m) => m && m.role === "user");
+        const rawContent = lastUser?.content;
+        const recallQuery =
+          typeof rawContent === "string"
+            ? rawContent
+            : Array.isArray(rawContent)
+              ? rawContent
+                  .filter((b) => b && (b as { type?: string }).type === "text")
+                  .map((b) => (b as { text?: string }).text ?? "")
+                  .join("\n")
+              : "";
+        recallSection = await buildMemoryRecallSection(recallQuery);
+      } catch (err) {
+        console.warn("[memory] semantic recall failed (falling back to static index):", err);
+      }
+      const overview =
+        recallSection !== null ? recallSection : await buildMemoryOverviewSection(workspaceRoot || undefined);
       memorySection = overview ? `${overview}\n\n${buildMemoryToolsSuffixSection()}` : "";
       memoryManagerTool = createMemoryManagerTool({
         workdir: workspaceRoot || "",

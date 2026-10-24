@@ -29,6 +29,16 @@ export const EXTRACTION_SYSTEM_PROMPT = [
   "- After SubmitMemoryPlan returns, stop. Do not write further prose.",
 ].join("\n");
 
+// 记忆升级包（ROADMAP ③）：重要度刻度——召回打分与 Dream 衰减/遗忘依赖
+const IMPORTANCE_RUBRIC = [
+  "Importance rubric for writes (field importance, 0.05-1.0):",
+  "- 0.9-1.0: core identity, standing preferences the user always wants honored.",
+  "- 0.7-0.8: strong habits or explicit feedback/corrections.",
+  "- 0.5-0.6: ordinary durable facts about tools, projects or workflow.",
+  "- 0.3-0.4: minor details that are nice to recall but disposable.",
+  "- Omit importance for updates; only writes carry it.",
+].join("\n");
+
 const REVIEWER_MODE_RULES: Record<MemoryReviewerMode, readonly string[]> = {
   // Strict: only write when the user clearly asked. Medium/low candidates may
   // only update existing slugs, never create new ones.
@@ -161,6 +171,8 @@ export function buildExtractionInstructionPrompt(params: {
     "The LAST user turn in <conversation-window> is the extraction target. Use the earlier turns (and <conversation-summary>, when present) only to resolve pronouns, corrections, and whether a new statement supersedes an existing memory.",
     "",
     buildReviewerModeLines(reviewerMode),
+    "",
+    IMPORTANCE_RUBRIC,
     "",
     "# Memory Extraction — Read-then-Decide",
     "",

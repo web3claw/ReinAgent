@@ -4,6 +4,7 @@ impl MemoryStore {
         let options = WriteOptions {
             unreviewed: actor == "extractor",
             actor,
+            importance: args.importance,
             conversation_id: args.conversation_id,
             trigger: None,
             model: args.model,
@@ -71,6 +72,7 @@ impl MemoryStore {
                 WriteOptions {
                     unreviewed: actor == "extractor",
                     actor,
+                    importance: None,
                     conversation_id: args.conversation_id,
                     trigger,
                     model: args.model,
@@ -150,6 +152,7 @@ impl MemoryStore {
         };
         let actor = args.actor.unwrap_or_else(|| "tool".to_string());
         let options = WriteOptions {
+            importance: None,
             unreviewed: if actor == "extractor" {
                 if evidence_only_update {
                     resolved.meta.unreviewed
@@ -459,6 +462,7 @@ impl MemoryStore {
             .unwrap_or_else(|| today_local(DEFAULT_ROLLOVER_HOUR).to_string());
         let options = WriteOptions {
             actor: "extractor".to_string(),
+            importance: None,
             conversation_id: args.conversation_id.clone(),
             trigger: args.trigger.clone(),
             model: args.model.clone(),
@@ -823,7 +827,8 @@ impl MemoryStore {
             .scope
             .clone()
             .unwrap_or_else(|| "project".to_string());
-        let write_options = options.clone();
+        let mut write_options = options.clone();
+        write_options.importance = decision.importance;
         if args.trigger.as_deref() == Some("memory-organize") {
             return match self.update_inner(
                 MemoryUpdateArgs {

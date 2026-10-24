@@ -32,7 +32,49 @@ fn init_schema(conn: &Connection) -> Result<(), String> {
     }
     conn.execute_batch(MEMORY_SCHEMA_DDL)
         .map_err(|e| format!("初始化记忆索引表失败：{e}"))?;
-    ensure_organize_runs_v4_columns(conn)
+    ensure_organize_runs_v4_columns(conn)?;
+    ensure_memory_v5_tables(conn)
+}
+
+/// v4 -> v5（记忆升级包，ROADMAP ③）：语义召回与 Dream 巩固的三张派生表。
+/// 均为 CREATE IF NOT EXISTS 新表——**不进 rebuild 白名单、不在 rebuild 的
+/// DROP 列表里**：reconcile 整库重建（DROP meta/fts 后重灌）时这三张表原样
+/// 保留；embeddings 靠 body_hash 差分自愈，stats 的键 (scope,hash,slug) 稳定
+/// 无需重建。
+fn ensure_memory_v5_tables(conn: &Connection) -> Result<(), String> {
+    conn.execute_batch(
+        r#"
+        CREATE TABLE IF NOT EXISTS memory_access_stats (
+            scope            TEXT    NOT NULL,
+            workdir_hash     TEXT    NOT NULL DEFAULT '',
+            slug             TEXT    NOT NULL,
+            importance       REAL    NOT NULL DEFAULT 0.5,
+            access_count     INTEGER NOT NULL DEFAULT 0,
+            last_accessed_at INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (scope, workdir_hash, slug)
+        );
+
+        CREATE TABLE IF NOT EXISTS memory_embeddings (
+            scope        TEXT    NOT NULL,
+            workdir_hash TEXT    NOT NULL DEFAULT '',
+            slug         TEXT    NOT NULL,
+            body_hash    TEXT    NOT NULL,
+            embedding    BLOB    NOT NULL,
+            dims         INTEGER NOT NULL,
+            updated_at   INTEGER NOT NULL,
+            PRIMARY KEY (scope, workdir_hash, slug)
+        );
+
+        CREATE TABLE IF NOT EXISTS memory_state (
+            key   TEXT PRIMARY KEY,
+            value TEXT NOT NULL
+        );
+
+        INSERT OR IGNORE INTO memory_schema_version (version, applied_at)
+        VALUES (5, strftime('%s','now') * 1000);
+        "#,
+    )
+    .map_err(|e| format!("初始化记忆 v5 表失败：{e}"))
 }
 
 /// v3 -> v4 is additive: organize-run history survives, missing columns are
@@ -79,7 +121,7 @@ fn memory_schema_needs_rebuild(conn: &Connection) -> Result<bool, String> {
     if version < 3 {
         return Ok(true);
     }
-    if version > 4 {
+    if version > 5 {
         return Err(format!("unsupported memory schema version: {version}"));
     }
 
@@ -276,6 +318,16 @@ fn index_parsed_file(
         &links_json,
         &parsed.body,
     )?;
+    // 记忆升级包：访问统计行随索引幂等落账（importance 初值按 type；
+    // 已有行不动——重要性由 Dream/召回回写演化，重索引/reconcile 不重置）。
+    if memory_type != "daily" {
+        tx.execute(
+            "INSERT OR IGNORE INTO memory_access_stats (scope, workdir_hash, slug, importance, access_count, last_accessed_at)
+             VALUES (?1, ?2, ?3, ?4, 0, 0)",
+            params![scope, workdir_hash, slug, importance_default_for_type(&memory_type)],
+        )
+        .map_err(|e| format!("初始化记忆访问统计失败：{e}"))?;
+    }
     tx.commit()
         .map_err(|e| format!("提交记忆索引事务失败：{e}"))
 }
@@ -388,6 +440,17 @@ fn delete_index_rows(
         params![scope, workdir_hash, slug],
     )
     .map_err(|e| format!("删除 memory_fts_tri 行失败：{e}"))?;
+    // 记忆升级包：级联清理访问统计与向量（记忆升级包 v5 表）
+    tx.execute(
+        "DELETE FROM memory_access_stats WHERE scope = ?1 AND workdir_hash = ?2 AND slug = ?3",
+        params![scope, workdir_hash, slug],
+    )
+    .map_err(|e| format!("删除 memory_access_stats 行失败：{e}"))?;
+    tx.execute(
+        "DELETE FROM memory_embeddings WHERE scope = ?1 AND workdir_hash = ?2 AND slug = ?3",
+        params![scope, workdir_hash, slug],
+    )
+    .map_err(|e| format!("删除 memory_embeddings 行失败：{e}"))?;
     tx.commit()
         .map_err(|e| format!("提交记忆删除事务失败：{e}"))
 }

@@ -208,5 +208,6 @@ include!("paths.rs");
 include!("content.rs");
 include!("schema.rs");
 include!("search.rs");
+include!("dream.rs");
 include!("commands.rs");
 include!("tests.rs");

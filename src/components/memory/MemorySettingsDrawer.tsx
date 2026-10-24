@@ -60,6 +60,8 @@ import {
   memoryScopeLabel,
 } from "./panelModel";
 import { DrawerSelect } from "./DrawerSelect";
+import { memoryDreamRunApi } from "../../lib/memory/api";
+import type { MemoryDreamReport } from "../../lib/memory/dreamTypes";
 import { OrganizerHistoryModal } from "./OrganizerHistoryModal";
 
 const MEMORY_ORGANIZER_TIME_DEBOUNCE_MS = 400;
@@ -119,6 +121,9 @@ export function MemorySettingsDrawer(props: {
   } = props;
   const [historyOpen, setHistoryOpen] = useState(false);
   const [organizerFeedback, setOrganizerFeedback] = useState<string | null>(null);
+  const [dreamBusy, setDreamBusy] = useState(false);
+  const [dreamPlan, setDreamPlan] = useState<MemoryDreamReport | null>(null);
+  const [dreamMessage, setDreamMessage] = useState<string | null>(null);
   const [drawerWipeConfirmOpen, setDrawerWipeConfirmOpen] = useState(false);
   const [quotaSummary, setQuotaSummary] = useState<MemoryQuotaSummaryResponse | null>(null);
   const memoryOrganizerModel = memoryModelValue(settings.memory.organizerModel);
@@ -202,6 +207,42 @@ export function MemorySettingsDrawer(props: {
     settings.memory.organizerEnabled,
     settings.memory.organizerSchedule.frequency,
   ]);
+
+  // Dream 数值巩固（记忆升级包）：预览（dry-run）先行，确认后才真正落库
+  async function handleDream(dryRun: boolean) {
+    setDreamBusy(true);
+    try {
+      const report = await memoryDreamRunApi({ dryRun });
+      setDreamPlan(report);
+      setDreamMessage(
+        (dryRun ? t("settings.memoryDreamPreviewLabel") : t("settings.memoryDreamDoneLabel")) +
+          ": " +
+          t("settings.memoryDreamMerged") +
+          " " +
+          report.merged +
+          " · " +
+          t("settings.memoryDreamDecayed") +
+          " " +
+          report.decayed +
+          " · " +
+          t("settings.memoryDreamForgotten") +
+          " " +
+          report.forgotten +
+          " · " +
+          t("settings.memoryDreamRemaining") +
+          " " +
+          report.remaining +
+          " (" +
+          report.durationMs +
+          "ms)",
+      );
+      if (!dryRun) void props.onMemoryChanged?.();
+    } catch (err) {
+      setDreamMessage(String(err instanceof Error ? err.message : err).slice(0, 200));
+    } finally {
+      setDreamBusy(false);
+    }
+  }
 
   // The two model selects share the picker but not the empty-value wording:
   // clearing the organizer model turns the organizer off, while clearing the
@@ -537,6 +578,60 @@ export function MemorySettingsDrawer(props: {
                   {t("settings.memoryOrganizerRunNow")}
                 </Button>
               </div>
+            </section>
+
+            <section className="py-5">
+              <div className="mb-3 flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground/90">
+                  {t("settings.memoryDreamTitle")}
+                </span>
+                <label className="flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                  <input
+                    type="checkbox"
+                    className="size-3.5 accent-[var(--accent)]"
+                    checked={settings.memory.dreamEnabled}
+                    onChange={(event) =>
+                      setSettings((prev) => updateMemorySettings(prev, { dreamEnabled: event.target.checked }))
+                    }
+                  />
+                  24h
+                </label>
+              </div>
+              <div className="rounded-lg border border-foreground/[0.05] bg-foreground/[0.025] p-3 text-xs leading-relaxed text-muted-foreground">
+                {t("settings.memoryDreamDescription")}
+              </div>
+              <div className="mt-3 flex gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="flex-1 border border-input bg-background hover:bg-accent/40"
+                  disabled={dreamBusy}
+                  onClick={() => void handleDream(true)}
+                >
+                  <RefreshCw className={cn("size-3.5", dreamBusy && "animate-pulse")} />
+                  {t("settings.memoryDreamPreview")}
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="flex-1"
+                  disabled={
+                    dreamBusy ||
+                    !dreamPlan ||
+                    !dreamPlan.dryRun ||
+                    dreamPlan.merged + dreamPlan.decayed + dreamPlan.forgotten === 0
+                  }
+                  onClick={() => void handleDream(false)}
+                >
+                  {t("settings.memoryDreamApply")}
+                </Button>
+              </div>
+              {dreamMessage ? (
+                <div className="mt-2 whitespace-pre-wrap rounded-lg border border-foreground/[0.05] bg-foreground/[0.025] px-3 py-2 text-xs text-muted-foreground">
+                  {dreamMessage}
+                </div>
+              ) : null}
             </section>
 
             <div className="py-4 break-all font-mono text-xs text-muted-foreground">
