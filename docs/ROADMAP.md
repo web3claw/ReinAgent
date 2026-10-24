@@ -13,11 +13,11 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 | 优先级 | 借鉴项 | 一句话价值 |
 | --- | --- | --- |
 | P0 | ① RAG 知识库 ✅（2026-10-24 v1 落地） | 笔记/会话/导入数据零检索 → sqlite-vec 语义检索 + agent 工具/自动注入 |
-| P0 | ② 会话级 worktree 隔离 | 多任务并行互踩工作区 → 懒创建 + 合并后自动清理 |
+| P0 | ② 会话级 worktree 隔离 ✅（2026-10-24 v1 落地） | 多任务并行互踩工作区 → 懒创建 + 合并后自动清理 |
 | P0 | ③ 记忆升级包（作用域/召回打分/Dream）✅（2026-10-24 v1 落地，会话作用域留 v2） | 纯数值算法、成本低，与现有 extraction/organizer 直接衔接 |
 | P1 | ④ 笔记增强包（版本历史/划词 AI/回收站/标签） | 笔记从「编辑器」升级为「资产库」 |
 | P1 | ⑤ 看板式 Agent 任务 | 任务驱动的无人值守执行（与 cron 自动化互补） |
-| P1 | ⑥ 进模型前文本压缩管线 | 纯函数 10 节点，专治工具输出超长，与 microcompact 正交 |
+| P1 | ⑥ 进模型前文本压缩管线 ✅（2026-10-24 v1 落地） | 纯函数 5 节点（轻有损子集），专治工具输出超长，与 microcompact 正交 |
 | P1 | ⑦ PR 面板（gh/glab） | Git 面板自然延伸 + 「交给 Agent 修」闭环 |
 | P2 | ⑧ 用量分析页 / ⑨ Wiki 生成 / ⑩ 知识图谱 / ⑪ 场景化模型 / ⑫ SSH 项目 | 依赖前置或投入大，缓 |
 | 地基 | ⓪ 后台任务队列语义 | ①⑤⑨ 的公共前置：SQLite 表即队列 |
@@ -48,7 +48,7 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 
 **必须继承的坑**：vec 虚表不支持 upsert（DELETE+INSERT 包同一事务）；KNN 语法 `WHERE embedding MATCH ? AND k = ?` 不能与 LIMIT 共存；虚表无元数据列，业务过滤必须 JOIN 回正规表（用 fetchK=topK×3 放大抵消）；换 embedding 模型 = 任务队列全量重算。
 
-### ② 会话级 git worktree 隔离 ☐
+### ② 会话级 git worktree 隔离 ✅（2026-10-24 v1 落地；实现细节见 PROJECT_CONTEXT「十五、会话级 worktree 隔离」节。落地差异：确定性命名（标题slug+任务短id）替代 LLM 起名与 -2 递增——幂等关键；清理的已合并判定用主仓 HEAD..branch 计数）
 
 **Hetu 机制**（`WorkWorktreeService.cs` / `WorktreeNameSuggester.cs` / `WorktreeCleanupService.cs`）：
 
@@ -100,7 +100,7 @@ ReinAgent 笔记是文件制：版本历史可落 `.ReinAgent/notes-versions/` �
 
 **对 ReinAgent 落地**：与 automations（cron 时间驱动）互补的任务驱动形态；复用任务级隔离/审批门静默档与 bg_list 徽标展示。依赖 ⓪ 后台任务队列。
 
-### ⑥ 进模型前文本压缩管线 ☐
+### ⑥ 进模型前文本压缩管线 ✅（2026-10-24 v1 落地；实现细节见 PROJECT_CONTEXT「十六、文本压缩管线」节。v1 为轻有损 5 节点子集：结构化折叠/连续重复/SimHash 近重复/空白收敛/headtail 首尾保留；number_normalize/stopwords/keywords/llm_summary 四节点不进 v1）
 
 **Hetu 机制**（`CompressionPipelineService.cs`，配置 `CompressionConfig`）：10 节点固定顺序的纯文本变换——structured（base64/HTML/JSON/表格折叠）→ dedup → whitespace → log_dedup → near_dup（**SimHash**）→ number_normalize → stopwords（默认关）→ keywords（关键行打分）→ headtail（超长保首尾）→ llm_summary（仅 ≥500 字符且非 algorithmic 模式）；硬守卫「结果没变短就保留原文」。用于：超长工具输出逐段压缩、看板简报、代理转发。
 

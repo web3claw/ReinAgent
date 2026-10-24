@@ -2447,3 +2447,47 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 - Rust：dream 纯函数 3 + store 集成 2（scan/upsert/模型 fail-fast/检索回写 accessCount 递增/dry-run 不落库/真跑合并+遗忘/keeper +0.05/.trash 两条）；全量 cargo 274 绿；**Red Check**：DECAY_FACTOR 0.8→1.0 与 MERGE_THRESHOLD 0.85→0.1 双破坏真实报红。
 - TS：test:memory 6/6（差分三分支/格式化截断）；test:hub 89、chat 178、knowledge 18、import 41 全绿；tsc 0。
 - **Real Usage E2E（SiliconFlow 真链路，9/9 两轮合计）**：启动 sweep 真实向量化 58 条记忆（4096 维）；真实语义召回命中真实记忆（top score 0.536）且回写 accessCount 0→1；importance 管道（写 0.9 → 检索命中携带 0.9 + 正文节选含验收标记）；Dream dry-run（merged=0/decayed=0/forgotten=0/remaining=59，真实数据未动）；delete 级联清理向量行。⚠️ 语义召回注入的请求预览抽查未单独跑（注入通道与知识库共用且已被知识库 E2E 覆盖，格式化有单测）。
+
+## 十五、会话级 worktree 隔离（ROADMAP ②，2026-10-24 落地，随 v0.2.11 发布）
+
+> 对标 Hetu WorkWorktreeService；用户拍板：仓库父目录放置、--no-ff 合并、确定性命名、自动清理（已合并+干净+空闲>24h，分支保留）、默认关。
+
+### Rust（src-tauri/src/git_worktree.rs，run_git 开放 pub(crate) 共用）
+- 4 命令：`git_worktree_ensure(cwd, taskId, title)`（幂等：rev-parse 定位仓根→确定性分支名 `reinagent/<标题slug(≤30, CJK保留)>-<task短id>`→目录 `<repoParent>/.reinagent-worktrees/<repoDirName>/<slug>/`→`worktree add [-b|重挂]`；分支已挂树→原样返回 created=false；分支存在但未挂（清理保留了分支）→重挂同名分支）/ `git_worktree_merge(worktreePath, base)`（校验链：工作树干净→主仓干净→主仓 HEAD==base→`merge --no-ff`；冲突 `merge --abort` 回滚+返回未合并文件列表；merge_core 同步函数可直测）/ `git_worktree_remove(worktreePath, branch, deleteBranch, force)`（**必须先定位主仓再 remove**——在被删工作树里跑 git，Windows cwd 被删会让 git 异常退出，初版真踩）/ `git_worktree_eligibility(worktreePath, branch)`（clean + 主仓 `HEAD..branch` 计数==0 = 已合并）。
+- 测试 9 用例（真 tempdir git 仓）：slugify/short_id、ensure 幂等与命名、非 git 报错、--no-ff 双亲/内容落地/eligibility/remove 分支保留、merge_core 拒绝（脏主仓/base 偏离）。Red Check：废掉干净/base 双校验 → 拒绝测试真实报红。
+
+### TS
+- AppTask 增 `worktreeEnabled`（三态）/`worktreePath/Branch/Base/CreatedAt`（payload JSON 自动持久化水合，零迁移）；`updateTaskWorktreeEnabled/WorktreeInfo` actions。
+- **决议单点**（App.tsx effectiveWorkspaceRoot）：`resolveTaskEffectiveRoot(activeTask, resolveWorkspaceRoot(project))`（纯函数 lib/worktree/resolve.ts）——终端/Files/Git/预览/hooks/@提及/记忆等 20+ 消费方无感跟随；buildTurnOptions 的 workspaceRoot **按 taskId 实时解析**（草稿提升首轮闭包值过期的坑，照 F17 审批模式模式）。
+- 懒创建（sendNow 尾部）：onSend 契约是同步 boolean，需建时「先受理 return true → ensure 完成后 finally 派发 poolSend」（首回合工具必须落在工作树里）；失败 console.warn + 回退主工作区发送。
+- 开关 UI：composer GitBranch 图标（Library 旁，三态：任务级 action / 草稿态写 hubSettings.worktree.enabledByDefault，kv 键 reinagent-worktree-settings，默认 false）；非 git 仓库首条消息 ensure 报错 toast。
+- WorktreeBadge（任务栏标题旁 ⎇ 分支名）：菜单=合并回主分支（--no-ff，冲突 toast 文件列表）/删除工作树（二次确认，分支保留）/文件管理器打开。
+- 自动清理（lib/worktree/cleanup.ts）：启动 30s 后 + 每小时；任务 updatedAt>24h 且 eligibility.removable → remove（分支保留）+清字段；未交付永不动。
+
+### 测试与验证
+- TS：test:worktree 2/2（决议纯函数回退语义）；tsc 0；cargo 283 全绿。
+- **Real Usage E2E 10/10**（真实 git 仓 + 真实运行时）：createTask 绑项目→开关→ensure 新建（CJK 分支名）→幂等→徽标渲染→工作树内真实提交→eligibility 未合并拒清→merge --no-ff（双亲=2、内容落主仓）→合并后可清→主仓脏合并拒绝（结构化文案）→remove（目录删/分支留）。
+
+### 已知边界
+- 主仓检出非 base 分支/主仓前进：合并结构化拒绝（提示先同步）；自动化任务与 SSH 项目 v1 不自动建 worktree；回合进行中切换不影响当轮（发送时快照语义）。
+
+## 十六、进模型前文本压缩管线（ROADMAP ⑥，2026-10-24 落地，随 v0.2.11 发布）
+
+> 对标 Hetu CompressionPipelineService 的 v1 轻有损子集；用户拍板：仅接管工具输出、5 节点。
+> Hetu 的 number_normalize（数值改写风险）/stopwords（其默认关）/keywords（有损打分）/llm_summary（需模型）四节点明确不进 v1。
+
+### 架构（src/lib/agent/compressPipeline.ts，纯模块 node --test 直跑）
+- **挂载单点**：tools.js `buildTextToolResult`——全部工具文本结果（exec 30KB/readFile 256KB/webFetch 30KB/webSearch 16KB/listDir 8KB）超限时走管线，替代旧「傻头切」；未超限零变化。details 增 `compressedFrom/compressedTo/compressNodes`（节点统计 UI/预览可见）。
+- **5 节点**（每节点硬守卫「没变短就保留输入」——字节恒不增）：① foldStructuredBlobs：hex(≥64，**先于 base64 匹配**——hex 是其字符子集)/base64(>80)→`[folded:<kind>,NB]`；数字密集行（≥120 字符纯数字/逗号/空白且 ≥16 个数）整行折叠 ② dedupConsecutiveLines：连续相同行→`…[repeated ×N]`（空白行重复不记标记） ③ dedupNearDuplicateLines：**词级 SimHash**（64 位双 32 半字，FNV-1a，**数字 token 归一化为 #**——时间戳/ID/计数器差异的同构日志距离≈0）汉明 ≤3，连续 ≥3 行折叠 `…[near-dup ×N]` ④ collapseWhitespace ⑤ headtail：仍超限→首 75% 预算+标记+尾 25%（**尾部 stack trace 不再丢**，标记 `…[compressed: 原 X → 管线后 Y，保留首尾 Z]`）。
+- 入口阈值 PIPELINE_MIN_BYTES=4096：小结果直通零开销。
+- **实现踩坑记录**（全部被测试真实验证）：数字串折叠禁用嵌套量词正则（`(?:\d+[,\s]+){16,}` ReDoS 实测挂死测试套件→改行级判定）；尾部二分必须 floor 中点（ceil 在 hi=lo+1 时 true 分支零进展死循环，é×8000 用例实测）；head 二分用 ceil 中点安全（true 分支 lo=mid≥lo+1 恒进展）。
+
+### 测试与验证（交付三铁律）
+- test:compress 9 用例：小文本直通/hex-base64-数字折叠（含 hex⊂base64 次序）/连续重复计数/词级 SimHash 距离判别/风暴折叠+独立行保留/空白收敛/硬守卫零放大/headtail 首尾锚+CJK 无替换字符/239KB 组合场景。
+- **Red Check 双破坏全红**：hammingDistance 恒 64（近重复节点失效）与 headtail 去尾；还原后全绿逐字节一致。
+- **Real Usage harness**：239KB 真实形态日志（base64 证书段+2400 行请求风暴+400 连续重试+perf 计数行+尾部 TypeError stacktrace）读盘过真实管线 → **1,013B（99.6%）**，headtail 未触发（管线已装下）、尾部锚与 ERROR 行完整保留。诚实声明：未发起真实模型回合（管线为确定性纯函数，模型侧无变量）。
+- 回归：tsc 0 / test:agent 49（旧头切契约断言已更新为 headtail 首尾语义 + 折叠直通新行为）/ chat 178 / import 41 全绿。
+
+### 行为变化（对用户的可见差异）
+- 超限工具结果从「只保头部」变为「先折叠噪音，仍超限保首尾」——尾部错误堆栈可见性提升。
+- 纯 base64/重复行内容可能折叠后完全装下（truncated=false，details 有折叠统计）。
