@@ -3193,6 +3193,11 @@ export function createOpenclawImporter(fs: ImportFs, home: string, db?: ImportDb
 // 顺序 fullConversationHeadersOnly）与 bubbleId:<id>:<bubble>（正文 text/
 // thinking/toolFormerData）。cwd/模型优先从 IDE composerData 借。
 
+/** Cursor IDE 库（Linux/macOS 布局；Windows 官方装 %APPDATA% 查不到，按缺库宽容）。 */
+function cursorStateDbPath(home: string): string {
+  return homeJoin(home, ".config", "Cursor", "User", "globalStorage", "state.vscdb");
+}
+
 function cursorUnwrapUserText(text: string): string {
   const m = text.match(/<user_query>([\s\S]*?)<\/user_query>/);
   if (m) return m[1].trim();
@@ -3216,14 +3221,7 @@ function decodeBlobValue(value: unknown): Record<string, any> | null {
 
 export function createCursorImporter(fs: ImportFs, home: string, db?: ImportDb): SessionImporter {
   const PROJECTS_DIR = homeJoin(home, ".cursor", "projects");
-  const STATE_DB = homeJoin(
-    home,
-    ".config",
-    "Cursor",
-    "User",
-    "globalStorage",
-    "state.vscdb",
-  );
+  const STATE_DB = cursorStateDbPath(home);
 
   async function composerFacts(composerId: string): Promise<{ cwd: string | null; model: string | null }> {
     if (!db) return { cwd: null, model: null };
@@ -3716,7 +3714,9 @@ export async function deleteSessionBySource(
       await removePaths(fs, [filePath, filePath.replace(/\.jsonl$/, "")]);
       return;
     }
-    case "codebuddy": {
+    case "codebuddy":
+    // WorkBuddy 是 CodeBuddy 孪生实例（仅根目录不同），删除形态一致
+    case "workbuddy": {
       await removePaths(fs, [
         filePath,
         `${filePath.replace(/\.jsonl$/, "")}.meta.json`,
@@ -3727,8 +3727,7 @@ export async function deleteSessionBySource(
     case "kimi":
     case "grok":
     case "craft":
-    case "dsh":
-    case "cursor": {
+    case "dsh": {
       // 一目录一会话的家：整目录递归删
       await removePaths(fs, [parentDirOf(filePath)]);
       return;
@@ -3808,18 +3807,21 @@ export async function deleteSessionBySource(
       return;
     }
     case "cursor": {
-      if (!io.db) throw new Error("import db unavailable");
-      // IDE 库：composer 元数据 + 全部气泡正文；CLI 转录目录（若存在）一并删
-      await execDelete(
-        io.db,
-        filePath,
-        "DELETE FROM cursorDiskKV WHERE key = ? OR key LIKE ?",
-        [`composerData:${externalId}`, `bubbleId:${externalId}:%`],
-      );
-      try {
-        await removePaths(fs, [parentDirOf(filePath)]);
-      } catch {
-        // 纯 IDE 会话没有转录目录——不视为失败
+      // 正文 = CLI 转录目录（一目录一会话）——主删除，失败即失败
+      await removePaths(fs, [parentDirOf(filePath)]);
+      // IDE 库同 id composer 元数据与气泡 best-effort 清：CLI-only / Windows
+      // 缺库 / 缺表都不阻断（转录才是正文，残留行无害）
+      if (io.db?.execute) {
+        try {
+          await execDelete(
+            io.db,
+            cursorStateDbPath(io.home),
+            "DELETE FROM cursorDiskKV WHERE key = ? OR key LIKE ?",
+            [`composerData:${externalId}`, `bubbleId:${externalId}:%`],
+          );
+        } catch {
+          // IDE 库缺失——按缺库宽容
+        }
       }
       return;
     }

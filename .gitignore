@@ -18,6 +18,12 @@ dist-ssr
 
 # Agent workspace memory & scratch (per-machine, contains machine-specific state)
 .workbuddy/
+# 导入测试的 WorkBuddy 孪生 fixture 必须进 git（importFixtures 测试依赖）；
+# 先反排除目录本身 git 才会继续下探
+!src/lib/import/fixtures/home/.workbuddy/
+!src/lib/import/fixtures/home/.workbuddy/**
+
+.zcode/
 
 # Environment
 .env

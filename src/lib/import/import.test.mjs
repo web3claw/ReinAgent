@@ -9,6 +9,7 @@ const {
   createClaudeImporter,
   createCodexImporter,
   createPiImporter,
+  deleteSessionBySource,
 } = await import("./importers.ts");
 const { groupImportCandidates, projectNameOf, formatImportDate } = await import("./importGroups.ts");
 const {
@@ -314,4 +315,93 @@ test("apiFormat 别名与确定性 id", () => {
   assert.equal(resolveApiFormat("pi-messages"), "anthropic-messages");
   assert.equal(resolveApiFormat("unknown-protocol"), undefined);
   assert.equal(modelConfigImportId("cc-switch", "claude:p1"), "import-cc-switch-claude:p1");
+});
+
+// ==================== 外部会话删除（deleteSessionBySource）====================
+
+function deleteSummary(source, filePath, externalId = "sess-1") {
+  return {
+    source,
+    externalId,
+    title: "t",
+    projectPath: null,
+    model: null,
+    createdAt: "2026-01-01T00:00:00Z",
+    updatedAt: "2026-01-01T00:00:00Z",
+    messageCount: 3,
+    filePath,
+  };
+}
+
+/** 记录型 ImportFs：只实现 removePath（删除链路不读文件）。 */
+function recordingFs() {
+  const removed = [];
+  return {
+    removed,
+    async removePath(path) {
+      removed.push(path.replace(/\\/g, "/"));
+      return true;
+    },
+  };
+}
+
+/** 记录型 ImportDb：execute 落账（result=null 模拟库删除失败）。 */
+function recordingDb(executeResult = { changed: 1 }) {
+  const executed = [];
+  return {
+    executed,
+    async query() {
+      return null;
+    },
+    async execute(path, sql, params) {
+      executed.push({ path, sql, params });
+      return executeResult;
+    },
+  };
+}
+
+test("删除：workbuddy 与 codebuddy 孪生同形态——jsonl + meta.json + 同名目录", async () => {
+  for (const source of ["workbuddy", "codebuddy"]) {
+    const fs = recordingFs();
+    await deleteSessionBySource(deleteSummary(source, "/home/u/.workbuddy/projects/e--DevCode-Proj/abc123.jsonl"), {
+      fs,
+      home: "/home/u",
+    });
+    assert.deepEqual(fs.removed, [
+      "/home/u/.workbuddy/projects/e--DevCode-Proj/abc123.jsonl",
+      "/home/u/.workbuddy/projects/e--DevCode-Proj/abc123.meta.json",
+      "/home/u/.workbuddy/projects/e--DevCode-Proj/abc123",
+    ]);
+  }
+});
+
+test("删除：cursor 删转录目录 + IDE 库残留按 state.vscdb 路径清", async () => {
+  const fs = recordingFs();
+  const db = recordingDb();
+  await deleteSessionBySource(
+    deleteSummary("cursor", "/home/u/.cursor/projects/-Users-t-p/agent-transcripts/s1/s1.jsonl", "s1"),
+    { fs, db, home: "/home/u" },
+  );
+  assert.deepEqual(fs.removed, ["/home/u/.cursor/projects/-Users-t-p/agent-transcripts/s1"]);
+  assert.equal(db.executed.length, 1);
+  assert.equal(db.executed[0].path, "/home/u/.config/Cursor/User/globalStorage/state.vscdb");
+  assert.equal(db.executed[0].sql, "DELETE FROM cursorDiskKV WHERE key = ? OR key LIKE ?");
+  assert.deepEqual(db.executed[0].params, ["composerData:s1", "bubbleId:s1:%"]);
+});
+
+test("删除：cursor 无 db 或 IDE 库删除失败，主删除仍成功不抛", async () => {
+  const fsNoDb = recordingFs();
+  await deleteSessionBySource(
+    deleteSummary("cursor", "/home/u/.cursor/projects/-p/agent-transcripts/s2/s2.jsonl", "s2"),
+    { fs: fsNoDb, home: "/home/u" },
+  );
+  assert.deepEqual(fsNoDb.removed, ["/home/u/.cursor/projects/-p/agent-transcripts/s2"]);
+
+  const fsDbFail = recordingFs();
+  const dbFail = recordingDb(null);
+  await deleteSessionBySource(
+    deleteSummary("cursor", "/home/u/.cursor/projects/-p/agent-transcripts/s3/s3.jsonl", "s3"),
+    { fs: fsDbFail, db: dbFail, home: "/home/u" },
+  );
+  assert.deepEqual(fsDbFail.removed, ["/home/u/.cursor/projects/-p/agent-transcripts/s3"]);
 });
