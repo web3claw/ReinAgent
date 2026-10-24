@@ -1,7 +1,7 @@
 {
   "name": "reinagent",
   "private": true,
-  "version": "0.2.9",
+  "version": "0.2.10",
   "type": "module",
   "packageManager": "bun@1.4.2",
   "trustedDependencies": [
@@ -26,7 +26,8 @@
     "test:hub": "bun test src/lib/skills/clawHubCategories.test.mjs src/lib/skills/clawHub.test.mjs src/lib/skills/installedSort.test.mjs src/lib/mcpRegistry/index.test.mjs src/lib/mcp/mcpToolsSchema.test.mjs src/lib/mcp/mcpJsonImport.test.mjs src/lib/memory/schema.test.mjs src/lib/memory/extraction/gating.test.mjs src/lib/memory/extraction/chatMessageAdapter.test.mjs src/lib/memory/organizer/quota.test.mjs src/lib/memory/organizer/runRecord.test.mjs src/lib/memory/modelResolution.test.mjs",
     "test:terminal": "node --test src/lib/terminal/terminalUi.test.mjs",
     "test:remote": "node --test src/remote-mobile/lib/remoteMobile.test.mjs",
-    "test:knowledge": "node --test src/lib/knowledge/knowledge.test.mjs"
+    "test:knowledge": "node --test src/lib/knowledge/knowledge.test.mjs",
+    "test:memory": "node --test src/lib/memory/memoryUpgrade.test.mjs"
   },
   "dependencies": {
     "@codemirror/language": "^6.13.1",

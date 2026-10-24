@@ -2419,3 +2419,31 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 - CDP E2E（Tauri 实测 10/10）：真实 invoke 链路 stats/scan、探针源 upsert→search 排序（甲>乙>丙）→维度不符如实报错→delete 归零、composer 开关点击翻转 + kv `reinagent-knowledge-settings` 持久化 + 还原。
 - **Not run**：embedding 真链路（Ollama 本机未装、局域网 `192.168.3.27:7863` 拒连）——`embedInputs` 真实 HTTP、sweep 全链路、注入真实召回待 Ollama 就绪后补验（设置页「测试 embeddings」按钮即验证入口）。
 - **Real Usage 补验完成（2026-10-24 同日，SiliconFlow + Qwen3-Embedding-8B）**：真实服务商绑定 → 测试 embeddings `OK · 4096 维 · 690ms` → sweep 真实索引（2 源 32 块 0 错误）→ 语义检索直测（查询「北极星计划的内部代号」top1 分 0.7589 精准命中目标笔记，无关笔记 0.42 干净分离）→ **经内置 MCP Server（`reinagent_create_task`/`reinagent_wait_task`/`reinagent_get_task_status`）驱动真实任务端到端**：模型自主调用 `search_knowledge` 工具并正确回答「内部代号是银河办公室」，引用来源与相关度如实。⚠️ 顺带修复一个**潜在 pre-existing bug**：`hubSettingsStore` 的 skills/memory/knowledge 三 kv 切片在模块求值期（早于 `initStorage()` 填充 kv 缓存）读初值，**重启后永远回落默认**——`main.tsx` bootstrap 现于 `initStorage()` 后调 `rehydrateHubKvSlices()` 补读（修复前 skills 选集/记忆整理模型等 kv 设置同样不生效，历史未暴露只因用户设置恰与默认一致）。MCP POST 鉴权：token 放 query（`?session_id=..&token=..`），SSE GET 与 POST 同参。
+
+## 十四、记忆升级包 v1（ROADMAP ③，2026-10-24 落地，随 v0.2.10 发布）
+
+> 借鉴来源与调研结论见 [ROADMAP.md](./ROADMAP.md) ③；机制对齐 Hetu（打分公式/Dream 阈值逐项同源）。
+
+### 定案（用户拍板）
+- **作用域**：v1 保持 Global/Project 双作用域，会话级留 v2（schema 手术成本高）。
+- **embedding 绑定**：复用「设置 ▸ 知识库」绑定，无新增设置项；未绑定时记忆行为与升级前完全一致（静态分桶索引注入，合法回退）。
+- **Dream 触发**：24h 自动（`dreamEnabled` 默认开，纯数值零 token）+ 手动按钮；**升级后首次自动运行只做 dry-run 预览不落库**，应用由用户在设置里确认。
+
+### Rust（src-tauri/src/memory/，schema v4→v5）
+- 三张**新表**（`ensure_memory_v5_tables`，不在 rebuild 白名单也不在 DROP 列表，reconcile 重建后原样保留）：`memory_access_stats`（importance REAL 0.05-1.0 / access_count / last_accessed_at，PK=(scope,workdir_hash,slug)）、`memory_embeddings`（body_hash/embedding f32 LE BLOB/dims）、`memory_state`（embedding_model_id/embedding_dims——换模型/维度 fail-fast 要求重建）。`memory_schema_needs_rebuild` 版本上界 4→5。
+- `dream.rs`（include! 进 memory 模块）：`embed_scan`（非 daily 条目 + embed_text=headline+description+body 截 2000 字符 + stored 行）/ `embed_upsert`（模型与维度双向 fail-fast）/ `embed_delete_keys` / `semantic_search`（**检索+回写一体**：命中即 last_accessed=now、access_count+1；scope 过滤=global∪project(workdir)；命中后按条读文件出 `body_excerpt` ≤500 字符）/ `dream_run`（**合并→衰减→遗忘**顺序固定：贪心余弦聚类 ≥0.85（组内=同 scope+workdir_hash，防跨作用域吸收）、keeper=importance↓→作用域公共→created↑，被吸收走 delete_inner 进 .trash 可恢复，keeper importance+0.05 上限 1 + access_count 取簇和；衰减=闲置>30d 且 importance>0.05 → ×0.8；遗忘=闲置>180d 且 importance<0.15 → delete_inner；dry_run 只出计划；运行记入 memory_organize_runs mode='dream' 与 organizer 共享单飞互斥）。
+- 挂账钩子：`index_parsed_file` 幂等落 stats 行（importance 初值按 type：user 0.8/feedback 0.7/project 0.6/reference 0.5，`INSERT OR IGNORE` 不重置已有值）；`delete_index_rows` 级联清 stats+embeddings；`MemoryWriteArgs/MemoryDecisionArgs/WriteOptions` 增 `importance: Option<f32>`，write_entry 创建时覆盖默认。
+- 数学 helper（cosine_with_norm/l2_norm/f32 转换）改为 `pub(crate)`，与 knowledge_index 共用单一真值源。
+
+### TS（src/lib/memory/）
+- `embedPlan.ts`（纯）：planMemoryEmbedDiff——按 (keys, bodyHash) 差分；模型变更=全量重嵌+清旧行。
+- `embeddingService.ts`：`memoryEmbedSweep()`（差分 → SiliconFlow/Qwen3 批量向量化 → upsert；孤儿清理）+ `scheduleMemoryEmbed()` 1.5s 防抖；触发=App 启动一次 + api.ts 六个写路径（write/update/delete/deleteProject/accept/applyBatch）成功后；未绑定如实跳过。
+- `recallFormat.ts`（纯）+ `recall.ts`：`buildMemoryRecallSection(userQuery)` → 语义召回节（免责句 + `[作用域·类型] 描述 (slug, score)` + 正文节选 ≤400 字/总 6KB 截断标注）；**检索失败 toast + 返回 null 回退静态索引**；runAgentTurn 的 memorySection 组装改为「已绑定→语义召回（null 回退静态）」，MemoryManager 工具不变。
+- 提取重要度：SubmitMemoryPlan schema 增 importance（0.05-1.0，校验越界静默忽略）+ 提取 prompt 注入刻度说明 + planToApplyBatchArgs 管道到 Rust。
+- `dreamService.ts`：createDreamService（App 挂载，24h 周期 + 启动补跑；上次运行查 organize_runs mode='dream'）；`dreamTypes.ts` DTO。
+- Dream UI：MemorySettingsDrawer 新增 Dream 分区（开关 + 描述 + 「Dream 预览」dry-run + 「应用计划」（须先有带动作的预览才可点）+ 统计反馈）；i18n 走 hub extra-memory 词典（settings.memoryDream*，zh+en）。
+
+### 测试与验证
+- Rust：dream 纯函数 3 + store 集成 2（scan/upsert/模型 fail-fast/检索回写 accessCount 递增/dry-run 不落库/真跑合并+遗忘/keeper +0.05/.trash 两条）；全量 cargo 274 绿；**Red Check**：DECAY_FACTOR 0.8→1.0 与 MERGE_THRESHOLD 0.85→0.1 双破坏真实报红。
+- TS：test:memory 6/6（差分三分支/格式化截断）；test:hub 89、chat 178、knowledge 18、import 41 全绿；tsc 0。
+- **Real Usage E2E（SiliconFlow 真链路，9/9 两轮合计）**：启动 sweep 真实向量化 58 条记忆（4096 维）；真实语义召回命中真实记忆（top score 0.536）且回写 accessCount 0→1；importance 管道（写 0.9 → 检索命中携带 0.9 + 正文节选含验收标记）；Dream dry-run（merged=0/decayed=0/forgotten=0/remaining=59，真实数据未动）；delete 级联清理向量行。⚠️ 语义召回注入的请求预览抽查未单独跑（注入通道与知识库共用且已被知识库 E2E 覆盖，格式化有单测）。

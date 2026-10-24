@@ -14,7 +14,7 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 | --- | --- | --- |
 | P0 | ① RAG 知识库 ✅（2026-10-24 v1 落地） | 笔记/会话/导入数据零检索 → sqlite-vec 语义检索 + agent 工具/自动注入 |
 | P0 | ② 会话级 worktree 隔离 | 多任务并行互踩工作区 → 懒创建 + 合并后自动清理 |
-| P0 | ③ 记忆升级包（作用域/召回打分/Dream） | 纯数值算法、成本低，与现有 extraction/organizer 直接衔接 |
+| P0 | ③ 记忆升级包（作用域/召回打分/Dream）✅（2026-10-24 v1 落地，会话作用域留 v2） | 纯数值算法、成本低，与现有 extraction/organizer 直接衔接 |
 | P1 | ④ 笔记增强包（版本历史/划词 AI/回收站/标签） | 笔记从「编辑器」升级为「资产库」 |
 | P1 | ⑤ 看板式 Agent 任务 | 任务驱动的无人值守执行（与 cron 自动化互补） |
 | P1 | ⑥ 进模型前文本压缩管线 | 纯函数 10 节点，专治工具输出超长，与 microcompact 正交 |
@@ -60,7 +60,7 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 
 **对 ReinAgent 落地**：任务级开关（对齐任务级隔离设置的模式，[[task-isolation-approval-mode-plan]]），tokio::process 直调 git。多任务并行互踩工作区是当前真实痛点；注意用户曾拍板 ReinAgent 自身开发用普通分支——那是开发流程决策，与本产品能力不冲突。
 
-### ③ 记忆升级包：三作用域 + 召回打分 + Dream 巩固 ☐
+### ③ 记忆升级包：三作用域 + 召回打分 + Dream 巩固 ✅（2026-10-24 v1 落地；会话作用域留 v2，实现细节见 PROJECT_CONTEXT「十四、记忆升级包」节）
 
 **Hetu 机制**（`MessageService.cs` 的 MemoryService 区段 / `DreamMemoryService.cs` / `ChatContextInjector.cs`）：
 
