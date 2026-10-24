@@ -26,6 +26,7 @@ mod fs_base64;
 mod import_sqlite;
 mod fs_tree;
 mod notes_fs;
+mod knowledge_index;
 mod git_panel;
 mod hooks;
 mod plugins;
@@ -307,6 +308,14 @@ pub fn run() {
             notes_fs::notes_delete_notebook,
             notes_fs::notes_rename_notebook,
             notes_fs::notes_open_folder,
+            knowledge_index::knowledge_scan_sources,
+            knowledge_index::knowledge_list_sources,
+            knowledge_index::knowledge_index_upsert,
+            knowledge_index::knowledge_get_chunks,
+            knowledge_index::knowledge_index_delete_source,
+            knowledge_index::knowledge_index_clear,
+            knowledge_index::knowledge_search,
+            knowledge_index::knowledge_stats,
             git_panel::git_status,
             git_panel::git_branch_list,
             git_panel::git_checkout,

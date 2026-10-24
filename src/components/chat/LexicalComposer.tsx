@@ -40,6 +40,7 @@ import { toast } from "../lw/ui/toast";
 import { BackgroundWorkTrigger } from "./BackgroundWorkTrigger";
 import type { ContextUsageData } from "../../lib/chat/contextUsage";
 import { useAppStore } from "../../store/useAppStore";
+import { useHubSettings } from "../../store/hubSettingsStore";
 import {
   ArrowUp,
   Square,
@@ -65,6 +66,7 @@ import {
   Loader2,
   Sparkles,
   Undo2,
+  Library,
 } from "lucide-react";
 import { MOCK_PROJECTS } from "../sidebar/WorkspaceSidebar";
 import {
@@ -219,6 +221,22 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const handleSelectApprovalMode = (mode: ComposerApprovalMode) => {
     if (activeTaskId) updateTaskApprovalMode(activeTaskId, mode);
     else setApprovalMode(mode);
+  };
+
+  // 知识库注入开关（RAG v1）：三态语义 — 任务级显式 true/false，草稿态写全局默认。
+  // undefined = 跟随全局默认（设置 ▸ 知识库 的 injectEnabledGlobal）。
+  const knowledgeGlobalDefault = useHubSettings((s) => s.settings.knowledge.injectEnabledGlobal);
+  const knowledgeEnabled = activeTask?.knowledgeEnabled ?? knowledgeGlobalDefault;
+  const updateTaskKnowledgeEnabled = useAppStore((s) => s.updateTaskKnowledgeEnabled);
+  const handleToggleKnowledge = () => {
+    if (activeTaskId) {
+      updateTaskKnowledgeEnabled(activeTaskId, !knowledgeEnabled);
+    } else {
+      useHubSettings.getState().setSettings((prev) => ({
+        ...prev,
+        knowledge: { ...prev.knowledge, injectEnabledGlobal: !knowledgeEnabled },
+      }));
+    }
   };
 
   const [text, setText] = useState("");
@@ -1401,6 +1419,25 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
               );
             })()}
           </div>
+
+          {/* 知识库注入开关（RAG v1）：开着时每轮自动检索注入 + search_knowledge 工具恒可用 */}
+          <button
+            type="button"
+            onClick={handleToggleKnowledge}
+            disabled={stt.active}
+            className={`p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center cursor-pointer ${
+              knowledgeEnabled
+                ? "text-[var(--accent)]"
+                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+            }`}
+            title={
+              knowledgeEnabled
+                ? t("knowledgeToggleOn", "知识库：开（每轮自动检索注入）")
+                : t("knowledgeToggleOff", "知识库：关（模型仍可用 search_knowledge 主动检索）")
+            }
+          >
+            <Library className="w-4 h-4" />
+          </button>
 
           {/* 运行中后台工作徽标（终端/子代理图标+计数，点击展开管理浮层） */}
           <BackgroundWorkTrigger conversationId={hasMessages ? taskId : undefined} />

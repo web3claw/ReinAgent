@@ -323,6 +323,8 @@ export function createConversationController(deps) {
               getApprovalMode: options.getApprovalMode,
               // 会话目标（/goal）：非空时注入 meta_user 权威状态块
               goal: options.goal,
+              // 知识库注入开关（任务级显式 ?? 全局默认，App 发送时已解析）
+              knowledgeEnabled: options.knowledgeEnabled,
               approval: options.approval,
               conversationId: deps.taskId,
               // 检查点上下文：本轮写文件前捕获前像（回退本轮代码改动的数据源）

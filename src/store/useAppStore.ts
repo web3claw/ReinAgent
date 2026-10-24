@@ -31,6 +31,8 @@ export interface AppTask {
   assistantId?: string;
   /** 会话目标（/goal）：每轮注入 meta_user 权威状态块；缺省 = 无目标。 */
   goal?: import("../lib/goals/goalState").TaskGoal;
+  /** 任务级知识库注入开关（RAG v1）；true/false=显式选择，undefined=跟随全局默认。 */
+  knowledgeEnabled?: boolean;
 }
 
 interface AppState {
@@ -81,6 +83,8 @@ interface AppState {
   updateTaskAssistant: (id: string, assistantId: string) => void;
   updateTaskThinkingLevel: (id: string, level: ThinkingLevel) => void;
   updateTaskApprovalMode: (id: string, mode: ApprovalMode) => void;
+  /** 任务级知识库注入开关（三态：true/false 显式选择，null=清除回退全局默认）。 */
+  updateTaskKnowledgeEnabled: (id: string, enabled: boolean | null) => void;
   /** 会话目标（/goal）：null = 清除目标。 */
   updateTaskGoal: (id: string, goal: import("../lib/goals/goalState").TaskGoal | null) => void;
   updateTaskToolPolicy: (id: string, toolName: string, policy: "allow" | "ask" | "deny" | null) => void;
@@ -482,6 +486,24 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => {
       const nextTasks = state.tasks.map((t) =>
         t.id === id ? { ...t, approvalMode: mode, updatedAt: Date.now() } : t
+      );
+      if (typeof window !== "undefined") {
+        try {
+          syncTasks(nextTasks.map((t) => ({ id: t.id, payload: JSON.stringify(t), updated_at: Date.now() })));
+        } catch (e) {
+          console.error("Failed to save tasks", e);
+        }
+      }
+      return { tasks: nextTasks };
+    });
+  },
+
+  updateTaskKnowledgeEnabled: (id, enabled) => {
+    set((state) => {
+      const nextTasks = state.tasks.map((t) =>
+        t.id === id
+          ? { ...t, knowledgeEnabled: enabled === null ? undefined : enabled, updatedAt: Date.now() }
+          : t
       );
       if (typeof window !== "undefined") {
         try {

@@ -11,6 +11,10 @@ async function bootstrap() {
   // 渲染前水合：store 在模块求值时已创建（此时缓存为空），
   // 这里从缓存重设全部持久化字段，再交给 React 渲染首帧。
   useAppStore.getState().hydratePersisted();
+  // hubSettings 的 kv 切片（skills/memory/knowledge）创建于模块求值期（早于
+  // kv 缓存填充），必须在此补读，否则 restart 后永远回落默认值。
+  const { rehydrateHubKvSlices } = await import("./store/hubSettingsStore");
+  rehydrateHubKvSlices();
 // 远程访问桥：常驻监听 Rust remote_server 事件（手机 WS 请求 → 会话运行时）
 void import("./lib/remote/remoteBridge").then((m) => m.startRemoteBridge());
   (window as any).__store = useAppStore;

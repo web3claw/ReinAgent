@@ -205,6 +205,7 @@ function SectionContent({ section, data }: { section: PreviewSectionId; data: Re
         <LabelledBlock label="currentDate" value={data.context.currentDate} />
         <LabelledBlock label="agents.md" value={data.context.agentsMd} />
         <LabelledBlock label="Memory Index" value={data.context.memory} />
+        <LabelledBlock label="Knowledge (RAG)" value={data.context.knowledge} />
         <LabelledBlock label="Skills" value={data.context.skills} />
         <LabelledBlock label="Hook:SessionStart" value={data.context.sessionStart} />
       </div>

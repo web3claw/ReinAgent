@@ -1023,6 +1023,9 @@ export default function App() {
         },
         // 会话目标（/goal）：发送时从任务解析，非空时注入 meta_user 权威状态块
         goal: task?.goal ?? null,
+        // 知识库注入开关（RAG v1）：任务级显式选择 ?? 全局默认（设置 ▸ 知识库）
+        knowledgeEnabled:
+          task?.knowledgeEnabled ?? useHubSettings.getState().settings.knowledge.injectEnabledGlobal,
         toolPolicies: activeTask?.toolPolicies,
         images,
         userAttachments,

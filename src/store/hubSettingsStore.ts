@@ -40,14 +40,28 @@ export interface MemorySettings {
   organizerNextRunAt?: number | null;
 }
 
+/** 知识库（RAG v1，docs/ROADMAP.md ①）：embedding 绑定 + 注入参数 */
+export interface KnowledgeSettings {
+  /** 绑定服务商 id（provider_config.json 中的 provider.id） */
+  providerId: string;
+  /** embedding 模型 id（如 Ollama 的 bge-m3；手填，不依赖 /models 列表） */
+  modelId: string;
+  /** 任务未显式选择时的注入默认值（composer「知识库」开关的草稿态） */
+  injectEnabledGlobal: boolean;
+  /** 注入/检索 topK（1-20） */
+  topK: number;
+}
+
 export interface HubAppSettings {
   skills: SkillsSettings;
   mcp: McpSettings;
   memory: MemorySettings;
+  knowledge: KnowledgeSettings;
 }
 
 const SKILLS_KEY = "reinagent-skills-settings";
 const MEMORY_KEY = "reinagent-memory-settings";
+const KNOWLEDGE_KEY = "reinagent-knowledge-settings";
 
 /**
  * 旧版「恒启用」内置技能名（迁移用）：2026-10-06 之前这两枚会被强制并入 selected；
@@ -109,6 +123,44 @@ function defaultMemoryShape(): MemorySettings {
   };
 }
 
+function defaultKnowledgeSettings(): KnowledgeSettings {
+  const saved = kvGet(KNOWLEDGE_KEY);
+  if (saved) {
+    try {
+      const parsed = JSON.parse(saved) as Partial<KnowledgeSettings>;
+      return { ...defaultKnowledgeShape(), ...parsed };
+    } catch {
+      console.error("[hubSettings] knowledge settings parse failed");
+    }
+  }
+  return defaultKnowledgeShape();
+}
+
+function defaultKnowledgeShape(): KnowledgeSettings {
+  return {
+    providerId: "",
+    modelId: "",
+    injectEnabledGlobal: false,
+    topK: 5,
+  };
+}
+
+/**
+ * 启动水合（main.tsx bootstrap 在 initStorage 之后调用）：本 store 创建于模块
+ * 求值期，早于 kv 缓存填充——skills/memory/knowledge 三切片的 kv 初值在创建时
+ * 读到的恒为空（潜在 bug，2026-10-24 知识库绑定 E2E 实证），必须在启动时补读。
+ */
+export function rehydrateHubKvSlices(): void {
+  useHubSettings.setState((prev) => ({
+    settings: {
+      ...prev.settings,
+      skills: defaultSkillsSettings(),
+      memory: defaultMemorySettings(),
+      knowledge: defaultKnowledgeSettings(),
+    },
+  }));
+}
+
 /** MCP 工具枚举失败通知（发送链路产生；UI 层订阅后 toast，内存态不持久化） */
 export interface McpEnumNotice {
   message: string;
@@ -140,6 +192,7 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
     skills: defaultSkillsSettings(),
     mcp: { servers: [] },
     memory: defaultMemorySettings(),
+    knowledge: defaultKnowledgeSettings(),
   },
 
   hydrateMcp: async () => {
@@ -164,9 +217,10 @@ export const useHubSettings = create<HubSettingsState>((set, get) => ({
 
   setSettings: (updater) => {
     const next = updater(get().settings);
-    // skills / memory 切片写透 kv
+    // skills / memory / knowledge 切片写透 kv
     kvSetJSON(SKILLS_KEY, next.skills);
     kvSetJSON(MEMORY_KEY, next.memory);
+    kvSetJSON(KNOWLEDGE_KEY, next.knowledge);
     // mcp 切片整表写回 Rust（防抖由调用频度决定：页面级操作非高频，直接写）
     // F19：读取失败态下跳过写盘，避免用空表覆盖用户真实配置。
     if (get().mcpDegradedError) {

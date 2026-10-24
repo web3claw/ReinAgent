@@ -145,6 +145,7 @@ export function buildMetaUserBlock(parts: {
   goalSection?: string;
   agentsMdSection?: string;
   memorySection?: string;
+  knowledgeSection?: string;
   skillsSection?: string;
 }): string | undefined {
   const sections = [
@@ -152,6 +153,7 @@ export function buildMetaUserBlock(parts: {
     parts.goalSection,
     parts.agentsMdSection,
     parts.memorySection,
+    parts.knowledgeSection,
     parts.skillsSection,
   ].filter((part): part is string => typeof part === "string" && part.trim().length > 0);
   if (sections.length === 0) return undefined;
@@ -203,6 +205,8 @@ export interface RunAgentTurnParams {
   getApprovalMode?: () => ApprovalMode;
   /** 会话目标（/goal）：非空时注入 meta_user 权威状态块（发送时从任务解析）。 */
   goal?: TaskGoal | null;
+  /** 知识库注入开关（任务级显式 ?? 全局默认，发送时解析；缺省 false=不注入）。 */
+  knowledgeEnabled?: boolean;
   /** 工具级审批策略（工具名 → allow/ask/deny）；未配置的工具走审批模式默认。 */
   toolPolicies?: Record<string, "allow" | "ask" | "deny">;
   /** 审批协调器（由会话池注入；缺省时不注入审批门，工具直通）。 */
@@ -477,6 +481,8 @@ export interface TurnAssemblyParams {
   checkpoint?: { conversationId: string; turnId: string; root?: string };
   /** 会话目标（/goal）：非空时按权威状态块注入 meta_user（见 goalState.formatGoalStateForModel）。 */
   goal?: TaskGoal | null;
+  /** 知识库注入开关（任务级显式 ?? 全局默认，发送时解析；缺省 false=不注入）。 */
+  knowledgeEnabled?: boolean;
   /** 是否执行 SessionStart hooks（缺省 true；预览传 false） */
   runSessionStartHooks?: boolean;
 }
@@ -494,6 +500,7 @@ export interface TurnAssembly {
   parts: {
     personaText: string | null;
     memorySection: string;
+    knowledgeSection: string;
     skillsSection: string;
     agentsMdSection: string;
     currentDateLine: string;
@@ -515,6 +522,7 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
     conversationId,
     checkpoint,
     goal,
+    knowledgeEnabled = false,
     runSessionStartHooks,
   } = params;
 
@@ -587,6 +595,39 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
       }
     } catch (err) {
       console.warn("[skills] discovery unavailable (continuing without skills):", err);
+    }
+
+    // 知识库注入（RAG v1，docs/ROADMAP.md ①）：composer「知识库」开关打开时，
+    // 以最后一条用户消息为 query 做语义检索，命中块随 meta_user 注入
+    // （<knowledge-source>，免责句在 knowledgeFormat.ts）。开关关闭/未配置/
+    // 空索引 = 空段（合法空态）；检索失败在 buildKnowledgeSection 内部
+    // toast + 返回空串（不阻断回合）。search_knowledge 工具与开关无关、恒挂载
+    // （模型按需主动检索；未配置时工具返回说明文本，不静默）。
+    let knowledgeSection = "";
+    if (knowledgeEnabled) {
+      try {
+        const lastUser = [...(messages ?? [])].reverse().find((m) => m && m.role === "user");
+        const rawContent = lastUser?.content;
+        const queryText =
+          typeof rawContent === "string"
+            ? rawContent
+            : Array.isArray(rawContent)
+              ? rawContent
+                  .filter((b) => b && (b as { type?: string }).type === "text")
+                  .map((b) => (b as { text?: string }).text ?? "")
+                  .join("\n")
+              : "";
+        const { buildKnowledgeSection } = await import("../knowledge/injection");
+        knowledgeSection = await buildKnowledgeSection(queryText);
+      } catch (err) {
+        console.warn("[knowledge] injection failed (continuing without):", err);
+      }
+    }
+    try {
+      const { createKnowledgeSearchTool } = await import("../knowledge/searchTool");
+      allTools.push(createKnowledgeSearchTool());
+    } catch (err) {
+      console.warn("[knowledge] search tool unavailable (continuing without):", err);
     }
     if (memoryManagerTool) {
       allTools.push(memoryManagerTool);
@@ -673,6 +714,7 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
       goalSection,
       agentsMdSection,
       memorySection,
+      knowledgeSection,
       skillsSection,
     });
     const requestMessages = prependMetaUserBlock(messages, metaUserBlock);
@@ -709,6 +751,7 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
     parts: {
       personaText,
       memorySection,
+      knowledgeSection,
       skillsSection,
       agentsMdSection,
       currentDateLine,
@@ -734,6 +777,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     approvalMode = "full",
     getApprovalMode,
     goal,
+    knowledgeEnabled,
     approval,
     toolPolicies,
     checkpoint,
@@ -748,6 +792,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     ...(assistantId === undefined ? {} : { assistantId }),
     approvalMode,
     ...(goal === undefined ? {} : { goal }),
+    ...(knowledgeEnabled === undefined ? {} : { knowledgeEnabled }),
     ...(approval === undefined ? {} : { approval }),
     ...(checkpoint === undefined ? {} : { checkpoint }),
     ...(conversationId ? { conversationId } : {}),

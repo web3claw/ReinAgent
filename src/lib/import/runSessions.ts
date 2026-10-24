@@ -19,6 +19,7 @@ import type { TimelineEntry } from "../chat/conversationModel";
 import type { AppTask } from "../../store/useAppStore";
 import { useAppStore } from "../../store/useAppStore";
 import { convertSession } from "./scan";
+import { scheduleKnowledgeIndex } from "../knowledge/autoIndex";
 import { importedSessionId, toMs, type ExternalSessionSummary, type ImportedSession, type ImportedUiMessage } from "./types";
 
 export interface SessionImportRunResult {
@@ -107,6 +108,10 @@ export async function runSessionImport(summaries: ExternalSessionSummary[]): Pro
     // 按更新时间新→旧排，插入任务列表尾部（正常任务仍在前）
     newTasks.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0));
     useAppStore.getState().registerExternalTasks(newTasks);
+    // 知识库自动索引（RAG v1）：导入成功后防抖索引新任务（未配置 embedding 时静默跳过）
+    for (const task of newTasks) {
+      scheduleKnowledgeIndex(task.id);
+    }
   }
   return { imported, skipped, failed };
 }

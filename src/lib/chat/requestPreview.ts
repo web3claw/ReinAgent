@@ -66,6 +66,7 @@ export interface RequestPreview {
     currentDate: string;
     agentsMd: string;
     memory: string;
+    knowledge: string;
     skills: string;
     sessionStart: string;
   };
@@ -263,7 +264,7 @@ export async function buildRequestPreview(input: RequestPreviewInput): Promise<R
   // 6) 消息展示视图（逐条裁剪）
   const entries = assembly.messages.map(messageEntry);
   const mergedNote = assembly.parts.currentDateLine
-    ? "用户上下文（currentDate/项目指令/记忆/技能）已并入首条 user 消息头部（下方第一条 user 可见 <system-reminder> 块）。"
+    ? "用户上下文（currentDate/项目指令/记忆/知识库/技能）已并入首条 user 消息头部（下方第一条 user 可见 <system-reminder> 块）。"
     : null;
 
   // 7) 原始 JSON（整体上限裁剪）
@@ -312,6 +313,7 @@ export async function buildRequestPreview(input: RequestPreviewInput): Promise<R
       currentDate: assembly.parts.currentDateLine,
       agentsMd: assembly.parts.agentsMdSection,
       memory: assembly.parts.memorySection,
+      knowledge: assembly.parts.knowledgeSection,
       skills: assembly.parts.skillsSection,
       sessionStart: assembly.parts.sessionStartContext,
     },

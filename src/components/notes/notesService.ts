@@ -3,6 +3,7 @@
  */
 
 import { invoke } from "@tauri-apps/api/core";
+import { scheduleKnowledgeIndex } from "../../lib/knowledge/autoIndex";
 
 export interface NotebookFolder {
   id: string;
@@ -117,7 +118,10 @@ export const notesService = {
   /** 保存笔记内容 */
   async saveNote(notebookRelPath: string, fileName: string, content: string): Promise<number> {
     if (isTauri) {
-      return invoke<number>("notes_save_note", { notebookRelPath, fileName, content });
+      const result = await invoke<number>("notes_save_note", { notebookRelPath, fileName, content });
+      // 知识库自动索引（RAG v1）：保存后防抖重索引该笔记（未配置 embedding 时静默跳过）
+      scheduleKnowledgeIndex(`${notebookRelPath}:${fileName}`);
+      return result;
     }
     const list = mockNotes[notebookRelPath] || [];
     const found = list.find((l) => l.item.fileName === fileName);
