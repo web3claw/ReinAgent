@@ -133,20 +133,21 @@ bun run tauri dev
 
 ---
 
-## 10. Session Wakeup & Daemon Self-Healing Rule (会话唤醒与守护自愈铁律)
+## 10. On-Demand Daemon Check Rule (按需守护检查铁律)
 
-为彻底解决“远端任务完成而本地会话停止导致的双向死锁沉默”，Agent 必须终身恪守以下守护与自愈铁律：
+后台对话守护任务（`wait_remote_dialogue`）实行**按需启动**（2026-10-25 用户拍板，取代原「每次进入会话自动首检 + 自愈拉起」机制）：
 
-1. **每次进入会话必首检 (First Action Inspection)**：
-   - 无论每日首次进入会话、上下文中断重置、或是收到用户任意新指令，Agent 在执行任何业务前，**必须首先调用 `manage_task(Action='list')` 检查后台对话守护任务（`wait_remote_dialogue`）的运行状态**。
-2. **掉线无感自愈 (Auto Resume Without Prompting)**：
-   - 若检测到守护任务未运行或已终止，**严禁等待用户提醒，必须立即自动使用 `run_command`（配置 `IsDaemon: true`）重新拉起后台守护任务**：
+1. **默认不自动检查 (No Auto Inspection)**：
+   - Agent 进入会话、收到用户指令或执行任何业务前，**严禁主动检查或拉起后台对话守护任务（`wait_remote_dialogue`）**。
+2. **用户发话才检查并拉起 (On-Demand Inspection & Resume)**：
+   - 仅当**用户明确要求检查后台对话守护任务**时，才检查其运行状态；
+   - 若此时检测到守护任务未运行或已终止，再使用以下命令拉起：
      ```bash
      systemd-run --user --wait --pipe node /home/web3claw/GitCode/ReinAgent/scripts/wait_remote_dialogue.mjs
      ```
-   - 保持对远端 ReinAgent 任务执行的持续监听与唤醒响应。
-3. **状态连带主动汇报 (Active Status Reporting)**：
-   - 回复用户时，必须附带远端 ReinAgent 任务的最新心跳、执行状态及当前守护任务 ID，确保项目管理员与远端开发者永远处于实时互通状态。
+   - 拉起后保持对远端 ReinAgent 任务执行的持续监听与唤醒响应。
+3. **状态连带汇报 (Status Reporting)**：
+   - 在守护任务运行期间或执行守护检查后回复用户时，附带远端 ReinAgent 任务的最新心跳、执行状态及当前守护任务 ID，确保信息实时互通。
 
 ---
 
