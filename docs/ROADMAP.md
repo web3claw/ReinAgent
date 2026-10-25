@@ -18,8 +18,8 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 | P1 | ④ 笔记增强包（版本历史/划词 AI/回收站/标签）✅（2026-10-25 v1 落地） | 笔记从「编辑器」升级为「资产库」 |
 | P1 | ⑤ 看板式 Agent 任务 ✅（2026-10-25 v1 落地） | 任务驱动的无人值守执行（与 cron 自动化互补） |
 | P1 | ⑥ 进模型前文本压缩管线 ✅（2026-10-24 v1 落地） | 纯函数 5 节点（轻有损子集），专治工具输出超长，与 microcompact 正交 |
-| P1 | ⑦ PR 面板（gh/glab） | Git 面板自然延伸 + 「交给 Agent 修」闭环 |
-| P2 | ⑧ 用量分析页 / ⑨ Wiki 生成 / ⑩ 知识图谱 / ⑪ 场景化模型 / ⑫ SSH 项目 | 依赖前置或投入大，缓 |
+| P1 | ⑦ PR 面板（gh/glab） ✅（2026-10-25 v1 落地，随下一版本发布） | Git 面板自然延伸 + 「交给 Agent 修」闭环 |
+| P2 | ⑧ 用量分析页 / ⑨ Wiki 生成 / ⑩ 知识图谱 / ⑫ SSH 项目 | 依赖前置或投入大，缓（⑪ 场景化模型已于 2026-10-25 落地） |
 | 地基 | ⓪ 后台任务队列语义 | ①⑤⑨ 的公共前置：SQLite 表即队列 |
 
 状态标记：☐ 未排期 · ◐ 进行中 · ✅ 已完成。
@@ -106,7 +106,7 @@ ReinAgent 笔记是文件制：版本历史可落 `.ReinAgent/notes-versions/` �
 
 **对 ReinAgent 落地**：纯函数极易单测（Red Check 友好），先接 `fs_execute`/工具输出与附件预览等大文本场景；与 microcompact（历史压缩）、compact（会话摘要）三层正交。
 
-### ⑦ PR 面板（gh/glab）☐
+### ⑦ PR 面板（gh/glab）✅（2026-10-25 v1 落地，实现细节见 PROJECT_CONTEXT「十九、PR / MR 面板」节。落地差异：close/reopen 在 gh 2.103 下必须显式传分支名；反馈聚合/动作映射照搬 Hetu）
 
 **Hetu 机制**（`WorkPrClient.cs` / `WorkPrPanel.tsx`）：按 remote URL 自动选 gh/glab；状态（state/mergeable/reviewDecision/CI checks/变更量）、创建（title/body/base/draft）、动作（ready/draft/merge --merge|--squash|--rebase/close/reopen）、**反馈聚合**（失败+进行中 CI、行内审查意见、失败日志摘录 ≤2 条）；前端「交给 Agent 修」把 feedback 渲染成 prompt 发回会话。
 
@@ -128,7 +128,7 @@ Hetu 单表 `LlmUsageLog` 十二种来源记账（chat/work/kanban/workflow/wiki
 
 实体 6 类（concept/person/organization/technology/project/custom）/关系 5 类封闭枚举抽取（`GraphService.cs`），实体小写名全局去重、关系 (source,target,type) 去重、LLM 关系 Confidence=0.8 手工 1.0；前端自绘 Canvas 力导向（手写 d3-force 风格，无 ReactFlow 依赖）。最大价值=给语义检索做 1 跳扩展（①的增强件），独立可视化价值次之。依赖 ①。
 
-### ⑪ 场景化默认模型 ☐
+### ⑪ 场景化默认模型 ✅（2026-10-25 落地，实现细节见 PROJECT_CONTEXT「二十、场景默认模型」节。方案 A：统一 UI 读写四场景现有键零迁移；v1 场景=chat/embedding/记忆整理/笔记 AI，Fast/Chunk 随 ⑨⑩ 再加）
 
 Hetu 两层：`AiModel.Purpose`（chat/embedding/completion）+ AppSettings 键 `Default{Scenario}ModelId` 七场景（Chat/Chunk/Fast/Embedding/Wiki/Graph/NoteAi），复合键 `providerId:modelId` 解析。ReinAgent 已有助手绑定（任务级）+ 全局默认；场景模型（fast/embedding 等）随 ①③ 落地一起做，UI 按 no-fallback 明示未配置。
 

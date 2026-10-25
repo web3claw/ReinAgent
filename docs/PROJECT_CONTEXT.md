@@ -2558,3 +2558,34 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 2. **测试污染真实库**：kanban 测试连真实 conversations.db，与 dev 实例 WAL 争用挂死；改 TEST_LOCK 串行 + 唯一 card_id + Cleanup Drop 清理。
 3. **Backlog→InProgress 非法**：dispatch 一步跳到 InProgress 被状态机正确拒绝 → 改按合法路径 [Todo, InProgress] 逐步推进。
 4. **列回写读缓存过期**：HMR/多实例下 cards Map 不可信 → 派发与回写都改读数据库真实列。
+
+## 十九、PR / MR 面板（ROADMAP ⑦，2026-10-25 落地，Hetu WorkPrClient 移植）
+
+gh（GitHub）/ glab（GitLab）按 remote URL 自动选择；CLI 未装/无 remote/非支持平台如实展示安装引导（no-fallback）。
+
+### Rust（src-tauri/src/git_pr.rs，tokio process + kill_on_drop 超时：网络 120s / 本地 git 30s）
+- 4 命令：`git_pr_status`（一站式：仓库/分支/host/CLI 探测/当前分支 PR+CI checks/开放 PR 列表）、`git_pr_create`（gh 的 body 走 stdin `--body-file -` 防转义；glab 走 --description）、`git_pr_action`（ready/draft/merge/close/reopen）、`git_pr_feedback`（失败+进行中 CI + 行内审查意见 gh api 两端点 ≤30 条 + 失败日志摘录 `gh run view --log-failed` ≤2 条 ≤12000 字符）
+- **关键坑（gh 2.103 实测）**：`pr close`/`pr reopen` 不接受隐式当前分支（报 "number, url, or branch required"）——build_action_args 对 close/reopen 显式追加当前分支名
+- argv 直传不经 shell（无转义面）；Windows CREATE_NO_WINDOW 照搬 git_panel.rs
+- 单测 git_pr_tests.rs（host/slug 解析、gh/glab JSON 解析、动作参数映射、标签映射；Red Check 两处验证过）+ git_pr_real_tests.rs（#[ignore] 真实链路 e2e：draft 创建→ready→draft→close→reopen→feedback→squash merge+删分支，在本仓库真实跑通）
+
+### 前端
+- `src/lib/git/prApi.ts`（invoke 封装 + DTO）+ `prLogic.ts`（纯展示逻辑：门禁/审查 key、mergeBlocked、CI 分色用 --diff-added/--diff-removed/--warn-text、buildPrHandoffPrompt 组装；node --test 5 例 + Red Check）
+- `src/components/git/PrPanel.tsx`：挂 GitPanel 尾部 section；当前 PR 卡（状态/草稿徽标、分支、+N/−N、门禁/审查徽标、checks 列表分色）、动作区（merge 方式三选+删分支勾选、blocked 禁用）、创建表单（base 预填集成分支 origin/HEAD→main→master）、「交给 Agent 修」= git_pr_feedback → prompt 组装 → **window 事件 `reinagent-prefill-prompt`** → App 监听写入 composerPrefill（预填不发送，对齐 EmptyState；避免三层 prop 钻孔，对齐 messageTheme 事件广播先例）
+- 轮询：checks pending 或 mergeable UNKNOWN → 5s，否则 10s；自动刷新失败静默保留旧数据
+- 浏览器模式（非 Tauri）显示「需要桌面端」（双模铁律）
+
+## 二十、场景默认模型（ROADMAP ⑪ 方案 A，2026-10-25 落地）
+
+统一设置区「场景默认模型」（设置 ▸ 通用，消息配色卡片上方）读写四场景**现有存储**（零迁移、不动消费链路）：
+
+| 场景 | 存储 | 备注 |
+| --- | --- | --- |
+| chat | settings.json provider+modelId（全局默认指针） | 换服务商时 modelId 置空回 defaultModelId 链 |
+| embedding | hubSettings.knowledge | 模型可手填（datalist）；换绑后需知识库页清索引重建（沿用既有语义，区块内明示） |
+| memoryOrganizer | hubSettings.memory.organizerModel | 与记忆页同一绑定 |
+| noteAi | kv `reinagent-noteai-model`（新） | 顺带修复笔记 AI 模型选择不持久的历史缺陷（NoteEditor 本地态→读 kv 初始化+选择写 kv） |
+
+- 解析层 `src/lib/settings/scenarioModels.ts`：chatDefaultOf（modelId 缺省→defaultModelId（**须存在且启用**）→首个启用模型）、validateBinding 四级失效原因（providerMissing/Disabled、modelMissing/Disabled）、resolveScenario（失效/未配置→回退聊天默认，UI 明示原因与回退值）；4 单测 + Red Check（破坏回退链真实变红）
+- UI `ScenarioModelsSection.tsx`：四行卡片（provider 下拉+model 下拉/手填），未配置显示「跟随聊天默认（当前 X）」，失效显示警告+回退值
+- 已知边界：settings.provider 的 TS 类型是封闭枚举 ProviderType 但运行时存任意 provider id（历史宽松，App 已有 as 断言先例，区块沿同款处理）

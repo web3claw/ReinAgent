@@ -33,6 +33,8 @@ import { NoteAiSidebar } from "./NoteAiSidebar";
 import { notesService, type NoteFileItem } from "./notesService";
 import { NoteVersionPanel, NoteTagEditor } from "./NoteEnhancePanels";
 import { useSettings } from "../../lib/settings/useSettings";
+import { kvGetJSON, kvSetJSON } from "../../lib/storage/db";
+import { NOTEAI_MODEL_KV_KEY, bindingToNoteKey, noteKeyToBinding } from "../../lib/settings/scenarioModels";
 import type { ProviderConfig } from "../../lib/providers/modelFactory";
 import { completeOneShotText } from "../../lib/promptEnhancement/enhance";
 import { buildInlineAiPrompt } from "./noteEnhance";
@@ -161,6 +163,12 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
   const [showModelPicker, setShowModelPicker] = useState(false);
   // selectedModelKey: "" 表示跟随系统默认模型，否则格式为 "${providerId}/${modelId}"
   const [selectedModelKey, setSelectedModelKey] = useState<string>("");
+
+  // 场景默认模型（⑪）：笔记 AI 选择持久化（此前为组件本地态，切页即失忆）
+  useEffect(() => {
+    const saved = kvGetJSON<{ providerId: string; modelId: string }>(NOTEAI_MODEL_KV_KEY);
+    if (saved?.providerId) setSelectedModelKey(bindingToNoteKey(saved));
+  }, []);
 
   // 真实已配置的服务商列表
   const [providers, setProviders] = useState<ProviderItem[]>([]);
@@ -910,6 +918,7 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
                       type="button"
                       onClick={() => {
                         setSelectedModelKey("");
+                        kvSetJSON(NOTEAI_MODEL_KV_KEY, { providerId: "", modelId: "" });
                         setShowModelPicker(false);
                       }}
                       className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors cursor-pointer ${
@@ -953,6 +962,7 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
                                   type="button"
                                   onClick={() => {
                                     setSelectedModelKey(key);
+                                    kvSetJSON(NOTEAI_MODEL_KV_KEY, noteKeyToBinding(key) ?? { providerId: "", modelId: "" });
                                     setShowModelPicker(false);
                                   }}
                                   className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors cursor-pointer ${
