@@ -26,6 +26,7 @@ mod fs_base64;
 mod import_sqlite;
 mod fs_tree;
 mod notes_fs;
+mod notes_meta;
 mod knowledge_index;
 mod git_panel;
 mod git_worktree;
@@ -199,6 +200,7 @@ pub fn run() {
         }
         // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
         automation::start_scheduler(app.handle().clone());
+        notes_meta::startup_maintenance();
         // WebDAV 备份自动同步任务（标脏 → 防抖合并 → 仅上传）；注册全局句柄供
         // backup:applied 事件发送（下载应用完成 → 前端重载各配置域内存态）
         webdav_backup::register_app_handle(app.handle().clone());
@@ -309,6 +311,14 @@ pub fn run() {
             notes_fs::notes_delete_notebook,
             notes_fs::notes_rename_notebook,
             notes_fs::notes_open_folder,
+            notes_meta::notes_version_list,
+            notes_meta::notes_version_content,
+            notes_meta::notes_set_tags,
+            notes_meta::notes_all_tags,
+            notes_meta::notes_tag_counts,
+            notes_meta::notes_trash_list,
+            notes_meta::notes_trash_restore,
+            notes_meta::notes_trash_purge,
             knowledge_index::knowledge_scan_sources,
             knowledge_index::knowledge_list_sources,
             knowledge_index::knowledge_index_upsert,

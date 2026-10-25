@@ -58,6 +58,29 @@ let mockNotes: Record<string, { item: NoteFileItem; content: string }[]> = {
   ],
 };
 
+export interface NoteVersionRow {
+  id: number;
+  noteId: string;
+  source: string;
+  savedAt: number;
+  preview: string;
+}
+
+export interface NoteVersionContent {
+  id: number;
+  noteId: string;
+  content: string;
+}
+
+export interface NoteTrashRow {
+  id: number;
+  originalNotebookRel: string;
+  originalFileName: string;
+  wasNotebook: boolean;
+  deletedAt: number;
+  preview: string;
+}
+
 export const notesService = {
   /** 确保根目录及 default 存在 */
   async ensureRoot(): Promise<NotebookFolder> {
@@ -115,10 +138,10 @@ export const notesService = {
     return found ? found.content : "";
   },
 
-  /** 保存笔记内容 */
-  async saveNote(notebookRelPath: string, fileName: string, content: string): Promise<number> {
+  /** 保存笔记内容（source: autosave/ai/manual/restore——版本历史来源标记） */
+  async saveNote(notebookRelPath: string, fileName: string, content: string, source?: string): Promise<number> {
     if (isTauri) {
-      const result = await invoke<number>("notes_save_note", { notebookRelPath, fileName, content });
+      const result = await invoke<number>("notes_save_note", { notebookRelPath, fileName, content, source: source ?? null });
       // 知识库自动索引（RAG v1）：保存后防抖重索引该笔记（未配置 embedding 时静默跳过）
       scheduleKnowledgeIndex(`${notebookRelPath}:${fileName}`);
       return result;
@@ -224,6 +247,51 @@ export const notesService = {
     }
     console.log(`[Web Mock] Open folder in system file manager: /mock/notebooks/${notebookRelPath}`);
   },
+
+  // ==================== 笔记增强包（ROADMAP ④）====================
+
+  /** 版本历史：列某笔记的最近 20 版（preview ≤200 字符） */
+  async versionList(noteId: string): Promise<NoteVersionRow[]> {
+    if (!isTauri) return [];
+    return invoke<NoteVersionRow[]>("notes_version_list", { noteId });
+  },
+
+  /** 版本历史：取某版全文（还原动作 = 取内容 → saveNote(source:'restore')） */
+  async versionContent(versionId: number): Promise<NoteVersionContent> {
+    if (!isTauri) throw new Error("Web 模式不支持版本历史");
+    return invoke<NoteVersionContent>("notes_version_content", { versionId });
+  },
+
+  /** 标签：设置某笔记的全部标签（整组替换） */
+  async setTags(notebookRelPath: string, fileName: string, tags: string[]): Promise<void> {
+    if (!isTauri) return;
+    await invoke("notes_set_tags", { notebookRelPath, fileName, tags });
+  },
+
+  /** 标签：全量映射 noteId → tags（列表页一次拉取；内部顺带孤儿对账） */
+  async allTags(): Promise<Record<string, string[]>> {
+    if (!isTauri) return {};
+    const rows = await invoke<{ noteId: string; tags: string[] }[]>("notes_all_tags");
+    const map: Record<string, string[]> = {};
+    for (const row of rows) map[row.noteId] = row.tags;
+    return map;
+  },
+
+  /** 回收站：列出已删笔记（含 preview） */
+  async trashList(): Promise<NoteTrashRow[]> {
+    if (!isTauri) return [];
+    return invoke<NoteTrashRow[]>("notes_trash_list");
+  },
+
+  /** 回收站：恢复到原位（原位被占自动重名）；返回恢复后的完整路径 */
+  async trashRestore(id: number): Promise<string> {
+    if (!isTauri) throw new Error("Web 模式不支持回收站");
+    return invoke<string>("notes_trash_restore", { id });
+  },
+
+  /** 回收站：彻底删除单条 */
+  async trashPurge(id: number): Promise<void> {
+    if (!isTauri) return;
+    await invoke("notes_trash_purge", { id });
+  }
 };
-
-

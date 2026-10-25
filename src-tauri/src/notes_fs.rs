@@ -261,11 +261,15 @@ pub async fn notes_read_note(notebook_rel_path: String, file_name: String) -> Re
 }
 
 /// 保存/写入某篇笔记的内容
+/// - 原子写（tempfile + fsync + persist，崩溃不留半截文件；memory/checkpoint 先例）
+/// - 内容有变时先把旧内容快照进 notes-meta（ROADMAP ④ 版本历史；1000ms 前端
+///   防抖天然聚合，快照只在真实变更时产生）
 #[tauri::command]
 pub async fn notes_save_note(
     notebook_rel_path: String,
     file_name: String,
     content: String,
+    source: Option<String>,
 ) -> Result<u64, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let root = get_notebooks_root();
@@ -274,7 +278,11 @@ pub async fn notes_save_note(
             fs::create_dir_all(&dir).map_err(|e| format!("创建目录失败: {e}"))?;
         }
         let target_file = dir.join(&file_name);
-        fs::write(&target_file, &content).map_err(|e| format!("保存笔记失败: {e}"))?;
+        // 版本快照（旧内容 → notes-meta；失败不阻断保存——版本历史是旁路能力）
+        let source_tag = source.as_deref().unwrap_or("autosave");
+        let _ = crate::notes_meta::store()
+            .snapshot_if_changed(&notebook_rel_path, &file_name, &content, source_tag);
+        atomic_write_note(&target_file, content.as_bytes())?;
         let now = std::time::SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map(|d| d.as_millis() as u64)
@@ -283,6 +291,21 @@ pub async fn notes_save_note(
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// 原子写 .md（tempfile → fsync → persist → 目录 fsync）。
+fn atomic_write_note(target: &Path, content: &[u8]) -> Result<(), String> {
+    use std::io::Write;
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("目标路径没有父目录：{}", target.display()))?;
+    fs::create_dir_all(parent).map_err(|e| format!("创建目录失败：{e}"))?;
+    let mut tmp = tempfile::NamedTempFile::new_in(parent)
+        .map_err(|e| format!("创建临时文件失败：{e}"))?;
+    tmp.write_all(content).map_err(|e| format!("写入临时文件失败：{e}"))?;
+    tmp.as_file().sync_all().map_err(|e| format!("fsync 失败：{e}"))?;
+    tmp.persist(target).map_err(|e| format!("替换文件失败：{}", e.error))?;
+    Ok(())
 }
 
 /// 创建新笔记（自动分配文件名，如 Untitled.md，或按指定标题）
@@ -371,6 +394,12 @@ pub async fn notes_rename_note(
 
         if new_file_name != old_file_name {
             fs::rename(&old_file, &new_file).map_err(|e| format!("重命名失败: {e}"))?;
+            // 版本历史/标签随 id 迁移（失败不阻断重命名——旁路能力）
+            let _ = crate::notes_meta::store().migrate_note_id(
+                &notebook_rel_path,
+                &old_file_name,
+                &new_file_name,
+            );
         }
 
         let now = std::time::SystemTime::now()
@@ -397,14 +426,25 @@ pub async fn notes_rename_note(
     .map_err(|e| e.to_string())?
 }
 
-/// 删除笔记
+/// 删除笔记 → 回收站（ROADMAP ④：物理删改软删，30 天自动清除；.trash 以 `.` 开头，
+/// 笔记本遍历天然忽略，Obsidian 视角不侵入——同步工具可能同步 .trash 属已知边界）
 #[tauri::command]
 pub async fn notes_delete_note(notebook_rel_path: String, file_name: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
         let root = get_notebooks_root();
         let file = root.join(&notebook_rel_path).join(&file_name);
         if file.exists() {
-            fs::remove_file(&file).map_err(|e| format!("删除笔记失败: {e}"))?;
+            let trash_dir = root.join(".trash");
+            fs::create_dir_all(&trash_dir).map_err(|e| format!("创建回收站失败: {e}"))?;
+            let now = std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let trash_name = format!("{file_name}.{now}.md");
+            fs::rename(&file, trash_dir.join(&trash_name))
+                .map_err(|e| format!("移入回收站失败: {e}"))?;
+            crate::notes_meta::store()
+                .trash_register(&notebook_rel_path, &file_name, &trash_name, false)?;
         }
         Ok(())
     })
@@ -412,7 +452,8 @@ pub async fn notes_delete_note(notebook_rel_path: String, file_name: String) -> 
     .map_err(|e| e.to_string())?
 }
 
-/// 删除笔记本（文件夹）
+/// 删除笔记本：笔记逐个进回收站（可恢复；was_notebook=1 便于 UI 分组），
+/// 目录本体删除——空目录结构不恢复（文档边界）。
 #[tauri::command]
 pub async fn notes_delete_notebook(notebook_rel_path: String) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -423,12 +464,66 @@ pub async fn notes_delete_notebook(notebook_rel_path: String) -> Result<(), Stri
         let root = get_notebooks_root();
         let dir = root.join(&clean);
         if dir.exists() {
+            let trash_dir = root.join(".trash");
+            fs::create_dir_all(&trash_dir).map_err(|e| format!("创建回收站失败: {e}"))?;
+            let now = std::time::SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            // 递归收 .md/.markdown（子目录笔记的原相对路径保留在登记里）
+            let mut moved = 0;
+            collect_md_for_trash(&dir, &dir, &trash_dir, now, &clean, &mut moved)?;
             fs::remove_dir_all(&dir).map_err(|e| format!("删除文件夹失败: {e}"))?;
+            let _ = moved;
         }
         Ok(())
     })
     .await
     .map_err(|e| e.to_string())?
+}
+
+/// 递归把目录下全部 .md/.markdown 移入 .trash 并登记（保留原相对路径便于恢复原位）。
+fn collect_md_for_trash(
+    base: &Path,
+    dir: &Path,
+    trash_dir: &Path,
+    now: u64,
+    notebook_rel: &str,
+    moved: &mut usize,
+) -> Result<(), String> {
+    for entry in fs::read_dir(dir).map_err(|e| format!("读取目录失败: {e}"))? {
+        let entry = entry.map_err(|e| format!("读取目录项失败: {e}"))?;
+        let path = entry.path();
+        if path.is_dir() {
+            collect_md_for_trash(base, &path, trash_dir, now, notebook_rel, moved)?;
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        if !(name.ends_with(".md") || name.ends_with(".markdown")) {
+            continue;
+        }
+        let rel = path
+            .strip_prefix(base)
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .unwrap_or_else(|_| name.clone());
+        // rel 形如 "sub/Note.md"；登记拆成 子目录/ 与 文件名
+        let (sub_rel, file_name) = match rel.rfind('/') {
+            Some(idx) => (format!("{notebook_rel}/{}", &rel[..idx]), rel[idx + 1..].to_string()),
+            None => (notebook_rel.to_string(), rel.clone()),
+        };
+        let trash_name = format!("{file_name}.{now}.md");
+        let dest = trash_dir.join(&trash_name);
+        let final_name = if dest.exists() {
+            format!("{file_name}.{now}-{}.md", *moved)
+        } else {
+            trash_name.clone()
+        };
+        fs::rename(&path, trash_dir.join(&final_name))
+            .map_err(|e| format!("移入回收站失败: {e}"))?;
+        crate::notes_meta::store().trash_register(&sub_rel, &file_name, &final_name, true)?;
+        *moved += 1;
+    }
+    Ok(())
 }
 
 /// 重命名笔记本（文件夹）

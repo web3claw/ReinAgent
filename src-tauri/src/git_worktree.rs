@@ -428,7 +428,6 @@ mod git_worktree_tests {
     use super::*;
     use crate::git_panel::is_not_repo_error;
     use std::path::Path;
-    use std::process::Command;
 
     fn git(dir: &Path, args: &[&str]) -> String {
         run_git(dir.to_str().expect("utf8 path"), args).expect("git ok")

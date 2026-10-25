@@ -31,17 +31,23 @@ import { useTranslation } from "../../i18n";
 import { MilkdownEditor, type MilkdownEditorHandle, type SelectionInfo } from "./MilkdownEditor";
 import { NoteAiSidebar } from "./NoteAiSidebar";
 import { notesService, type NoteFileItem } from "./notesService";
+import { NoteVersionPanel, NoteTagEditor } from "./NoteEnhancePanels";
 import { useSettings } from "../../lib/settings/useSettings";
 import type { ProviderConfig } from "../../lib/providers/modelFactory";
 import { completeOneShotText } from "../../lib/promptEnhancement/enhance";
+import { buildInlineAiPrompt } from "./noteEnhance";
 import {
   loadProvidersConfigFromDisk,
   type ProviderItem,
 } from "../settings/model-provider/types";
 
 interface NoteEditorProps {
+  /** 全量标签映射（ROADMAP ④；NotesPage 持有） */
+  allTags?: Record<string, string[]>;
+  /** 标签变更后通知父层刷新 */
+  onTagsChanged?: () => void;
   note: NoteFileItem | null;
-  onSaveContent: (content: string) => Promise<void>;
+  onSaveContent: (content: string, source?: string) => Promise<void>;
   onRenameTitle: (newTitle: string) => Promise<void>;
 }
 
@@ -51,6 +57,10 @@ interface FormatAction {
   title: string;
   run: (md: MilkdownEditorHandle) => void;
 }
+
+/** 自动保存防抖（用户定稿 2026-10-25：1s → 5s——纯打字不记版本的配套取舍，
+ * 崩溃丢失窗口 ≤5s；AI/手动/还原路径不受防抖影响（AI 搭便车但即时应用，Ctrl+S 冲刷立即存）。 */
+const AUTOSAVE_DEBOUNCE_MS = 5000;
 
 const FORMAT_ACTIONS: FormatAction[] = [
   { key: "h2", icon: Heading2, title: "二级标题 (H2)", run: (md) => md.toggleHeading(2) },
@@ -128,13 +138,14 @@ function sanitizeAiResult(
   return result;
 }
 
-export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorProps) {
+export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTagsChanged }: NoteEditorProps) {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [loaded, setLoaded] = useState(false);
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "unsaved">("saved");
+  const [isVersionOpen, setIsVersionOpen] = useState(false);
   const [linkDraft, setLinkDraft] = useState<string | null>(null);
   const [isAiSidebarOpen, setIsAiSidebarOpen] = useState(false);
 
@@ -160,6 +171,9 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorPro
   const modelPickerRef = useRef<HTMLDivElement>(null);
   const saveTimeoutRef = useRef<number | null>(null);
   const currentContentRef = useRef<string>("");
+  // 版本来源搭车：行内 AI 应用结果走 onChange→防抖链（无独立保存调用），
+  // 在此挂待发 source，防抖到期一并透传给 onSaveContent。
+  const pendingSaveSourceRef = useRef<string | undefined>(undefined);
 
   // 从磁盘读取多服务商真实配置（仅取启用的服务商与启用的模型）
   const refreshProviders = useCallback(async () => {
@@ -285,16 +299,41 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorPro
       saveTimeoutRef.current = window.setTimeout(async () => {
         setSaveStatus("saving");
         try {
-          await onSaveContent(newContent);
+          await onSaveContent(newContent, pendingSaveSourceRef.current);
           setSaveStatus("saved");
         } catch (err) {
           console.error("Auto save failed:", err);
           setSaveStatus("unsaved");
+        } finally {
+          pendingSaveSourceRef.current = undefined;
         }
-      }, 1000);
+      }, AUTOSAVE_DEBOUNCE_MS);
     },
     [onSaveContent]
   );
+
+  // Ctrl+S 手动保存（ROADMAP ④ source=manual）：冲刷防抖立即存盘——「强制留一版再大改」的抓手
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        if (saveTimeoutRef.current) {
+          window.clearTimeout(saveTimeoutRef.current);
+          saveTimeoutRef.current = null;
+        }
+        if (!currentContentRef.current) return;
+        setSaveStatus("saving");
+        void onSaveContent(currentContentRef.current, "manual")
+          .then(() => setSaveStatus("saved"))
+          .catch(() => setSaveStatus("unsaved"))
+          .finally(() => {
+            pendingSaveSourceRef.current = undefined;
+          });
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onSaveContent]);
 
   const handleContentChange = useCallback(
     (newContent: string) => {
@@ -419,8 +458,18 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorPro
     inlineAbortRef.current = abortController;
 
     try {
-      const systemPrompt = "你是一位专业的 Markdown 编辑与写作助手。请直接输出处理后的正文内容，保留 Markdown 格式，不要包含多余的客套寒暄。";
-      const userPrompt = `${promptToSend}\n\n内容如下：\n"""\n${targetText}\n"""`;
+      const systemPrompt = "你是一位专业的 Markdown 编辑与写作助手。请直接输出处理后的正文内容，保留 Markdown 格式，不要包含多余的客套寒暄。严格的输出边界：只输出「待处理文本」处理后的结果，背景参考仅供理解语境，严禁把背景内容复述进输出。";
+      // 分区 prompt（ROADMAP ④）：有选区时选区=待处理、全文=背景（防整篇回显覆盖）
+      const hasSelection = Boolean(selInfo?.hasSelection && selInfo.text.trim());
+      const fullMarkdown = milkdownRef.current?.getMarkdown() ?? content;
+      const userPrompt = buildInlineAiPrompt({
+        instruction: promptToSend,
+        selection: hasSelection ? selInfo!.text : "",
+        noteTitle: note?.title ?? "",
+        fullMarkdown,
+        selectionChars: selInfo?.text.length ?? 0,
+        fullChars: fullMarkdown.length,
+      });
 
       const generated = await completeOneShotText(
         providerConfig,
@@ -449,6 +498,7 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorPro
     const cleaned = sanitizeAiResult(inlineAiResult, { noteTitle: note?.title, selectedText: aiSelection });
     if (!cleaned) return;
     const selection = milkdownRef.current?.getSelectionInfo();
+    pendingSaveSourceRef.current = "ai";
     if (!selection?.hasSelection && !aiSelection) {
       milkdownRef.current?.appendContent(cleaned);
     } else {
@@ -461,6 +511,7 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorPro
     if (!inlineAiResult || inlineAiResult.startsWith("[ERROR]")) return;
     const cleaned = sanitizeAiResult(inlineAiResult, { noteTitle: note?.title, selectedText: aiSelection });
     if (!cleaned) return;
+    pendingSaveSourceRef.current = "ai";
     milkdownRef.current?.appendContent(cleaned);
     closeInlineAi();
   };
@@ -652,6 +703,16 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorPro
             )}
           </div>
 
+          {/* 版本历史入口（ROADMAP ④） */}
+          <button
+            type="button"
+            onClick={() => setIsVersionOpen(true)}
+            title={t("notesVersionTitle", "版本历史")}
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors cursor-pointer"
+          >
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
+          </button>
+
           {/* ✨ AI 助手高亮胶囊按钮（100% 对齐 Hetu 截图） */}
           <button
             type="button"
@@ -688,6 +749,21 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorPro
           className="w-full text-2xl font-bold bg-transparent border-none outline-hidden text-[var(--text)] placeholder:text-[var(--text-dim)] tracking-tight"
         />
       </div>
+      {/* 标签编辑条（ROADMAP ④）——AllTags 由 NotesPage 持有经 props 注入 */}
+      <NoteTagEditor noteId={note.id} notebookRelPath={note.notebookRelPath} fileName={note.fileName} allTags={allTags ?? {}} onTagsChanged={onTagsChanged} />
+      {isVersionOpen && (
+        <NoteVersionPanel
+          noteId={note.id}
+          currentContent={currentContentRef.current}
+          onRestore={(restored: string) => {
+            void milkdownRef.current?.setMarkdown(restored);
+            setContent(restored);
+            // 立即保存（source=restore → 版本历史记还原来源；旧当前内容已在快照链中留存）
+            void onSaveContent(restored, "restore");
+          }}
+          onClose={() => setIsVersionOpen(false)}
+        />
+      )}
 
       {/* 常驻格式工具条（100% 对齐 Hetu 截图图标与顺序） */}
       <div className="sticky top-0 z-10 flex items-center px-8 py-2 border-b border-[var(--border)] bg-[var(--bg-elev)] shrink-0 overflow-x-auto">
@@ -974,13 +1050,13 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle }: NoteEditorPro
         onReplaceFull={(newText) => {
           milkdownRef.current?.setMarkdown(newText);
           setContent(newText);
-          void onSaveContent(newText);
+          void onSaveContent(newText, "ai");
         }}
         onAppendContent={(textToAppend) => {
           milkdownRef.current?.appendContent(textToAppend);
           const full = milkdownRef.current?.getMarkdown() || content;
           setContent(full);
-          void onSaveContent(full);
+          void onSaveContent(full, "ai");
         }}
       />
       </div>

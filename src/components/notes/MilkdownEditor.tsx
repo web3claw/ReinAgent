@@ -451,15 +451,11 @@ const MilkdownEditorInner = forwardRef<MilkdownEditorHandle, MilkdownEditorProps
         const doc = ctx.get(parserCtx)(text);
         if (!doc) return;
         const slice = new ProseSlice(doc.content, 0, 0);
-        const { selection } = view.state;
         const tr = view.state.tr;
-        if (selection.empty) {
-          tr.replaceSelection(slice);
-        } else {
-          const $from = selection.$from;
-          const $to = selection.$to;
-          tr.replaceRange($from.before($from.depth), $to.after($to.depth), slice);
-        }
+        // 精确选区替换（ROADMAP ④ 修复）：非空选区也走 tr.replaceSelection——
+        // 旧实现 replaceRange 到父块边界会把「替换一句」放大成「替换整段」，
+        // 划词 AI 结果会覆盖选区之外的原文（事故源）。
+        tr.replaceSelection(slice);
         view.dispatch(tr);
         view.focus();
         const md = getMarkdown();

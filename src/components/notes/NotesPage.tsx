@@ -1,6 +1,8 @@
-import { useState, useEffect, useCallback } from "react";
-import { Search, Plus, FolderPlus } from "lucide-react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { Search, Plus, FolderPlus, Trash2 } from "lucide-react";
 import { NotesTree } from "./NotesTree";
+import { NoteTrashPanel } from "./NoteEnhancePanels";
+import { noteMatchesSearch } from "./noteEnhance";
 import { NoteEditor } from "./NoteEditor";
 import {
   notesService,
@@ -20,6 +22,9 @@ export function NotesPage({
   const [selectedNotebookPath, setSelectedNotebookPath] = useState<string>("default");
   const [selectedNote, setSelectedNote] = useState<NoteFileItem | null>(null);
   const [searchTerm, setSearchTerm] = useState("");
+  // 笔记增强包（ROADMAP ④）：全量标签映射（tag: 搜索与编辑条共享）与回收站面板
+  const [allTags, setAllTags] = useState<Record<string, string[]>>({});
+  const [trashOpen, setTrashOpen] = useState(false);
 
   useEffect(() => {
     if (initialSelectedNote) {
@@ -166,13 +171,21 @@ export function NotesPage({
     }
   };
 
-  // 删除笔记
+  const refreshTags = () => {
+    void notesService.allTags().then(setAllTags).catch(() => {});
+  };
+  useEffect(() => {
+    refreshTags();
+  }, []);
+
+  // 删除笔记 → 回收站（ROADMAP ④：文案与语义改为移入回收站）
   const handleDeleteNote = async (note: NoteFileItem) => {
-    const ok = window.confirm(t("deleteNoteConfirm").replace("{title}", note.title));
+    const ok = window.confirm(`${t("deleteNoteConfirm").replace("{title}", note.title)}\n${t("notesDeleteToTrashConfirm")}`);
     if (!ok) return;
     try {
       await notesService.deleteNote(note.notebookRelPath, note.fileName);
       await loadNotesForFolder(note.notebookRelPath);
+      refreshTags();
       if (selectedNote?.id === note.id) {
         setSelectedNote(null);
       }
@@ -182,9 +195,9 @@ export function NotesPage({
   };
 
   // 编辑器正文保存
-  const handleSaveContent = async (newContent: string) => {
+  const handleSaveContent = async (newContent: string, source?: string) => {
     if (!selectedNote) return;
-    await notesService.saveNote(selectedNote.notebookRelPath, selectedNote.fileName, newContent);
+    await notesService.saveNote(selectedNote.notebookRelPath, selectedNote.fileName, newContent, source);
     // 更新本地内存中的 snippet
     setNotesMap((prev) => {
       const folderList = prev[selectedNote.notebookRelPath] || [];
@@ -249,12 +262,28 @@ export function NotesPage({
             <FolderPlus className="w-3.5 h-3.5 text-blue-400" />
             <span>文件夹</span>
           </button>
+          <button
+            type="button"
+            onClick={() => setTrashOpen(true)}
+            className="flex items-center px-2 py-1 text-xs font-medium rounded-lg bg-[var(--bg-elev-2)] hover:bg-[var(--surface-hover)] border border-[var(--border)] text-[var(--text)] transition-all shrink-0 cursor-pointer shadow-xs active:scale-95"
+            title={t("notesTrashTitle")}
+          >
+            <Trash2 className="w-3.5 h-3.5 text-amber-500" />
+          </button>
         </div>
 
         {/* 树形列表视图 */}
         <NotesTree
           notebooks={notebooks}
-          notesMap={notesMap}
+          notesMap={useMemo(() => {
+            if (!searchTerm.trim()) return notesMap;
+            const out: Record<string, NoteFileItem[]> = {};
+            for (const [rel, list] of Object.entries(notesMap)) {
+              const kept = list.filter((n) => noteMatchesSearch(n, allTags[n.id], searchTerm));
+              if (kept.length) out[rel] = kept;
+            }
+            return out;
+          }, [notesMap, searchTerm, allTags])}
           selectedNoteId={selectedNote?.id}
           selectedNotebookPath={selectedNotebookPath}
           searchTerm={searchTerm}
@@ -279,8 +308,19 @@ export function NotesPage({
           note={selectedNote}
           onSaveContent={handleSaveContent}
           onRenameTitle={handleRenameTitleFromEditor}
+          allTags={allTags}
+          onTagsChanged={refreshTags}
         />
       </div>
+      {trashOpen ? (
+        <NoteTrashPanel
+          onRestored={() => {
+            void reloadAll();
+            refreshTags();
+          }}
+          onClose={() => setTrashOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

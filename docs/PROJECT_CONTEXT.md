@@ -2491,3 +2491,36 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 ### 行为变化（对用户的可见差异）
 - 超限工具结果从「只保头部」变为「先折叠噪音，仍超限保首尾」——尾部错误堆栈可见性提升。
 - 纯 base64/重复行内容可能折叠后完全装下（truncated=false，details 有折叠统计）。
+
+## 十七、笔记增强包（ROADMAP ④，2026-10-25 落地，随 v0.2.12 发布）
+
+> 用户拍板：标签走 SQLite 零污染（.md 与 Obsidian/Typora 互通不受影响）、v1 不加 agent 标签工具、划词 AI 不做逐字流式。
+
+### 存储（src-tauri/src/notes_meta.rs，新模块）
+- 独立库 `~/.ReinAgent/notes-meta.sqlite3`（照 knowledge_index：幂等 DDL/WAL/integrity_check 损坏隔离重建；派生数据不进 WebDAV 备份）。三表：`note_versions`（note_id/notebook_rel/file_name/content/source/saved_at）、`note_tags`（note_id+tag 主键 + mtime:size 指纹列）、`note_trash`（原位置/trash 文件名/was_notebook/deleted_at）。
+- 8 命令：version_list（preview≤200）/version_content/set_tags（整组替换+去重+空串剔除+≤40 字）/all_tags（读取时顺带孤儿对账——外部改名行清理）/tag_counts/trash_list/trash_restore（原位被占自动 `名 (恢复于 ts).md` 重名）/trash_purge；startup_maintenance（lib.rs setup）= 30 天过期清扫 + 标签孤儿对账。
+
+### notes_fs.rs 改造
+- `notes_save_note`：①裸 write → **atomic_write**（tempfile+fsync+persist）；②新增 `source` 参数，**磁盘旧内容有变时**先快照（基准=磁盘真相——外部编辑器改动也在链上）；每笔记保留 20 版（SQL 裁剪）。
+- `notes_delete_note`：物理删 → `notebooks/.trash/{name}.{ms}.md` rename + 登记（`.` 开头目录遍历天然忽略）。
+- `notes_delete_notebook`：递归收全部 .md 进 .trash（was_notebook=1，子目录路径保留在 original_notebook_rel）+ 目录删除；空目录结构不恢复（边界）。
+- `notes_rename_note`：migrate_note_id（版本+标签同事务迁移）。
+
+### 前端
+- `noteEnhance.ts`（纯）：tagColorIndex（FNV-1a→8 色板稳定映射）/parseTagSearch（`tag:xxx 词`）/noteMatchesSearch/buildInlineAiPrompt（**分区 prompt**：有选区=SELECTION 待处理+CONTEXT 全文背景+「严禁背景复述进输出」明令；无选区=整篇待处理）。
+- `NoteEnhancePanels.tsx`：NoteVersionPanel（右滑面板：版本列表（时间+来源徽标+preview）→ 点击并排对照当前 vs 所选（前 1000 字，照 Hetu 并排非词级）→ 还原=取内容→setMarkdown→saveNote(source=restore) 自动留存还原前当前版）；NoteTrashPanel（列表+单条恢复/彻底删/3.2s 二次确认清空+30 天提示）；NoteTagEditor（色板胶囊+回车添加+× 删+Backspace 删末+已有标签建议下拉）+NoteTagDots（树行 3 色点）。
+- NoteEditor：顶栏历史按钮（AI 胶囊旁）；标题下标签条；restore 走正常保存链。NotesPage：回收站按钮（文件夹旁）+ notesMap 预过滤（tag: 前缀）+ refreshTags（挂载/删除/恢复后）。i18n：notesVersion*/notesTrash*/notesTags*/notesDeleteToTrashConfirm zh+en。
+**防抖与版本门禁定稿（2026-10-25 用户拍板）**：自动保存防抖 1s→**5s**（NoteEditor.tsx 常量 AUTOSAVE_DEBOUNCE_MS=5000）；**autosave 一律不产生版本快照**（Rust snapshot_if_changed 门禁：source=='autosave' 早退）——版本列表只留「有意识的安全点」（ai/manual/restore，各即时记版不受防抖影响），20 版窗口全给有价值节点；磁盘安全不变（autosave 照写文件，崩溃丢失 ≤5s）。Red Check：去门禁真实报红。CDP 6/6：autosave×4 变更零版本且磁盘每笔都写、manual/ai/restore 各记版且快照内容正确。
+
+**source 接线补全（2026-10-25 用户追问发现）**：handleSaveContent 透传 source——还原=restore、侧栏 AI 替换/追加=ai、行内 AI 应用经 pendingSaveSourceRef 搭 1s 防抖便车=ai；新增 **Ctrl+S 手动保存**（冲刷防抖立即存盘，source=manual，「强制留一版再大改」抓手；无差异时照样不产生版本）。CDP 补验 6/6：Ctrl+S 覆盖外部直写产生 manual 版本（快照=磁盘旧内容）语义正确。
+
+- **划词 AI 两缺口修复**：①prompt 分区接线（handleExecuteInlineAi 改用 buildInlineAiPrompt+system 加输出边界明令）；②MilkdownEditor.replaceSelection 非空选区从「父块边界 replaceRange」改为 **tr.replaceSelection 精确替换**（旧实现会把替换一句放大成替换整段——ROADMAP 警示的覆盖事故源）。
+
+### 测试与验证（交付三铁律）
+- Rust notes_meta 4 用例（ENV_LOCK 串行——cargo 并行测试共享进程 env 互踩实测）+ Red Check 双红：①去掉「内容有变才快照」早退 ②版本保留 20→2（字面量断言——用常量是同义反复，实测踩中后修正）。cargo 287 全绿。
+- TS：test:notes 5/5（色板稳定/搜索解析含大小写/prompt 分区两形态）；tsc 0。
+- **Real Usage CDP E2E 15/15**：3 次保存→2 版快照（首存无旧内容）、无变化不新增、还原前当前版自动留存（top=restore/v3 preview）、磁盘回滚正确、标签写入去重计数、删除→.trash 登记 preview→恢复原位→行清除、原位被占自动重名（含时间戳）、UI 三入口挂载。**Not run**：划词 AI 的真实选区替换未走 UI 鼠标链（修复点有单测级验证+tsc；prompt 分区有纯函数断言）。
+- 回归：knowledge 18 / cargo 287 全绿。
+
+### 边界
+- 外部（Obsidian）编辑不产生版本快照（快照只认应用内保存链）；标签外部改名孤儿在下次 all_tags 读取时清理（无监听）；同步工具可能同步 .trash 目录（已知）；回收站笔记本删除不保留空目录结构。
