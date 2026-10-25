@@ -10,11 +10,15 @@
  * fetchImpl 可注入（单测用内存 fake，不 mock 真实网络）。
  */
 
+import { recordUsage } from "../usage/recordUsage";
+
 export interface EmbeddingTarget {
   /** 已含 /v1 前缀的完整基础地址（调用方用 ensureV1BaseUrl 归一化后传入） */
   baseUrl: string;
   apiKey: string;
   model: string;
+  /** 服务商 id（用量记账用；测试可不传） */
+  provider?: string;
 }
 
 export interface EmbedResult {
@@ -91,6 +95,18 @@ async function embedBatch(
       throw new Error(formatEmbeddingHttpError(res.status, res.statusText, bodyText));
     }
     const json = (await res.json()) as unknown;
+    // 用量记账（⑧）：OpenAI embeddings 响应的 usage.prompt_tokens（无 output 维度）；
+    // 网关不回 usage 则不记（no-fallback）
+    const usage = (json as { usage?: { prompt_tokens?: number; total_tokens?: number } }).usage;
+    if (usage?.prompt_tokens) {
+      void recordUsage({
+        source: "embedding",
+        provider: target.provider ?? "",
+        model: target.model,
+        inputTokens: usage.prompt_tokens,
+        outputTokens: Math.max(0, (usage.total_tokens ?? usage.prompt_tokens) - usage.prompt_tokens),
+      });
+    }
     return parseEmbeddingResponse(json, inputs.length);
   } catch (err: unknown) {
     if (err instanceof Error && err.name === "AbortError") {

@@ -2589,3 +2589,22 @@ gh（GitHub）/ glab（GitLab）按 remote URL 自动选择；CLI 未装/无 rem
 - 解析层 `src/lib/settings/scenarioModels.ts`：chatDefaultOf（modelId 缺省→defaultModelId（**须存在且启用**）→首个启用模型）、validateBinding 四级失效原因（providerMissing/Disabled、modelMissing/Disabled）、resolveScenario（失效/未配置→回退聊天默认，UI 明示原因与回退值）；4 单测 + Red Check（破坏回退链真实变红）
 - UI `ScenarioModelsSection.tsx`：四行卡片（provider 下拉+model 下拉/手填），未配置显示「跟随聊天默认（当前 X）」，失效显示警告+回退值
 - 已知边界：settings.provider 的 TS 类型是封闭枚举 ProviderType 但运行时存任意 provider id（历史宽松，App 已有 as 断言先例，区块沿同款处理）
+
+## 二十一、用量来源维度与全景聚合（ROADMAP ⑧，2026-10-25 落地）
+
+在 8.11.1 ZCode 复刻面板（设置 ▸ 用量统计）下方新增「用量来源」区，把全部模型调用按来源拆分。
+
+### 来源打标（model_usage.query_source 从 2 值扩展到 10 值）
+- **pool 主链回填**：task payload 新增 `source` 字段（AppTask.source，createTask 第 7 参）——看板 runDispatcher 传 `kanban`、自动化派发传 `automation`、普通会话缺省 `chat`；回填 SQL 读 task 表解析；历史 `main_turn` 行幂等修正（先归 chat 再按 task 标记重写，对齐当年 model 空名纠正先例）
+- **独立调用记账**：新 Rust 命令 `usage_record`（direct 行 id=direct:{source}:{ts}:{seq}，task_id/msg_id 空）；六条链接入——`note-ai`（NoteEditor 行内 AI）/ `prompt-enhance` / `commit-message`（两者经共享入口 completeOneShotText 加 source 尾参一次覆盖）/ `memory-organizer`（organizer service 的 runTurn usage 处）/ `title`（titleGenerator 四协议分支按协议字段映射）/ `embedding`（embeddingClient batch 级，EmbeddingTarget 加 provider 字段由 providerBinding 传入）
+- **no-fallback**：响应无 usage 一律不记（绝不编 0）；recordUsage 失败只警告不阻塞主链路
+
+### 聚合与 UI
+- `usage_snapshot` 增量字段（ZCode 复刻组件不识别多余字段，向前兼容）：`sources`（按来源 SUM/COUNT/share）、`sourceModels`（来源×模型）、`weekHourly`（近 7 天 7×24=168 格含 0 填充，level 复用 heatmap_level）
+- `UsageSourceSection.tsx`（独立文件零侵入复刻目录，useAppUsageStats("all") 独立实例）：来源环形（SVG stroke-dasharray + 图例）、来源×模型横向堆叠条（div 宽度百分比 + 段图例）、7×24 周热力图（CSS grid 24 列，色用 --color-usage-heatmap-0..4，title 原生 tooltip，小时刻度每 6h 一档）
+- 明细分页列表（Hetu 有）按用户拍板 v1 不做
+
+### 测试（交付三铁律）
+- usage_stats_tests +4：来源解析与历史行修正 / 三新聚合（share 和=1、堆叠序、168 格 0 填充）/ direct 行；**Red Check**：破坏 main_turn→chat 修正（改 zzz）→ corrects_history 真实红
+- 测试库 fixture 补 task 表（真实库同构）；insert_assistant_api_message 的 usage_json 传内层对象（双层嵌套会解析出全 0——测试里真实踩过）
+- 验收：Rust 307 全绿 + 前端 74 绿 + tsc 0；真实数据回填目检待用户（设置 ▸ 用量统计滚动到 ZCode 面板下方）

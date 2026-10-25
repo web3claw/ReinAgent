@@ -126,6 +126,8 @@ async function readOrganizerEntries(entries: any[], workdir: string): Promise<Or
 }
 
 /** One hidden LLM round for the organizer; token usage accumulates into `tokens`. */
+
+import { recordUsage } from "../../usage/recordUsage";
 async function runOrganizerModelPrompt(params: {
   model: ExtractionModelDeps;
   run: MemoryOrganizeRun;
@@ -153,6 +155,14 @@ async function runOrganizerModelPrompt(params: {
     if (message.role === "assistant" && (message as any).usage) {
       const usage = (message as any).usage;
       params.tokens.total += usage.totalTokens ?? (usage.input ?? 0) + (usage.output ?? 0);
+      // 用量记账（⑧）：organizer 的 hidden LLM 轮次按真实 usage 落账
+      void recordUsage({
+        source: "memory-organizer",
+        provider: String((params.model as any).providerId ?? ""),
+        model: String((params.model.model as any)?.modelID ?? params.model.label ?? ""),
+        inputTokens: usage.input ?? 0,
+        outputTokens: usage.output ?? 0,
+      });
     }
   }
   const lastAssistant = [...result.messages].reverse().find((m) => m.role === "assistant");

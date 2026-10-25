@@ -484,7 +484,8 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
         systemPrompt,
         userPrompt,
         "off",
-        abortController.signal
+        abortController.signal,
+        "note-ai",
       );
 
       setInlineAiResult(generated.trim());

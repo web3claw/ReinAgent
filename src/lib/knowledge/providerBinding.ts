@@ -49,5 +49,6 @@ export async function resolveKnowledgeEmbeddingTarget(): Promise<EmbeddingTarget
     baseUrl: ensureV1BaseUrl(provider.baseUrl),
     apiKey: (provider.apiKey || "").trim(),
     model: modelId,
+    provider: provider.id,
   };
 }

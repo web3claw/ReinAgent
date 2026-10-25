@@ -8,6 +8,8 @@
  * 一次性增强失败如实报错，60s 超时不换模型重试（避免双倍等待，对齐 PI）。
  */
 
+import { recordUsage } from "../usage/recordUsage";
+
 import type { AssistantMessage, AssistantMessageEvent, Message } from "@earendil-works/pi-ai";
 import { buildModel, type ProviderConfig } from "../providers/modelFactory";
 import { getStreamFnForApi } from "../providers/runAgentTurn";
@@ -78,6 +80,7 @@ export async function completeOneShotText(
   userText: string,
   thinkingLevel: ThinkingLevel,
   signal: AbortSignal,
+  usageSource?: import("../usage/recordUsage").DirectUsageSource,
 ): Promise<string> {
   const model = buildModel(config);
   const stream = await getStreamFnForApi(model.api);
@@ -120,6 +123,19 @@ export async function completeOneShotText(
     throw new Error(final?.errorMessage ?? "模型请求失败");
   }
   if (!text.trim()) throw Object.assign(new Error("模型返回了空结果"), { errorCode: "PROMPT_ENHANCEMENT_EMPTY" });
+  // 用量记账（⑧）：final.usage 是 pi-ai 真实值，缺 usage（部分网关不回）则不记（no-fallback）
+  if (usageSource && final?.usage) {
+    const u = final.usage as { input?: number; output?: number; cacheRead?: number; cacheWrite?: number };
+    void recordUsage({
+      source: usageSource,
+      provider: String(config.provider ?? ""),
+      model: String(config.modelId ?? ""),
+      inputTokens: u.input ?? 0,
+      outputTokens: u.output ?? 0,
+      cacheReadTokens: u.cacheRead,
+      cacheWriteTokens: u.cacheWrite,
+    });
+  }
   return text;
 }
 
@@ -136,7 +152,7 @@ export async function enhancePromptDraft(options: PromptEnhancementOptions): Pro
     const merged = signal
       ? AbortSignal.any([timeoutSignal, signal])
       : timeoutSignal;
-    return completeOneShotText(config, DEFAULT_PROMPT_ENHANCEMENT_SYSTEM_PROMPT, userText, thinkingLevel, merged);
+    return completeOneShotText(config, DEFAULT_PROMPT_ENHANCEMENT_SYSTEM_PROMPT, userText, thinkingLevel, merged, "prompt-enhance");
   });
   const cleaned = stripEnhancementDecorations(raw);
   if (!cleaned.trim()) {

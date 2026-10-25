@@ -14,6 +14,7 @@ import { ShortcutsSection } from './ShortcutsSection';
 import { TerminalShellSetting } from './TerminalShellSetting';
 import { invoke } from '@tauri-apps/api/core';
 import { AppUsagePanel } from './usage-stats/AppUsagePanel';
+import { UsageSourceSection } from './UsageSourceSection';
 import { useAppStore } from '../../store/useAppStore';
 import {
   Settings as SettingsIcon,
@@ -421,6 +422,7 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
           {activeTab === 'usage' && (
             <div className="space-y-6">
               <AppUsagePanel />
+              <UsageSourceSection />
             </div>
           )}
 

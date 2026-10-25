@@ -237,7 +237,7 @@ export async function dispatchCard(cardId: string, trigger: "todo" | "comment" |
   if (!taskId) {
     const store = useAppStore.getState();
     const previousActive = store.activeTaskId;
-    taskId = store.createTask(card.title, card.workspacePath || null, provider.id, modelId, undefined, "full");
+    taskId = store.createTask(card.title, card.workspacePath || null, provider.id, modelId, undefined, "full", "kanban");
     // 不抢前台：恢复原活动任务（看板执行是后台行为）
     useAppStore.getState().setActiveTaskId(previousActive);
     await invoke("kanban_card_set_task", { cardId, taskId }).catch((err) =>

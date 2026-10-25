@@ -1,3 +1,4 @@
+import { recordUsage } from "../usage/recordUsage";
 import type { ProviderConfig } from "../providers/modelFactory";
 import { API_FORMAT_TO_WIRE, ensureV1BaseUrl } from "../providers/modelFactory";
 import { proxiedFetch } from "../web/proxiedFetch";
@@ -24,7 +25,40 @@ Title rules:
 - Do not use markdown, numbering, quotes, trailing punctuation, or explanations.
 - Return only the concise title text.`;
 
-export function cleanGeneratedTitle(raw: string): string | null {
+export /** 标题生成用量记账（⑧）：按协议提取真实 usage，网关不回 usage 则不记（no-fallback） */
+function recordTitleUsage(
+  api: string,
+  data: unknown,
+  provider: string,
+  modelId: string,
+): void {
+  const d = data as Record<string, any>;
+  let input: number | undefined;
+  let output: number | undefined;
+  if (api === "anthropic-messages") {
+    input = d?.usage?.input_tokens;
+    output = d?.usage?.output_tokens;
+  } else if (api === "google-generative-ai") {
+    input = d?.usageMetadata?.promptTokenCount;
+    output = d?.usageMetadata?.candidatesTokenCount;
+  } else if (api === "openai-responses") {
+    input = d?.usage?.input_tokens;
+    output = d?.usage?.output_tokens;
+  } else {
+    input = d?.usage?.prompt_tokens;
+    output = d?.usage?.completion_tokens;
+  }
+  if (typeof input !== "number" && typeof output !== "number") return;
+  void recordUsage({
+    source: "title",
+    provider,
+    model: modelId,
+    inputTokens: input ?? 0,
+    outputTokens: output ?? 0,
+  });
+}
+
+function cleanGeneratedTitle(raw: string): string | null {
   const withoutThinking = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   const candidate = withoutThinking.split("\n")[0]?.trim();
   if (!candidate) return null;
@@ -142,7 +176,7 @@ export async function generateSessionTitle(
         const rawContent = contentBlock?.text || contentBlock?.content;
         if (typeof rawContent === "string") {
           const cleaned = cleanGeneratedTitle(rawContent);
-          if (cleaned) return cleaned;
+          if (cleaned) { recordTitleUsage(api, data, provider, modelId); return cleaned; }
         }
       }
     } else if (api === "google-generative-ai") {
@@ -172,7 +206,7 @@ export async function generateSessionTitle(
         const rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
         if (typeof rawContent === "string") {
           const cleaned = cleanGeneratedTitle(rawContent);
-          if (cleaned) return cleaned;
+          if (cleaned) { recordTitleUsage(api, data, provider, modelId); return cleaned; }
         }
       }
     } else if (api === "openai-responses") {
@@ -208,7 +242,7 @@ export async function generateSessionTitle(
             : "") || (typeof data.output_text === "string" ? data.output_text : "");
         if (rawContent) {
           const cleaned = cleanGeneratedTitle(rawContent);
-          if (cleaned) return cleaned;
+          if (cleaned) { recordTitleUsage(api, data, provider, modelId); return cleaned; }
         }
       }
     } else {
@@ -238,7 +272,7 @@ export async function generateSessionTitle(
         const rawContent = data.choices?.[0]?.message?.content;
         if (typeof rawContent === "string") {
           const cleaned = cleanGeneratedTitle(rawContent);
-          if (cleaned) return cleaned;
+          if (cleaned) { recordTitleUsage(api, data, provider, modelId); return cleaned; }
         }
       }
     }

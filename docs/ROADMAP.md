@@ -19,7 +19,7 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 | P1 | ⑤ 看板式 Agent 任务 ✅（2026-10-25 v1 落地） | 任务驱动的无人值守执行（与 cron 自动化互补） |
 | P1 | ⑥ 进模型前文本压缩管线 ✅（2026-10-24 v1 落地） | 纯函数 5 节点（轻有损子集），专治工具输出超长，与 microcompact 正交 |
 | P1 | ⑦ PR 面板（gh/glab） ✅（2026-10-25 v1 落地，随下一版本发布） | Git 面板自然延伸 + 「交给 Agent 修」闭环 |
-| P2 | ⑧ 用量分析页 / ⑨ Wiki 生成 / ⑩ 知识图谱 / ⑫ SSH 项目 | 依赖前置或投入大，缓（⑪ 场景化模型已于 2026-10-25 落地） |
+| P2 | ⑨ Wiki 生成 / ⑩ 知识图谱 / ⑫ SSH 项目 | 依赖前置或投入大，缓（⑪ 场景化模型、⑧ 用量来源页已于 2026-10-25 落地） |
 | 地基 | ⓪ 后台任务队列语义 | ①⑤⑨ 的公共前置：SQLite 表即队列 |
 
 状态标记：☐ 未排期 · ◐ 进行中 · ✅ 已完成。
@@ -116,7 +116,7 @@ ReinAgent 笔记是文件制：版本历史可落 `.ReinAgent/notes-versions/` �
 
 ## 三、P2 借鉴项
 
-### ⑧ 用量分析页 ☐
+### ⑧ 用量分析页 ✅（2026-10-25 落地，实现细节见 PROJECT_CONTEXT「二十一、用量来源维度」节。落地差异：来源打标走 task payload.source + 六条独立调用链 usage_record 记账；明细分页列表用户拍板不做；7×24 周热力图做了）
 
 Hetu 单表 `LlmUsageLog` 十二种来源记账（chat/work/kanban/workflow/wiki/note-ai/skill/graph/search/scheduled/proxy）+ RefId + 延迟；聚合出概览/近 7 天趋势/365 天热力图/7×24 周热力图/按模型/按来源/来源×模型堆叠。**两家都只记 token 不记成本**。ReinAgent 已有 api_message 原件持久化 + usage_reset 水位线 + SessionStatsBar，缺全景页与「来源」维度（补 source 字段即可）。
 

@@ -25,6 +25,8 @@ export interface AppTask {
   thinkingLevel?: ThinkingLevel;
   /** 任务级审批模式覆盖；缺省=跟随全局默认。 */
   approvalMode?: ApprovalMode;
+  /** 任务来源（⑧ 用量维度）：chat 缺省 / kanban 看板派发 / automation 定时派发。 */
+  source?: string;
   /** 工具级审批策略（工具名 → allow/ask/deny）；未配置的工具回退审批模式默认。 */
   toolPolicies?: Record<string, "allow" | "ask" | "deny">;
   /** 当前助手（人设预设）；缺省/缺省值 general = 无定制。切助手时已采用其模型/思考/审批预设。 */
@@ -80,7 +82,8 @@ interface AppState {
     providerId?: string,
     modelId?: string,
     thinkingLevel?: ThinkingLevel,
-    approvalMode?: ApprovalMode
+    approvalMode?: ApprovalMode,
+    source?: string
   ) => string;
   setActiveTaskId: (id: string | null) => void;
   setGlobalDefaultAssistant: (id: string) => void;
@@ -368,7 +371,7 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
 
-  createTask: (title, project = null, providerId, modelId, thinkingLevel, approvalMode) => {
+  createTask: (title, project = null, providerId, modelId, thinkingLevel, approvalMode, source) => {
     const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newTask: AppTask = {
       id: newId,
@@ -381,6 +384,7 @@ export const useAppStore = create<AppState>((set) => ({
       // 草稿态所选的推理等级/审批模式在首次发送（草稿提升）时落到新任务上，实现任务级隔离。
       thinkingLevel: thinkingLevel,
       approvalMode: approvalMode,
+      source: source,
     };
     set((state) => {
       const nextTasks = [newTask, ...state.tasks];

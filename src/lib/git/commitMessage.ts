@@ -72,6 +72,7 @@ export async function generateCommitMessage(options: GenerateCommitMessageOption
       buildCommitMessageUserPrompt({ branchName: options.branchName, diffText: options.diffText }),
       options.thinkingLevel ?? "off",
       merged,
+      "commit-message",
     );
     const cleaned = cleanCommitMessage(raw);
     if (!cleaned) {

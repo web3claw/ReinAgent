@@ -125,7 +125,45 @@ pub struct UsageToolRow {
     pub avg_duration_ms: Option<i64>,
 }
 
-/// ZCode AppUsageSnapshot 同形快照（usage-stats.ts 契约）。
+/// 来源分布行（⑧ 用量来源维度：chat/kanban/automation/subagent/note-ai/...）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSourceRow {
+    pub source: String,
+    pub total_tokens: i64,
+    pub request_count: i64,
+    pub share: f64,
+}
+
+/// 来源×模型堆叠行
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageSourceModelRow {
+    pub source: String,
+    pub model_id: Option<String>,
+    pub total_tokens: i64,
+}
+
+/// 7×24 周热力图单元格（date+hour 唯一，含 0 填充）
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWeekHourCell {
+    pub date: String,
+    pub hour: i32,
+    pub total_tokens: i64,
+    pub level: i32,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageWeekHourly {
+    pub max_tokens: i64,
+    /// 近 7 天 × 24 小时 = 168 格，按天序后小时序排列
+    pub cells: Vec<UsageWeekHourCell>,
+}
+
+/// ZCode AppUsageSnapshot 同形快照（usage-stats.ts 契约；sources/sourceModels/weekHourly
+/// 为 ⑧ 增量字段，ZCode 复刻组件不识别多余字段，向前兼容）。
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct UsageSnapshot {
@@ -138,6 +176,9 @@ pub struct UsageSnapshot {
     pub daily_model_usage: Vec<UsageDailyModelDay>,
     pub models: Vec<UsageModelRow>,
     pub tools: Vec<UsageToolRow>,
+    pub sources: Vec<UsageSourceRow>,
+    pub source_models: Vec<UsageSourceModelRow>,
+    pub week_hourly: UsageWeekHourly,
 }
 
 fn parse_usage_field(value: &serde_json::Value, key: &str) -> i64 {
@@ -220,6 +261,25 @@ pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64
         .map_err(|e| e.to_string())?;
     drop(stmt);
 
+    // task → 来源标记（⑧：kanban/automation 派发的任务在 payload.source 打标，缺省 chat）
+    let mut stmt = tx.prepare("SELECT id, payload FROM task").map_err(|e| e.to_string())?;
+    let task_sources: std::collections::HashMap<String, String> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<(String, String)>, _>>()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|(id, payload)| {
+            let source = serde_json::from_str::<serde_json::Value>(&payload)
+                .ok()
+                .and_then(|v| v.get("source").and_then(|x| x.as_str()).map(str::to_owned))
+                .filter(|x| !x.is_empty())
+                .unwrap_or_else(|| "chat".to_string());
+            (id, source)
+        })
+        .collect();
+    drop(stmt);
+
     for (task_id, msg_id, started_at, payload) in rows {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(&payload) else {
             continue;
@@ -250,7 +310,7 @@ pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64
                 "INSERT OR IGNORE INTO model_usage
                  (id, task_id, msg_id, query_source, provider, model, status, started_at,
                   input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens)
-                 VALUES (?1, ?2, ?3, 'main_turn', ?4, ?5, 'completed', ?6, ?7, ?8, ?9, ?10, ?11)",
+                 VALUES (?1, ?2, ?3, ?12, ?4, ?5, 'completed', ?6, ?7, ?8, ?9, ?10, ?11)",
                 rusqlite::params![
                     id,
                     task_id,
@@ -262,7 +322,8 @@ pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64
                     output,
                     cache_read,
                     cache_write,
-                    input + output
+                    input + output,
+                    task_sources.get(&task_id).cloned().unwrap_or_else(|| "chat".to_string()),
                 ],
             )
             .map_err(|e| e.to_string())?;
@@ -361,6 +422,23 @@ pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64
         inserted += n as i64;
     }
 
+    // 2.5) 历史行来源修正：早期回填统一写 main_turn——先归 chat，再按 task 标记
+    // 重写 kanban/automation（幂等；direct 记账行与 subagent 行不受影响）
+    tx.execute(
+        "UPDATE model_usage SET query_source = 'chat' WHERE query_source = 'main_turn'",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
+    for (tid, src) in &task_sources {
+        if src != "chat" {
+            tx.execute(
+                "UPDATE model_usage SET query_source = ?2 WHERE task_id = ?1 AND query_source = 'chat'",
+                rusqlite::params![tid, src],
+            )
+            .map_err(|e| e.to_string())?;
+        }
+    }
+
     // 3) 30 天滚动保留（对齐 ZCode USAGE_RETENTION_DAYS）
     let cutoff = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -374,6 +452,62 @@ pub(crate) fn usage_backfill_conn(conn: &mut rusqlite::Connection) -> Result<i64
 
     tx.commit().map_err(|e| format!("commit failed: {e}"))?;
     Ok(inserted)
+}
+
+/// 独立调用记账入参（⑧：不走会话池的调用链——note-ai/memory-organizer/title/embedding）
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageRecordArgs {
+    /// note-ai | memory-organizer | title | embedding
+    pub source: String,
+    pub provider: String,
+    pub model: String,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    #[serde(default)]
+    pub cache_read_tokens: Option<i64>,
+    #[serde(default)]
+    pub cache_write_tokens: Option<i64>,
+    #[serde(default)]
+    pub duration_ms: Option<i64>,
+}
+
+/// 独立调用记账（id 由时间戳+计数唯一化；task_id/msg_id 留空——不关联会话）。
+#[tauri::command]
+pub async fn usage_record(args: UsageRecordArgs) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static SEQ: AtomicU64 = AtomicU64::new(0);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        let id = format!("direct:{}:{}:{}", args.source, now, SEQ.fetch_add(1, Ordering::Relaxed));
+        let conn = crate::conversation_store::db_conn()?;
+        conn.execute(
+            "INSERT INTO model_usage
+             (id, task_id, msg_id, query_source, provider, model, status, started_at, duration_ms,
+              input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens)
+             VALUES (?1, '', '', ?2, ?3, ?4, 'completed', ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            rusqlite::params![
+                id,
+                args.source,
+                args.provider,
+                args.model,
+                now,
+                args.duration_ms,
+                args.input_tokens,
+                args.output_tokens,
+                args.cache_read_tokens.unwrap_or(0),
+                args.cache_write_tokens.unwrap_or(0),
+                args.input_tokens + args.output_tokens,
+            ],
+        )
+        .map_err(|e| e.to_string())?;
+        Ok(())
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 pub(crate) fn usage_query_sync(
@@ -728,6 +862,91 @@ pub(crate) fn usage_query_conn(
         })
         .collect();
 
+    // ---- 范围内来源分布（⑧）----
+    let mut src_stmt = conn
+        .prepare(
+            "SELECT query_source, SUM(total_tokens), COUNT(*)
+             FROM model_usage WHERE started_at >= ?1
+             GROUP BY query_source ORDER BY SUM(total_tokens) DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let src_rows: Vec<(String, i64, i64)> = src_stmt
+        .query_map(rusqlite::params![since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(src_stmt);
+    let range_source_total: i64 = src_rows.iter().map(|(_, t, _)| *t).sum();
+    let sources: Vec<UsageSourceRow> = src_rows
+        .into_iter()
+        .map(|(source, total, requests)| UsageSourceRow {
+            source,
+            total_tokens: total,
+            request_count: requests,
+            share: if range_source_total > 0 { total as f64 / range_source_total as f64 } else { 0.0 },
+        })
+        .collect();
+
+    // ---- 来源×模型（堆叠条形）----
+    let mut sm_stmt = conn
+        .prepare(
+            "SELECT query_source, model, SUM(total_tokens)
+             FROM model_usage WHERE started_at >= ?1
+             GROUP BY query_source, model ORDER BY SUM(total_tokens) DESC",
+        )
+        .map_err(|e| e.to_string())?;
+    let sm_rows: Vec<(String, String, i64)> = sm_stmt
+        .query_map(rusqlite::params![since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(sm_stmt);
+    let source_models: Vec<UsageSourceModelRow> = sm_rows
+        .into_iter()
+        .map(|(source, model, total)| UsageSourceModelRow {
+            source,
+            model_id: if model.is_empty() { None } else { Some(model) },
+            total_tokens: total,
+        })
+        .collect();
+
+    // ---- 近 7 天 7×24 周热力图（含 0 填充，tz 对齐）----
+    let week_since_ms = now_ms - 6 * 24 * 3600 * 1000;
+    let mut wh_stmt = conn
+        .prepare(
+            "SELECT CAST((started_at + ?2) / 3600000 AS INTEGER) AS hour_slot, SUM(total_tokens)
+             FROM model_usage WHERE started_at >= ?1
+             GROUP BY hour_slot",
+        )
+        .map_err(|e| e.to_string())?;
+    let wh_rows: Vec<(i64, i64)> = wh_stmt
+        .query_map(rusqlite::params![week_since_ms, tz_offset_ms], |r| Ok((r.get(0)?, r.get(1)?)))
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    drop(wh_stmt);
+    let mut hour_map: std::collections::HashMap<i64, i64> = std::collections::HashMap::new();
+    for (slot, tokens) in wh_rows {
+        *hour_map.entry(slot).or_insert(0) += tokens;
+    }
+    let week_max = hour_map.values().copied().max().unwrap_or(0);
+    let mut cells: Vec<UsageWeekHourCell> = Vec::with_capacity(7 * 24);
+    let mut day_cursor = today_index - 6;
+    while day_cursor <= today_index {
+        for hour in 0..24i64 {
+            let slot = day_cursor * 24 + hour;
+            let tokens = hour_map.get(&slot).copied().unwrap_or(0);
+            cells.push(UsageWeekHourCell {
+                date: utc_date_from_day_index(day_cursor),
+                hour: hour as i32,
+                total_tokens: tokens,
+                level: heatmap_level(tokens, week_max),
+            });
+        }
+        day_cursor += 1;
+    }
+    let week_hourly = UsageWeekHourly { max_tokens: week_max, cells };
+
     Ok(UsageSnapshot {
         range: range.to_string(),
         generated_at: now_ms,
@@ -738,6 +957,9 @@ pub(crate) fn usage_query_conn(
         daily_model_usage,
         models,
         tools: Vec::new(),
+        sources,
+        source_models,
+        week_hourly,
     })
 }
 

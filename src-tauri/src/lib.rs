@@ -344,6 +344,7 @@ pub fn run() {
             knowledge_index::knowledge_index_clear,
             knowledge_index::knowledge_search,
             knowledge_index::knowledge_stats,
+            usage_stats::usage_record,
             git_pr::git_pr_status,
             git_pr::git_pr_create,
             git_pr::git_pr_action,

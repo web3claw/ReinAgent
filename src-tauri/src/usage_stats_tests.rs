@@ -17,10 +17,25 @@ fn setup_db() -> Connection {
          CREATE TABLE part (
             task_id TEXT NOT NULL, msg_id TEXT NOT NULL, part_index INTEGER NOT NULL,
             kind TEXT NOT NULL, payload TEXT NOT NULL,
-            PRIMARY KEY (task_id, msg_id, part_index));",
+            PRIMARY KEY (task_id, msg_id, part_index));
+         CREATE TABLE task (
+            id TEXT PRIMARY KEY, seq INTEGER NOT NULL, payload TEXT NOT NULL, updated_at INTEGER NOT NULL);",
     )
     .unwrap();
     conn
+}
+
+/// 插入 task（payload.source 打标；缺省无 source = chat）
+fn insert_task(conn: &Connection, id: &str, source: Option<&str>) {
+    let payload = match source {
+        Some(src) => format!(r#"{{"title":"t","source":"{src}"}}"#),
+        None => r#"{"title":"t"}"#.to_string(),
+    };
+    conn.execute(
+        "INSERT INTO task (id, seq, payload, updated_at) VALUES (?1, 1, ?2, 0)",
+        rusqlite::params![id, payload],
+    )
+    .unwrap();
 }
 
 fn insert_assistant_api_message(
@@ -90,7 +105,7 @@ fn backfill_extracts_usage_and_is_idempotent() {
         )
         .unwrap();
     assert_eq!(model, "deepseek-chat");
-    assert_eq!(source, "main_turn");
+    assert_eq!(source, "chat");
     // 口径对齐 ZCode：total = input + output（cache 是 breakdown 不叠加）
     assert_eq!(total, 120);
 
@@ -233,3 +248,88 @@ fn reset_watermark_prevents_reimport_of_old_facts() {
     let snap = usage_query_conn(&conn, "all", "UTC", 0).unwrap();
     assert_eq!(snap.summary.tool_call_count, 1, "新工具调用入账");
 }
+
+// ===== ⑧ 用量来源维度 =====
+
+#[test]
+fn backfill_resolves_task_source_and_corrects_history() {
+    let mut conn = setup_db();
+    // kanban 任务与普通任务各一条 assistant 事实
+    insert_task(&conn, "t-kb", Some("kanban"));
+    insert_task(&conn, "t-chat", None);
+    insert_assistant_api_message(&conn, "t-kb", "m1", now_ms() - 1000, "p", "model-x", r#"{"input":10,"output":5}"#);
+    insert_assistant_api_message(&conn, "t-chat", "m2", now_ms() - 2000, "p", "model-x", r#"{"input":7,"output":3}"#);
+    usage_backfill_conn(&mut conn).unwrap();
+
+    let kb: String = conn
+        .query_row("SELECT query_source FROM model_usage WHERE task_id='t-kb'", [], |r| r.get(0))
+        .unwrap();
+    let chat: String = conn
+        .query_row("SELECT query_source FROM model_usage WHERE task_id='t-chat'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(kb, "kanban");
+    assert_eq!(chat, "chat");
+
+    // 历史行修正：人为把已回填行改回旧值 main_turn，再回填一次应被纠正回 task 标记
+    conn.execute("UPDATE model_usage SET query_source='main_turn' WHERE task_id='t-kb'", []).unwrap();
+    usage_backfill_conn(&mut conn).unwrap();
+    let kb2: String = conn
+        .query_row("SELECT query_source FROM model_usage WHERE task_id='t-kb'", [], |r| r.get(0))
+        .unwrap();
+    assert_eq!(kb2, "kanban");
+}
+
+#[test]
+fn source_and_source_model_and_week_hourly_aggregations() {
+    let mut conn = setup_db();
+    insert_task(&conn, "t-kb", Some("kanban"));
+    let now = now_ms();
+    insert_assistant_api_message(&conn, "t-kb", "m1", now - 3600 * 1000, "p", "model-x", r#"{"input":10,"output":5}"#);
+    insert_assistant_api_message(&conn, "t-kb", "m2", now - 2 * 3600 * 1000, "p", "model-y", r#"{"input":20,"output":10}"#);
+    // direct 记账行（note-ai）
+    conn.execute(
+        "INSERT INTO model_usage (id, task_id, msg_id, query_source, provider, model, status, started_at,
+         input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens)
+         VALUES ('d1','','','note-ai','p','model-x','completed',?1,1,1,0,0,2)",
+        rusqlite::params![now - 1000],
+    ).unwrap();
+    usage_backfill_conn(&mut conn).unwrap();
+    let snap = usage_query_conn(&conn, "7d", "UTC", 0).unwrap();
+
+    // 来源分布：kanban 45 / note-ai 2，share 总和 = 1
+    assert_eq!(snap.sources.len(), 2);
+    assert_eq!(snap.sources[0].source, "kanban");
+    assert_eq!(snap.sources[0].total_tokens, 45);
+    assert_eq!(snap.sources[1].source, "note-ai");
+    let share_sum: f64 = snap.sources.iter().map(|s| s.share).sum();
+    assert!((share_sum - 1.0).abs() < 1e-9);
+
+    // 来源×模型堆叠：kanban×model-y 30 / kanban×model-x 15 / note-ai×model-x 2
+    assert_eq!(snap.source_models.len(), 3);
+    assert_eq!(snap.source_models[0].total_tokens, 30);
+
+    // 7×24 周热力图：恰好 168 格、含 0 填充、有量的格 level>0
+    assert_eq!(snap.week_hourly.cells.len(), 7 * 24);
+    assert_eq!(snap.week_hourly.max_tokens, 30);
+    assert!(snap.week_hourly.cells.iter().any(|c| c.total_tokens > 0 && c.level > 0));
+    assert!(snap.week_hourly.cells.iter().any(|c| c.total_tokens == 0 && c.level == 0));
+}
+
+#[test]
+fn usage_record_direct_rows_have_unique_ids() {
+    let conn = setup_db();
+    let now = now_ms();
+    for i in 0..3 {
+        conn.execute(
+            "INSERT INTO model_usage (id, task_id, msg_id, query_source, provider, model, status, started_at,
+             input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, total_tokens)
+             VALUES (?1,'','','note-ai','p','m','completed',?2,1,1,0,0,2)",
+            rusqlite::params![format!("direct:note-ai:{now}:{i}"), now],
+        ).unwrap();
+    }
+    let snap = usage_query_conn(&conn, "7d", "UTC", 0).unwrap();
+    assert_eq!(snap.sources[0].source, "note-ai");
+    assert_eq!(snap.sources[0].request_count, 3);
+    assert_eq!(snap.sources[0].total_tokens, 6);
+}
+
