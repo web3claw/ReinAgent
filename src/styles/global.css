@@ -250,6 +250,16 @@
   color: #f5a742;
 }
 
+/* 标题 = opencode markdownHeading（dark = darkAccent #9d7cd8；与 strong 同款作用域覆盖。
+   字重 700 覆盖 .md 标题的 400 常规体（2026-10-25 用户定稿：OpenCode 主题标题加粗） */
+[data-message-theme="opencode"] .md h1,
+[data-message-theme="opencode"] .md h2,
+[data-message-theme="opencode"] .md h3,
+[data-message-theme="opencode"] .md h4 {
+  color: #9d7cd8;
+  font-weight: 700;
+}
+
 [data-theme="light"] [data-message-theme="opencode"] {
   background-color: #ffffff;
   /* 同上：浅色侧画布是白，作用域内 --bg 一并跟随 */
@@ -279,6 +289,13 @@
 
 [data-theme="light"] [data-message-theme="opencode"] .md strong,
 [data-theme="light"] [data-message-theme="opencode"] .md b {
+  color: #d68c27;
+}
+
+[data-theme="light"] [data-message-theme="opencode"] .md h1,
+[data-theme="light"] [data-message-theme="opencode"] .md h2,
+[data-theme="light"] [data-message-theme="opencode"] .md h3,
+[data-theme="light"] [data-message-theme="opencode"] .md h4 {
   color: #d68c27;
 }
 
