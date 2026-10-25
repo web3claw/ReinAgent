@@ -480,6 +480,21 @@ export default function App() {
   // 快捷动作卡预填状态（EmptyState → 输入框；hooks 必须在设置页早退 return 之前声明）
   const [composerPrefill, setComposerPrefill] = useState<{ text: string; nonce: number } | null>(null);
   const prefillNonceRef = useRef(0);
+
+  // 深层组件（如 PrPanel「交给 Agent 修」）经 window 事件请求预填输入框——对齐
+  // messageTheme 的 window 事件广播模式，避免三层 prop 钻孔。⚠️ 必须放在设置页
+  // 早退 return 之前的 hooks 区，否则打开设置页 hooks 数量变化 → React 卸载整树白屏。
+  useEffect(() => {
+    const onPrefillPrompt = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (typeof text === "string" && text.length > 0) {
+        prefillNonceRef.current += 1;
+        setComposerPrefill({ text, nonce: prefillNonceRef.current });
+      }
+    };
+    window.addEventListener("reinagent-prefill-prompt", onPrefillPrompt);
+    return () => window.removeEventListener("reinagent-prefill-prompt", onPrefillPrompt);
+  }, []);
   // 当前生效助手的完整人设文本（与 runAgentTurn 注入格式同构；「系统提示词」导出用）
   const [activePersonaText, setActivePersonaText] = useState<string | null>(null);
   useEffect(() => {
@@ -1162,6 +1177,7 @@ export default function App() {
         modelId,
         undefined,
         "full",
+        "automation",
       );
       const accepted = poolSend(taskId, payload.prompt, {
         source: isDemo ? "faux" : (providerId as never),
@@ -1942,16 +1958,6 @@ export default function App() {
     setComposerPrefill({ text, nonce: prefillNonceRef.current });
   };
 
-  // 深层组件（如 PrPanel「交给 Agent 修」）经 window 事件请求预填输入框——
-  // 对齐 messageTheme 的 window 事件广播模式，避免三层 prop 钻孔
-  useEffect(() => {
-    const onPrefillPrompt = (e: Event) => {
-      const text = (e as CustomEvent<string>).detail;
-      if (typeof text === "string" && text.length > 0) handleQuickPrompt(text);
-    };
-    window.addEventListener("reinagent-prefill-prompt", onPrefillPrompt);
-    return () => window.removeEventListener("reinagent-prefill-prompt", onPrefillPrompt);
-  }, []);
 
   const handleSelectModel = (nextProviderId: string, nextModelId: string) => {
     // 仅切换当前聊天会话使用的服务商与模型，绝不修改覆盖“服务商设置”里的系统默认模型
