@@ -34,6 +34,7 @@ import { inferCodeLanguage } from "../../preview/lib/codeViewer";
 import { DEFAULT_CODE_PREVIEW_SETTINGS } from "../../preview/lib/codePreviewSettings";
 import { useAppStore } from "../../store/useAppStore";
 import { CommitDialog } from "./CommitDialog";
+import { PrPanel } from "./PrPanel";
 import { toast } from "../lw/ui/toast";
 
 /** 自动轮询间隔：与 ZCode「agent 批量写文件时避免密集 git I/O」的取向一致，取保守值。 */
@@ -480,6 +481,9 @@ export function GitPanel({ workspacePath }: { workspacePath?: string }) {
           </div>
         )}
       </section>
+
+      {/* PR / MR 面板（ROADMAP ⑦）：当前分支 PR 详情 + 动作 + 交给 Agent 修 */}
+      <PrPanel cwd={cwd} />
 
       {/* 提交对话框（ZCode GitCommitDialog 移植：信息 + ✨AI 生成 + 提交/提交并推送） */}
       <CommitDialog

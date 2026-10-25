@@ -71,7 +71,7 @@ zip = { version = "2", default-features = false, features = ["deflate"] }
 tempfile = "3"
 dirs = "6"
 toml = "0.9"
-tokio = { version = "1", features = ["rt", "time"] }
+tokio = { version = "1", features = ["rt", "time", "process", "io-util"] }
 axum = { version = "0.8.9", features = ["ws", "multipart"] }
 # 手机远控前端（Vite 构建产物 remote_assets/app）编译期内嵌，随裸二进制分发
 include_dir = "0.7"
@@ -121,3 +121,6 @@ javascriptcore = { version = "1", package = "javascriptcore-rs" }
 gtk = { version = "0.18", package = "gtk" }
 
 # 单文件 exe：静态链接 CRT（下面主 [profile.release] 中），产物不依赖目标机的 VC++ 运行库
+
+[dev-dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }

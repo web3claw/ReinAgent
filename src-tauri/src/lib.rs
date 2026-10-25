@@ -47,6 +47,9 @@ mod backup_snapshot;
 mod cua_driver;
 #[cfg(test)]
 mod git_panel_tests;
+mod git_pr;
+mod git_pr_tests;
+mod git_pr_real_tests;
 #[cfg(test)]
 mod fs_cmd_tests;
 #[cfg(test)]
@@ -341,6 +344,10 @@ pub fn run() {
             knowledge_index::knowledge_index_clear,
             knowledge_index::knowledge_search,
             knowledge_index::knowledge_stats,
+            git_pr::git_pr_status,
+            git_pr::git_pr_create,
+            git_pr::git_pr_action,
+            git_pr::git_pr_feedback,
             git_panel::git_status,
             git_worktree::git_worktree_ensure,
             git_worktree::git_worktree_merge,

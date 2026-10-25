@@ -1942,6 +1942,17 @@ export default function App() {
     setComposerPrefill({ text, nonce: prefillNonceRef.current });
   };
 
+  // 深层组件（如 PrPanel「交给 Agent 修」）经 window 事件请求预填输入框——
+  // 对齐 messageTheme 的 window 事件广播模式，避免三层 prop 钻孔
+  useEffect(() => {
+    const onPrefillPrompt = (e: Event) => {
+      const text = (e as CustomEvent<string>).detail;
+      if (typeof text === "string" && text.length > 0) handleQuickPrompt(text);
+    };
+    window.addEventListener("reinagent-prefill-prompt", onPrefillPrompt);
+    return () => window.removeEventListener("reinagent-prefill-prompt", onPrefillPrompt);
+  }, []);
+
   const handleSelectModel = (nextProviderId: string, nextModelId: string) => {
     // 仅切换当前聊天会话使用的服务商与模型，绝不修改覆盖“服务商设置”里的系统默认模型
     setSessionProviderId(nextProviderId);
