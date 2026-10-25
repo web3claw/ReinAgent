@@ -2524,3 +2524,37 @@ Quick Tunnel（`cloudflared tunnel --url`）的 `*.trycloudflare.com` 域名由 
 
 ### 边界
 - 外部（Obsidian）编辑不产生版本快照（快照只认应用内保存链）；标签外部改名孤儿在下次 all_tags 读取时清理（无监听）；同步工具可能同步 .trash 目录（已知）；回收站笔记本删除不保留空目录结构。
+
+## 十八、看板式 Agent 任务（ROADMAP ⑤，2026-10-25 落地，随 v0.2.13 发布）
+
+> 对标 Hetu KanbanTask 体系；用户拍板：卡片=持久会话、HTML5 原生拖拽、审批强制 full。
+
+### 核心架构（与 Hetu 的关键差异）
+- **不自建执行器**：复用 conversationPool（无 UI 执行/持久化/审批/终止/终态事件全现成），Rust 只管「状态机迁移 + 每卡单 run 查重 + run 记账」。
+- **卡片=持久会话**（非 Hetu 的每 run 新会话）：卡片首次执行时建任务并绑定 task_id，评论=下一轮 user 消息续跑——执行时间线（thinking/工具调用/结果）免费复用 message/part 表，历史天然可回溯。
+- **事件驱动收敛**（关键）：automation 的 5s 轮询在 ask_user 挂起时永不收敛（status 仍是 streaming）；看板改用 subscribeTaskTerminal 事件（含 awaitingDecision）→ 挂起即转 Blocked。
+- **不抢前台**：createTask 会劫持 activeTaskId，dispatcher 保存并恢复；setActiveTaskId 的视图复位保留名单加 kanban。
+
+### Rust（src-tauri/src/kanban.rs，conversations.db 同库+独立连接，照 automations 先例）
+- 三表：kanban_cards（七列 CHECK + 优先级 CHECK + task_id 绑定 + sort_order）/ kanban_card_comments（author user|agent|system）/ kanban_runs（trigger todo|comment|manual，status running|succeeded|failed|blocked|stopped）。
+- **每卡单 run**：部分唯一索引 `idx_kanban_runs_active ON kanban_runs(card_id) WHERE status='running'`；冲突报「该卡片已有正在执行的 run」。
+- **状态机白名单**（后端校验）：Backlog→Todo/Archived；Todo→InProgress/Backlog/Archived；InProgress→InReview/Blocked/Backlog；InReview→Done/InProgress/Blocked/Todo；Blocked→Todo/InProgress；Done→Archived；Archived→Backlog。⚠️ **Backlog→InProgress 非法**（必须经 Todo）——dispatch 按合法路径逐步推进。
+- 12 命令；启动 recover_stale_runs（running→stopped，照 automation）。
+
+### TS
+- `lib/kanban/model.ts`（纯）：状态机镜像（与 Rust 逐条对齐，前端前置拦截 UX）/ buildCardBrief（标题+描述+优先级+工作区+无人值守约定+评论，明确「提问会转阻塞」）/ resolveRunVerdict（awaitingDecision→blocked/Blocked、done→succeeded/InReview、其他→failed/Blocked）/ priorityBarClass。
+- `lib/kanban/runDispatcher.ts`（headless）：dispatchCard（**读数据库真实列**推进状态机 → F20 同源解析 provider/model → run_start → poolSend 简报 approvalMode:full maxSteps:0）；模块级 subscribeTaskTerminal 单例做终态回写（**再读一次数据库列**避免缓存过期）；answerBlockedCard（resolveApproval 回灌 ask_user + 评论 + 回 InProgress）；moveCardAndMaybeRun。
+- `components/kanban/KanbanPage.tsx`：7 列横排 + HTML5 draggable（拖拽即时 isValidTransition 拦截）+ 卡片（优先级色条/运行中 Loader/Blocked 红点）+ 新建对话框 + 详情弹窗（评论流/运行历史/打开会话/删除/Blocked 时评论=回答）。
+- ViewMode 加 kanban + 侧栏 Columns3 按钮 + i18n kanban* zh+en。App 暴露 `__kanbanDispatch/__kanbanAnswer/__kanbanMoveRun` 调试后门（CDP E2E 用，生产无害）。
+
+### 测试与验证（交付三铁律）
+- Rust 4 用例（状态机全路径+非法拒绝/创建移动/单 run 冲突/评论 CRUD + 删卡级联）+ Red Check 双红（迁移白名单恒 true、单 run 索引降级普通索引）；cargo 292 全绿。
+- TS test:kanban 8/8（状态机镜像/简报/终态分流/色条）；tsc 0；chat 178 回归绿。
+- **Real Usage CDP 8/8**：真实卡创建 → 非法迁移（Todo→Done）被拒 → **真实 LLM 执行**（计算 1234×5678）→ 列回写 InReview → Agent 结论入评论 → 结果正确（7,006,652）。
+- **Not run**（如实）：ask_user 阻塞→回答续跑的真实闭环、InReview 评论重跑、应用重启 run 收敛——三条为边角路径，逻辑有单测覆盖但未走真实模型回合（需构造模型提问场景）。
+
+### 过程修复的真实 bug（全部真实踩中并修复）
+1. **重入死锁**：create_card/move_card/update_fields 持有 MutexGuard 时调 get_card（再次 lock 同锁）→ 测试全挂起；修法先 drop(conn)。
+2. **测试污染真实库**：kanban 测试连真实 conversations.db，与 dev 实例 WAL 争用挂死；改 TEST_LOCK 串行 + 唯一 card_id + Cleanup Drop 清理。
+3. **Backlog→InProgress 非法**：dispatch 一步跳到 InProgress 被状态机正确拒绝 → 改按合法路径 [Todo, InProgress] 逐步推进。
+4. **列回写读缓存过期**：HMR/多实例下 cards Map 不可信 → 派发与回写都改读数据库真实列。

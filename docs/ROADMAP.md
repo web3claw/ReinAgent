@@ -16,7 +16,7 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 | P0 | ② 会话级 worktree 隔离 ✅（2026-10-24 v1 落地） | 多任务并行互踩工作区 → 懒创建 + 合并后自动清理 |
 | P0 | ③ 记忆升级包（作用域/召回打分/Dream）✅（2026-10-24 v1 落地，会话作用域留 v2） | 纯数值算法、成本低，与现有 extraction/organizer 直接衔接 |
 | P1 | ④ 笔记增强包（版本历史/划词 AI/回收站/标签）✅（2026-10-25 v1 落地） | 笔记从「编辑器」升级为「资产库」 |
-| P1 | ⑤ 看板式 Agent 任务 | 任务驱动的无人值守执行（与 cron 自动化互补） |
+| P1 | ⑤ 看板式 Agent 任务 ✅（2026-10-25 v1 落地） | 任务驱动的无人值守执行（与 cron 自动化互补） |
 | P1 | ⑥ 进模型前文本压缩管线 ✅（2026-10-24 v1 落地） | 纯函数 5 节点（轻有损子集），专治工具输出超长，与 microcompact 正交 |
 | P1 | ⑦ PR 面板（gh/glab） | Git 面板自然延伸 + 「交给 Agent 修」闭环 |
 | P2 | ⑧ 用量分析页 / ⑨ Wiki 生成 / ⑩ 知识图谱 / ⑪ 场景化模型 / ⑫ SSH 项目 | 依赖前置或投入大，缓 |
@@ -87,7 +87,7 @@ ReinAgent 笔记现状：文件制（notes_* Rust 命令）+ 整篇级 AI 侧栏
 
 ReinAgent 笔记是文件制：版本历史可落 `.ReinAgent/notes-versions/` 或 SQLite 快照表；划词 AI 依赖 Milkdown 选区追踪（Hetu 的 `MilkdownEditor.tsx:267-313` 可直接参考）。
 
-### ⑤ 看板式 Agent 任务 ☐
+### ⑤ 看板式 Agent 任务 ✅（2026-10-25 v1 落地；实现细节见 PROJECT_CONTEXT「十八、看板式 Agent 任务」节。落地差异：卡片=持久会话（非 Hetu 的每 run 新会话，时间线免费复用）；不自建执行器——复用 conversationPool + 事件驱动收敛（automation 的 5s 轮询在 ask_user 挂起时永不收敛，这是关键差异）；收件箱聚合留 v2）
 
 **Hetu 机制**（`KanbanTask.cs` / `KanbanTaskService.cs` / `KanbanTaskExecutor.cs` / `InboxService.cs`）：
 

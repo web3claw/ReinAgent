@@ -1,7 +1,7 @@
 {
   "name": "reinagent",
   "private": true,
-  "version": "0.2.12",
+  "version": "0.2.13",
   "type": "module",
   "packageManager": "bun@1.4.2",
   "trustedDependencies": [
@@ -29,7 +29,8 @@
     "test:knowledge": "node --test src/lib/knowledge/knowledge.test.mjs",
     "test:memory": "node --test src/lib/memory/memoryUpgrade.test.mjs",
     "test:worktree": "node --test src/lib/worktree/worktree.test.mjs",
-    "test:compress": "node --test src/lib/agent/compressPipeline.test.mjs"
+    "test:compress": "node --test src/lib/agent/compressPipeline.test.mjs",
+    "test:kanban": "node --test src/lib/kanban/kanban.test.mjs"
   },
   "dependencies": {
     "@codemirror/language": "^6.13.1",

@@ -83,6 +83,7 @@
     <tr><td>Real protocol support</td><td>Chat Completions, Anthropic Messages, Responses and Google Generative AI, with fail-fast handshakes and no guessed metadata.</td></tr>
     <tr><td>Subagents</td><td>The main agent dispatches isolated subagents for parallel research and review without polluting its own context.</td></tr>
     <tr><td>Per-task worktree isolation</td><td>Opt-in per-task git worktree + branch: lazy creation on first message, one-click --no-ff merge back, auto-cleanup of merged worktrees (branches kept) — parallel tasks never stomp each other.</td></tr>
+    <tr><td>Kanban agent tasks</td><td>Seven-column board drives unattended runs: drop a card into Todo and an agent works it in the background; comments request changes and re-run; when the model asks a question the card moves to Blocked and your answer resumes it.</td></tr>
     <tr><td>Tool-output compression</td><td>Oversized tool results pass a deterministic pure-function pipeline (duplicate / near-duplicate log folding, base64/hex blob folding, head+tail keep) before any truncation — tail stack traces survive.</td></tr>
     <tr><td>Remote access</td><td>LAN direct, Cloudflare Quick Tunnel, or a custom domain — monitor and approve from a phone.</td></tr>
     <tr><td>Bidirectional MCP</td><td>Full MCP Client to connect external tools, plus native built-in MCP Server (SSE + JSON-RPC) allowing external models (Claude Desktop, Cursor) to drive ReinAgent.</td></tr>

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>ReinAgent · 高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台</title>
-<meta name="description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问、RAG 语义检索、Dream 记忆巩固、Worktree 隔离、工具输出压缩管线与笔记版本/标签/回收站。">
+<meta name="description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问、RAG 语义检索、Dream 记忆巩固、Worktree 隔离、看板式无人值守任务、工具输出压缩与笔记版本/标签/回收站。">
 <meta name="theme-color" content="#4f46e5">
 <link rel="canonical" href="https://web3claw.github.io/ReinAgent/">
 <link rel="alternate" hreflang="zh-CN" href="https://web3claw.github.io/ReinAgent/">
@@ -13,7 +13,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="ReinAgent">
 <meta property="og:title" content="ReinAgent · 高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台">
-<meta property="og:description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问、RAG 语义检索、Dream 记忆巩固、Worktree 隔离、工具输出压缩管线与笔记版本/标签/回收站。">
+<meta property="og:description" content="ReinAgent 是高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台：Tauri 2 + Rust 后端、React 19 前端，支持多智能体协作、审批与检查点回退、多协议真实接入、远程访问、RAG 语义检索、Dream 记忆巩固、Worktree 隔离、看板式无人值守任务、工具输出压缩与笔记版本/标签/回收站。">
 <meta property="og:url" content="https://web3claw.github.io/ReinAgent/">
 <meta property="og:image" content="https://web3claw.github.io/ReinAgent/assets/workbench-subagents-demo.png">
 <meta name="twitter:card" content="summary_large_image">
@@ -117,6 +117,10 @@
         <div class="card">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="6" cy="6" r="3"/><path d="M6 9v9a3 3 0 0 0 3 3h9"/><circle cx="18" cy="18" r="3"/></svg></span>会话级 Worktree 隔离</h3>
           <p>任务可开启独立 git worktree 与分支并行作业，主工作区保持干净；懒创建、--no-ff 一键合并回主分支、已交付工作树自动清理（分支保留），多任务改动互不踩踏。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="5" height="16" rx="1.5"/><rect x="10" y="4" width="5" height="12" rx="1.5"/><rect x="17" y="4" width="4" height="9" rx="1.5"/></svg></span>看板式 Agent 任务</h3>
+          <p>七列看板（待规划/待执行/执行中/待验收/阻塞/完成/归档）拖拽驱动无人值守执行：卡片拖进「待执行」即由 Agent 后台跑完整任务，评论即追加要求并重跑；模型中途提问时卡片自动转为「阻塞」，你在卡片上回答即续跑。</p>
         </div>
         <div class="card">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 9l3 3-3 3M13 15h3M4 4h16v16H4z"/></svg></span>双向 MCP 生态（Client & Server）</h3>
