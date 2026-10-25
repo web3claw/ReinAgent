@@ -27,6 +27,7 @@ mod import_sqlite;
 mod fs_tree;
 mod notes_fs;
 mod notes_meta;
+mod kanban;
 mod knowledge_index;
 mod git_panel;
 mod git_worktree;
@@ -201,6 +202,7 @@ pub fn run() {
         // 自动化调度线程：每 20s 轮询到期任务，经 automation-due 事件派发前端执行
         automation::start_scheduler(app.handle().clone());
         notes_meta::startup_maintenance();
+        let _ = kanban::recover_stale_runs();
         // WebDAV 备份自动同步任务（标脏 → 防抖合并 → 仅上传）；注册全局句柄供
         // backup:applied 事件发送（下载应用完成 → 前端重载各配置域内存态）
         webdav_backup::register_app_handle(app.handle().clone());
@@ -319,6 +321,18 @@ pub fn run() {
             notes_meta::notes_trash_list,
             notes_meta::notes_trash_restore,
             notes_meta::notes_trash_purge,
+            kanban::kanban_card_create,
+            kanban::kanban_card_list,
+            kanban::kanban_card_get,
+            kanban::kanban_card_move,
+            kanban::kanban_card_update,
+            kanban::kanban_card_delete,
+            kanban::kanban_card_set_task,
+            kanban::kanban_comment_add,
+            kanban::kanban_comment_list,
+            kanban::kanban_run_start,
+            kanban::kanban_run_finish,
+            kanban::kanban_run_list,
             knowledge_index::knowledge_scan_sources,
             knowledge_index::knowledge_list_sources,
             knowledge_index::knowledge_index_upsert,

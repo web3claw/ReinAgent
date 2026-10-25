@@ -14,6 +14,7 @@ import {
   clearPendingRecovery,
 } from "./lib/chat/conversationPool";
 import { AutomationsPage } from "./components/automations/AutomationsPage";
+import { KanbanPage } from "./components/kanban/KanbanPage";
 import { useAutomationStore } from "./lib/automations/store";
 import { ConversationSearchDialog } from "./components/search/ConversationSearchDialog";
 import { CommandPalette, type PaletteCommand } from "./components/chat/CommandPalette";
@@ -924,6 +925,18 @@ export default function App() {
     );
     (window as any).__dreamPoke = () => service.poke();
     return () => service.dispose();
+  }, []);
+
+  // 看板派发后门（ROADMAP ⑤）：CDP E2E 驱动真实派发链（生产无害——仅引用模块函数）
+  useEffect(() => {
+    void import("./lib/kanban/runDispatcher").then((m) => {
+      (window as unknown as Record<string, unknown>).__kanbanDispatch = (cardId: string, trigger: string) =>
+        m.dispatchCard(cardId, trigger as never);
+      (window as unknown as Record<string, unknown>).__kanbanAnswer = (cardId: string, answer: string) =>
+        m.answerBlockedCard(cardId, answer);
+      (window as unknown as Record<string, unknown>).__kanbanMoveRun = (cardId: string, column: string) =>
+        m.moveCardAndMaybeRun(cardId, column as never);
+    });
   }, []);
 
   // worktree 自动清理（ROADMAP ②）：启动 + 每小时扫描（已合并+干净+空闲>24h 才移除）
@@ -2352,7 +2365,9 @@ export default function App() {
 
         {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {currentView === "automations" ? (
+          {currentView === "kanban" ? (
+            <KanbanPage workspacePath={effectiveWorkspaceRoot} />
+          ) : currentView === "automations" ? (
             <AutomationsPage
               providers={providers}
               defaultProviderId={settings.provider || "deepseek"}

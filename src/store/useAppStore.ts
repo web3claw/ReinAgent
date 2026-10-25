@@ -7,7 +7,7 @@ export type ThemeMode = "dark" | "light";
 export type LocaleMode = "zh-CN" | "en-US";
 /** workbench=聊天工作台 / settings=设置 / automations=自动化定时任务 /
  *  skills / mcp / memory=资源中心页 / notes=笔记本 */
-export type ViewMode = "workbench" | "settings" | "automations" | "assistants" | "notes" | "skills" | "mcp" | "memory";
+export type ViewMode = "workbench" | "settings" | "automations" | "kanban" | "assistants" | "notes" | "skills" | "mcp" | "memory";
 export type ThinkingLevel = "off" | "default" | "low" | "medium" | "high" | "xhigh" | "max";
 /** 审批模式（对齐 ZCode 用户可切面）：plan=计划模式 ask=变更前确认 edit=自动编辑 full=完全访问。 */
 export type ApprovalMode = "plan" | "ask" | "edit" | "full";
@@ -331,10 +331,13 @@ export const useAppStore = create<AppState>((set) => ({
       const targetTask = activeTaskId ? state.tasks.find((t) => t.id === activeTaskId) : null;
       return {
         activeTaskId,
-        // 从资源中心页（自动化/Skills/MCP/记忆）激活任务（点击侧栏任务/新建任务）时
-        // 切回聊天工作台；自动化自身的派发走 createTask（不经此 action），不会打断页面停留。
+        // 从资源中心页（自动化/Skills/MCP/记忆/看板）激活任务时切回聊天工作台；
+        // 自动化/看板的派发走 createTask（不经此 action）或恢复原 activeTaskId，
+        // 不会打断页面停留——看板点击「打开会话」才显式切 workbench。
         currentView:
-          state.currentView === "workbench" || state.currentView === "settings"
+          state.currentView === "workbench" ||
+          state.currentView === "settings" ||
+          state.currentView === "kanban"
             ? state.currentView
             : "workbench",
         // 切到已有任务严格跟随任务自身项目（无项目如实为 null，绝不残留上一个任务的项目）；
