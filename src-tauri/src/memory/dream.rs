@@ -106,6 +106,9 @@ pub struct MemorySemanticSearchArgs {
     /// 当前工作区（project 作用域过滤）；None = 仅 global
     #[serde(default)]
     pub workdir: Option<String>,
+    /// 会话作用域检索键（taskId；None/空 = 不含 session 路）
+    #[serde(default)]
+    pub session_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -409,6 +412,13 @@ impl MemoryStore {
             Some(workdir) if !workdir.trim().is_empty() => Some(workdir_hash(workdir)?),
             _ => None,
         };
+        // 会话作用域（v2 尾巴 ③）：三路并集 = global ∪ project(workdir) ∪ session(taskId)
+        let session_hash = args
+            .session_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+            .map(session_hash);
         let conn = self.lock_conn()?;
         let mut stmt = conn
             .prepare(
@@ -423,12 +433,14 @@ impl MemoryStore {
                 LEFT JOIN memory_access_stats s
                     ON s.scope = e.scope AND s.workdir_hash = e.workdir_hash AND s.slug = e.slug
                 WHERE m.type != 'daily' AND m.archived = 0
-                  AND (m.scope = 'global' OR (m.scope = 'project' AND m.workdir_hash = ?1))
+                  AND (m.scope = 'global'
+                       OR (m.scope = 'project' AND m.workdir_hash = ?1)
+                       OR (?2 IS NOT NULL AND m.scope = 'session' AND m.workdir_hash = ?2))
                 "#,
             )
             .map_err(|e| format!("记忆语义检索查询失败：{e}"))?;
         let mapped = stmt
-            .query_map([workdir_hash.as_deref().unwrap_or("")], |row| {
+            .query_map(params![workdir_hash.as_deref().unwrap_or(""), session_hash.as_deref()], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
                     row.get::<_, String>(1)?,
@@ -1039,6 +1051,7 @@ mod dream_store_tests {
             .semantic_search(MemorySemanticSearchArgs {
                 query_embedding: vec![1.0, 0.05],
                 top_k: Some(2),
+                session_id: None,
                 workdir: None,
             })
             .expect("search");
@@ -1051,6 +1064,7 @@ mod dream_store_tests {
             .semantic_search(MemorySemanticSearchArgs {
                 query_embedding: vec![1.0, 0.05],
                 top_k: Some(2),
+                session_id: None,
                 workdir: None,
             })
             .expect("search again");
@@ -1137,6 +1151,7 @@ mod dream_store_tests {
             .semantic_search(MemorySemanticSearchArgs {
                 query_embedding: vec![1.0, 0.0],
                 top_k: Some(5),
+                session_id: None,
                 workdir: None,
             })
             .expect("search keeper");

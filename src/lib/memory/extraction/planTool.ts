@@ -44,7 +44,7 @@ const PLAN_ITEM_SCHEMA = Type.Object({
     }),
   ),
   scope: Type.Optional(
-    Type.Union([Type.Literal("global"), Type.Literal("project")], {
+    Type.Union([Type.Literal("global"), Type.Literal("project"), Type.Literal("session")], {
       description:
         "Required for write/accept/delete. Optional for update (omit to auto-resolve project then global).",
     }),
@@ -244,7 +244,7 @@ export function validateSubmittedPlan(
     const scope = asTrimmedString(item.scope);
     if (action === "write" || action === "accept" || action === "delete") {
       if (!isMemoryScope(scope)) {
-        reject(index, "invalid-scope", `${action} requires scope "global" or "project"`);
+        reject(index, "invalid-scope", `${action} requires scope "global", "project" or "session"`);
         return;
       }
     } else if (scope !== undefined && !isMemoryScope(scope)) {

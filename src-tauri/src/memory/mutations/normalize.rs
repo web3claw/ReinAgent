@@ -61,6 +61,7 @@ fn normalize_write_scope(input: &str) -> Result<String, String> {
     match input.trim() {
         "global" => Ok("global".to_string()),
         "project" => Ok("project".to_string()),
+        "session" => Ok("session".to_string()),
         other => Err(error_json(
             "invalid_scope",
             &format!("invalid memory scope: {other}"),

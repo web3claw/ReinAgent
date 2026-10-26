@@ -95,6 +95,11 @@ impl MemoryStore {
         if workdir_hash.is_empty() {
             return Err("project memory requires workdir hash".to_string());
         }
+        if scope == "session" {
+            let dir = self.sessions_dir().join(workdir_hash);
+            fs::create_dir_all(&dir).map_err(|e| format!("创建会话记忆目录失败：{e}"))?;
+            return Ok(dir.join(format!("{slug}.md")));
+        }
         let dir = self.projects_dir().join(workdir_hash);
         fs::create_dir_all(&dir).map_err(|e| format!("创建项目记忆目录失败：{e}"))?;
         if let Some(workdir) = workdir {
@@ -179,6 +184,10 @@ impl MemoryStore {
 
     fn global_daily_dir(&self) -> PathBuf {
         self.global_dir().join("daily")
+    }
+
+    fn sessions_dir(&self) -> PathBuf {
+        self.root.join("sessions")
     }
 
     fn projects_dir(&self) -> PathBuf {
@@ -320,6 +329,12 @@ fn required_workdir_hash(workdir: Option<&str>) -> Result<String, String> {
             )
         })?;
     workdir_hash(workdir)
+}
+
+/// 会话作用域键：conversation_id（taskId）→ 16 位 hex（与 workdir_hash 同长度约束）
+pub(crate) fn session_hash(conversation_id: &str) -> String {
+    let digest = Sha256::digest(conversation_id.trim().as_bytes());
+    to_hex(&digest)[..16].to_string()
 }
 
 fn workdir_hash(workdir: &str) -> Result<String, String> {

@@ -37,7 +37,7 @@ test("normalizeMemoryConfidence：未知值一律落 unknown", () => {
 });
 
 test("常量表与置信度契约形状", () => {
-  assert.deepEqual([...MEMORY_SCOPES], ["global", "project"]);
+  assert.deepEqual([...MEMORY_SCOPES], ["global", "project", "session"]); // v2 尾巴 ③：会话作用域
   assert.deepEqual([...MEMORY_TYPES], ["user", "feedback", "project", "reference"]);
   assert.deepEqual([...MEMORY_CONFIDENCES], ["high", "medium", "low", "unknown"]);
   assert.equal(CONFIDENCE_CONTRACT.highMinQuoteChars, 5);

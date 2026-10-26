@@ -22,7 +22,7 @@ const MEMORY_RECALL_TOP_K = 5;
  * 语义召回。调用方（runAgentTurn）拿到 null 时走现有静态索引路径。
  * 查询 = 最后一条用户消息（截 2000 字符）。
  */
-export async function buildMemoryRecallSection(userQuery: string): Promise<string | null> {
+export async function buildMemoryRecallSection(userQuery: string, sessionId?: string): Promise<string | null> {
   const query = (userQuery ?? "").trim().slice(0, MEMORY_RECALL_QUERY_MAX_CHARS);
   if (query.length === 0) return null;
   if (!isKnowledgeConfigured()) return null;
@@ -30,7 +30,12 @@ export async function buildMemoryRecallSection(userQuery: string): Promise<strin
     const target = await resolveKnowledgeEmbeddingTarget();
     const { vectors } = await embedInputs(target, [query]);
     const hits = await invoke<MemorySemanticHit[]>("memory_semantic_search", {
-      args: { queryEmbedding: vectors[0], topK: MEMORY_RECALL_TOP_K, workdir: undefined },
+      args: {
+        queryEmbedding: vectors[0],
+        topK: MEMORY_RECALL_TOP_K,
+        workdir: undefined,
+        sessionId: sessionId?.trim() || undefined,
+      },
     });
     return formatMemoryRecall(hits);
   } catch (err) {

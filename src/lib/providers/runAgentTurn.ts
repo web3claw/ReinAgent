@@ -582,7 +582,7 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
                   .map((b) => (b as { text?: string }).text ?? "")
                   .join("\n")
               : "";
-        recallSection = await buildMemoryRecallSection(recallQuery);
+        recallSection = await buildMemoryRecallSection(recallQuery, resolvedConversationId);
       } catch (err) {
         console.warn("[memory] semantic recall failed (falling back to static index):", err);
       }

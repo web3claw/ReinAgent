@@ -26,6 +26,23 @@ impl MemoryStore {
         let description = normalize_description(&description_input)?;
         let workdir_hash = if scope == "project" {
             required_workdir_hash(workdir.as_deref())?
+        } else if scope == "session" {
+            // 会话作用域（v2 尾巴 ③）：workdir_hash = hash(taskId/conversation_id)——
+            // 复用既有 PK 列免 schema 手术；仅自动提取可产（UI 手写不开放）
+            let conv = options
+                .conversation_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|v| !v.is_empty())
+                .ok_or_else(|| {
+                    error_json(
+                        "conversation_required",
+                        "session memory requires a conversation id",
+                        None,
+                        None,
+                    )
+                })?;
+            session_hash(conv)
         } else {
             String::new()
         };

@@ -8,7 +8,7 @@
 // constants here exist so prompts, tool descriptions, and tests state the same
 // numbers the store applies.
 
-export const MEMORY_SCOPES = ["global", "project"] as const;
+export const MEMORY_SCOPES = ["global", "project", "session"] as const;
 export type MemoryScope = (typeof MEMORY_SCOPES)[number];
 /** Scope filter accepted by read paths: auto searches project then global. */
 export type MemoryScopeFilter = MemoryScope | "auto";
