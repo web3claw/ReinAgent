@@ -501,7 +501,8 @@ test("6b · applyReadLineCap：超 2000 行截断并注明总行数；按工具�
   );
   assert.equal(foldOut.details.truncated, false, "折叠后装下即不截断");
   // 字母也逐行变化（base36）——仅数字扰动会被 SimHash 数字归一化折叠成风暴
-  const unfoldable = Array.from({ length: 5000 }, (_, i) => `L${i.toString(36)} unique-${(i * 7919).toString(36)}-line\n`).join("");
+  // 每行含 error（关键行 +6）→ 保留集超预算 → extractKeyLines 如实退回 → headtail 兜底截断
+  const unfoldable = Array.from({ length: 5000 }, (_, i) => `L${i.toString(36)} error unique-${(i * 7919).toString(36)}-line\n`).join("");
   const execOut = buildTextToolResult(unfoldable, {}, TOOL_LIMITS.execBytes);
   assert.ok(
     utf8.encode(execOut.content[0].text).length <= TOOL_LIMITS.execBytes,
@@ -540,6 +541,8 @@ test("8 · getTools() 返回浅拷贝：改动返回数组不影响内部注册�
       "grep",
       "delete_file",
       "todo_write",
+      "list_note_tags",
+      "set_note_tags",
       "background_bash",
       "task_output",
       "task_stop",

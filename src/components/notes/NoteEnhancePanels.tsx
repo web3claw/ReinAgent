@@ -10,6 +10,7 @@ import { notesService, type NoteTrashRow, type NoteVersionRow } from "./notesSer
 import { tagColorIndex } from "./noteEnhance";
 import { toast } from "../lw/ui/toast";
 import { History, RotateCcw, Trash2, X, Tag as TagIcon } from "lucide-react";
+import { wordDiff } from "../../lib/notes/wordDiff";
 
 /** 标签色板（与全局主题变量协同的 8 色——由 tagColorIndex 稳定映射）。 */
 const TAG_BG = [
@@ -137,19 +138,34 @@ export function NoteVersionPanel({
             ))
           )}
         </div>
-        {/* 并排对照 */}
+        {/* 词级对照（v2 尾巴 ④）：当前 vs 所选，红删绿增；未选版本时显示当前全文 */}
         <div className="flex-1 min-w-0 flex flex-col">
-          <div className="flex-1 min-h-0 grid grid-cols-2 divide-x divide-[var(--border)]">
-            <div className="min-h-0 overflow-y-auto p-2">
-              <div className="text-[11px] text-[var(--text-dim)] mb-1">{t("notesVersionCurrent", "当前")}</div>
+          <div className="flex-1 min-h-0 overflow-y-auto p-2">
+            <div className="text-[11px] text-[var(--text-dim)] mb-1">
+              {selected === null
+                ? `${t("notesVersionCurrent", "当前")} · ${t("notesVersionPickHint", "← 点击版本对照")}`
+                : `${t("notesVersionDiffTitle", "词级对照")}：${t("notesVersionCurrent", "当前")} ⇆ ${t("notesVersionSelected", "所选版本")}`}
+            </div>
+            {selected === null ? (
               <pre className="text-[11px] whitespace-pre-wrap break-all font-mono">{currentPreview}</pre>
-            </div>
-            <div className="min-h-0 overflow-y-auto p-2">
-              <div className="text-[11px] text-[var(--text-dim)] mb-1">
-                {selected === null ? t("notesVersionPickHint", "← 点击版本对照") : t("notesVersionSelected", "所选版本")}
-              </div>
-              <pre className="text-[11px] whitespace-pre-wrap break-all font-mono">{selectedContent}</pre>
-            </div>
+            ) : (
+              <pre className="text-[11px] whitespace-pre-wrap break-all font-mono">
+                {wordDiff(currentContent, selectedContent).map((seg, i) => (
+                  <span
+                    key={i}
+                    className={
+                      seg.type === "add"
+                        ? "bg-[var(--diff-added-bg)] text-[var(--diff-added)]"
+                        : seg.type === "del"
+                          ? "bg-[var(--diff-removed-bg)] text-[var(--diff-removed)] line-through"
+                          : ""
+                    }
+                  >
+                    {seg.text}
+                  </span>
+                ))}
+              </pre>
+            )}
           </div>
           <div className="p-2 border-t border-[var(--border)]">
             <button

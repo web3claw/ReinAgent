@@ -580,6 +580,60 @@ export function createTools(options) {
   };
 
   // ---- Todo：任务清单（对齐 ZCode handlers/todo.ts；随轮次落库，无需新持久化字段）----
+  // ---- 笔记标签（v2 尾巴 ④）：模型可查看/整理笔记标签（notes-meta，非文件系统）----
+  const listNoteTags = {
+    name: "list_note_tags",
+    label: "笔记标签列表",
+    description:
+      "列出所有笔记的标签（来自内置笔记系统，非工作区文件）。\n" +
+      "- 返回每条笔记的 note_id（格式 `<笔记本相对路径>:<文件名>`）与其标签数组，附标签使用计数汇总。\n" +
+      "- 笔记正文可用 list_dir/read_file 探查 `~/.ReinAgent/notebooks/` 目录树。\n" +
+      "- 与 set_note_tags 配合可为笔记整理标签。",
+    parameters: Type.Object({}),
+    execute: async () => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const rows = await invoke("notes_all_tags");
+      const counts = new Map();
+      for (const row of rows) for (const tag of row.tags ?? []) counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      const summary = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([tag, n]) => `${tag}×${n}`).join(", ");
+      const lines = rows.map((r) => `${r.noteId}: [${(r.tags ?? []).join(", ")}]`).join("\n");
+      return buildTextToolResult(
+        `${rows.length} 条笔记有标签。\n标签计数：${summary || "（无）"}\n\n${lines || "（尚无任何标签）"}`,
+        { count: rows.length, rows },
+      );
+    },
+  };
+
+  const setNoteTags = {
+    name: "set_note_tags",
+    label: "设置笔记标签",
+    description:
+      "整组替换一篇笔记的标签（全量覆盖语义，传完整目标标签数组）。\n" +
+      "- 参数：notebook=笔记本相对路径（根笔记本传空串）、file=笔记文件名（含 .md）、tags=完整标签数组（空数组=清空标签）。\n" +
+      "- 标签会去重、剔除空串、单个 ≤40 字符。修改前建议先 list_note_tags 查看现状。",
+    parameters: Type.Object(
+      {
+        notebook: Type.String({ description: "笔记本相对路径（根笔记本传空串）" }),
+        file: Type.String({ description: "笔记文件名（含 .md 扩展名）" }),
+        tags: Type.Array(Type.String(), { description: "完整目标标签数组（覆盖式；空数组=清空）" }),
+      },
+      { required: ["notebook", "file", "tags"] },
+    ),
+    execute: async (_toolCallId, params) => {
+      const { invoke } = await import("@tauri-apps/api/core");
+      await invoke("notes_set_tags", {
+        notebookRelPath: params.notebook,
+        fileName: params.file,
+        tags: params.tags,
+      });
+      const noteId = params.notebook ? `${params.notebook}:${params.file}` : params.file;
+      return buildTextToolResult(`标签已更新：${noteId} → [${params.tags.join(", ")}]`, {
+        noteId,
+        tags: params.tags,
+      });
+    },
+  };
+
   const todoWrite = {
     name: "todo_write",
     label: "任务清单",
@@ -1038,7 +1092,7 @@ export function createTools(options) {
     },
   };
 
-  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite, backgroundBash, taskOutput, taskStop, webFetchTool, webSearchTool, browserViewTool, browserActTool];
+  return [readFile, writeFile, editFile, listDir, execCommand, globTool, grepTool, deleteFile, todoWrite, listNoteTags, setNoteTags, backgroundBash, taskOutput, taskStop, webFetchTool, webSearchTool, browserViewTool, browserActTool];
 }
 
 /**
