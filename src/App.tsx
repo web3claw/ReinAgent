@@ -124,6 +124,7 @@ import {
 import { createMemoryOrganizerService, installMemoryOrganizerService } from "./lib/memory/organizer/service";
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { GraphPage } from "./components/knowledge/GraphPage";
+import { WikiPage } from "./components/wiki/WikiPage";
 import { loadProvidersConfigFromDisk, providerAllowsMissingApiKey, resolveSupportedEffortLevels, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe, Gauge, X
@@ -2383,7 +2384,9 @@ export default function App() {
 
         {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {currentView === "graph" ? (
+          {currentView === "wiki" ? (
+            <WikiPage />
+          ) : currentView === "graph" ? (
             <GraphPage />
           ) : currentView === "kanban" ? (
             <KanbanPage workspacePath={effectiveWorkspaceRoot} />

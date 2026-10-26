@@ -2632,3 +2632,34 @@ graph_get（全量，实体 2000/关系 6000 上限）/ graph_apply_extraction�
 - Rust graph_tests 6 例：大小写去重+别名归一+三元组去重 / 未知实体关系跳过 / 按源删关系 / 合并改挂去重 / **1 跳扩展**（含无关源排除+fromGraph+score0）/ 手工 upsert 唯一性；**Red Check**：投毒 belongs_to 映射值 → delete 测试断言红 → 恢复绿（第一轮 Red Check 静默未命中被命中数断言拦住——patch 必须断言命中）
 - 前端 graphExtract 4 例（解析容错/prompt 枚举）；全量 Rust 313 绿 + 前端 13 绿 + tsc 0
 - Not run：真实 LLM 抽取全链（需用户在窗口对真实笔记点「提取图谱」目检）；图谱页视觉（dev 窗口目检）
+
+## 二十三、Wiki 项目文档生成（ROADMAP ⑨ + ⓪ 队列落地，2026-10-26，Hetu WikiService 移植）
+
+侧栏「Wiki 文档」独立页：对任意工作区一键生成整套 DeepWiki 风格文档（总览 + 3-6 章 / 8-16 页）。
+
+### 存储（knowledge.db 三件套）
+- `wiki_documents`（set_id 分组，(set_id, sort_order) 唯一——单页重生成覆盖写）+ `wiki_jobs`（**⓪ 队列语义：先落库再执行**，status 0 排队/1 运行/2 完成/3 失败 + stage 文案 + progress 0-100 + totalPages/donePages + warning）
+- **schema v2 迁移**：`knowledge_sources.source_type` CHECK 放宽至 'wiki'——按 sqlite_master 建表 SQL 判定旧库，事务内重建表拷数据（新库 DDL 直含 'wiki'；迁移幂等）
+- **陈旧回收**：wiki_jobs 运行态超 10 分钟无更新 → list 时标记失败「生成中断」（对齐 Hetu 启动恢复语义的轮询版）
+
+### 三段链路（执行器在前端 TS，LLM 全在 TS 侧）
+1. **采集（5%）**：Rust `wiki_collect_context`——README 优先 + docs/*.md（48KB 预算）+ 目录树（深度 3/300 项/忽略规则 23 目录）+ 源码采样（32 文件 × 2400B / 总 40KB / 按路径排序确定性）+ 顶层模块统计（兜底大纲用）
+2. **规划（10%）**：`buildPlanPrompt`（Hetu 同构，3-6 章/8-16 页/covers 必须来自资料）→ 解析三层容错（直接 parse → 剥围栏 → **正则抢救**，章节标题后瞻 "pages" 排除）→ 带原文重试一次 → `fallbackPlanFromModules` 模块兜底
+3. **并行成页（15-85%）**：并发 4 worker 池 + 失败重试 1 次（800ms backoff）+ **截断续写 ≤4 轮**（completeOneShotText 新增第 7 参 maxContinueRounds：stopReason=length 或 ``` 围栏奇数 → 携带全文续写；缺省 0 不影响既有调用方）+ `sanitizeWikiContent` 清洗（粘连标题断行/元对话行过滤/围栏内不动）
+4. **总览（90%）**：强制 mermaid 架构图 + 文档导航；进度写库 fire-and-forget（失败不影响生成）
+5. **投影**：页面自动注册知识库源（wiki_scan_sources_conn → source_id=`wiki:<docId>`、fingerprint=updated_at:len 变更即重索引）；indexingService loadSourceText 加 wiki 分支（wiki_get_document 读正文）；WikiPage 每页「提取图谱」按钮（graph_apply_extraction，source_id 同款）
+
+### 用量与场景模型
+- 用量来源 `wiki`（规划/每页/续写每轮各自记账经 completeOneShotText usageSource）
+- 场景默认模型第 6 行「Wiki 生成」（kv `reinagent-wiki-model`，未配置回退聊天默认）
+
+### 前端（src/components/wiki/WikiPage.tsx）
+- 顶栏：工作区选择（最近任务工作区下拉 + 手动输入）+ 生成/中止；运行中 2s 轮询 job 进度条（stage 文案 + 页数计数）
+- 套件 chips（删除）→ 章节分组文档树 → 查看器（`WikiMarkdown`：mermaid 围栏拆分 + mermaid.render 主题跟随 + MarkdownText 正文；渲染失败如实显示源码）；hover 操作：单页重生成（RefreshCw）/ 提取图谱（Network）
+- ViewMode 加 "wiki"；侧栏 BookText 图标入口
+
+### 测试（交付三铁律）
+- Rust wiki_tests 4 例：**v1→v2 迁移**（旧 CHECK 拒 wiki → 迁移 → 放行 + 数据保留 + 幂等）、任务状态机与陈旧回收、页面写入覆盖 + scan 投影、上下文采集（README/树/采样/忽略目录/不存在路径如实 failure）；**Red Check**：禁用迁移 → 迁移测试真实红（首轮 Red Check 暴露「新 DDL 已含 wiki 导致测试未走旧库路径」盲区，测试重写为真实 v1 旧表）
+- 前端 wikiLogic 8 例（解析三态/顶层 pages/正则抢救含章节排除/上限截断/模块兜底/清洗三规则/续写判定/prompt 约束）；**Red Check**：破坏粘连标题断行 → 清洗测试真实红；正则抢救首个版本把章节标题捞成页面——单测抓出后加后瞻排除
+- 全量：Rust 317 绿 + 前端 16 绿 + tsc 0
+- Not run：真实 LLM 全链生成（需窗口对真实工作区点「生成 Wiki」目检）

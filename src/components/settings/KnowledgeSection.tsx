@@ -36,7 +36,7 @@ interface KnowledgeStats {
 
 interface KnowledgeSourceMeta {
   sourceId: string;
-  sourceType: "note" | "import";
+  sourceType: "note" | "import" | "wiki";
   title: string;
   status: "ok" | "error";
   error: string | null;

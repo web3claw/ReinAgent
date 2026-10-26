@@ -12,6 +12,7 @@ import { useSettings } from "../../lib/settings/useSettings";
 import { kvGetJSON, kvSetJSON } from "../../lib/storage/db";
 import {
   GRAPH_MODEL_KV_KEY,
+  WIKI_MODEL_KV_KEY,
   NOTEAI_MODEL_KV_KEY,
   SCENARIO_META,
   chatDefaultOf,
@@ -44,6 +45,7 @@ export function ScenarioModelsSection() {
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [noteAiBinding, setNoteAiBinding] = useState<ScenarioBinding | null>(null);
   const [graphBinding, setGraphBinding] = useState<ScenarioBinding | null>(null);
+  const [wikiBinding, setWikiBinding] = useState<ScenarioBinding | null>(null);
 
   useEffect(() => {
     void loadProvidersConfigFromDisk(settings)
@@ -56,6 +58,7 @@ export function ScenarioModelsSection() {
     for (const [key, setter] of [
       [NOTEAI_MODEL_KV_KEY, setNoteAiBinding],
       [GRAPH_MODEL_KV_KEY, setGraphBinding],
+      [WIKI_MODEL_KV_KEY, setWikiBinding],
     ] as const) {
       const saved = kvGetJSON<ScenarioBinding>(key);
       if (saved && typeof saved.providerId === "string" && typeof saved.modelId === "string") {
@@ -105,9 +108,12 @@ export function ScenarioModelsSection() {
     if (scenario === "noteAi") {
       setNoteAiBinding(binding);
       kvSetJSON(NOTEAI_MODEL_KV_KEY, binding ?? { providerId: "", modelId: "" });
-    } else {
+    } else if (scenario === "graph") {
       setGraphBinding(binding);
       kvSetJSON(GRAPH_MODEL_KV_KEY, binding ?? { providerId: "", modelId: "" });
+    } else {
+      setWikiBinding(binding);
+      kvSetJSON(WIKI_MODEL_KV_KEY, binding ?? { providerId: "", modelId: "" });
     }
   };
 
@@ -121,6 +127,7 @@ export function ScenarioModelsSection() {
     { id: "memoryOrganizer", binding: organizerBinding },
     { id: "noteAi", binding: noteAiBinding },
     { id: "graph", binding: graphBinding },
+    { id: "wiki", binding: wikiBinding },
   ];
 
   return (

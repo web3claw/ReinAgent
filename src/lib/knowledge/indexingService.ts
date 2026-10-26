@@ -75,6 +75,13 @@ async function loadImportSourceText(taskId: string): Promise<string> {
 }
 
 async function loadSourceText(row: KnowledgeScanRow): Promise<string> {
+  if (row.sourceType === "wiki") {
+    // wiki 页正文在 knowledge.db（source_id = "wiki:<docId>"），不走文件系统
+    const docId = row.sourceId.slice("wiki:".length);
+    const doc = await invoke<{ content: string } | null>("wiki_get_document", { id: docId });
+    if (!doc) throw new Error(`Wiki 页不存在（可能已被删除）：${docId}`);
+    return doc.content;
+  }
   if (row.sourceType === "note") {
     const text = await tauriImportFs.readText(row.sourcePath);
     if (text == null) throw new Error(`读取笔记失败：${row.sourcePath}`);
@@ -123,7 +130,7 @@ export async function knowledgeSweep(
 
   onProgress({ phase: "scan" });
   const scannedRows = await invoke<
-    Array<{ sourceId: string; sourceType: "note" | "import"; title: string; sourcePath: string; fingerprint: string }>
+    Array<{ sourceId: string; sourceType: "note" | "import" | "wiki"; title: string; sourcePath: string; fingerprint: string }>
   >("knowledge_scan_sources");
   const storedMetas = await invoke<Array<{ sourceId: string; fingerprint: string; status: string }>>(
     "knowledge_list_sources",
@@ -195,7 +202,7 @@ export async function knowledgeIndexSingleSource(
   }
   const target = await resolveKnowledgeEmbeddingTarget();
   const rows = await invoke<
-    Array<{ sourceId: string; sourceType: "note" | "import"; title: string; sourcePath: string; fingerprint: string }>
+    Array<{ sourceId: string; sourceType: "note" | "import" | "wiki"; title: string; sourcePath: string; fingerprint: string }>
   >("knowledge_scan_sources");
   const row = rows.find((r) => r.sourceId === sourceId);
   if (!row) {

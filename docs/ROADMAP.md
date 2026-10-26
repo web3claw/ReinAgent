@@ -19,7 +19,7 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 | P1 | ⑤ 看板式 Agent 任务 ✅（2026-10-25 v1 落地） | 任务驱动的无人值守执行（与 cron 自动化互补） |
 | P1 | ⑥ 进模型前文本压缩管线 ✅（2026-10-24 v1 落地） | 纯函数 5 节点（轻有损子集），专治工具输出超长，与 microcompact 正交 |
 | P1 | ⑦ PR 面板（gh/glab） ✅（2026-10-25 v1 落地，随下一版本发布） | Git 面板自然延伸 + 「交给 Agent 修」闭环 |
-| P2 | ⑨ Wiki 生成 / ⑫ SSH 项目 | 依赖前置或投入大，缓（⑧⑩⑪ 均已于 2026-10-25 落地） |
+| P2 | ⑫ SSH 项目 | 已标缓（⑧⑨⑩⑪ 均已落地；⓪ 队列随 ⑨ 以 wiki_jobs 形态落地） |
 | 地基 | ⓪ 后台任务队列语义 | ①⑤⑨ 的公共前置：SQLite 表即队列 |
 
 状态标记：☐ 未排期 · ◐ 进行中 · ✅ 已完成。
@@ -120,7 +120,7 @@ ReinAgent 笔记是文件制：版本历史可落 `.ReinAgent/notes-versions/` �
 
 Hetu 单表 `LlmUsageLog` 十二种来源记账（chat/work/kanban/workflow/wiki/note-ai/skill/graph/search/scheduled/proxy）+ RefId + 延迟；聚合出概览/近 7 天趋势/365 天热力图/7×24 周热力图/按模型/按来源/来源×模型堆叠。**两家都只记 token 不记成本**。ReinAgent 已有 api_message 原件持久化 + usage_reset 水位线 + SessionStatsBar，缺全景页与「来源」维度（补 source 字段即可）。
 
-### ⑨ Wiki 项目文档生成 ☐
+### ⑨ Wiki 项目文档生成 ✅（2026-10-26 落地，实现细节见 PROJECT_CONTEXT「二十三、Wiki 项目文档生成」节。落地差异：执行器在前端 TS（LLM 全在 TS 侧），⓪ 队列即 wiki_jobs 表语义；代码语义索引未建——上下文走源码采样兜底；mtime 过期判定 v1 不做（显示生成时间）
 
 选题→大纲→并行成页三段（`WikiService.cs` 1314 行 + `WikiContextCollector.cs`）：规划一次调用出 `{chapters:[{title,pages:[{title,brief,covers}]}]}`（3–6 章/8–16 页，解析三层容错含正则抢救）；并行成页（并发 4，每页独立上下文，代码语义索引就绪则按页检索 24 条代码块，否则源码采样）；截断续写最多 4 轮（finish reason=length + 代码围栏未闭合检测）；总览页强制 mermaid 架构图；生成后自动投影进知识库与图谱；单页可重生成（Brief 复用）、按 mtime 判过期。依赖 ① 知识库先行。
 

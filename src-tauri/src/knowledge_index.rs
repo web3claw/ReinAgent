@@ -37,7 +37,7 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS knowledge_sources (
     source_id       TEXT PRIMARY KEY,
-    source_type     TEXT    NOT NULL CHECK (source_type IN ('note', 'import')),
+    source_type     TEXT    NOT NULL CHECK (source_type IN ('note', 'import', 'wiki')),
     title           TEXT    NOT NULL DEFAULT '',
     source_path     TEXT    NOT NULL DEFAULT '',
     fingerprint     TEXT    NOT NULL DEFAULT '',
@@ -369,6 +369,9 @@ impl KnowledgeStore {
         let mut rows = Vec::new();
         rows.extend(self.scan_note_sources()?);
         rows.extend(self.scan_import_sources()?);
+        let guard = self.lock_conn()?;
+        rows.extend(crate::wiki::wiki_scan_sources_conn(&guard)?);
+        drop(guard);
         Ok(rows)
     }
 
@@ -827,6 +830,10 @@ fn open_knowledge_connection(db_path: &PathBuf) -> Result<Connection, String> {
     }
     conn.execute_batch(KNOWLEDGE_SCHEMA_DDL)
         .map_err(|e| format!("初始化知识库表失败：{e}"))?;
+    crate::wiki::migrate_knowledge_sources_v2(&conn)
+        .map_err(|e| format!("knowledge_sources v2 迁移失败：{e}"))?;
+    conn.execute_batch(crate::wiki::WIKI_SCHEMA_DDL)
+        .map_err(|e| format!("初始化 wiki 表失败：{e}"))?;
     Ok(conn)
 }
 

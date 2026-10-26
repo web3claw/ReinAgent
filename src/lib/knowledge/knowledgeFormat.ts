@@ -8,7 +8,7 @@ export const KNOWLEDGE_SECTION_MAX_CHARS = 24_000;
 
 export interface KnowledgeSearchHit {
   sourceId: string;
-  sourceType: "note" | "import";
+  sourceType: "note" | "import" | "wiki";
   title: string;
   sourcePath: string;
   chunkIndex: number;

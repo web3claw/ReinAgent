@@ -10,7 +10,7 @@
  * UI 明示回退与失效原因，绝不静默发往不存在的模型。
  */
 
-export type ScenarioId = "chat" | "embedding" | "memoryOrganizer" | "noteAi" | "graph";
+export type ScenarioId = "chat" | "embedding" | "memoryOrganizer" | "noteAi" | "graph" | "wiki";
 
 export interface ScenarioBinding {
   providerId: string;
@@ -114,6 +114,9 @@ export const NOTEAI_MODEL_KV_KEY = "reinagent-noteai-model";
 /** graph 抽取持久键（kv `reinagent-graph-model`；空 = 跟随聊天默认） */
 export const GRAPH_MODEL_KV_KEY = "reinagent-graph-model";
 
+/** Wiki 生成的持久键（kv `reinagent-wiki-model`；空 = 跟随聊天默认） */
+export const WIKI_MODEL_KV_KEY = "reinagent-wiki-model";
+
 /** NoteEditor 的 "providerId/modelId" 字符串 key ⇄ 结构化绑定互转（笔记页本地态格式兼容） */
 export function bindingToNoteKey(binding: ScenarioBinding | null | undefined): string {
   if (!binding || !binding.providerId) return "";
@@ -135,6 +138,7 @@ export const SCENARIO_META: Record<ScenarioId, { labelKey: string; descKey: stri
   memoryOrganizer: { labelKey: "scenarioOrganizerLabel", descKey: "scenarioOrganizerDesc" },
   noteAi: { labelKey: "scenarioNoteAiLabel", descKey: "scenarioNoteAiDesc" },
   graph: { labelKey: "scenarioGraphLabel", descKey: "scenarioGraphDesc" },
+  wiki: { labelKey: "scenarioWikiLabel", descKey: "scenarioWikiDesc" },
 };
 
 /** 场景绑定 → one-shot 调用配置（graph 抽取等独立调用链用）：

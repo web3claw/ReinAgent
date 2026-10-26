@@ -9,7 +9,7 @@
 
 export interface KnowledgeScanRow {
   sourceId: string;
-  sourceType: "note" | "import";
+  sourceType: "note" | "import" | "wiki";
   title: string;
   sourcePath: string;
   fingerprint: string;

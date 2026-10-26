@@ -51,6 +51,8 @@ mod git_pr;
 mod git_pr_tests;
 mod graph;
 mod graph_tests;
+mod wiki;
+mod wiki_tests;
 mod git_pr_real_tests;
 #[cfg(test)]
 mod fs_cmd_tests;
@@ -355,6 +357,16 @@ pub fn run() {
             graph::graph_delete_relation,
             graph::graph_merge_entities,
             graph::graph_search_entities,
+            wiki::wiki_collect_context,
+            wiki::wiki_job_create,
+            wiki::wiki_job_update,
+            wiki::wiki_job_get,
+            wiki::wiki_job_list,
+            wiki::wiki_write_page,
+            wiki::wiki_delete_set,
+            wiki::wiki_get_document,
+            wiki::wiki_documents_by_set,
+            wiki::wiki_sets_list,
             usage_stats::usage_record,
             git_pr::git_pr_status,
             git_pr::git_pr_create,
