@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.8</span>
+        下载 <span data-latest-version>v0.2.14</span>
       </a>
     </div>
   </div>
@@ -64,6 +64,8 @@
       <li><a href="notes.html">知识库与笔记系统</a></li>
       <li><a href="permissions.html">审批与检查点</a></li>
       <li><a href="models.html">模型与协议</a></li>
+      <li><a href="scenario-models.html">场景默认模型</a></li>
+      <li><a href="usage.html">用量统计</a></li>
       <li><a href="memory.html">本地长期记忆</a></li>
       <li><a href="git.html">Git 工作台</a></li>
       <li><a href="extensions.html" aria-current="page">扩展与集成</a></li>
@@ -107,13 +109,12 @@
   </tbody>
 </table></div>
 
-<h2>Skills 与双向 MCP 生态</h2>
+<h2>Skills 与 MCP</h2>
 <div class="table-wrap"><table>
-  <thead><tr><th>扩展方式</th><th>角色</th><th>说明</th></tr></thead>
+  <thead><tr><th>扩展方式</th><th>说明</th></tr></thead>
   <tbody>
-    <tr><td>MCP 客户端（Client）</td><td>ReinAgent → 外部工具</td><td>连接外部 MCP Server（本地进程 / SSE），供工作台内部模型调用扩展工具</td></tr>
-    <tr><td>MCP 服务端（Server）</td><td>外部大模型 → ReinAgent</td><td>遵循 MCP 2024-11-05 协议，通过 HTTP/SSE 暴露 15 个工具，供 Claude Desktop、Cursor 等外部 AI 反向直接操控 ReinAgent</td></tr>
-    <tr><td>ClawHub 技能生态</td><td>技能扩展</td><td>支持一键安装内置/自定义技能与磁盘目录技能体系</td></tr>
+    <tr><td>Model Context Protocol</td><td>支持 MCP 服务器接入，扩展工具能力</td></tr>
+    <tr><td>ClawHub 技能生态</td><td>内置 / 自定义技能与磁盘目录技能</td></tr>
   </tbody>
 </table></div>
 

@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.8</span>
+        下载 <span data-latest-version>v0.2.14</span>
       </a>
     </div>
   </div>
@@ -64,6 +64,8 @@
       <li><a href="notes.html">知识库与笔记系统</a></li>
       <li><a href="permissions.html">审批与检查点</a></li>
       <li><a href="models.html">模型与协议</a></li>
+      <li><a href="scenario-models.html">场景默认模型</a></li>
+      <li><a href="usage.html">用量统计</a></li>
       <li><a href="memory.html">本地长期记忆</a></li>
       <li><a href="git.html" aria-current="page">Git 工作台</a></li>
       <li><a href="extensions.html">扩展与集成</a></li>
@@ -106,6 +108,20 @@
     <tr><td>仓库初始化</td><td>空目录一键初始化 Git 仓库</td></tr>
   </tbody>
 </table></div>
+
+<h2>PR / MR 面板</h2>
+<p>Git 面板底部的 PR 区块把托管平台的评审闭环搬进工作台：按远端地址自动选择 <code>gh</code>（GitHub）/ <code>glab</code>（GitLab），不依赖任何网页跳转。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>能力</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>状态总览</td><td>当前分支 PR 编号 / 标题 / 状态 / 草稿标记、<code>+N −N</code> 变更量、门禁（可合并 / 有冲突 / 被阻塞 / 落后 / 检查未全绿）与审查结论徽标</td></tr>
+    <tr><td>CI 检查</td><td>逐项列出检查名称与状态（通过 / 失败 / 进行中分色），点击直达运行日志</td></tr>
+    <tr><td>动作五连</td><td>转正式 / 转草稿 / 合并（合并提交 · Squash · Rebase，可勾选删除分支）/ 关闭 / 重开；门禁未通过或要求修改时合并按钮禁用并说明原因</td></tr>
+    <tr><td>创建 PR</td><td>标题 / 描述 / 目标分支（默认自动解析 origin/HEAD → main → master）/ 草稿勾选；描述经 stdin 传递，规避 shell 转义问题</td></tr>
+    <tr><td>交给 Agent 修</td><td>一键聚合待处理反馈（失败与进行中的 CI、行内审查意见、失败日志摘录）组装成结构化指令<b>预填进输入框</b>，你确认后再发送</td></tr>
+  </tbody>
+</table></div>
+<div class="note">CLI 未安装 / 未登录 / 远端非 GitHub·GitLab 时如实提示安装命令与错误原文，不做静默降级。</div>
 
 <h2>与 Agent 协同</h2>
 <p>Agent 在仓库内工作时，所有文件改动都会经过检查点留存，可逐轮回退；Git 面板同步展示当前改动，提交前你能看到 Agent 究竟改了什么。</p>

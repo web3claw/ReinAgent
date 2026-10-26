@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.8</span>
+        下载 <span data-latest-version>v0.2.14</span>
       </a>
     </div>
   </div>
@@ -64,6 +64,8 @@
       <li><a href="notes.html" aria-current="page">知识库与笔记系统</a></li>
       <li><a href="permissions.html">审批与检查点</a></li>
       <li><a href="models.html">模型与协议</a></li>
+      <li><a href="scenario-models.html">场景默认模型</a></li>
+      <li><a href="usage.html">用量统计</a></li>
       <li><a href="memory.html">本地长期记忆</a></li>
       <li><a href="git.html">Git 工作台</a></li>
       <li><a href="extensions.html">扩展与集成</a></li>
@@ -123,6 +125,20 @@
 </table></div>
 <div class="note">笔记本数据绝不经过任何中心化云服务，所有读写均由 Rust 后端 <code>notes_fs.rs</code> 原生接管，并带 Web Mock 兼容层保障无头环境调试。</div>
 
+<h2>知识图谱</h2>
+<p>笔记与世界知识可以沉淀为实体—关系网络，既能可视化浏览，也能反向增强语义检索。</p>
+<div class="table-wrap"><table>
+  <thead><tr><th>能力</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>抽取</td><td>知识库设置页对任意笔记「提取图谱」（支持批量），单轮模型按封闭枚举输出实体与关系</td></tr>
+    <tr><td>实体与关系模型</td><td>实体 5 类：概念 / 人物 / 组织 / 技术 / 项目；关系 5 类：属于 / 相关 / 依赖 / 包含 / 对比。同名实体全局去重（不区分大小写），同实体对同类型关系只保留一条</td></tr>
+    <tr><td>可视化</td><td>侧栏「知识图谱」页：Canvas 力导向图，节点按类型分色、半径随关系数量增长；支持拖拽节点、滚轮缩放、点击查看详情、按名称搜索与类型筛选</td></tr>
+    <tr><td>人工校正</td><td>可删除实体 / 关系，也可把重复实体合并（关系自动改挂、自环与重复自动清理）</td></tr>
+    <tr><td>检索增强</td><td>语义检索命中笔记后，按 1 跳关系扩展出相邻实体关联的其他笔记一并返回（附「图谱」标记，排在语义命中之后）</td></tr>
+  </tbody>
+</table></div>
+<div class="note">图谱模型可在「设置 ▸ 通用 ▸ 场景默认模型 ▸ 图谱抽取」单独指定，未配置时跟随聊天默认模型；抽取用量计入「用量统计 ▸ 用量来源」。</div>
+
 <h2>AI 写作助手指令体系</h2>
 <div class="table-wrap"><table>
   <thead><tr><th>指令</th><th>适用场景</th></tr></thead>
@@ -132,19 +148,6 @@
     <tr><td>解释代码</td><td>对选中文档中的代码块或技术概念生成详尽的原理解读</td></tr>
     <tr><td>提取总结</td><td>提炼核心要点为清晰有序的待办项或摘要</td></tr>
     <tr><td>替换全文 / 文末追加</td><td>生成完毕后一键应用，精准触达编辑器文档模型并自动保存</td></tr>
-  </tbody>
-</table></div>
-
-<h2>RAG 语义检索（v0.2.9 新增）</h2>
-<p>笔记与导入的外部会话会自动分块并向量化，进入本地知识库索引；模型可通过语义检索利用这些内容回答问题，而不只是关键词匹配。</p>
-<div class="table-wrap"><table>
-  <thead><tr><th>环节</th><th>机制与用法</th></tr></thead>
-  <tbody>
-    <tr><td>绑定 embedding 服务商</td><td>设置 ▸ 知识库 ▸ 绑定任意 OpenAI 兼容 <code>/embeddings</code> 服务商（Qwen3-Embedding、本地 Ollama 等均实测可用），「测试 embeddings」即发真实请求验证并学习向量维度</td></tr>
-    <tr><td>索引与增量</td><td>「扫描并索引」按内容指纹增量向量化（未变内容不重复计费）；笔记保存与外部会话导入后 1.5s 自动重索引；换 embedding 模型会提示清空重建，严禁混维检索</td></tr>
-    <tr><td>每轮自动注入</td><td>输入胶囊左侧 <code>Library</code> 图标开启（任务级开关，全局默认兜底）：发送前以你的消息为查询做语义检索，命中块以 <code>&lt;knowledge-source&gt;</code> 并入上下文，请求预览的「用户上下文」节可查看命中明细</td></tr>
-    <tr><td>模型主动检索</td><td><code>search_knowledge</code> 工具始终挂载：对话里直接让模型「查一下知识库」，它会自主检索并引用来源标题与相关度</td></tr>
-    <tr><td>存储与安全</td><td>索引存于本地 <code>~/.ReinAgent/knowledge/knowledge-index.sqlite3</code>（可随时清空重建，原文零损失、不进备份）；注意对话类内容纳入索引时会发往所选 embedding 服务商做向量化</td></tr>
   </tbody>
 </table></div>
     <div class="docs-pager"><span><a href="workspace.html">← Agent 工作台</a></span><span><a href="permissions.html">审批与检查点 →</a></span></div>
