@@ -9,6 +9,7 @@ import {
   Timer, Settings, Monitor, Plug, Bot, BookOpen, Columns3, Network, BookText,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
+import { InboxBell } from './InboxBell';
 import { SidebarVersionUpdater } from './SidebarVersionUpdater';
 
 /** 底栏图标按钮（对齐 PI-Desktop TooltipButton + footer-action：32×32 命中区和 top 气泡提示）。
@@ -291,6 +292,7 @@ export function WorkspaceSidebar({
           <FooterIconButton tooltip={theme === 'dark' ? t('lightMode') : t('darkMode')} onClick={toggleTheme}>
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </FooterIconButton>
+          <InboxBell />
           <FooterIconButton
             tooltip={locale === 'zh-CN' ? 'Switch to English' : '切换为简体中文'}
             onClick={toggleLocale}

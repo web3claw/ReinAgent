@@ -124,6 +124,7 @@ import {
 import { createMemoryOrganizerService, installMemoryOrganizerService } from "./lib/memory/organizer/service";
 import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSchedule";
 import { GraphPage } from "./components/knowledge/GraphPage";
+import { pushNotification } from "./lib/inbox/api";
 import { WikiPage } from "./components/wiki/WikiPage";
 import { loadProvidersConfigFromDisk, providerAllowsMissingApiKey, resolveSupportedEffortLevels, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
@@ -1136,6 +1137,13 @@ export default function App() {
             error: `服务商「${payload.modelProvider || settings.provider || "default"}」不存在，无法派发。`,
           }).catch((err) => console.warn("[automations] automation_run_finished failed:", err)),
         );
+        void pushNotification({
+          categoryKey: `automation:${payload.runId}`,
+          kind: "automation",
+          title: payload.title || "定时任务",
+          body: `派发失败：服务商「${payload.modelProvider || settings.provider || "default"}」不存在`,
+          linkView: "automations",
+        });
         return;
       }
 
@@ -1165,6 +1173,13 @@ export default function App() {
             error: `服务商「${provider.name || provider.id}」下未找到可用模型（请求模型: ${payload.modelId || "未指定"}），派发中止。`,
           }).catch((err) => console.warn("[automations] automation_run_finished failed:", err)),
         );
+        void pushNotification({
+          categoryKey: `automation:${payload.runId}`,
+          kind: "automation",
+          title: payload.title || "定时任务",
+          body: `派发失败：未找到可用模型（${payload.modelId || "未指定"}）`,
+          linkView: "automations",
+        });
         return;
       }
 
@@ -1207,6 +1222,13 @@ export default function App() {
         void import("@tauri-apps/api/core").then(({ invoke }) =>
           invoke("automation_run_finished", { runId: payload.runId, status: "failed", taskId, error: "dispatch rejected" })
             .catch((err) => console.warn("[automations] automation_run_finished failed:", err)),
+          void pushNotification({
+            categoryKey: `automation:${payload.runId}`,
+            kind: "automation",
+            title: payload.title || "定时任务",
+            body: "派发被拒绝（队列并发上限）",
+            linkView: "automations",
+          }),
         );
         return;
       }
@@ -1285,6 +1307,17 @@ export default function App() {
       const task = useAppStore.getState().tasks.find((t) => t.id === event.taskId);
       const title = task?.title ?? "后台任务";
       const body = summarizeOutcome(event.outcome, event.lastAssistantText, event.error);
+      // 自动化任务失败/停止 → 应用内收件箱聚合（v2 尾巴 ⑤；成功不打扰）
+      if (task?.source === "automation" && event.outcome !== "done") {
+        void pushNotification({
+          categoryKey: `automation:${task.id}`,
+          kind: "automation",
+          title: task.title,
+          body,
+          linkView: "automations",
+          linkTaskId: event.taskId,
+        });
+      }
       // 系统通知只在窗口失焦时（有焦点=人正在用软件，无需通知）
       if (!document.hasFocus()) {
         void sendSystemNotification(title, body, event.taskId);

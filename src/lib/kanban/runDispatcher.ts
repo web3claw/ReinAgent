@@ -20,6 +20,7 @@ import { DEFAULT_SYSTEM_PROMPT } from "../providers/runAgentTurn";
 import { resolveWorkspaceRoot } from "../agent/workspace";
 import { buildCardBrief, resolveRunVerdict, type KanbanColumn } from "./model";
 import { toast } from "../../components/lw/ui/toast";
+import { pushNotification } from "../inbox/api";
 
 export interface KanbanCardDto {
   cardId: string;
@@ -142,8 +143,24 @@ function ensureTerminalSubscription(): void {
       }
       if (verdict.runStatus === "blocked") {
         toast.warning(`看板卡片「${fresh?.title ?? active.cardId}」等待你的回答`);
+        void pushNotification({
+          categoryKey: `kanban:${active.cardId}`,
+          kind: "kanban",
+          title: fresh?.title ?? active.cardId,
+          body: "等待你的回答（评论后自动重跑）",
+          linkView: "kanban",
+          linkTaskId: event.taskId,
+        });
       } else if (verdict.runStatus === "failed") {
         toast.error(`看板卡片「${fresh?.title ?? active.cardId}」执行失败`);
+        void pushNotification({
+          categoryKey: `kanban:${active.cardId}`,
+          kind: "kanban",
+          title: fresh?.title ?? active.cardId,
+          body: "执行失败（InReview 评论会打回 Todo 重跑）",
+          linkView: "kanban",
+          linkTaskId: event.taskId,
+        });
       }
     })();
   });

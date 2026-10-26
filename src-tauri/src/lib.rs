@@ -51,6 +51,8 @@ mod git_pr;
 mod git_pr_tests;
 mod graph;
 mod graph_tests;
+mod notifications;
+mod notifications_tests;
 mod wiki;
 mod wiki_tests;
 mod git_pr_real_tests;
@@ -367,6 +369,10 @@ pub fn run() {
             wiki::wiki_get_document,
             wiki::wiki_documents_by_set,
             wiki::wiki_sets_list,
+            notifications::notify_push,
+            notifications::notify_list,
+            notifications::notify_archive,
+            notifications::notify_archive_all,
             usage_stats::usage_record,
             git_pr::git_pr_status,
             git_pr::git_pr_create,

@@ -2663,3 +2663,33 @@ graph_get（全量，实体 2000/关系 6000 上限）/ graph_apply_extraction�
 - 前端 wikiLogic 8 例（解析三态/顶层 pages/正则抢救含章节排除/上限截断/模块兜底/清洗三规则/续写判定/prompt 约束）；**Red Check**：破坏粘连标题断行 → 清洗测试真实红；正则抢救首个版本把章节标题捞成页面——单测抓出后加后瞻排除
 - 全量：Rust 317 绿 + 前端 16 绿 + tsc 0
 - Not run：真实 LLM 全链生成（需窗口对真实工作区点「生成 Wiki」目检）
+
+## 二十四、v2 尾巴打包批（⑤③④⑥ 收口，2026-10-26 落地）
+
+四个 v1 功能的 v2 缺口一批清掉；①（Ollama 补验/sqlite-vec）按拍板缓置。
+
+### ⑤ 应用内通知收件箱（Hetu InboxService 精简版）
+- **Rust `notifications.rs`**（conversations.db）：`notifications` 表（`category_key` 唯一聚合键、count/unread/link_view/link_task_id）；`notify_push`（同键未归档合并：正文刷新/计数+1/回未读）/ `notify_list` / `notify_archive`（删行）/ `notify_archive_all`；单测 3（合并/归档重计/空键拒绝）
+- **接入点**：看板 blocked/failed（runDispatcher，categoryKey=`kanban:{cardId}`）+ 自动化派发失败三处（provider/model 不存在、dispatch rejected，categoryKey=`automation:{runId}`）+ 自动化任务终态失败（App subscribeTaskTerminal，source==='automation' && outcome!=='done'）
+- **前端**：`InboxBell`（侧栏底栏 Monitor 按钮后）——未读徽标 + 弹出面板（×N 计数、时间、单条归档 ✕、全部清空、点击跳转 kanban/automations 视图并归档）；push 经 window 事件 `reinagent-inbox-change` 即时刷新徽标；push 失败只警告不阻塞（通知不倒置主链路优先级）
+
+### ③ 记忆会话作用域（免 schema 手术）
+- **键设计**：PK 本就含 (scope, workdir_hash, slug)——session 条目 `workdir_hash = sha256(taskId)[..16]`（`session_hash`），物理隔离在 `~/.ReinAgent/memory/sessions/<hash>/`（记忆抽屉的目录扫描天然不显示，零污染）
+- **写入**：normalize_write_scope 放行 'session'；write_entry session 分支要求 options.conversation_id（缺则如实报错）；**仅自动提取可产**（MemoryManager 手写工具 requireWriteScope 仍限 global/project，对齐 Hetu）
+- **检索**：memory_semantic_search 加 `session_id` 参数，SQL 三路并集 `global ∪ project(workdir) ∪ session(taskId)`；recall.buildMemoryRecallSection 加 sessionId 参（runAgentTurn 传 resolvedConversationId）
+- **提取**：planTool scope 枚举加 session（extractionEngine 本就传 conversationId=params.taskId）；Dream 聚类组内=同 scope+workdir_hash 天然隔离
+- 契约测试更新（MEMORY_SCOPES 三值）；memory 42 测全绿
+
+### ④ 笔记 agent 标签工具 + 词级 diff
+- **agent 工具 2 枚**（tools.js，注册表 16→18）：`list_note_tags`（notes_all_tags + 标签计数汇总）/ `set_note_tags`（整组覆盖，notebook/file/tags 三参；未知工具保守视为 write 级审批）
+- **词级 diff**（`src/lib/notes/wordDiff.ts` 纯函数）：token 切分（CJK 连串成词/拉丁点分串成词/空白段）+ LCS 对齐 + same/add/del 片段合并；2000 token 上限降级整体替换；NoteVersionPanel 对照从「并排前 1000 字」升级为**词级红绿视图**（--diff-added/--diff-removed 语义变量）；6 单测
+
+### ⑥ 压缩管线补三节点（8→11 节点语义）
+- `normalizeNumbers`（≥3 位数字 → [N]；≤2 位保留，Hetu 同款）恒跑；`extractKeyLines`（关键行打分：error/warn/结论/路径/命令/标题加分 + 流水负分，首尾 3 行保护带 + 预算裁剪 + 折叠标记）**自适应运行**——仅当去重后仍超 maxBytes（否则必被 headtail 盲截）才执行，严格优于盲截且保住 v1 语义；`removeStopwords`（中英虚词，激进有损）默认关（CompressOptions.stopwords 显式开）
+- 13 单测（新增 4）；**headtail 测试输入改为 error 密集行**（关键行超预算 → bail → headtail 兜底）——新节点改变了原测试输入的路径
+- **挂起项**：llm_summary（需 async 改造 + 专用 fast 模型，收益存疑，用户拍板不做）；sqlite-vec（暴力余弦当前量级无瓶颈，继续挂账）；Ollama 补验（本机未安装，装后补）
+
+### 测试与验证（交付三铁律）
+- 全量：Rust 320 绿（notifications 3 + memory session 相关）+ 前端 43 绿（wikiLogic 8/wordDiff 6/compressPipeline 13/tools 16）+ memory bun 42 绿 + tsc 0
+- **Red Check**：wordDiff LCS 比较破坏 → 真实红；compressPipeline scoreKeyLine 长度惩罚移除 → 真实红（迁移 Red Check 见二十二节）
+- Not run：通知收件箱与 session 记忆的真实链路目检（需窗口实操：看板跑失败卡 → 铃铛出现徽标）
