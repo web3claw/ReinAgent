@@ -30,7 +30,7 @@ const STATE_KEY_DIMS: &str = "embedding_dims";
 const DEFAULT_TOP_K: usize = 5;
 const MAX_TOP_K: usize = 32;
 
-const KNOWLEDGE_SCHEMA_DDL: &str = r#"
+pub(crate) const KNOWLEDGE_SCHEMA_DDL: &str = r#"
 PRAGMA journal_mode = WAL;
 PRAGMA synchronous = NORMAL;
 PRAGMA foreign_keys = ON;
@@ -176,6 +176,9 @@ pub struct KnowledgeSearchHit {
     pub heading_path: String,
     pub content: String,
     pub score: f32,
+    /// 图谱 1 跳扩展追加的命中（score=0 排后；前端可打「图谱」徽标）
+    #[serde(default)]
+    pub from_graph: bool,
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -246,7 +249,7 @@ struct VectorCache {
 }
 
 pub struct KnowledgeStore {
-    conn: Mutex<Connection>,
+    pub(crate) conn: Mutex<Connection>,
     vector_cache: RwLock<Option<Arc<VectorCache>>>,
 }
 
@@ -765,6 +768,7 @@ impl KnowledgeStore {
                             title: row.get(5)?,
                             source_path: row.get(6)?,
                             score: item.score,
+                            from_graph: false,
                         })
                     })
                     .optional()
@@ -773,6 +777,13 @@ impl KnowledgeStore {
                     hits.push(hit);
                 }
             }
+        }
+        // 图谱 1 跳扩展（⑩）：命中源 → 关联实体 → 邻居实体 → 邻居关联的其他源，
+        // 追加其首块 chunk（score=0 排后、fromGraph 标记）；无图谱数据自动跳过
+        if !hits.is_empty() {
+            // conn 已在上方 lock_conn 持有（std Mutex 不可重入，二次 lock = 死锁）——直接复用
+            let expanded = crate::graph::graph_expand_search_conn(&conn, &hits, top_k);
+            hits.extend(expanded);
         }
         Ok(hits)
     }

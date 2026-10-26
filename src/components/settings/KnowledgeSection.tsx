@@ -17,7 +17,12 @@ import { createMemoryTranslate } from "../memory/panelModel";
 import { embedInputs } from "../../lib/knowledge/embeddingClient";
 import { resolveKnowledgeEmbeddingTarget } from "../../lib/knowledge/providerBinding";
 import { knowledgeSweep } from "../../lib/knowledge/indexingService";
-import { PlugZap, RefreshCw, Trash2, Loader2 } from "lucide-react";
+import { PlugZap, RefreshCw, Trash2, Loader2, Network } from "lucide-react";
+import { runGraphExtraction, applyGraphExtraction } from "../../lib/knowledge/graphExtract";
+import { GRAPH_MODEL_KV_KEY, scenarioBindingToProviderConfig } from "../../lib/settings/scenarioModels";
+import { kvGetJSON } from "../../lib/storage/db";
+import { loadProvidersConfigFromDisk } from "./model-provider/types";
+import { useSettings } from "../../lib/settings/useSettings";
 
 interface KnowledgeStats {
   noteCount: number;
@@ -43,6 +48,89 @@ export function KnowledgeSection({ modelOptions }: { modelOptions: Array<{ value
   // hub 缺失键先查 extra-memory 词典（chat.searchModel 等 LA 键，同 MemoryPanel）
   const t = useMemo(() => createMemoryTranslate(translate, locale), [translate, locale]);
   const knowledge = useHubSettings((s) => s.settings.knowledge);
+  const { settings: appSettings } = useSettings();
+  // 图谱提取状态（⑩）
+  const [noteRows, setNoteRows] = useState<Array<{ sourceId: string; title: string; sourcePath: string }>>([]);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [extractBusy, setExtractBusy] = useState(false);
+  const [extractingId, setExtractingId] = useState<string | null>(null);
+  const [graphMessage, setGraphMessage] = useState<string | null>(null);
+  const [graphError, setGraphError] = useState(false);
+
+  const loadNoteRows = useCallback(async () => {
+    setScanLoading(true);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const rows = await invoke<Array<{ sourceId: string; sourceType: string; title: string; sourcePath: string }>>("knowledge_scan_sources");
+      setNoteRows(rows.filter((r) => r.sourceType === "note"));
+    } catch (err) {
+      console.warn("[graph] scan sources failed:", err);
+    } finally {
+      setScanLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadNoteRows();
+  }, [loadNoteRows]);
+
+  const extractOne = useCallback(
+    async (row: { sourceId: string; title: string }) => {
+      setExtractingId(row.sourceId);
+      setGraphError(false);
+      setGraphMessage(null);
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const idx = row.sourceId.indexOf(":");
+        const notebookRel = idx > 0 ? row.sourceId.slice(0, idx) : "";
+        const fileName = idx > 0 ? row.sourceId.slice(idx + 1) : row.sourceId;
+        const content = await invoke<string>("notes_read_note", { notebookRelPath: notebookRel, fileName });
+        const providers = await loadProvidersConfigFromDisk(appSettings).catch(() => []);
+        const binding = kvGetJSON<{ providerId: string; modelId: string }>(GRAPH_MODEL_KV_KEY);
+        const { config } = scenarioBindingToProviderConfig(
+          binding && binding.providerId ? binding : null,
+          providers,
+          { provider: appSettings.provider, modelId: appSettings.modelId, apiKey: appSettings.apiKey, baseUrl: appSettings.baseUrl },
+        );
+        if (!config) {
+          setGraphError(true);
+          setGraphMessage(t("graphExtractNoModel"));
+          return null;
+        }
+        const extracted = await runGraphExtraction(config as never, row.title || fileName, content, new AbortController().signal);
+        return await applyGraphExtraction(row.sourceId, extracted);
+      } catch (err) {
+        setGraphError(true);
+        setGraphMessage(`${row.title || row.sourceId}: ${String(err)}`);
+        return null;
+      } finally {
+        setExtractingId(null);
+      }
+    },
+    [appSettings, t],
+  );
+
+  const extractAllNotes = useCallback(async () => {
+    setExtractBusy(true);
+    setGraphError(false);
+    let totalE = 0;
+    let totalR = 0;
+    let failed = 0;
+    for (const row of noteRows) {
+      const res = await extractOne(row);
+      if (res) {
+        totalE += res.newEntities;
+        totalR += res.newRelations;
+      } else {
+        failed += 1;
+      }
+    }
+    const tpl = t("graphExtractDone");
+    const msg = tpl.replace(/\{(\w+)\}/g, (_, k: string) => String({ e: totalE, r: totalR, se: 0, sr: 0 }[k] ?? ""));
+    setGraphMessage(msg + (failed > 0 ? ` · ${failed} 篇失败` : ""));
+    setExtractBusy(false);
+  }, [noteRows, extractOne, t]);
+
   const setSettings = useHubSettings((s) => s.setSettings);
 
   const [stats, setStats] = useState<KnowledgeStats | null>(null);
@@ -274,6 +362,47 @@ export function KnowledgeSection({ modelOptions }: { modelOptions: Array<{ value
             ))}
           </div>
         )}
+      </section>
+
+      {/* 图谱提取（⑩）：笔记源 → 单轮 LLM 抽取实体/关系 → 去重落库；入口与知识库同域 */}
+      <section className="p-4 rounded-xl border border-[var(--border)] bg-[var(--bg-elev)] space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <div className="font-medium flex items-center gap-1.5">
+              <Network className="w-4 h-4 text-[var(--text-dim)]" />
+              {t("graphTitle")}
+            </div>
+            <div className="text-xs text-[var(--text-dim)]">{t("graphExtractAllNotesDesc")}</div>
+          </div>
+          <button
+            type="button"
+            onClick={() => void extractAllNotes()}
+            disabled={extractBusy || noteRows.length === 0}
+            className="h-8 px-3 rounded-lg border border-[var(--border)] text-sm text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:opacity-40 cursor-pointer flex items-center gap-1.5"
+          >
+            {extractBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+            {extractBusy ? t("graphExtracting") : t("graphExtractAllNotes")}
+          </button>
+        </div>
+        {graphMessage ? <p className={`text-xs break-all ${graphError ? "text-[var(--status-err,red)]" : "text-[var(--text-dim)]"}`}>{graphMessage}</p> : null}
+        <div className="max-h-56 overflow-y-auto space-y-1">
+          {noteRows.map((row) => (
+            <div key={row.sourceId} className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border)] px-2.5 py-1.5">
+              <span className="min-w-0 flex-1 truncate text-xs" title={row.sourceId}>{row.title || row.sourceId}</span>
+              <button
+                type="button"
+                onClick={() => void extractOne(row)}
+                disabled={extractBusy || extractingId === row.sourceId}
+                className="h-6 shrink-0 rounded-md border border-[var(--border)] px-2 text-[11px] text-[var(--text-dim)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] disabled:opacity-40 cursor-pointer"
+              >
+                {extractingId === row.sourceId ? t("graphExtracting") : t("graphExtractAction")}
+              </button>
+            </div>
+          ))}
+          {noteRows.length === 0 && !scanLoading ? (
+            <p className="text-xs text-[var(--text-dim)]">{t("graphNoNotes")}</p>
+          ) : null}
+        </div>
       </section>
 
       {/* 注入参数 */}

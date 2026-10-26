@@ -49,6 +49,8 @@ mod cua_driver;
 mod git_panel_tests;
 mod git_pr;
 mod git_pr_tests;
+mod graph;
+mod graph_tests;
 mod git_pr_real_tests;
 #[cfg(test)]
 mod fs_cmd_tests;
@@ -344,6 +346,15 @@ pub fn run() {
             knowledge_index::knowledge_index_clear,
             knowledge_index::knowledge_search,
             knowledge_index::knowledge_stats,
+            graph::graph_get,
+            graph::graph_apply_extraction,
+            graph::graph_delete_by_source,
+            graph::graph_delete_entity,
+            graph::graph_upsert_entity,
+            graph::graph_upsert_relation,
+            graph::graph_delete_relation,
+            graph::graph_merge_entities,
+            graph::graph_search_entities,
             usage_stats::usage_record,
             git_pr::git_pr_status,
             git_pr::git_pr_create,

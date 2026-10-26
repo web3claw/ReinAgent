@@ -11,6 +11,7 @@ import { useTranslation, type TranslationKey } from "../../i18n";
 import { useSettings } from "../../lib/settings/useSettings";
 import { kvGetJSON, kvSetJSON } from "../../lib/storage/db";
 import {
+  GRAPH_MODEL_KV_KEY,
   NOTEAI_MODEL_KV_KEY,
   SCENARIO_META,
   chatDefaultOf,
@@ -42,6 +43,7 @@ export function ScenarioModelsSection() {
   const setHubSettings = useHubSettings((s) => s.setSettings);
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [noteAiBinding, setNoteAiBinding] = useState<ScenarioBinding | null>(null);
+  const [graphBinding, setGraphBinding] = useState<ScenarioBinding | null>(null);
 
   useEffect(() => {
     void loadProvidersConfigFromDisk(settings)
@@ -51,9 +53,14 @@ export function ScenarioModelsSection() {
   }, []);
 
   useEffect(() => {
-    const saved = kvGetJSON<ScenarioBinding>(NOTEAI_MODEL_KV_KEY);
-    if (saved && typeof saved.providerId === "string" && typeof saved.modelId === "string") {
-      setNoteAiBinding(saved);
+    for (const [key, setter] of [
+      [NOTEAI_MODEL_KV_KEY, setNoteAiBinding],
+      [GRAPH_MODEL_KV_KEY, setGraphBinding],
+    ] as const) {
+      const saved = kvGetJSON<ScenarioBinding>(key);
+      if (saved && typeof saved.providerId === "string" && typeof saved.modelId === "string") {
+        setter(saved);
+      }
     }
   }, []);
 
@@ -94,9 +101,14 @@ export function ScenarioModelsSection() {
       }));
       return;
     }
-    // noteAi：kv 持久（NoteEditor 打开时读取）
-    setNoteAiBinding(binding);
-    kvSetJSON(NOTEAI_MODEL_KV_KEY, binding ?? { providerId: "", modelId: "" });
+    // noteAi / graph：kv 持久（消费端打开时读取）
+    if (scenario === "noteAi") {
+      setNoteAiBinding(binding);
+      kvSetJSON(NOTEAI_MODEL_KV_KEY, binding ?? { providerId: "", modelId: "" });
+    } else {
+      setGraphBinding(binding);
+      kvSetJSON(GRAPH_MODEL_KV_KEY, binding ?? { providerId: "", modelId: "" });
+    }
   };
 
   const scenarios: {
@@ -108,6 +120,7 @@ export function ScenarioModelsSection() {
     { id: "embedding", binding: embeddingBinding, allowModelNotListed: true },
     { id: "memoryOrganizer", binding: organizerBinding },
     { id: "noteAi", binding: noteAiBinding },
+    { id: "graph", binding: graphBinding },
   ];
 
   return (

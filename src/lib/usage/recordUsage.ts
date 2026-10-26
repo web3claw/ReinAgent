@@ -12,7 +12,8 @@ export type DirectUsageSource =
   | "title"
   | "embedding"
   | "commit-message"
-  | "prompt-enhance";
+  | "prompt-enhance"
+  | "graph-extract";
 
 export interface UsageRecordInput {
   source: DirectUsageSource;

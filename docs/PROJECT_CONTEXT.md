@@ -2608,3 +2608,27 @@ gh（GitHub）/ glab（GitLab）按 remote URL 自动选择；CLI 未装/无 rem
 - usage_stats_tests +4：来源解析与历史行修正 / 三新聚合（share 和=1、堆叠序、168 格 0 填充）/ direct 行；**Red Check**：破坏 main_turn→chat 修正（改 zzz）→ corrects_history 真实红
 - 测试库 fixture 补 task 表（真实库同构）；insert_assistant_api_message 的 usage_json 传内层对象（双层嵌套会解析出全 0——测试里真实踩过）
 - 验收：Rust 307 全绿 + 前端 74 绿 + tsc 0；真实数据回填目检待用户（设置 ▸ 用量统计滚动到 ZCode 面板下方）
+
+## 二十二、知识图谱（ROADMAP ⑩，2026-10-25 落地，Hetu GraphService 移植）
+
+实体/关系存 knowledge.db（与 RAG 同库独立表），抽取链在前端（LLM），Rust 负责去重落库与查询。
+
+### 数据模型与语义（对齐 Hetu）
+- `graph_entities`：name 唯一（COLLATE NOCASE，小写名全局去重）；实体 5 类 concept/person/organization/technology/project；别名归一 org→organization、tech→technology，非法回落 concept
+- `graph_relations`：(source_entity_id, target_entity_id, relation_type) 三元组 UNIQUE；关系 5 类 belong_to/related_to/depends_on/contains/compared_with + **LLM 常见偏差别名归一**（belongs_to→belong_to、depend_on/contain/compare_with，测试驱动补的——belongs_to 归一回 related_to 会撞三元组静默丢失）；LLM confidence 0.8 / 手工 1.0
+
+### Rust（src-tauri/src/graph.rs，9 命令）
+graph_get（全量，实体 2000/关系 6000 上限）/ graph_apply_extraction（事务去重落库）/ graph_delete_by_source / graph_upsert_entity·relation / graph_delete_entity·relation / graph_merge_entities（UPDATE OR IGNORE 改挂 + 自环与重复三元组清理）/ graph_search_entities；`graph_expand_search_conn` 挂进 knowledge_search 尾部做 **1 跳扩展**（命中源→关联实体→邻居实体→邻居源首块 chunk，score=0 + fromGraph 标记，≤ topK/2；无图谱数据自动跳过）
+- **死锁教训**：KnowledgeStore.conn 是 std Mutex，search 已 lock_conn 后**严禁二次 lock**——graph 扩展初版再 lock 一次 → cargo test 全体挂死 5 分钟+；复用已持有的 guard
+
+### 前端
+- `src/lib/knowledge/graphExtractLogic.ts`（纯逻辑：prompt 组装/解析三态容错剥围栏杂质/DTO，4 单测）+ `graphExtract.ts`（runGraphExtraction 经 completeOneShotText source="graph-extract" 记账 + applyGraphExtraction 落库）
+- **场景模型 graph 行**：scenarioModels 加第 5 场景（kv `reinagent-graph-model`），ScenarioModelsSection 图谱抽取行；`scenarioBindingToProviderConfig` helper（绑定→校验→回退聊天默认→config 组装）供独立调用链复用
+- `src/components/knowledge/GraphPage.tsx`（侧栏「知识图谱」入口，ViewMode 加 graph）：Canvas 手写力导向（库仑斥力+弹簧+向心，alpha 衰减停机；>800 节点关仿真只渲染）；节点=实体（类型分色读 CSS 变量 getComputedStyle——canvas 不认 var()，半径随关系数）、拖拽/滚轮缩放/点击详情；搜索+类型过滤 pills；侧栏=描述+关系列表（可删）+合并实体（点选目标）+删除实体
+- 知识库设置页「图谱提取」区：knowledge_scan_sources 过滤 note 源逐篇「提取图谱」（sourceId 拆 notebook:file → notes_read_note 读全文）+ 批量提取；graph 场景绑定 → 聊天默认，都无则如实报错
+- 检索命中带 fromGraph 的前端展示徽标留 v2（数据字段已备）
+
+### 测试（交付三铁律）
+- Rust graph_tests 6 例：大小写去重+别名归一+三元组去重 / 未知实体关系跳过 / 按源删关系 / 合并改挂去重 / **1 跳扩展**（含无关源排除+fromGraph+score0）/ 手工 upsert 唯一性；**Red Check**：投毒 belongs_to 映射值 → delete 测试断言红 → 恢复绿（第一轮 Red Check 静默未命中被命中数断言拦住——patch 必须断言命中）
+- 前端 graphExtract 4 例（解析容错/prompt 枚举）；全量 Rust 313 绿 + 前端 13 绿 + tsc 0
+- Not run：真实 LLM 抽取全链（需用户在窗口对真实笔记点「提取图谱」目检）；图谱页视觉（dev 窗口目检）

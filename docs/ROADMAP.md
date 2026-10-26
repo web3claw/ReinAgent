@@ -19,7 +19,7 @@ Hetu 与 ReinAgent 定位同构（同为本地优先 AI 工作台，笔记系统
 | P1 | ⑤ 看板式 Agent 任务 ✅（2026-10-25 v1 落地） | 任务驱动的无人值守执行（与 cron 自动化互补） |
 | P1 | ⑥ 进模型前文本压缩管线 ✅（2026-10-24 v1 落地） | 纯函数 5 节点（轻有损子集），专治工具输出超长，与 microcompact 正交 |
 | P1 | ⑦ PR 面板（gh/glab） ✅（2026-10-25 v1 落地，随下一版本发布） | Git 面板自然延伸 + 「交给 Agent 修」闭环 |
-| P2 | ⑨ Wiki 生成 / ⑩ 知识图谱 / ⑫ SSH 项目 | 依赖前置或投入大，缓（⑪ 场景化模型、⑧ 用量来源页已于 2026-10-25 落地） |
+| P2 | ⑨ Wiki 生成 / ⑫ SSH 项目 | 依赖前置或投入大，缓（⑧⑩⑪ 均已于 2026-10-25 落地） |
 | 地基 | ⓪ 后台任务队列语义 | ①⑤⑨ 的公共前置：SQLite 表即队列 |
 
 状态标记：☐ 未排期 · ◐ 进行中 · ✅ 已完成。
@@ -124,7 +124,7 @@ Hetu 单表 `LlmUsageLog` 十二种来源记账（chat/work/kanban/workflow/wiki
 
 选题→大纲→并行成页三段（`WikiService.cs` 1314 行 + `WikiContextCollector.cs`）：规划一次调用出 `{chapters:[{title,pages:[{title,brief,covers}]}]}`（3–6 章/8–16 页，解析三层容错含正则抢救）；并行成页（并发 4，每页独立上下文，代码语义索引就绪则按页检索 24 条代码块，否则源码采样）；截断续写最多 4 轮（finish reason=length + 代码围栏未闭合检测）；总览页强制 mermaid 架构图；生成后自动投影进知识库与图谱；单页可重生成（Brief 复用）、按 mtime 判过期。依赖 ① 知识库先行。
 
-### ⑩ 知识图谱 ☐
+### ⑩ 知识图谱 ✅（2026-10-25 落地，实现细节见 PROJECT_CONTEXT「二十二、知识图谱」节。落地差异：抽取在前端走 completeOneShotText（场景模型 graph 行）；关系别名归一 belongs_to 等为测试驱动新增；Canvas 力导向零依赖自绘）
 
 实体 6 类（concept/person/organization/technology/project/custom）/关系 5 类封闭枚举抽取（`GraphService.cs`），实体小写名全局去重、关系 (source,target,type) 去重、LLM 关系 Confidence=0.8 手工 1.0；前端自绘 Canvas 力导向（手写 d3-force 风格，无 ReactFlow 依赖）。最大价值=给语义检索做 1 跳扩展（①的增强件），独立可视化价值次之。依赖 ①。
 

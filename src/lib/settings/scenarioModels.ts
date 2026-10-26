@@ -10,7 +10,7 @@
  * UI 明示回退与失效原因，绝不静默发往不存在的模型。
  */
 
-export type ScenarioId = "chat" | "embedding" | "memoryOrganizer" | "noteAi";
+export type ScenarioId = "chat" | "embedding" | "memoryOrganizer" | "noteAi" | "graph";
 
 export interface ScenarioBinding {
   providerId: string;
@@ -111,6 +111,9 @@ export function resolveScenario(input: {
 /** noteAi 持久键（kv `reinagent-noteai-model`，存 JSON；空/清空 = 跟随聊天默认） */
 export const NOTEAI_MODEL_KV_KEY = "reinagent-noteai-model";
 
+/** graph 抽取持久键（kv `reinagent-graph-model`；空 = 跟随聊天默认） */
+export const GRAPH_MODEL_KV_KEY = "reinagent-graph-model";
+
 /** NoteEditor 的 "providerId/modelId" 字符串 key ⇄ 结构化绑定互转（笔记页本地态格式兼容） */
 export function bindingToNoteKey(binding: ScenarioBinding | null | undefined): string {
   if (!binding || !binding.providerId) return "";
@@ -131,4 +134,38 @@ export const SCENARIO_META: Record<ScenarioId, { labelKey: string; descKey: stri
   embedding: { labelKey: "scenarioEmbeddingLabel", descKey: "scenarioEmbeddingDesc" },
   memoryOrganizer: { labelKey: "scenarioOrganizerLabel", descKey: "scenarioOrganizerDesc" },
   noteAi: { labelKey: "scenarioNoteAiLabel", descKey: "scenarioNoteAiDesc" },
+  graph: { labelKey: "scenarioGraphLabel", descKey: "scenarioGraphDesc" },
 };
+
+/** 场景绑定 → one-shot 调用配置（graph 抽取等独立调用链用）：
+ * 绑定有效用绑定；否则回退聊天默认（settings 全局指针）；全无 → null（调用方明示未配置）。 */
+export function scenarioBindingToProviderConfig(
+  binding: ScenarioBinding | null | undefined,
+  providers: (ProviderModelLookup & { apiKey?: string; baseUrl?: string; apiFormat?: string })[],
+  fallback: { provider?: string; modelId?: string; apiKey?: string; baseUrl?: string },
+): { config: { provider: string; apiKey: string; modelId: string; baseUrl: string; apiFormat?: string } | null; fallbackUsed: boolean } {
+  const resolve = (providerId: string, modelId: string) => {
+    const p = providers.find((x) => x.id === providerId);
+    if (!p || p.enabled === false || !modelId) return null;
+    return {
+      provider: p.id,
+      apiKey: p.apiKey ?? "",
+      modelId,
+      baseUrl: p.baseUrl ?? "",
+      apiFormat: p.apiFormat,
+    };
+  };
+  if (binding) {
+    const cfg = resolve(binding.providerId, binding.modelId);
+    if (cfg) return { config: cfg, fallbackUsed: false };
+  }
+  const chat = chatDefaultOf(fallback, providers);
+  if (!chat) return { config: null, fallbackUsed: true };
+  const cfg = resolve(chat.providerId, chat.modelId) ?? {
+    provider: chat.providerId,
+    apiKey: fallback.apiKey ?? "",
+    modelId: chat.modelId,
+    baseUrl: fallback.baseUrl ?? "",
+  };
+  return { config: cfg, fallbackUsed: true };
+}
