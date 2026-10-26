@@ -213,6 +213,99 @@ export function collapseWhitespace(text: string): string {
     .replace(/\n{3,}/g, "\n\n");
 }
 
+/** ⑥ number_normalize：≥3 位数字 token 归一为 [N]（时间戳/计数器/ID 提升近重复折叠率；≤2 位保留）。 */
+export function normalizeNumbers(text: string): string {
+  return text.replace(/\b\d+\b/g, (v) => (v.length <= 2 ? v : "[N]"));
+}
+
+// —— 关键行打分（Hetu ScoreKeyLine 同构）——
+const ERROR_SIGNALS = /错误|失败|异常|报错|超时|拒绝|无法|不能|不存在|冲突|回滚|error|exception|fail(?:ed|ure)?|panic|fatal|traceback|❌|⛔/i;
+const WARN_SIGNALS = /警告|注意|小心|退而求其次|降级|warn(?:ing)?|deprecat|⚠/i;
+const DECISION_SIGNALS = /结论|决定|方案|必须|不要|禁止|建议|原因|根因|待办|下一步|TODO|FIXME|NOTE:|说明[：:]|修复|新增|删除|改动/i;
+const PATH_SIGNALS = /(?:[A-Za-z]:\\|\/|\\)[\w.-]+(?:[/\\][\w.-]+)*|\b[\w-]+\.(?:rs|ts|tsx|js|jsx|json|md|py|sql|yml|yaml|xml|css|html|sh|ps1|png|jpg|log|txt|db)\b/i;
+const COMMAND_SIGNALS = /^\s*(?:\$|>|PS\s?[A-Z]:\\|cargo|bun|npm|pnpm|yarn|git|gh|curl|python|node|docker|kubectl|systemctl)\b/;
+const HEADING_SIGNALS = /^\s*(?:#{1,6}\s|\d+[.)]\s|[一二三四五六七八九十]+[、.]|[-*+]\s+\S)/;
+const NOISE_SIGNALS = /^\s*(?:\d+%|\.{3,}|={3,}|-{3,}|等待中|加载中|处理中|loading|waiting|retry|heartbeat|ping)\s*$/;
+
+/** 行信息量打分：正分=值得保留，负分=流水行 */
+export function scoreKeyLine(line: string): number {
+  const trimmed = line.trim();
+  if (trimmed.length === 0) return 0;
+  let score = 0;
+  if (ERROR_SIGNALS.test(trimmed)) score += 6;
+  if (WARN_SIGNALS.test(trimmed)) score += 3;
+  if (DECISION_SIGNALS.test(trimmed)) score += 3;
+  if (PATH_SIGNALS.test(trimmed)) score += 2;
+  if (COMMAND_SIGNALS.test(trimmed)) score += 2;
+  if (HEADING_SIGNALS.test(trimmed)) score += 2;
+  if (trimmed.includes("→") || trimmed.includes("=>") || trimmed.includes("%")) score += 1;
+  if (trimmed.length < 15) score -= 3;
+  if (NOISE_SIGNALS.test(trimmed)) score -= 5;
+  return score;
+}
+
+/**
+ * ⑦ keywords 关键行抽取（Hetu ExtractKeyLines 同构）：长文本里大部分是流水行，
+ * 按信息量打分保留错误/结论/路径/命令等关键行（首尾各 3 行固定保留），其余按预算
+ * 裁掉并折叠为一行提示。关键行不足以压到预算内时返回原文，交给 headtail 处理。
+ */
+export function extractKeyLines(text: string): string {
+  const MIN_CHARS = 2500;
+  if (text.length < MIN_CHARS) return text;
+  const lines = text.split("\n");
+  if (lines.length < 25) return text;
+
+  const scores = lines.map(scoreKeyLine);
+  const keep = lines.map((_, i) => i < 3 || i >= lines.length - 3 || scores[i] > 0);
+  let used = lines.reduce((acc, l, i) => (keep[i] ? acc + l.length + 1 : acc), 0);
+  const budget = Math.max(1500, Math.floor(text.length / 3));
+  if (used > budget) {
+    // 优先丢分数最低、最长的流水行（首尾 3 行保护带之外、得分 <4 的可丢行）
+    const droppable = lines
+      .map((_, i) => i)
+      .filter((i) => i >= 3 && i < lines.length - 3 && keep[i] && scores[i] < 4)
+      .sort((a, b) => scores[a] - scores[b] || lines[b].length - lines[a].length);
+    for (const i of droppable) {
+      if (used <= budget) break;
+      keep[i] = false;
+      used -= lines[i].length + 1;
+    }
+  }
+  if (used > budget) return text;
+
+  const output: string[] = [];
+  let skipped = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (keep[i]) {
+      if (skipped > 0) {
+        output.push(`…[折叠 ${skipped} 行流水]`);
+        skipped = 0;
+      }
+      output.push(lines[i]);
+    } else {
+      skipped += 1;
+    }
+  }
+  if (skipped > 0) output.push(`…[折叠 ${skipped} 行流水]`);
+  return output.join("\n");
+}
+
+// —— stopwords（默认关；CompressOptions.stopwords 显式开启才生效）——
+const CN_STOPWORDS = new Set(["的", "了", "着", "地", "得", "之", "而已", "的话", "一个", "我们", "你们", "他们", "以及", "然后", "因此", "其实", "就是"]);
+const EN_STOPWORDS = new Set(["the", "a", "an", "is", "are", "was", "were", "be", "been", "being", "have", "has", "had", "do", "does", "did", "will", "would", "could", "should", "may", "might", "can", "shall", "to", "of", "in", "for", "on", "with", "at", "by", "from", "as", "into", "through", "during", "before", "after", "above", "below", "between", "and", "but", "or", "so", "yet", "both", "either", "each", "every", "all", "any", "few", "more", "most", "other", "some", "such", "same", "than", "too", "very", "just", "about", "also", "if", "then", "now", "here", "there", "when", "where", "why", "how", "it", "its", "this", "that", "these", "those"]);
+
+/** ⑧ stopwords：剥离中英虚词（激进有损，默认关）。 */
+export function removeStopwords(text: string): string {
+  const words = text.split(/(\s+|[，。！？；：""（）\r\n])/);
+  const out: string[] = [];
+  for (const w of words) {
+    if (!w || /^\s+$/.test(w) || w.length <= 1) out.push(w);
+    else if (CN_STOPWORDS.has(w) || EN_STOPWORDS.has(w)) out.push(" ");
+    else out.push(w);
+  }
+  return out.join("").replace(/ {2,}/g, " ");
+}
+
 /** ⑤ headtail：首 HEAD_RATIO 预算 + 标记 + 尾部余量（UTF-8 安全）。 */
 export function headtailKeepEnds(
   text: string,
@@ -248,6 +341,8 @@ function applyNode(
 export interface CompressOptions {
   minBytes?: number;
   simhashThreshold?: number;
+  /** 停用词剥离（激进有损，默认关；Hetu stopwords 节点同款语义） */
+  stopwords?: boolean;
 }
 
 /**
@@ -274,10 +369,22 @@ export function compressToolText(
     stats,
   );
   current = applyNode("collapseWhitespace", current, collapseWhitespace, stats);
-  const postPipelineBytes = utf8Bytes(current);
+  current = applyNode("normalizeNumbers", current, normalizeNumbers, stats);
+  if (opts?.stopwords) {
+    current = applyNode("removeStopwords", current, removeStopwords, stats);
+  }
+  let postPipelineBytes = utf8Bytes(current);
+  // 关键行抽取（自适应）：仅在去重后仍超上限（否则必被 headtail 盲截）时运行——
+  // 用语义行保留替代盲目首尾截断；仍超限才落到 headtail
   if (postPipelineBytes > maxBytes) {
-    current = headtailKeepEnds(current, maxBytes, originalBytes, postPipelineBytes);
-    return { text: current, stats, truncated: true, originalBytes, finalBytes: utf8Bytes(current) };
+    current = applyNode("extractKeyLines", current, extractKeyLines, stats);
+    postPipelineBytes = utf8Bytes(current);
+    if (postPipelineBytes > maxBytes) {
+      current = headtailKeepEnds(current, maxBytes, originalBytes, postPipelineBytes);
+      return { text: current, stats, truncated: true, originalBytes, finalBytes: utf8Bytes(current) };
+    }
+    // 关键行抽取已压到限内：内容已折叠（stats 可见），不算 truncated
+    return { text: current, stats, truncated: false, originalBytes, finalBytes: postPipelineBytes };
   }
   return { text: current, stats, truncated: false, originalBytes, finalBytes: postPipelineBytes };
 }

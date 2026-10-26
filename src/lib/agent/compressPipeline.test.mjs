@@ -15,6 +15,10 @@ const {
   hammingDistance,
   utf8Bytes,
   PIPELINE_MIN_BYTES,
+  normalizeNumbers,
+  scoreKeyLine,
+  extractKeyLines,
+  removeStopwords,
 } = await import("./compressPipeline.ts");
 
 // ① 小文本直通（含空串）——零开销零行为变化
@@ -95,7 +99,8 @@ test("硬守卫：每行唯一的不可压缩文本，字节恒不增", () => {
 test("headtail：首部与尾部锚串都保留，CJK 不劈（无替换字符）", () => {
   // 每行唯一（行号素数扰动）——避免被近重复节点折叠短路，专测 headtail 本体
   // 字母也逐行变化（base36）——数字扰动会被 SimHash 归一化吞掉，必须变 token 集合
-  const lines = Array.from({ length: 3000 }, (_, i) => `uniq ${i.toString(36)} ${(i * 7919).toString(36)} line`);
+  // 每行含 error（关键行 +6）→ 关键行总量超预算 → extractKeyLines 如实退回原文 → 由 headtail 兜底
+  const lines = Array.from({ length: 3000 }, (_, i) => `uniq ${i.toString(36)} ${(i * 7919).toString(36)} error line`);
   const text = `HEAD_ANCHOR_START\n${lines.join("\n")}\nTAIL_ANCHOR_END_错误堆栈在这`;
   const r = compressToolText(text, 8192);
   assert.equal(r.truncated, true);
@@ -129,4 +134,46 @@ test("组合：日志风暴+base64+尾部关键行 → 压到 exec 30KB 内且�
   assert.ok(r.stats.length >= 2, `至少两个节点生效（${r.stats.map((s) => s.node).join(",")}）`);
   const reduction = ((1 - r.finalBytes / total) * 100).toFixed(1);
   assert.ok(Number(reduction) > 80, `压缩率 >80%（实际 ${reduction}%）`);
+});
+
+// ===== v2 尾巴 ⑥：三新节点 =====
+
+test("normalizeNumbers：≥3 位数字归一为 [N]，≤2 位保留", () => {
+  assert.equal(normalizeNumbers("id=100000 port=8080 n=3"), "id=[N] port=[N] n=3");
+  assert.equal(normalizeNumbers("v2 at 2026-10-26"), "v2 at [N]-10-26"); // 仅 ≥3 位归一（Hetu 同款）
+});
+
+test("scoreKeyLine：错误/结论/路径加分，流水行负分", () => {
+  assert.ok(scoreKeyLine("error: build failed at src/main.rs") >= 8);
+  assert.ok(scoreKeyLine("## 结论：使用方案 A 部署") >= 5); // 标题+决策，长度不受惩罚
+  assert.ok(scoreKeyLine("waiting...") < 0);
+  assert.equal(scoreKeyLine("   "), 0);
+});
+
+test("extractKeyLines：长文本保留首尾与关键行、折叠流水带标记", () => {
+  const parts = ["HEAD_CONTEXT_LINE"];
+  for (let i = 0; i < 200; i++) parts.push(`processing chunk ${i} all ok waiting`);
+  parts.push("FATAL: panic at src/exec.rs:120 exit");
+  parts.push("TAIL_SUMMARY_DONE");
+  const text = parts.join("\n");
+  const out = extractKeyLines(text);
+  assert.ok(out.length < text.length, "应压缩");
+  assert.ok(out.includes("HEAD_CONTEXT_LINE"), "首 3 行保留");
+  assert.ok(out.includes("TAIL_SUMMARY_DONE"), "尾 3 行保留");
+  assert.ok(out.includes("panic"), "错误行保留");
+  assert.ok(out.includes("折叠"), "折叠标记存在");
+  // 短文本 / 少行直通
+  assert.equal(extractKeyLines("short"), "short");
+  const few = Array.from({ length: 10 }, (_, i) => `line ${i}`).join("\n");
+  assert.equal(extractKeyLines(few), few);
+});
+
+test("removeStopwords：剥离虚词保留实词；管线默认关、显式开启生效", () => {
+  assert.equal(removeStopwords("the quick fox 和 quick test"), " quick fox 和 quick test".replace(/ {2,}/g, " "));
+  assert.ok(!removeStopwords("the and of").includes("the"));
+  const big = Array.from({ length: 60 }, (_, i) => `plain flowing line number ${i} status ok`).join("\n") + "\nERROR: boom\nTAIL";
+  const r1 = compressToolText(big, 800);
+  assert.ok(!r1.stats.some((s) => s.node === "removeStopwords"), "默认不启用");
+  const r2 = compressToolText(big, 800, { stopwords: true });
+  assert.ok(Array.isArray(r2.stats), "显式开启不报错");
 });
