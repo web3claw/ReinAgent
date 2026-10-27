@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.15</span>
+        下载 <span data-latest-version>v0.2.16</span>
       </a>
     </div>
   </div>
@@ -3762,6 +3762,51 @@ Hetu 的 number_normalize（数值改写风险）/stopwords（其默认关）/ke
 <li><strong>过程抓出的真实问题</strong>：①ssh_run 对非 0 退出返回 Ok（exit code 是业务语义）——setup 类 bootstrap 命令必须自查 code；②两真实测试并行跑因 env 污染互踩（REINAGENT_SSH_PROXY 全局态）——合并单测顺序执行；③stderr 首行是 post-quantum 横幅——错误抽取过滤 <code>**</code>/Warning 行；④远端测试机无 git——yum 真实安装后通过</li>
 <li>全量：Rust 329 绿 + 前端 52 绿 + tsc 0</li>
 <li>已知边界：SSH 工作区无 checkpoint/worktree/PR 面板/Wiki/知识库（如实提示，v2 候选）；终端为 ssh -t 远端 shell（本地 shell 配置不生效）</li>
+</ul>
+<h2>二十六、用量下钻增强（⑧ v2 收口，2026-10-27 落地）</h2>
+<p>UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在来源区 + 新 Rust 查询）：</p>
+<h3>范围与对比上期</h3>
+<ul>
+<li>顶部范围选择器：近 7 天 / 近 30 天 / 全部（默认 30d；账目仅保留 30 天——all 显示「账目仅保留近 30 天」注）</li>
+<li>「对比上一期」开关：<code>usage_snapshot</code> 新增 <code>offsetDays</code> 参数，<strong>仅作用于 sources/sourceModels 两维</strong>（Rust 侧窗口 <code>src_since = now-(span+offset)</code> 上界 <code>src_upper = now-offset</code>；heatmap/daily/models 不受影响），前端同 range 并发拉当期+上期两次</li>
+<li><strong>range=all 无「上一期」语义</strong>（窗口无穷 + 30 天账目）→ 开关禁用 + 切 all 自动关闭（offsetDays=0 时前端连 prev 请求都不发）</li>
+<li>对比表：来源本期/上期/增减；±10% 内一位小数、之外取整；新增（prev=0）/消失（cur=0）特判为 warn/dim 文案；up=红（用量涨了）down=绿</li>
+</ul>
+<h3>明细下钻</h3>
+<ul>
+<li>新 Rust 命令 <code>usage_details(args{source?,model?,days?,limit,offset})</code>：model_usage 明细行分页（时间倒序），返回 total/sumTokens 供分页与汇总；<code>?2 IS NULL OR</code> 可空过滤模式；days clamp(1,60)</li>
+<li>交互：堆叠条每个<strong>色段可点击</strong>（source+model 过滤）；来源行标签/环形图例点击（仅 source 过滤）→ 下方内嵌明细面板：过滤条件徽标行（来源/模型/近 N 天）+ ✕ 关闭、8 列表格（时间/来源/模型/输入/输出/缓存读/合计/耗时）、‹页码/总页›分页（50/页）</li>
+<li>保留期边界：days 最大 60 但账目 30 天滚动 prune——明细面板空态如实「超 30 天已清理」，不偷改保留策略</li>
+<li>模型「—」（空 model 列）在堆叠条点击时<strong>不过滤模型</strong>（映射 null 防误查）——Rust 侧 <code>*s != &quot;—&quot;</code> 同款防御</li>
+</ul>
+<h3>测试</h3>
+<ul>
+<li>Rust：<code>usage_stats_tests +1</code>（details 分页/total 不受 offset 影响/模型+来源过滤/空集 + offset_days 对比窗口双查询 m4 落上期）；<strong>Red Check 双破坏</strong>：明细 OFFSET 写死 0 → 真实红；对比窗口 src_since 丢 offset → 真实红</li>
+<li>前端：<code>usageDrilldown.test.mjs</code> 2 例（compareDelta 五分支 + 精度阈值；bun 可直跑含 JSX 的 tsx 模块）；<strong>Red Check</strong>：new 分支改回 up → 真实红；all 范围守卫是开发中自查补的（首版「对比」在 all 下会显示两份相同数据误导）</li>
+<li>tsc 0；全量 Rust 330 绿 + 前端 52+2 绿</li>
+<li>来源标签补 <code>graph-extract</code>/<code>wiki</code>（⑨⑩ 上线后快照里会出现但 UI 缺标签，顺手补全双语）</li>
+</ul>
+<h2>二十七、图谱/检索增强三小件（2026-10-27 落地）</h2>
+<h3>① fromGraph 徽标（检索命中区分语义 vs 图谱扩展）</h3>
+<ul>
+<li><code>KnowledgeSearchHit</code> TS 镜像补 <code>fromGraph?</code>（Rust 早已返回，TS 侧此前丢字段）</li>
+<li>注入段：图谱扩展命中追加 <code> graph=&quot;1&quot;</code> 属性；<code>formatKnowledgeHitLines</code> 清单行尾追加「· 图谱扩展」——模型能区分「语义命中」与「1 跳扩展来的关联笔记」</li>
+<li>3 单测（属性存在/缺失/混合块数）+ Red Check（删除属性插值 → 真实红）</li>
+</ul>
+<h3>② 图谱实体跳源（<code>src/lib/knowledge/sourceLinks.ts</code> 纯函数）</h3>
+<ul>
+<li><code>parseKnowledgeSourceId</code>：<code>wiki:&lt;docId&gt;</code> → wiki；<code>import-*</code>/<code>import:</code> → 导入任务；<code>notebook:file</code> → 笔记；无冒号且 <code>.md/.markdown</code> → 根笔记本；其余 unknown（不猜）</li>
+<li><code>firstNavigableSourceId</code>：实体详情回溯首个可跳转关系来源（跳过手工 null 与未知）</li>
+<li>跳转经 window 事件 <code>reinagent-open-knowledge-source</code> → App 监听三路分发：note→<code>targetNoteToOpen</code> + notes 视图；wiki→<code>activeWikiDocId</code> + wiki 视图（WikiPage 新增 initialDocId prop，加载该文档并切套件）；import→<code>setActiveTaskId</code> + workbench</li>
+<li>GraphPage：每条关系行「查看来源」按钮（有可跳 sourceId 才显示）+ 实体详情顶部「查看来源（笔记/Wiki 页/导入会话）」按钮</li>
+<li>3 单测 + Red Check（删除 import 路由 → 真实红）</li>
+</ul>
+<h3>③ 图谱抽取范围扩展（note + wiki + import 三类源）</h3>
+<ul>
+<li><code>indexingService</code> 导出 <code>loadKnowledgeSourceText</code>——统一三类正文读取（note=文件 / wiki=knowledge.db / import=会话拼接），图谱抽取与 RAG 索引<strong>共用同一实现</strong>（防两套口径漂移）</li>
+<li>知识库设置页提取区行列表放宽到三类源，行首类型徽标（笔记/Wiki 页/导入会话）；批量按钮自然覆盖全量</li>
+<li>顺带修复：原 extractOne 只走 <code>notes_read_note</code>（wiki/导入源会读失败）</li>
+<li>tsc 0；全量 Rust 330 绿 + knowledge 相关前端 30 绿</li>
 </ul>
 </div>
     <div class="docs-pager"><span><a href="dev.html">← 参与开发</a></span><span><a href="PROMPTS.html">提示词参考与现状 →</a></span></div>

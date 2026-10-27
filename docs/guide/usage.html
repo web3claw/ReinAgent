@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.15</span>
+        下载 <span data-latest-version>v0.2.16</span>
       </a>
     </div>
   </div>
@@ -126,6 +126,16 @@
 
 <h2>来源 × 模型 与 7×24 周热力图</h2>
 <p>每个来源内部的模型构成以堆叠条展示；另有一周 × 24 小时热力图，直观看出使用的时间分布。</p>
+
+<h2>下钻与对比（v0.2.16）</h2>
+<div class="table-wrap"><table>
+  <thead><tr><th>能力</th><th>说明</th></tr></thead>
+  <tbody>
+    <tr><td>时间范围</td><td>近 7 天 / 近 30 天 / 全部三档（账目本身保留近 30 天）</td></tr>
+    <tr><td>点击下钻</td><td>堆叠条的每个色段、来源行、环形图例都可点击，展开该来源（或来源+模型）的<strong>逐次调用明细</strong>：时间 / 来源 / 模型 / 输入 / 输出 / 缓存读 / 合计 / 耗时，50 条一页</td></tr>
+    <tr><td>对比上一期</td><td>勾选后按同长度窗口向前平移一个周期，逐来源列出本期 / 上期 / 增减（用量上涨标红、下降标绿，新增与消失单独标注）</td></tr>
+  </tbody>
+</table></div>
 <div class="note">口径：total = 输入 + 输出（缓存读写为独立分项，不重复累加）；缓存命中率 = 缓存读 /（输入 + 缓存读）。响应未返回 usage 的调用不记账，绝不编造数值。</div>
     <div class="docs-pager"><span><a href="scenario-models.html">← 场景默认模型</a></span><span><a href="ssh.html">SSH 项目 →</a></span></div>
     </div>

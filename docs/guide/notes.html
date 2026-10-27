@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.15</span>
+        下载 <span data-latest-version>v0.2.16</span>
       </a>
     </div>
   </div>
@@ -135,7 +135,9 @@
     <tr><td>实体与关系模型</td><td>实体 5 类：概念 / 人物 / 组织 / 技术 / 项目；关系 5 类：属于 / 相关 / 依赖 / 包含 / 对比。同名实体全局去重（不区分大小写），同实体对同类型关系只保留一条</td></tr>
     <tr><td>可视化</td><td>侧栏「知识图谱」页：Canvas 力导向图，节点按类型分色、半径随关系数量增长；支持拖拽节点、滚轮缩放、点击查看详情、按名称搜索与类型筛选</td></tr>
     <tr><td>人工校正</td><td>可删除实体 / 关系，也可把重复实体合并（关系自动改挂、自环与重复自动清理）</td></tr>
-    <tr><td>检索增强</td><td>语义检索命中笔记后，按 1 跳关系扩展出相邻实体关联的其他笔记一并返回（附「图谱」标记，排在语义命中之后）</td></tr>
+    <tr><td>检索增强</td><td>语义检索命中笔记后，按 1 跳关系扩展出相邻实体关联的其他笔记一并返回——注入给模型的块会带 <code>graph="1"</code> 标记（与语义直接命中区分），工具清单里标注「图谱扩展」</td></tr>
+    <tr><td>来源回溯</td><td>图谱详情面板与每条关系都可「查看来源」，一键跳到对应笔记 / Wiki 页 / 导入的会话</td></tr>
+    <tr><td>抽取范围</td><td>图谱提取覆盖笔记、Wiki 页与导入的外部会话三类知识源（正文读取与 RAG 索引共用同一实现）</td></tr>
   </tbody>
 </table></div>
 <div class="note">图谱模型可在「设置 ▸ 通用 ▸ 场景默认模型 ▸ 图谱抽取」单独指定，未配置时跟随聊天默认模型；抽取用量计入「用量统计 ▸ 用量来源」。</div>
