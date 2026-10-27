@@ -108,3 +108,24 @@ test("7 · No-Fallback：主目录未知时 ~ 展开与相对路径解析必须�
     if (prevProfile !== undefined) process.env.USERPROFILE = prevProfile;
   }
 });
+
+// ===== ⑫ SSH 工作区 =====
+
+test("isSshWorkspace 与 ssh:// 原样透传", async () => {
+  const { isSshWorkspace, resolveWorkspacePath, resolveSshWorkspacePath } = await import("./workspace.ts");
+  assert.equal(isSshWorkspace("ssh://root@h/~/app"), true);
+  assert.equal(isSshWorkspace("/local/path"), false);
+  assert.equal(resolveWorkspacePath("ssh://root@h/~/app", "ssh://root@h/~/app"), "ssh://root@h/~/app");
+  assert.equal(resolveSshWorkspacePath("ssh://u@h/p", "ssh://u@h/p"), "ssh://u@h/p");
+});
+
+test("resolveSshWorkspacePath：相对段拼接 + ./ 收敛 + ../ 回退", async () => {
+  const { resolveSshWorkspacePath } = await import("./workspace.ts");
+  const ws = "ssh://root@h/~/app";
+  assert.equal(resolveSshWorkspacePath("src/main.rs", ws), "ssh://root@h/~/app/src/main.rs");
+  assert.equal(resolveSshWorkspacePath("./src/./a.rs", ws), "ssh://root@h/~/app/src/a.rs");
+  assert.equal(resolveSshWorkspacePath("src/../lib/x.ts", ws), "ssh://root@h/~/app/lib/x.ts");
+  assert.equal(resolveSshWorkspacePath(".", ws), ws);
+  // 逃逸拒绝
+  assert.throws(() => resolveSshWorkspacePath("../../etc/passwd", ws), /超出项目范围/);
+});

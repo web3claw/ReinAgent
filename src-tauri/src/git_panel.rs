@@ -85,6 +85,15 @@ fn no_window(cmd: &mut Command) -> &mut Command {
 }
 
 pub(crate) fn run_git(cwd: &str, args: &[&str]) -> Result<String, String> {
+    // SSH 工作区路由（⑫）：git 命令在远端执行；写操作被只读白名单拦截（v1 边界）
+    if crate::ssh_remote::is_ssh_workspace(cwd) {
+        let target = crate::ssh_remote::parse_ssh_workspace(cwd)?;
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|e| format!("ssh runtime 启动失败：{e}"))?;
+        return rt.block_on(crate::ssh_remote::ssh_git(&target, args));
+    }
     let mut cmd = Command::new("git");
     cmd.args(args).current_dir(cwd);
     #[cfg(windows)]

@@ -49,10 +49,41 @@ pub fn terminal_create(
         .filter(|s| !s.is_empty())
         .unwrap_or(default_shell);
 
-    let mut cmd = CommandBuilder::new(&shell_command);
-    if let Some(dir) = cwd {
-        cmd.cwd(dir);
-    }
+    // SSH 工作区路由（⑫）：PTY 直接 spawn `ssh -t user@host`——交互式远端 shell，
+    // 远端 cd 到项目根（shell 登录后执行）；keepalive/accept-new 与 runner 同参
+    let ssh_shell = cwd.as_deref().filter(|c| crate::ssh_remote::is_ssh_workspace(c));
+    let mut cmd = if let Some(ws) = ssh_shell {
+        let target = crate::ssh_remote::parse_ssh_workspace(ws)?;
+        let proxy = crate::ssh_remote::proxy_for_ssh(&target.host);
+        let mut ssh_args: Vec<String> = vec!["-t".into()];
+        ssh_args.push("-p".into());
+        ssh_args.push(target.port.to_string());
+        ssh_args.extend(["-o".into(), "StrictHostKeyChecking=accept-new".into()]);
+        ssh_args.extend(["-o".into(), "ServerAliveInterval=5".into()]);
+        ssh_args.extend(["-o".into(), "ServerAliveCountMax=3".into()]);
+        if let Some(p) = proxy {
+            ssh_args.extend(["-o".into(), format!("ProxyCommand=nc -X connect -x {} %h %p", crate::ssh_remote::shell_quote(&p))]);
+        }
+        match &target.user {
+            Some(u) => ssh_args.push(format!("{u}@{}", target.host)),
+            None => ssh_args.push(target.host.clone()),
+        }
+        ssh_args.push(format!(
+            "cd {} 2>/dev/null || cd ~; exec $SHELL",
+            crate::ssh_remote::quote_root(&target.root)
+        ));
+        let mut c = CommandBuilder::new("ssh");
+        for a in &ssh_args {
+            c.arg(a);
+        }
+        c
+    } else {
+        let mut c = CommandBuilder::new(&shell_command);
+        if let Some(dir) = cwd {
+            c.cwd(dir);
+        }
+        c
+    };
     // 终端能力环境（2026-10-05 修复「fish 打开全空白、无提示符」）：
     // PTY 子进程默认继承启动它的父进程环境，而 GUI / tauri-dev 链路上 TERM 常为
     // "dumb"（或缺失）——starship / oh-my-* 等提示符框架遇到 dumb 终端会直接拒绝

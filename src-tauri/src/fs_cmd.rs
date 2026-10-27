@@ -76,6 +76,14 @@ pub async fn open_in_file_manager(path: Option<String>) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn fs_read_file(path: String) -> Result<String, String> {
+    if crate::ssh_remote::is_ssh_workspace(&path) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&path)?;
+        let slice = crate::ssh_remote::ssh_read_slice(&target, &target.root, 0, 0).await?;
+        if slice.is_binary {
+            return Err(format!("二进制文件不支持文本读取: {}", target.root));
+        }
+        return Ok(slice.content);
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let resolved = resolve_path(&path);
         fs::read_to_string(&resolved).map_err(|e| format!("Failed to read {}: {}", resolved.display(), e))
@@ -136,6 +144,12 @@ pub async fn fs_write_file(
     content: String,
     checkpoint: Option<crate::checkpoint::CheckpointCtx>,
 ) -> Result<(), String> {
+    // SSH 工作区：远端写入；checkpoint 前像在远端不可得，v1 如实跳过（无回退）
+    if crate::ssh_remote::is_ssh_workspace(&path) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&path)?;
+        let _ = checkpoint; // 显式忽略（SSH 无 checkpoint 语义）
+        return crate::ssh_remote::ssh_write_file(&target, &target.root, &content).await;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let resolved = resolve_path(&path);
         // 检查点前像捕获（对齐 LiveAgent）：落盘前把被改文件的"前像"记入
@@ -254,7 +268,12 @@ pub async fn fs_clean_reinagent_tmp(
 
 #[tauri::command]
 pub async fn fs_list_dir(path: String) -> Result<Vec<String>, String> {
-    tauri::async_runtime::spawn_blocking(move || {
+    // SSH 工作区路由（⑫）：拼接后的 ssh:// URL 整体解析，root 即远端目标路径
+    if crate::ssh_remote::is_ssh_workspace(&path) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&path)?;
+        return crate::ssh_remote::ssh_list_dir_entries(&target, &target.root).await;
+    }
+tauri::async_runtime::spawn_blocking(move || {
         let resolved = resolve_path(&path);
         if !resolved.exists() {
             fs::create_dir_all(&resolved).map_err(|e| e.to_string())?;
@@ -282,6 +301,11 @@ pub async fn fs_delete_file(
     path: String,
     checkpoint: Option<crate::checkpoint::CheckpointCtx>,
 ) -> Result<(), String> {
+    if crate::ssh_remote::is_ssh_workspace(&path) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&path)?;
+        let _ = checkpoint; // SSH 无前像可留
+        return crate::ssh_remote::ssh_delete_file(&target, &target.root).await;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let resolved = resolve_path(&path);
         let md = fs::symlink_metadata(&resolved)
@@ -308,6 +332,10 @@ pub async fn fs_delete_file(
 /// 创建目录（文件管理器面板「新建文件夹」；父目录已存在，不递归建链）。
 #[tauri::command]
 pub async fn fs_create_dir(path: String) -> Result<(), String> {
+    if crate::ssh_remote::is_ssh_workspace(&path) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&path)?;
+        return crate::ssh_remote::ssh_create_dir(&target, &target.root).await;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let resolved = resolve_path(&path);
         if resolved.exists() {
@@ -371,6 +399,16 @@ pub async fn fs_rename(
     new_path: String,
     checkpoint: Option<crate::checkpoint::CheckpointCtx>,
 ) -> Result<(), String> {
+    if crate::ssh_remote::is_ssh_workspace(&path) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&path)?;
+        let to = if crate::ssh_remote::is_ssh_workspace(&new_path) {
+            crate::ssh_remote::parse_ssh_workspace(&new_path)?.root
+        } else {
+            crate::ssh_remote::join_remote(&target.root, &new_path)?
+        };
+        let _ = checkpoint;
+        return crate::ssh_remote::ssh_rename(&target, &target.root, &to).await;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let from = resolve_path(&path);
         let to = resolve_path(&new_path);
@@ -451,6 +489,22 @@ pub async fn fs_execute(
     // NO_PROXY（覆盖系统继承值）；为空时**清除**继承的代理变量——设置页语义
     // 「不读取系统环境变量，留空直连」。
     let _proxy_env = read_kv_proxy_settings();
+    // SSH 工作区路由（⑫）：cwd=ssh:// 时命令在远端执行（cd root 由 runner 处理）
+    if let Some(cwd) = cwd.as_deref() {
+        if crate::ssh_remote::is_ssh_workspace(cwd) {
+            let target = crate::ssh_remote::parse_ssh_workspace(cwd)?;
+            return crate::ssh_remote::ssh_run(&target, &command, None, crate::ssh_remote::SSH_TIMEOUT_SECS * 2, None)
+                .await
+                .map(|out| {
+                    let mut text = out.stdout;
+                    if !out.stderr.trim().is_empty() {
+                        text.push_str(&format!("\n[stderr] {}", out.stderr.trim_end()));
+                    }
+                    text.push_str(&format!("\n（退出码 {}）", out.code));
+                    text
+                });
+        }
+    }
     tauri::async_runtime::spawn_blocking(move || {
         const EXEC_TIMEOUT_SECS: u64 = 120;
         // 代理环境注入（P2-G2 代理贯通）：设置非空时子进程显式继承 HTTP(S)_PROXY/
@@ -685,6 +739,16 @@ pub async fn fs_read_text_file(
     offset: Option<usize>,
     length: Option<usize>,
 ) -> Result<FileTextSlice, String> {
+    if crate::ssh_remote::is_ssh_workspace(&path) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&path)?;
+        return crate::ssh_remote::ssh_read_slice(
+            &target,
+            &target.root,
+            offset.unwrap_or(0),
+            length.unwrap_or(0),
+        )
+        .await;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let resolved = resolve_path(&path);
         let meta = fs::metadata(&resolved)

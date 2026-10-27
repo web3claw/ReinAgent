@@ -52,6 +52,10 @@ mod git_pr_tests;
 mod graph;
 mod graph_tests;
 mod notifications;
+mod ssh_remote;
+mod ssh_remote_tests;
+mod ssh_config;
+mod ssh_real_tests;
 mod notifications_tests;
 mod wiki;
 mod wiki_tests;
@@ -373,6 +377,9 @@ pub fn run() {
             notifications::notify_list,
             notifications::notify_archive,
             notifications::notify_archive_all,
+            ssh_remote::ssh_store_password_cmd,
+            ssh_config::ssh_config_list,
+            ssh_remote::ssh_probe,
             usage_stats::usage_record,
             git_pr::git_pr_status,
             git_pr::git_pr_create,

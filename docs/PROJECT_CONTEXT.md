@@ -2693,3 +2693,26 @@ graph_get（全量，实体 2000/关系 6000 上限）/ graph_apply_extraction�
 - 全量：Rust 320 绿（notifications 3 + memory session 相关）+ 前端 43 绿（wikiLogic 8/wordDiff 6/compressPipeline 13/tools 16）+ memory bun 42 绿 + tsc 0
 - **Red Check**：wordDiff LCS 比较破坏 → 真实红；compressPipeline scoreKeyLine 长度惩罚移除 → 真实红（迁移 Red Check 见二十二节）
 - Not run：通知收件箱与 session 记忆的真实链路目检（需窗口实操：看板跑失败卡 → 铃铛出现徽标）
+
+## 二十五、SSH 项目（ROADMAP ⑫，2026-10-27 落地，Hetu WorkCommandRunner/WorkRemoteFs 移植）
+
+侧栏「+ 新建项目」菜单二选一（本地目录 / SSH 连接），SSH 工作区以 `ssh://[user@]host[:port]/path` scheme 表示——任务/看板/自动化零迁移获得远程操作能力。
+
+### 架构（系统 ssh 客户端 + shell 模拟文件 API；非 sshfs、零 SSH 库依赖）
+- **Rust `ssh_remote.rs`**：SshTarget 解析（逃逸守卫 rel_escapes/join_remote；**~ 前缀统一转 $HOME 形态**——单引号阻止波浪号展开是 Hetu 踩过的坑，quote_remote_path 对 $HOME 用双引号保留展开）；runner（BatchMode 仅 Key/Agent 模式开启——**密码认证下 BatchMode 会禁用 askpass**；StrictHostKeyChecking=accept-new；ConnectTimeout=10；keepalive 5s×3；60s 超时可读报错；kill_on_drop；argv 无转义面）
+- **密码认证**：SSH_ASKPASS 临时脚本（0700 用后即删 + SSH_ASKPASS_REQUIRE=force，OpenSSH ≥8.4）；密码存 `~/.ReinAgent/ssh_auth.json`（0600，键 `user@host:port`）；env `REINAGENT_SSH_PASSWORD` 测试覆盖；Windows 如实拒绝（无 askpass）
+- **代理**：env `REINAGENT_SSH_PROXY` > 应用出网代理 kv（reinagent-web-proxy）；ProxyCommand = `nc -X connect -x {proxy} %h %p`（HTTP CONNECT，OpenBSD nc）；no_proxy 规则精确/后缀匹配（`*` 不通配 IP 字面量——与 reqwest 同款教训）
+- **`ssh_config.rs`**：~/.ssh/config 解析（Host 块/HostName/User/Port/IdentityFile + Include 防环展开，通配符忽略）→ 表单一键预填
+- **路由**：fs_cmd 8 命令（list/read/read_text/write/delete/create_dir/rename/execute）+ fs_search 2（glob=远端 find+本地正则、grep=远端 grep -rnE 解析，`:数字:` 行号锚定容忍路径含冒号）+ git_panel（run_git 内嗅探，**只读白名单** status/log/diff/branch 等放行、写命令如实拒绝）+ terminal（PTY 直接 spawn `ssh -t`，登录后 cd 项目根）；checkpoint 对 SSH 显式跳过（无前像可留）
+- 语义对照 Hetu：ls -la/cat 切片/mkdir+cat stdin 写/test -f 守卫删/find head 20000+正则/grep 解析/ApplyPatch 读改写回
+
+### UI
+- ProjectList「+」按钮 → 菜单（选择本地目录 / SSH 连接…）；SSH 表单：host/port/user/远端路径/密码（可选）/私钥路径（可选）+ **测试连接**（ssh_probe）+ 从 ~/.ssh/config 导入下拉；保存 = addProject(ssh:// URL) + 密码入认证文件
+- 工作区输入框直接粘贴 ssh:// URL 亦可用；resolveWorkspacePath 对 ssh 工作区走 remote-join 分支（../ 逃逸拒绝）
+
+### 测试（交付三铁律）
+- 单测 ssh_remote_tests 9 例（解析变体/逃逸/引号规则含 ~ 归一/Key vs Password 参数差异含 ProxyCommand/代理 no_proxy/grep 行号锚定/git 只读门禁/认证文件往返+env 覆盖）+ workspace ssh 2 例；**Red Check**：rel_escapes 破坏 → 真实红
+- **Real Usage（经代理连 47.82.144.54 真机，81s 十一步）**：whoami/list/read/write/edit(等长替换 delta=0 合法)/glob/grep/逃逸拒绝/git 非仓库 GIT_NOT_REPO + 写命令拒绝/删除守卫/**断链**（坏代理端口 30s 内快速失败）；ssh_real_tests #[ignore] + env 凭据（TEST_PASSWORD→REINAGENT_SSH_PASSWORD 映射，凭据不入仓库）
+- **过程抓出的真实问题**：①ssh_run 对非 0 退出返回 Ok（exit code 是业务语义）——setup 类 bootstrap 命令必须自查 code；②两真实测试并行跑因 env 污染互踩（REINAGENT_SSH_PROXY 全局态）——合并单测顺序执行；③stderr 首行是 post-quantum 横幅——错误抽取过滤 `**`/Warning 行；④远端测试机无 git——yum 真实安装后通过
+- 全量：Rust 329 绿 + 前端 52 绿 + tsc 0
+- 已知边界：SSH 工作区无 checkpoint/worktree/PR 面板/Wiki/知识库（如实提示，v2 候选）；终端为 ssh -t 远端 shell（本地 shell 配置不生效）

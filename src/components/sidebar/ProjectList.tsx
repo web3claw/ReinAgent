@@ -276,6 +276,79 @@ export function ProjectList({
     toggleTaskPin(taskId);
   };
 
+  // SSH 连接表单（⑫）：+ 按钮菜单第二项；保存 = addProject(ssh:// URL) + 密码入 0600 认证文件
+  const [sshFormOpen, setSshFormOpen] = useState(false);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [sshHost, setSshHost] = useState("");
+  const [sshPort, setSshPort] = useState("22");
+  const [sshUser, setSshUser] = useState("root");
+  const [sshPath, setSshPath] = useState("~/");
+  const [sshPassword, setSshPassword] = useState("");
+  const [sshKeyPath, setSshKeyPath] = useState("");
+  const [sshStatus, setSshStatus] = useState<string | null>(null);
+  const [sshBusy, setSshBusy] = useState(false);
+  const [sshConfigHosts, setSshConfigHosts] = useState<Array<{ alias: string; hostname?: string; user?: string; port?: number; identityFile?: string }>>([]);
+
+  const sshWorkspaceUrl = () => {
+    const host = sshHost.trim();
+    if (!host) return null;
+    const port = parseInt(sshPort, 10);
+    const portPart = Number.isFinite(port) && port > 0 && port !== 22 ? `:${port}` : "";
+    const user = sshUser.trim();
+    const userPart = user ? `${user}@` : "";
+    const path = sshPath.trim() || "~";
+    return `ssh://${userPart}${host}${portPart}/${path.replace(/^\/+/, "")}`;
+  };
+
+  const openSshForm = () => {
+    setAddMenuOpen(false);
+    setSshFormOpen(true);
+    setSshStatus(null);
+    void import("@tauri-apps/api/core").then(({ invoke }) =>
+      invoke<Array<{ alias: string; hostname?: string; user?: string; port?: number; identityFile?: string }>>("ssh_config_list")
+        .then(setSshConfigHosts)
+        .catch(() => setSshConfigHosts([])),
+    );
+  };
+
+  const applySshConfigHost = (alias: string) => {
+    const h = sshConfigHosts.find((x) => x.alias === alias);
+    if (!h) return;
+    setSshHost(h.hostname || h.alias);
+    if (h.user) setSshUser(h.user);
+    if (h.port && h.port !== 22) setSshPort(String(h.port));
+    if (h.identityFile) setSshKeyPath(h.identityFile);
+  };
+
+  const saveSshWorkspace = async (probe: boolean) => {
+    const url = sshWorkspaceUrl();
+    if (!url) {
+      setSshStatus("主机不能为空");
+      return;
+    }
+    setSshBusy(true);
+    setSshStatus(null);
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      if (sshPassword.trim()) {
+        await invoke("ssh_store_password_cmd", { workspace: url, password: sshPassword.trim() });
+      }
+      if (probe) {
+        const info = await invoke<string>("ssh_probe", { workspace: url });
+        setSshStatus(`✅ ${info.split("\n").slice(1).join(" · ")}`);
+      } else {
+        addProject(url);
+        setSelectedProject(url);
+        setSshFormOpen(false);
+        setSshPassword("");
+      }
+    } catch (err) {
+      setSshStatus(String(err));
+    } finally {
+      setSshBusy(false);
+    }
+  };
+
   const handleOpenFolder = async () => {
     try {
       const { invoke } = await import("@tauri-apps/api/core");
@@ -433,18 +506,69 @@ export function ProjectList({
             <GripVertical className="w-3.5 h-3.5" />
           </div>
 
-          {/* Add Project icon button with Radix Tooltip */}
+          {/* Add Project icon button（⑫）：菜单二选一——本地目录 / SSH 连接 */}
           <Tooltip title={t('newProject')} side="top">
             <button
               type="button"
-              onClick={handleAddProject}
+              onClick={() => setAddMenuOpen((v) => !v)}
               className="p-1 rounded-md text-[var(--sidebar-text)] hover:text-[var(--sidebar-text-active)] hover:bg-[var(--sidebar-hover)] transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" />
             </button>
           </Tooltip>
+          {addMenuOpen ? (
+            <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] shadow-lg">
+              <button type="button" onClick={(e) => { setAddMenuOpen(false); handleAddProject(e); }} className="block w-full px-3 py-2 text-left text-xs text-[var(--text)] hover:bg-[var(--sidebar-hover)]">
+                {t('sshAddLocal')}
+              </button>
+              <button type="button" onClick={openSshForm} className="block w-full px-3 py-2 text-left text-xs text-[var(--text)] hover:bg-[var(--sidebar-hover)]">
+                {t('sshAddSsh')}
+              </button>
+            </div>
+          ) : null}
         </div>
       </div>
+
+      {/* SSH 连接表单（⑫） */}
+      {sshFormOpen ? (
+        <div className="mx-1 mb-2 rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] p-3 space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-[var(--text)]">{t('sshFormTitle')}</span>
+            <button type="button" onClick={() => setSshFormOpen(false)} className="text-[10px] text-[var(--text-dim)] hover:text-[var(--text)]">✕</button>
+          </div>
+          {sshConfigHosts.length > 0 ? (
+            <select
+              onChange={(e) => applySshConfigHost(e.target.value)}
+              value=""
+              className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)]"
+            >
+              <option value="">{t('sshImportConfig')}</option>
+              {sshConfigHosts.map((h) => (
+                <option key={h.alias} value={h.alias}>{h.alias}{h.hostname ? ` (${h.hostname})` : ""}</option>
+              ))}
+            </select>
+          ) : null}
+          <div className="grid grid-cols-2 gap-2">
+            <input value={sshHost} onChange={(e) => setSshHost(e.target.value)} placeholder={t('sshHost')} className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)]" />
+            <input value={sshPort} onChange={(e) => setSshPort(e.target.value)} placeholder="22" className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)]" />
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <input value={sshUser} onChange={(e) => setSshUser(e.target.value)} placeholder={t('sshUser')} className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)]" />
+            <input value={sshPath} onChange={(e) => setSshPath(e.target.value)} placeholder={t('sshPath')} className="rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)]" />
+          </div>
+          <input value={sshPassword} onChange={(e) => setSshPassword(e.target.value)} type="password" placeholder={t('sshPasswordOptional')} className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)]" />
+          <input value={sshKeyPath} onChange={(e) => setSshKeyPath(e.target.value)} placeholder={t('sshKeyPathOptional')} className="w-full rounded-md border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-xs text-[var(--text)]" />
+          {sshStatus ? <p className="text-[10px] break-all text-[var(--text-dim)]">{sshStatus}</p> : null}
+          <div className="flex gap-2">
+            <button type="button" disabled={sshBusy} onClick={() => void saveSshWorkspace(true)} className="flex-1 rounded-md border border-[var(--border)] px-2 py-1 text-xs text-[var(--text-dim)] hover:text-[var(--text)] disabled:opacity-40">
+              {sshBusy ? t('sshTesting') : t('sshTestConn')}
+            </button>
+            <button type="button" disabled={sshBusy} onClick={() => void saveSshWorkspace(false)} className="flex-1 rounded-md border border-[var(--brand)] bg-[var(--brand-dim)] px-2 py-1 text-xs font-medium text-[var(--brand)] disabled:opacity-40">
+              {t('sshSave')}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       {projectsExpanded && (
         <div className="flex flex-col w-full px-1 py-0.5 space-y-0.5">

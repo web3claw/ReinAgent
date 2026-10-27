@@ -132,7 +132,7 @@ Hetu 单表 `LlmUsageLog` 十二种来源记账（chat/work/kanban/workflow/wiki
 
 Hetu 两层：`AiModel.Purpose`（chat/embedding/completion）+ AppSettings 键 `Default{Scenario}ModelId` 七场景（Chat/Chunk/Fast/Embedding/Wiki/Graph/NoteAi），复合键 `providerId:modelId` 解析。ReinAgent 已有助手绑定（任务级）+ 全局默认；场景模型（fast/embedding 等）随 ①③ 落地一起做，UI 按 no-fallback 明示未配置。
 
-### ⑫ SSH 项目 ☐
+### ⑫ SSH 项目 ✅（2026-10-27 v1 落地，实现细节见 PROJECT_CONTEXT「二十五、SSH 项目」节。方案=系统 ssh + shell 模拟文件 API（Hetu 同构）；v1 仅 Key/Agent+密码（askpass）；Git 只读；checkpoint/worktree/PR/Wiki 留 v2）
 
 Hetu 方案=「系统 ssh 客户端（BatchMode+keepalive）+ shell 命令模拟文件 API」（`WorkCommandRunner.cs` 的 Local/Ssh 双 runner + `WorkRemoteFs.cs` 的 ls/cat/tee/grep/find 解析层），非 sshfs、不嵌 SSH 库；SSH 项目不支持 worktree 与 checkpoint。与 ReinAgent 的手机远控/远端实例运维场景有协同，但工程量大，缓。
 

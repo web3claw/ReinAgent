@@ -91,12 +91,53 @@ export function resolveWorkspaceRoot(project?: string | null): string {
  * - 若 inputPath 是相对路径，自动基于 workspaceRoot 拼接；
  * - 处理空路径防护。
  */
+/** ssh:// 工作区判定 */
+export function isSshWorkspace(value: string): boolean {
+  return (value ?? "").trim().toLowerCase().startsWith("ssh://");
+}
+
+/** ssh:// 相对路径解析：root + rel 拼接（.. 逃逸拒绝；无需本地路径规范化） */
+export function resolveSshWorkspacePath(inputPath: string, workspaceRoot: string): string {
+  const trimmed = inputPath.trim();
+  if (trimmed.toLowerCase().startsWith("ssh://")) return trimmed;
+  // 相对段解析：逐段处理 ./ 与 ../（.. 越过 root 即拒绝）
+  const segments: string[] = [];
+  for (const seg of trimmed.replace(/\\/g, "/").split("/")) {
+    if (seg === "" || seg === ".") continue;
+    if (seg === "..") {
+      if (segments.length === 0) {
+        throw new Error("路径超出项目范围（.. 越过工作区根）");
+      }
+      segments.pop();
+      continue;
+    }
+    segments.push(seg);
+  }
+  const root = workspaceRoot.trim().replace(/\/+$/, "");
+  return segments.length === 0 ? root : `${root}/${segments.join("/")}`;
+}
+
+/** 工作区值规范化：ssh:// 原样返回，本地路径走 normalizePath */
+export function normalizeWorkspaceValue(value: string): string {
+  const v = (value ?? "").trim();
+  if (isSshWorkspace(v)) return v.replace(/\/+$/, "");
+  return normalizePath(v);
+}
+
 export function resolveWorkspacePath(inputPath: string, workspaceRoot: string): string {
   if (!inputPath || typeof inputPath !== "string" || inputPath.trim().length === 0) {
-    return normalizePath(workspaceRoot);
+    return normalizeWorkspaceValue(workspaceRoot);
   }
 
   const trimmed = inputPath.trim();
+
+  // SSH 工作区（⑫）：ssh:// URL 拼接 + 逃逸守卫（远端路径不走本地 normalize）
+  if (workspaceRoot.trim().toLowerCase().startsWith("ssh://")) {
+    return resolveSshWorkspacePath(trimmed, workspaceRoot);
+  }
+  if (trimmed.toLowerCase().startsWith("ssh://")) {
+    return trimmed; // 输入本身就是 ssh:// URL——原样透传
+  }
 
   // 绝对路径（POSIX / 开头 或 Windows 驱动器 C:\ 开头）
   if (isAbsolutePath(trimmed)) {

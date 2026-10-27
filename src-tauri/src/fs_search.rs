@@ -136,6 +136,13 @@ pub async fn fs_glob(
     pattern: String,
     limit: Option<usize>,
 ) -> Result<GlobResult, String> {
+    // SSH 工作区路由（⑫）：远端 find + 本地 glob 正则
+    if crate::ssh_remote::is_ssh_workspace(&root) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&root)?;
+        let max = limit.unwrap_or(GLOB_DEFAULT_LIMIT).clamp(1, 5000);
+        let matcher = glob_to_regex(&pattern)?;
+        return crate::ssh_remote::ssh_glob(&target, &target.root, &pattern, max, &matcher, &SKIP_DIRS).await;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let canon_root = resolve_search_root(&root)?;
         let matcher = glob_to_regex(&pattern)?;
@@ -215,6 +222,21 @@ pub async fn fs_grep(
     ignore_case: Option<bool>,
     limit: Option<usize>,
 ) -> Result<GrepResult, String> {
+    // SSH 工作区路由（⑫）：远端 grep -rnE（Hetu GrepAsync 同构）
+    if crate::ssh_remote::is_ssh_workspace(&root) {
+        let target = crate::ssh_remote::parse_ssh_workspace(&root)?;
+        let max = limit.unwrap_or(GREP_DEFAULT_LIMIT).clamp(1, 2000);
+        return crate::ssh_remote::ssh_grep(
+            &target,
+            &target.root,
+            &pattern,
+            include.as_deref(),
+            !ignore_case.unwrap_or(false),
+            max,
+            &SKIP_DIRS,
+        )
+        .await;
+    }
     tauri::async_runtime::spawn_blocking(move || {
         let canon_root = resolve_search_root(&root)?;
         let re = RegexBuilder::new(&pattern)
