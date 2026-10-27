@@ -381,6 +381,7 @@ pub fn run() {
             ssh_config::ssh_config_list,
             ssh_remote::ssh_probe,
             usage_stats::usage_record,
+            usage_stats::usage_details,
             git_pr::git_pr_status,
             git_pr::git_pr_create,
             git_pr::git_pr_action,

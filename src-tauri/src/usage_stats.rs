@@ -6,7 +6,7 @@
 //! 先回填再查询，数据即时最新；`usage_query` 在 SQL 层聚合（tz 偏移日桶）。
 //! 无 cost 维度（对齐 ZCode：口径一律 token/请求数）。30 天滚动保留（prune）。
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// model_usage 事实表（ZCode migration 0010 精简版）。
 pub(crate) const MODEL_USAGE_SCHEMA: &str = "
@@ -190,6 +190,113 @@ fn parse_usage_field(value: &serde_json::Value, key: &str) -> i64 {
 pub(crate) fn usage_backfill_sync() -> Result<i64, String> {
     let mut conn = crate::conversation_store::db_conn()?;
     usage_backfill_conn(&mut conn)
+}
+
+/// 用量明细行（下钻⑧ v2：来源×模型条形点击 → 逐次调用列表）
+#[derive(Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageDetailRow {
+    pub id: String,
+    pub query_source: String,
+    pub provider: String,
+    pub model: String,
+    pub started_at: i64,
+    pub duration_ms: Option<i64>,
+    pub input_tokens: i64,
+    pub output_tokens: i64,
+    pub cache_read_tokens: i64,
+    pub total_tokens: i64,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageDetailsResult {
+    pub rows: Vec<UsageDetailRow>,
+    /// 同过滤条件下的总条数（分页用）
+    pub total: i64,
+    /// 同过滤条件下的 token 合计
+    pub sum_tokens: i64,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UsageDetailsArgs {
+    /// 按来源过滤（空 = 不过滤）
+    #[serde(default)]
+    pub source: Option<String>,
+    /// 按模型过滤（空 = 不过滤；"—" 映射空 model 列）
+    #[serde(default)]
+    pub model: Option<String>,
+    /// 时间窗（天，默认 30=保留期全量）
+    #[serde(default)]
+    pub days: Option<i64>,
+    #[serde(default)]
+    pub limit: Option<i64>,
+    #[serde(default)]
+    pub offset: Option<i64>,
+}
+
+pub(crate) fn usage_details_query(conn: &rusqlite::Connection, args: &UsageDetailsArgs) -> Result<UsageDetailsResult, String> {
+    let days = args.days.unwrap_or(30).clamp(1, 60);
+    let since = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64 - days * 24 * 3600 * 1000)
+        .unwrap_or(0);
+    let source = args.source.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    let model = args.model.as_deref().map(str::trim).filter(|s| !s.is_empty() && *s != "—");
+    let limit = args.limit.unwrap_or(50).clamp(1, 200);
+    let offset = args.offset.unwrap_or(0).max(0);
+    let rows: Vec<UsageDetailRow> = conn
+        .prepare(
+            "SELECT id, query_source, provider, model, started_at, duration_ms,
+                    input_tokens, output_tokens, cache_read_tokens, total_tokens
+             FROM model_usage
+             WHERE started_at >= ?1
+               AND (?2 IS NULL OR query_source = ?2)
+               AND (?3 IS NULL OR model = ?3)
+             ORDER BY started_at DESC LIMIT ?4 OFFSET ?5",
+        )
+        .map_err(|e| e.to_string())?
+        .query_map(rusqlite::params![since, source, model, limit, offset], |r| {
+            Ok(UsageDetailRow {
+                id: r.get(0)?,
+                query_source: r.get(1)?,
+                provider: r.get(2)?,
+                model: r.get(3)?,
+                started_at: r.get(4)?,
+                duration_ms: r.get(5)?,
+                input_tokens: r.get(6)?,
+                output_tokens: r.get(7)?,
+                cache_read_tokens: r.get(8)?,
+                total_tokens: r.get(9)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<_, _>>()
+        .map_err(|e| e.to_string())?;
+    let (total, sum_tokens): (i64, i64) = conn
+        .query_row(
+            "SELECT COUNT(*), COALESCE(SUM(total_tokens),0)
+             FROM model_usage
+             WHERE started_at >= ?1
+               AND (?2 IS NULL OR query_source = ?2)
+               AND (?3 IS NULL OR model = ?3)",
+            rusqlite::params![since, source, model],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(UsageDetailsResult { rows, total, sum_tokens })
+}
+
+#[tauri::command]
+pub async fn usage_details(args: UsageDetailsArgs) -> Result<UsageDetailsResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        usage_backfill_sync()?;
+        let conn = crate::conversation_store::db_conn()?;
+        usage_details_query(&conn, &args)
+    })
+    .await
+    .map_err(|e| e.to_string())?
 }
 
 /// 重置水位线 kv 键：清空账目后，回填只导入水位线之后的源行（防止旧 part 重新灌入）。
@@ -514,9 +621,10 @@ pub(crate) fn usage_query_sync(
     range: &str,
     time_zone: &str,
     tz_offset_ms: i64,
+    offset_days: i64,
 ) -> Result<UsageSnapshot, String> {
     let conn = crate::conversation_store::db_conn()?;
-    usage_query_conn(&conn, range, time_zone, tz_offset_ms)
+    usage_query_conn(&conn, range, time_zone, tz_offset_ms, offset_days)
 }
 
 fn utc_date_from_day_index(day_index: i64) -> String {
@@ -562,6 +670,7 @@ pub(crate) fn usage_query_conn(
     range: &str,
     time_zone: &str,
     tz_offset_ms: i64,
+    offset_days: i64,
 ) -> Result<UsageSnapshot, String> {
     let now_ms = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -863,15 +972,25 @@ pub(crate) fn usage_query_conn(
         .collect();
 
     // ---- 范围内来源分布（⑧）----
+    // 来源维度窗口（下钻⑧ v2）：offset_days>0 时统计 [now-(span+offset), now-offset) 的
+    // 前置周期（「对比上一期」用）；range=all 时偏移无意义按 0 处理。
+    let span_days: i64 = match range {
+        "7d" => 7,
+        "30d" => 30,
+        _ => 0,
+    };
+    let offset = if span_days > 0 { offset_days.max(0) } else { 0 };
+    let src_since = now_ms - (span_days + offset) * 24 * 3600 * 1000;
+    let src_upper = if offset > 0 { now_ms - offset * 24 * 3600 * 1000 } else { i64::MAX };
     let mut src_stmt = conn
         .prepare(
             "SELECT query_source, SUM(total_tokens), COUNT(*)
-             FROM model_usage WHERE started_at >= ?1
+             FROM model_usage WHERE started_at >= ?1 AND started_at < ?2
              GROUP BY query_source ORDER BY SUM(total_tokens) DESC",
         )
         .map_err(|e| e.to_string())?;
     let src_rows: Vec<(String, i64, i64)> = src_stmt
-        .query_map(rusqlite::params![since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .query_map(rusqlite::params![src_since, src_upper], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .map_err(|e| e.to_string())?
         .collect::<Result<_, _>>()
         .map_err(|e| e.to_string())?;
@@ -891,12 +1010,12 @@ pub(crate) fn usage_query_conn(
     let mut sm_stmt = conn
         .prepare(
             "SELECT query_source, model, SUM(total_tokens)
-             FROM model_usage WHERE started_at >= ?1
+             FROM model_usage WHERE started_at >= ?1 AND started_at < ?2
              GROUP BY query_source, model ORDER BY SUM(total_tokens) DESC",
         )
         .map_err(|e| e.to_string())?;
     let sm_rows: Vec<(String, String, i64)> = sm_stmt
-        .query_map(rusqlite::params![since], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+        .query_map(rusqlite::params![src_since, src_upper], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
         .map_err(|e| e.to_string())?
         .collect::<Result<_, _>>()
         .map_err(|e| e.to_string())?;
@@ -969,10 +1088,11 @@ pub async fn usage_snapshot(
     range: String,
     time_zone: String,
     tz_offset_ms: i64,
+    offset_days: Option<i64>,
 ) -> Result<UsageSnapshot, String> {
     tauri::async_runtime::spawn_blocking(move || {
         usage_backfill_sync()?;
-        usage_query_sync(&range, &time_zone, tz_offset_ms)
+        usage_query_sync(&range, &time_zone, tz_offset_ms, offset_days.unwrap_or(0))
     })
     .await
     .map_err(|e| e.to_string())?

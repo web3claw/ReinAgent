@@ -1,14 +1,18 @@
 /**
- * 用量来源面板（ROADMAP ⑧）：ZCode 复刻面板下方的增量区——来源分布环形 +
- * 来源×模型堆叠条 + 7×24 周热力图。数据经 useAppUsageStats("all")（独立实例，
- * 不侵入复刻文件）；Rust usage_snapshot 的 sources/sourceModels/weekHourly 增量字段
- * 用交叉类型断言读取（复刻 types.ts 保持零改动）。
+ * 用量来源面板（ROADMAP ⑧ + v2 下钻增强）：ZCode 复刻面板下方的增量区——
+ * 范围选择（7d/30d/all + 对比上一期开关）+ 来源分布环形（点击行 → 明细）+
+ * 来源×模型堆叠条（色段点击 → 明细过滤）+ 对比表 + 7×24 周热力图。
+ *
+ * 数据经 useAppUsageStats(range)（独立实例，不侵入 ZCode 复刻文件）；对比上期 =
+ * 同 range 再查一次 usage_snapshot({offsetDays: 窗口天数})（Rust 侧仅来源两维偏移）。
+ * 明细走 usage_details（30 天保留期——超窗如实提示，不另改保留期）。
  */
 
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { useTranslation, type TranslationKey } from "../../i18n";
-import { useAppUsageStats } from "./usage-stats/useAppUsageStats";
-import type { AppUsageSnapshot } from "./usage-stats/types";
+import type { AppUsageRange } from "./usage-stats/types";
+import type { AppUsageSnapshot as UsageSnapshot } from "./usage-stats/types";
 
 interface SourceRow {
   source: string;
@@ -27,11 +31,54 @@ interface WeekHourCell {
   totalTokens: number;
   level: number;
 }
-type SourceExtras = AppUsageSnapshot & {
+type SourceExtras = UsageSnapshot & {
   sources?: SourceRow[];
   sourceModels?: SourceModelRow[];
   weekHourly?: { maxTokens: number; cells: WeekHourCell[] };
 };
+
+export interface UsageDetailRow {
+  id: string;
+  querySource: string;
+  provider: string;
+  model: string;
+  startedAt: number;
+  durationMs: number | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  totalTokens: number;
+}
+export interface UsageDetailsResult {
+  rows: UsageDetailRow[];
+  total: number;
+  sumTokens: number;
+}
+export interface UsageDetailsFilter {
+  source?: string;
+  model?: string;
+  days?: number;
+  limit?: number;
+  offset?: number;
+}
+
+const DETAIL_PAGE = 50;
+const RANGE_DAYS: Record<Exclude<AppUsageRange, "all">, number> = { "7d": 7, "30d": 30 };
+
+/** 明细查询（浏览器模式/失败如实抛） */
+export async function fetchUsageDetails(f: UsageDetailsFilter): Promise<UsageDetailsResult> {
+  return invoke<UsageDetailsResult>("usage_details", { args: f });
+}
+
+/** 来源本期/上期增减：新增/消失特判，其余百分比（≥10% 取整保精度） */
+export function compareDelta(cur: number, prev: number): { text: string; dir: "up" | "down" | "flat" | "new" | "gone" } {
+  if (cur === 0 && prev === 0) return { text: "0%", dir: "flat" };
+  if (prev === 0) return { text: "", dir: "new" };
+  if (cur === 0) return { text: "", dir: "gone" };
+  const pct = ((cur - prev) / prev) * 100;
+  const rounded = Math.abs(pct) >= 10 ? Math.round(pct) : Math.round(pct * 10) / 10;
+  return { text: `${pct > 0 ? "+" : ""}${rounded}%`, dir: pct > 0 ? "up" : pct < 0 ? "down" : "flat" };
+}
 
 const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
   chat: "usageSrcChat",
@@ -44,6 +91,8 @@ const SOURCE_LABEL_KEYS: Record<string, TranslationKey> = {
   embedding: "usageSrcEmbedding",
   "commit-message": "usageSrcCommitMessage",
   "prompt-enhance": "usageSrcPromptEnhance",
+  "graph-extract": "usageSrcGraphExtract",
+  wiki: "usageSrcWiki",
 };
 
 /** 环形/堆叠段色：复用 usage 图表色板变量（chart-1..6 循环） */
@@ -65,14 +114,59 @@ function fmtTokens(n: number): string {
 
 const WEEKDAY_KEYS: TranslationKey[] = ["usageWeekdaySun", "usageWeekdayMon", "usageWeekdayTue", "usageWeekdayWed", "usageWeekdayThu", "usageWeekdayFri", "usageWeekdaySat"];
 
+interface DetailPanelState {
+  filter: UsageDetailsFilter;
+  result: UsageDetailsResult | null;
+  page: number;
+  loading: boolean;
+  error: string | null;
+}
+
 export function UsageSourceSection() {
   const { t } = useTranslation();
-  const { snapshot, loading, error } = useAppUsageStats("all");
-  const data = snapshot as SourceExtras | null;
+  const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
+  const [range, setRange] = useState<AppUsageRange>("30d");
+  const [compareOn, setCompareOn] = useState(false);
+  const [cur, setCur] = useState<SourceExtras | null>(null);
+  const [prev, setPrev] = useState<SourceExtras | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [detail, setDetail] = useState<DetailPanelState | null>(null);
+  const reqVersion = useRef(0);
 
-  const sources = useMemo(() => data?.sources ?? [], [data]);
-  const sourceModels = useMemo(() => data?.sourceModels ?? [], [data]);
-  const weekHourly = data?.weekHourly;
+  const load = useCallback(async () => {
+    if (!isTauri) return;
+    const version = ++reqVersion.current;
+    setLoading(true);
+    setError(null);
+    const timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    const tzOffsetMs = -new Date().getTimezoneOffset() * 60_000;
+    try {
+      const spanDays = (RANGE_DAYS as Partial<Record<AppUsageRange, number>>)[range] ?? 0;
+      const offsetDays = compareOn && range !== "all" ? spanDays : 0;
+      const [curSnap, prevSnap] = await Promise.all([
+        invoke<SourceExtras>("usage_snapshot", { range, timeZone, tzOffsetMs, offsetDays: 0 }),
+        offsetDays > 0
+          ? invoke<SourceExtras>("usage_snapshot", { range, timeZone, tzOffsetMs, offsetDays })
+          : Promise.resolve(null),
+      ]);
+      if (version !== reqVersion.current) return;
+      setCur(curSnap);
+      setPrev(offsetDays > 0 ? prevSnap : null);
+    } catch (err) {
+      if (version === reqVersion.current) setError(String(err));
+    } finally {
+      if (version === reqVersion.current) setLoading(false);
+    }
+  }, [range, compareOn, isTauri]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const sources = useMemo(() => cur?.sources ?? [], [cur]);
+  const sourceModels = useMemo(() => cur?.sourceModels ?? [], [cur]);
+  const weekHourly = cur?.weekHourly;
 
   // 来源×模型 → 每来源一行（段=模型）
   const stackedRows = useMemo(() => {
@@ -107,14 +201,61 @@ export function UsageSourceSection() {
     return rows;
   }, [weekHourly]);
 
+  // 对比表：并集来源逐行本期/上期/增减
+  const compareRows = useMemo(() => {
+    if (!compareOn || !prev) return [];
+    const curMap = new Map<string, SourceRow>(sources.map((s) => [s.source, s]));
+    const prevMap = new Map<string, SourceRow>((prev.sources ?? []).map((s) => [s.source, s]));
+    const keys = [...new Set([...curMap.keys(), ...prevMap.keys()])];
+    return keys
+      .map((k) => {
+        const c = curMap.get(k)?.totalTokens ?? 0;
+        const p = prevMap.get(k)?.totalTokens ?? 0;
+        return { source: k, cur: c, prev: p, delta: compareDelta(c, p) };
+      })
+      .sort((a, b) => b.cur - a.cur);
+  }, [compareOn, prev, sources]);
+
   const label = (source: string): string => {
     const key = SOURCE_LABEL_KEYS[source];
     return key ? t(key) : source;
   };
 
+  const openDetails = useCallback(
+    (filter: UsageDetailsFilter) => {
+      const days = range === "all" ? 30 : RANGE_DAYS[range] ?? 30;
+      setDetail({ filter: { ...filter, days, limit: DETAIL_PAGE, offset: 0 }, result: null, page: 0, loading: true, error: null });
+    },
+    [range],
+  );
+
+  // 明细面板数据拉取（page 变化重拉）
+  useEffect(() => {
+    if (!detail || !isTauri) return;
+    let cancelled = false;
+    void fetchUsageDetails(detail.filter)
+      .then((r) => {
+        if (!cancelled) setDetail((d) => (d ? { ...d, result: r, loading: false, error: null } : d));
+      })
+      .catch((err) => {
+        if (!cancelled) setDetail((d) => (d ? { ...d, loading: false, error: String(err) } : d));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [detail?.filter, isTauri]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const detailPage = useCallback(
+    (page: number) => {
+      setDetail((d) =>
+        d ? { ...d, page, loading: true, filter: { ...d.filter, offset: page * DETAIL_PAGE } } : d,
+      );
+    },
+    [],
+  );
+
   if (error) {
-    // 浏览器模式（无 Tauri invoke）显示桌面端引导；真实错误如实展示（no-fallback）
-    const isWeb = typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window);
+    const isWeb = !isTauri;
     return (
       <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)]">
         <div className="font-medium mb-1">{t("usageSourceTitle")}</div>
@@ -123,7 +264,15 @@ export function UsageSourceSection() {
     );
   }
 
-  if (loading && !data) {
+  if (!isTauri) {
+    return (
+      <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)]">
+        <p className="text-sm text-[var(--text-dim)]">{t("usageDesktopOnly")}</p>
+      </div>
+    );
+  }
+
+  if (loading && !cur) {
     return (
       <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)]">
         <p className="text-sm text-[var(--text-dim)]">{t("usageLoading")}</p>
@@ -132,13 +281,43 @@ export function UsageSourceSection() {
   }
 
   const hasAny = sources.length > 0;
+  const rangeKeys: { key: AppUsageRange; labelKey: TranslationKey }[] = [
+    { key: "7d", labelKey: "usageRange7d" },
+    { key: "30d", labelKey: "usageRange30d" },
+    { key: "all", labelKey: "usageRangeAll" },
+  ];
 
   return (
     <div className="space-y-4">
-      {/* 来源分布（环形 + 图例） */}
+      {/* 范围 + 对比开关 */}
+      <div className="flex flex-wrap items-center gap-2 px-1">
+        {rangeKeys.map(({ key, labelKey }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => {
+              setRange(key);
+              // all 范围无「上一期」语义（账目仅 30 天且窗口无穷），强制关对比
+              if (key === "all") setCompareOn(false);
+            }}
+            className={`rounded-lg border px-2.5 py-1 text-xs ${range === key ? "border-[var(--brand)] text-[var(--brand)]" : "border-[var(--border)] text-[var(--text-dim)] hover:text-[var(--text)]"}`}
+          >
+            {t(labelKey)}
+          </button>
+        ))}
+        <span className="flex-1" />
+        <label className="flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
+          <input type="checkbox" checked={compareOn} disabled={range === "all"} onChange={(e) => setCompareOn(e.target.checked)} className="accent-[var(--brand)] disabled:opacity-40" />
+          {t("usageComparePrev")}
+        </label>
+      </div>
+
+      {/* 来源分布（环形 + 图例，点击行 → 明细） */}
       <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)]">
         <div className="font-medium">{t("usageSourceTitle")}</div>
-        <div className="text-sm text-[var(--text-dim)] mb-3">{t("usageSourceDesc")}</div>
+        <div className="text-sm text-[var(--text-dim)] mb-3">
+          {range === "all" ? t("usageSourceNote30d") : t("usageSourceDesc")}
+        </div>
         {!hasAny ? (
           <p className="text-sm text-[var(--text-dim)]">{t("usageEmpty")}</p>
         ) : (
@@ -171,11 +350,18 @@ export function UsageSourceSection() {
             </svg>
             <ul className="flex-1 min-w-0 w-full space-y-1">
               {sources.map((s, i) => (
-                <li key={s.source} className="flex items-center gap-2 text-sm">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: chartColor(i) }} />
-                  <span className="min-w-0 flex-1 truncate">{label(s.source)}</span>
-                  <span className="tabular-nums text-[var(--text-dim)]">{fmtTokens(s.totalTokens)}</span>
-                  <span className="w-14 text-right tabular-nums text-[var(--text-dim)]">{(s.share * 100).toFixed(1)}%</span>
+                <li key={s.source}>
+                  <button
+                    type="button"
+                    onClick={() => openDetails({ source: s.source })}
+                    className="flex w-full items-center gap-2 rounded px-1 py-0.5 text-left text-sm hover:bg-[var(--surface-hover)]"
+                    title={t("usageDrillHint")}
+                  >
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: chartColor(i) }} />
+                    <span className="min-w-0 flex-1 truncate">{label(s.source)}</span>
+                    <span className="tabular-nums text-[var(--text-dim)]">{fmtTokens(s.totalTokens)}</span>
+                    <span className="w-14 text-right tabular-nums text-[var(--text-dim)]">{(s.share * 100).toFixed(1)}%</span>
+                  </button>
                 </li>
               ))}
             </ul>
@@ -183,7 +369,41 @@ export function UsageSourceSection() {
         )}
       </div>
 
-      {/* 来源 × 模型（横向堆叠条） */}
+      {/* 对比上一期表 */}
+      {compareOn && compareRows.length > 0 ? (
+        <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)]">
+          <div className="font-medium">{t("usageCompareTitle")}</div>
+          <div className="text-sm text-[var(--text-dim)] mb-2">{t("usageCompareDesc")}</div>
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-[var(--text-dim)]">
+                <th className="py-1 font-normal">{t("usageCompareColSource")}</th>
+                <th className="py-1 text-right font-normal">{t("usageCompareColCur")}</th>
+                <th className="py-1 text-right font-normal">{t("usageCompareColPrev")}</th>
+                <th className="py-1 text-right font-normal">{t("usageCompareColDelta")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {compareRows.map((r) => (
+                <tr key={r.source} className="border-t border-[var(--border)]">
+                  <td className="py-1">{label(r.source)}</td>
+                  <td className="py-1 text-right tabular-nums">{fmtTokens(r.cur)}</td>
+                  <td className="py-1 text-right tabular-nums text-[var(--text-dim)]">{fmtTokens(r.prev)}</td>
+                  <td
+                    className={`py-1 text-right tabular-nums ${
+                      r.delta.dir === "up" ? "text-[var(--diff-removed)]" : r.delta.dir === "down" ? "text-[var(--diff-added)]" : r.delta.dir === "new" ? "text-[var(--warn-text)]" : "text-[var(--text-dim)]"
+                    }`}
+                  >
+                    {r.delta.dir === "new" ? t("usageCompareNew") : r.delta.dir === "gone" ? t("usageCompareGone") : r.delta.text}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+
+      {/* 来源 × 模型（色段点击 → 明细过滤） */}
       {stackedRows.length > 0 ? (
         <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)]">
           <div className="font-medium">{t("usageSourceModelTitle")}</div>
@@ -192,14 +412,19 @@ export function UsageSourceSection() {
             {stackedRows.map((row) => (
               <div key={row.source}>
                 <div className="flex items-center justify-between text-xs mb-1">
-                  <span>{label(row.source)}</span>
+                  <button type="button" onClick={() => openDetails({ source: row.source })} className="text-[var(--text)] hover:underline" title={t("usageDrillHint")}>
+                    {label(row.source)}
+                  </button>
                   <span className="tabular-nums text-[var(--text-dim)]">{fmtTokens(row.total)}</span>
                 </div>
                 <div className="flex h-3 w-full overflow-hidden rounded-full bg-[var(--surface-hover)]">
                   {row.models.map((m, i) => (
-                    <div
+                    <button
                       key={m.model}
-                      title={`${m.model}: ${fmtTokens(m.tokens)}`}
+                      type="button"
+                      onClick={() => openDetails({ source: row.source, model: m.model })}
+                      title={`${m.model}: ${fmtTokens(m.tokens)} · ${t("usageDrillHint")}`}
+                      className="cursor-pointer hover:brightness-125"
                       style={{ width: `${(m.tokens / row.total) * 100}%`, background: chartColor(i) }}
                     />
                   ))}
@@ -219,6 +444,94 @@ export function UsageSourceSection() {
         </div>
       ) : null}
 
+      {/* 明细下钻面板 */}
+      {detail ? (
+        <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)]" data-testid="usage-details-panel">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="text-sm font-medium">{t("usageDetailsTitle")}</span>
+            {detail.filter.source ? (
+              <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-[10px] text-[var(--text-dim)]">
+                {t("usageFilterSource")}={label(detail.filter.source)}
+              </span>
+            ) : null}
+            {detail.filter.model ? (
+              <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-[10px] text-[var(--text-dim)]">
+                {t("usageFilterModel")}={detail.filter.model}
+              </span>
+            ) : null}
+            <span className="rounded-full bg-[var(--surface-hover)] px-2 py-0.5 text-[10px] text-[var(--text-dim)]">
+              {t("usageFilterDays")}={detail.filter.days}{t("usageUnitDays")}
+            </span>
+            <span className="flex-1" />
+            <button type="button" onClick={() => setDetail(null)} className="rounded px-1.5 py-0.5 text-xs text-[var(--text-dim)] hover:text-[var(--text)]" aria-label={t("usageDetailsClose")}>
+              ✕
+            </button>
+          </div>
+          {detail.error ? (
+            <p className="text-xs text-[var(--danger)]">{detail.error}</p>
+          ) : detail.loading ? (
+            <p className="text-xs text-[var(--text-dim)]">{t("usageLoading")}</p>
+          ) : !detail.result || detail.result.rows.length === 0 ? (
+            <p className="text-xs text-[var(--text-dim)]">{t("usageDetailsEmpty")}</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[560px] text-[11px]" data-testid="usage-details-table">
+                  <thead>
+                    <tr className="text-left text-[var(--text-dim)]">
+                      <th className="py-1 pr-2 font-normal">{t("usageColTime")}</th>
+                      <th className="py-1 pr-2 font-normal">{t("usageColSource")}</th>
+                      <th className="py-1 pr-2 font-normal">{t("usageColModel")}</th>
+                      <th className="py-1 pr-2 text-right font-normal">{t("usageColInput")}</th>
+                      <th className="py-1 pr-2 text-right font-normal">{t("usageColOutput")}</th>
+                      <th className="py-1 pr-2 text-right font-normal">{t("usageColCacheRead")}</th>
+                      <th className="py-1 pr-2 text-right font-normal">{t("usageColTotal")}</th>
+                      <th className="py-1 text-right font-normal">{t("usageColDuration")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.result.rows.map((r) => (
+                      <tr key={r.id} className="border-t border-[var(--border)]">
+                        <td className="py-1 pr-2 whitespace-nowrap text-[var(--text-dim)]">{new Date(r.startedAt).toLocaleString()}</td>
+                        <td className="py-1 pr-2">{label(r.querySource)}</td>
+                        <td className="py-1 pr-2 max-w-32 truncate" title={r.model || "—"}>{r.model || "—"}</td>
+                        <td className="py-1 pr-2 text-right tabular-nums">{r.inputTokens.toLocaleString()}</td>
+                        <td className="py-1 pr-2 text-right tabular-nums">{r.outputTokens.toLocaleString()}</td>
+                        <td className="py-1 pr-2 text-right tabular-nums text-[var(--text-dim)]">{r.cacheReadTokens.toLocaleString()}</td>
+                        <td className="py-1 pr-2 text-right tabular-nums font-medium">{r.totalTokens.toLocaleString()}</td>
+                        <td className="py-1 text-right tabular-nums text-[var(--text-dim)]">{r.durationMs != null ? `${(r.durationMs / 1000).toFixed(1)}s` : "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--text-dim)]">
+                <span>
+                  {t("usageDetailsSummary", )
+                    .replace("{n}", String(detail.result.total))
+                    .replace("{tokens}", fmtTokens(detail.result.sumTokens))}
+                  {detail.result.total > DETAIL_PAGE ? ` · ${t("usageDetailsWindowNote")}` : ""}
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <button type="button" disabled={detail.page === 0} onClick={() => detailPage(detail.page - 1)} className="rounded border border-[var(--border)] px-1.5 py-0.5 hover:text-[var(--text)] disabled:opacity-40">
+                    ‹
+                  </button>
+                  <span>{detail.page + 1}/{Math.max(1, Math.ceil(detail.result.total / DETAIL_PAGE))}</span>
+                  <button
+                    type="button"
+                    disabled={(detail.page + 1) * DETAIL_PAGE >= detail.result.total}
+                    onClick={() => detailPage(detail.page + 1)}
+                    className="rounded border border-[var(--border)] px-1.5 py-0.5 hover:text-[var(--text)] disabled:opacity-40"
+                  >
+                    ›
+                  </button>
+                </span>
+              </div>
+            </>
+          )}
+        </div>
+      ) : null}
+
       {/* 7×24 周热力图 */}
       {weekRows.length === 7 ? (
         <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)]">
@@ -226,7 +539,6 @@ export function UsageSourceSection() {
           <div className="text-sm text-[var(--text-dim)] mb-3">{t("usageWeekHourDesc")}</div>
           <div className="overflow-x-auto">
             <div className="min-w-[560px]">
-              {/* 小时刻度：每 6 小时一档 */}
               <div className="flex pl-9 text-[10px] text-[var(--text-dim)] mb-1">
                 {Array.from({ length: 24 }, (_, h) => (
                   <div key={h} className="flex-1 text-center">

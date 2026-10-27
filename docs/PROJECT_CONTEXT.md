@@ -2716,3 +2716,25 @@ graph_get（全量，实体 2000/关系 6000 上限）/ graph_apply_extraction�
 - **过程抓出的真实问题**：①ssh_run 对非 0 退出返回 Ok（exit code 是业务语义）——setup 类 bootstrap 命令必须自查 code；②两真实测试并行跑因 env 污染互踩（REINAGENT_SSH_PROXY 全局态）——合并单测顺序执行；③stderr 首行是 post-quantum 横幅——错误抽取过滤 `**`/Warning 行；④远端测试机无 git——yum 真实安装后通过
 - 全量：Rust 329 绿 + 前端 52 绿 + tsc 0
 - 已知边界：SSH 工作区无 checkpoint/worktree/PR 面板/Wiki/知识库（如实提示，v2 候选）；终端为 ssh -t 远端 shell（本地 shell 配置不生效）
+
+## 二十六、用量下钻增强（⑧ v2 收口，2026-10-27 落地）
+
+UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在来源区 + 新 Rust 查询）：
+
+### 范围与对比上期
+- 顶部范围选择器：近 7 天 / 近 30 天 / 全部（默认 30d；账目仅保留 30 天——all 显示「账目仅保留近 30 天」注）
+- 「对比上一期」开关：`usage_snapshot` 新增 `offsetDays` 参数，**仅作用于 sources/sourceModels 两维**（Rust 侧窗口 `src_since = now-(span+offset)` 上界 `src_upper = now-offset`；heatmap/daily/models 不受影响），前端同 range 并发拉当期+上期两次
+- **range=all 无「上一期」语义**（窗口无穷 + 30 天账目）→ 开关禁用 + 切 all 自动关闭（offsetDays=0 时前端连 prev 请求都不发）
+- 对比表：来源本期/上期/增减；±10% 内一位小数、之外取整；新增（prev=0）/消失（cur=0）特判为 warn/dim 文案；up=红（用量涨了）down=绿
+
+### 明细下钻
+- 新 Rust 命令 `usage_details(args{source?,model?,days?,limit,offset})`：model_usage 明细行分页（时间倒序），返回 total/sumTokens 供分页与汇总；`?2 IS NULL OR` 可空过滤模式；days clamp(1,60)
+- 交互：堆叠条每个**色段可点击**（source+model 过滤）；来源行标签/环形图例点击（仅 source 过滤）→ 下方内嵌明细面板：过滤条件徽标行（来源/模型/近 N 天）+ ✕ 关闭、8 列表格（时间/来源/模型/输入/输出/缓存读/合计/耗时）、‹页码/总页›分页（50/页）
+- 保留期边界：days 最大 60 但账目 30 天滚动 prune——明细面板空态如实「超 30 天已清理」，不偷改保留策略
+- 模型「—」（空 model 列）在堆叠条点击时**不过滤模型**（映射 null 防误查）——Rust 侧 `*s != "—"` 同款防御
+
+### 测试
+- Rust：`usage_stats_tests +1`（details 分页/total 不受 offset 影响/模型+来源过滤/空集 + offset_days 对比窗口双查询 m4 落上期）；**Red Check 双破坏**：明细 OFFSET 写死 0 → 真实红；对比窗口 src_since 丢 offset → 真实红
+- 前端：`usageDrilldown.test.mjs` 2 例（compareDelta 五分支 + 精度阈值；bun 可直跑含 JSX 的 tsx 模块）；**Red Check**：new 分支改回 up → 真实红；all 范围守卫是开发中自查补的（首版「对比」在 all 下会显示两份相同数据误导）
+- tsc 0；全量 Rust 330 绿 + 前端 52+2 绿
+- 来源标签补 `graph-extract`/`wiki`（⑨⑩ 上线后快照里会出现但 UI 缺标签，顺手补全双语）

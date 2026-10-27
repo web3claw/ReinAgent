@@ -1,7 +1,7 @@
 //! usage_stats 单测：回填幂等 / ZCode 快照形状（summary streak/peak/heatmap/日分模型/模型 share）。
 //! 运行：cargo test --lib usage_stats
 
-use crate::usage_stats::{usage_backfill_conn, usage_query_conn, MODEL_USAGE_SCHEMA};
+use crate::usage_stats::{usage_backfill_conn, usage_details_query, usage_query_conn, MODEL_USAGE_SCHEMA, UsageDetailsArgs};
 use rusqlite::Connection;
 
 fn setup_db() -> Connection {
@@ -132,7 +132,7 @@ fn snapshot_shape_matches_zcode_contract() {
     insert_assistant_api_message(&conn, "t1", "m3", now - 3 * 86_400_000, "p", "model-a", r#"{"input":1000,"output":100,"cacheRead":0,"cacheWrite":0}"#);
     usage_backfill_conn(&mut conn).unwrap();
 
-    let snap = usage_query_conn(&conn, "all", "UTC", 0).unwrap();
+    let snap = usage_query_conn(&conn, "all", "UTC", 0, 0).unwrap();
     assert_eq!(snap.range, "all");
     assert_eq!(snap.source, "agent-db");
     assert_eq!(snap.summary.total_tokens, 1430);
@@ -183,10 +183,10 @@ fn query_range_filters_by_since() {
     insert_assistant_api_message(&conn, "t1", "old1", now - 8 * 24 * 3600 * 1000, "p", "m", r#"{"input":999,"output":99,"cacheRead":0,"cacheWrite":0}"#);
     usage_backfill_conn(&mut conn).unwrap();
 
-    let week = usage_query_conn(&conn, "7d", "UTC", 0).unwrap();
+    let week = usage_query_conn(&conn, "7d", "UTC", 0, 0).unwrap();
     assert_eq!(week.models[0].request_count, 1, "7d 只含新行");
     assert_eq!(week.daily_model_usage.len(), 7, "7d 补齐连续 7 天每日序列（含 0 数据天）");
-    let all = usage_query_conn(&conn, "all", "UTC", 0).unwrap();
+    let all = usage_query_conn(&conn, "all", "UTC", 0, 0).unwrap();
     assert_eq!(all.models[0].request_count, 2);
 }
 
@@ -226,7 +226,7 @@ fn reset_watermark_prevents_reimport_of_old_facts() {
     assert_eq!(count, 0, "清零后旧事实不重灌");
 
     // message 表直算指标同样受水位线约束：最长聊天时长/工具调用归零
-    let snap = usage_query_conn(&conn, "all", "UTC", 0).unwrap();
+    let snap = usage_query_conn(&conn, "all", "UTC", 0, 0).unwrap();
     assert_eq!(snap.summary.longest_session_ms, 0, "清零后旧会话时长不计");
     assert_eq!(snap.summary.tool_call_count, 0, "清零后旧工具调用不计");
 
@@ -245,7 +245,7 @@ fn reset_watermark_prevents_reimport_of_old_facts() {
         .query_row("SELECT COUNT(*) FROM model_usage", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 1, "只有新事实入账");
-    let snap = usage_query_conn(&conn, "all", "UTC", 0).unwrap();
+    let snap = usage_query_conn(&conn, "all", "UTC", 0, 0).unwrap();
     assert_eq!(snap.summary.tool_call_count, 1, "新工具调用入账");
 }
 
@@ -294,7 +294,7 @@ fn source_and_source_model_and_week_hourly_aggregations() {
         rusqlite::params![now - 1000],
     ).unwrap();
     usage_backfill_conn(&mut conn).unwrap();
-    let snap = usage_query_conn(&conn, "7d", "UTC", 0).unwrap();
+    let snap = usage_query_conn(&conn, "7d", "UTC", 0, 0).unwrap();
 
     // 来源分布：kanban 45 / note-ai 2，share 总和 = 1
     assert_eq!(snap.sources.len(), 2);
@@ -327,9 +327,64 @@ fn usage_record_direct_rows_have_unique_ids() {
             rusqlite::params![format!("direct:note-ai:{now}:{i}"), now],
         ).unwrap();
     }
-    let snap = usage_query_conn(&conn, "7d", "UTC", 0).unwrap();
+    let snap = usage_query_conn(&conn, "7d", "UTC", 0, 0).unwrap();
     assert_eq!(snap.sources[0].source, "note-ai");
     assert_eq!(snap.sources[0].request_count, 3);
     assert_eq!(snap.sources[0].total_tokens, 6);
 }
 
+
+#[test]
+fn details_pagination_and_offset_compare_window() {
+    let mut conn = setup_db();
+    let now = now_ms();
+    // 本期（近 3 天）：chat 2 条；上期（4-7 天前）：chat 1 条 + embedding 1 条
+    insert_task(&mut conn, "t1", None);
+    insert_assistant_api_message(&conn, "t1", "m1", now - 86_400_000, "p", "glm-x", r#"{"input":10,"output":5}"#);
+    insert_assistant_api_message(&conn, "t1", "m2", now - 2 * 86_400_000, "p", "glm-x", r#"{"input":20,"output":10}"#);
+    insert_assistant_api_message(&conn, "t1", "m3", now - 5 * 86_400_000, "p", "glm-x", r#"{"input":7,"output":3}"#);
+    // 上期窗口（7-14 天前）一条：m4
+    insert_assistant_api_message(&conn, "t1", "m4", now - 10 * 86_400_000, "p", "glm-x", r#"{"input":4,"output":1}"#);
+    usage_backfill_conn(&mut conn).unwrap();
+
+    // 明细：过滤 chat 全窗 3 条、时间倒序；分页 offset=2 只剩最旧一条
+    let d1 = usage_details_query(
+        &conn,
+        &UsageDetailsArgs { source: Some("chat".into()), model: None, days: Some(30), limit: Some(50), offset: None },
+    )
+    .unwrap();
+    assert_eq!(d1.total, 4);
+    assert_eq!(d1.sum_tokens, (10 + 5) + (20 + 10) + (7 + 3) + (4 + 1));
+    assert!(d1.rows[0].started_at >= d1.rows[1].started_at, "时间倒序");
+    let d2 = usage_details_query(
+        &conn,
+        &UsageDetailsArgs { source: Some("chat".into()), model: None, days: Some(30), limit: Some(50), offset: Some(2) },
+    )
+    .unwrap();
+    assert_eq!(d2.rows.len(), 2, "offset=2 → 第 3、4 条（时间序）");
+    assert_eq!(d2.total, 4, "total 是过滤条件总数不受分页影响");
+    // 模型过滤 + 未知来源空集
+    let d3 = usage_details_query(
+        &conn,
+        &UsageDetailsArgs { source: Some("chat".into()), model: Some("glm-x".into()), days: None, limit: None, offset: None },
+    )
+    .unwrap();
+    assert_eq!(d3.total, 4);
+    let d4 = usage_details_query(
+        &conn,
+        &UsageDetailsArgs { source: Some("note-ai".into()), model: None, days: None, limit: None, offset: None },
+    )
+    .unwrap();
+    assert_eq!(d4.total, 0);
+
+    // 对比窗口：7d + offset_days=7 → 上期只含 m3（10 tokens）
+    let cur = usage_query_conn(&conn, "7d", "UTC", 0, 0).unwrap();
+    let prev = usage_query_conn(&conn, "7d", "UTC", 0, 7).unwrap();
+    let cur_chat = cur.sources.iter().find(|s| s.source == "chat").unwrap();
+    let prev_chat = prev.sources.iter().find(|s| s.source == "chat").unwrap();
+    // 本期窗口 [now-7d, now)：m1/m2/m3；上期窗口 [now-14d, now-7d)：m4
+    assert_eq!(cur_chat.request_count, 3, "本期 3 条");
+    assert_eq!(cur_chat.total_tokens, 55);
+    assert_eq!(prev_chat.request_count, 1, "上期 1 条（m4）");
+    assert_eq!(prev_chat.total_tokens, 5);
+}

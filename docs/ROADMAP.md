@@ -116,7 +116,7 @@ ReinAgent 笔记是文件制：版本历史可落 `.ReinAgent/notes-versions/` �
 
 ## 三、P2 借鉴项
 
-### ⑧ 用量分析页 ✅（2026-10-25 落地，实现细节见 PROJECT_CONTEXT「二十一、用量来源维度」节。落地差异：来源打标走 task payload.source + 六条独立调用链 usage_record 记账；明细分页列表用户拍板不做；7×24 周热力图做了）
+### ⑧ 用量分析页 ✅（2026-10-25 落地 + 2026-10-27 v2 下钻收口〔条形点击明细过滤/对比上期〕见 PROJECT_CONTEXT「二十六、用量下钻增强」节。落地差异：来源打标走 task payload.source + 六条独立调用链 usage_record 记账；明细分页列表用户拍板不做；7×24 周热力图做了）
 
 Hetu 单表 `LlmUsageLog` 十二种来源记账（chat/work/kanban/workflow/wiki/note-ai/skill/graph/search/scheduled/proxy）+ RefId + 延迟；聚合出概览/近 7 天趋势/365 天热力图/7×24 周热力图/按模型/按来源/来源×模型堆叠。**两家都只记 token 不记成本**。ReinAgent 已有 api_message 原件持久化 + usage_reset 水位线 + SessionStatsBar，缺全景页与「来源」维度（补 source 字段即可）。
 
