@@ -217,4 +217,4 @@ PPTX / PDF / Office / 媒体预览引擎（PreviewPane 模式壳已移植、渲�
 ### E. 仓库运营
 
 - **Dependabot**：加 `.github/dependabot.yml`（npm/cargo 每周检查）——依赖安全更新 + Contributors 面显示 dependabot[bot]
-- 发版：main 现有 2 个未发版提交（62abfa3 用量下钻、0b3c5bd 图谱增强），攒够一批发 v0.2.16
+- 发版：v0.2.17 桌面原生走查缺陷修复与 Computer Use 闭环（侧栏项目菜单、笔记版本原位 Toggle、知识源解析）

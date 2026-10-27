@@ -279,6 +279,17 @@ export function ProjectList({
   // SSH 连接表单（⑫）：+ 按钮菜单第二项；保存 = addProject(ssh:// URL) + 密码入 0600 认证文件
   const [sshFormOpen, setSshFormOpen] = useState(false);
   const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const addMenuRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!addMenuOpen) return;
+    const onPointerDown = (event: PointerEvent) => {
+      if (!addMenuRef.current?.contains(event.target as Node)) {
+        setAddMenuOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    return () => document.removeEventListener("pointerdown", onPointerDown);
+  }, [addMenuOpen]);
   const [sshHost, setSshHost] = useState("");
   const [sshPort, setSshPort] = useState("22");
   const [sshUser, setSshUser] = useState("root");
@@ -497,7 +508,7 @@ export function ProjectList({
         </button>
 
         {/* Action icons on right (Drag handle without title & Add Project button with Tooltip) */}
-        <div className="flex items-center gap-1">
+        <div ref={addMenuRef} className="relative z-50 flex items-center gap-1">
           {/* 6-dot drag handle - without any title tooltip */}
           <div
             onMouseDown={(e) => handleDragStart("projects", e)}
@@ -518,10 +529,30 @@ export function ProjectList({
           </Tooltip>
           {addMenuOpen ? (
             <div className="absolute right-0 top-full z-50 mt-1 w-44 overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] shadow-lg">
-              <button type="button" onClick={(e) => { setAddMenuOpen(false); handleAddProject(e); }} className="block w-full px-3 py-2 text-left text-xs text-[var(--text)] hover:bg-[var(--sidebar-hover)]">
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  setAddMenuOpen(false);
+                  handleAddProject(e);
+                }}
+                onClick={(e) => {
+                  setAddMenuOpen(false);
+                  handleAddProject(e);
+                }}
+                className="block w-full px-3 py-2 text-left text-xs text-[var(--text)] hover:bg-[var(--sidebar-hover)]"
+              >
                 {t('sshAddLocal')}
               </button>
-              <button type="button" onClick={openSshForm} className="block w-full px-3 py-2 text-left text-xs text-[var(--text)] hover:bg-[var(--sidebar-hover)]">
+              <button
+                type="button"
+                onPointerDown={(e) => {
+                  e.stopPropagation();
+                  openSshForm();
+                }}
+                onClick={openSshForm}
+                className="block w-full px-3 py-2 text-left text-xs text-[var(--text)] hover:bg-[var(--sidebar-hover)]"
+              >
                 {t('sshAddSsh')}
               </button>
             </div>

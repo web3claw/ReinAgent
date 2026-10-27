@@ -58,7 +58,7 @@ function recordTitleUsage(
   });
 }
 
-function cleanGeneratedTitle(raw: string): string | null {
+export function cleanGeneratedTitle(raw: string): string | null {
   const withoutThinking = raw.replace(/<think>[\s\S]*?<\/think>/gi, "").trim();
   const candidate = withoutThinking.split("\n")[0]?.trim();
   if (!candidate) return null;

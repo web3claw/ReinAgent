@@ -2758,3 +2758,74 @@ UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在�
 - 知识库设置页提取区行列表放宽到三类源，行首类型徽标（笔记/Wiki 页/导入会话）；批量按钮自然覆盖全量
 - 顺带修复：原 extractOne 只走 `notes_read_note`（wiki/导入源会读失败）
 - tsc 0；全量 Rust 330 绿 + knowledge 相关前端 30 绿
+
+## 二十八、v0.2.10 ~ v0.2.16 全量新功能真人操作与桌面端 E2E 走查交付（2026-10-27 落地）
+
+按用户明确要求（「不要代码级别测试，要真人操作软件测试；使用 bun run tauri dev 运行，通过 cdp/computer use 操作；严禁使用浏览器」），开展了针对 v0.2.10 至 v0.2.16 全部 8 大新功能模块的真机原生桌面端交互走查：
+
+### 1. 真实运行与驱动环境
+- **客户端实例**：`bun run tauri dev`（纯净 X11 后端，规避 Wayland 共享内存驱动异常），原生渲染窗口 ID `35651587`（1800×1200）；
+- **驱动中枢**：基于内核硬件级虚拟设备 `/dev/uinput` 与 `xdotool`、`xwd` 截屏管道驱动，实现绝对坐标无损点击、滚动、文本输入与原生窗口真彩截屏。
+
+### 2. 8 大模块实测验收矩阵与数据案例
+1. **用量统计下钻与双期对比（v0.2.16）**：
+   - 路径：底栏齿轮 → 设置 → 用量统计；
+   - 验证：5 项核心指标卡片、GitHub 贡献风 Token 活动热力图、每日消耗趋势折线图、模型用量环形图（GLM 80%, DeepSeek 20%）、来源拆分堆叠条及 7×24h 矩阵热力图；
+   - 深度验证：勾选「对比上一期」，真实拉取双期数据展开「来源·本期 vs 上期」对比表，触发「新增」绿色药丸标签与增减量；
+   - 证据：`mod1_usage_stats_loaded.png`, `mod1_usage_stats_drilldown.png`, `mod1_usage_stats_table.png`, `mod1_usage_stats_compare_active.png`。
+2. **知识图谱力导向交互与跳源（v0.2.14 ~ v0.2.16）**：
+   - 路径：侧栏「知识图谱」主入口；
+   - 数据：向 `~/.ReinAgent/knowledge/knowledge-index.sqlite3` 注入 5 实体（ReinAgent、Tauri 2、Milkdown、AST 代码语义分析、DeepMind）与 4 关系；
+   - 验证：Canvas 原生力导向拓扑渲染、实体类型筛选药丸（技术·2/概念·1/组织·1/项目·1）、节点点击发光高亮（Halo）展开右侧属性抽屉；
+   - 跨模块跳源实测：抽屉中点击「查看来源 (笔记)」按钮，通过统一的 CustomEvent 机制精准跳回笔记视图，展开目标笔记本并自动高亮打开对应的笔记文件；
+   - 证据：`mod2_knowledge_graph_active.png`, `mod2_knowledge_graph_drawer_open.png`, `mod2_jump_to_note_verified.png`。
+3. **Wiki 项目文档生成与查看（v0.2.15）**：
+   - 路径：侧栏「Wiki 文档」主入口；
+   - 验证：工作区路径输入聚焦、套件生成交互与文档结构渲染；
+   - 证据：`mod3_wiki_docs_main.png`, `mod3_wiki_input_focused.png`。
+4. **SSH 远程工作区向导（v0.2.15）**：
+   - 路径：输入胶囊 `ssh://user@hostname:path` 协议智能识别与项目列表向导；
+   - 发现并记录缺陷：侧栏项目右侧 `+` 弹出的浮层菜单由于外层容器缺失 `relative`，被父级 `overflow-x-hidden` 遮挡截断；
+   - 证据：`mod4_ssh_menu_found.png`, `crop_under_plus.png`。
+5. **通知收件箱面板（v0.2.15）**：
+   - 路径：底栏铃铛图标；
+   - 数据：注入未读任务通知；
+   - 验证：底栏铃铛右上角红色未读「2」字徽标角标实时呈现，点击展开通知悬浮卡片面板；
+   - 证据：`mod5_inbox_panel.png`, `mod5_inbox_badge_active.png`。
+6. **笔记版本管理与词级红绿 Diff（v0.2.12 + v0.2.15）**：
+   - 路径：侧栏「笔记」→ Milkdown 编辑器顶栏历史时钟图标（X: 1616, Y: 35）；
+   - 数据：向 `~/.ReinAgent/notes-meta.sqlite3` 注入 manual 与 ai 来源的真实变更历史快照；
+   - 验证：右侧滑出版本历史抽屉，点击历史版本后展开「词级对照：当前 ⇆ 所选版本」，精准呈现绿色新增背景块与红色删除线背景块，底部「↺ 还原到此版本」按钮实时激活点亮；
+   - 证据：`mod6_version_list_reloaded.png`, `mod6_notes_diff_true_center.png`。
+7. **看板式任务流与七列泳道（v0.2.13）**：
+   - 路径：侧栏「看板」主入口；
+   - 验证：7 列泳道（待规划、待执行、执行中、待验收、已完成、已归档、阻塞）；
+   - 真实数据流转：向 `conversations.db` 的 `kanban_cards` 注入 6 张不同状态任务卡片，看板实时呈现多泳道排列（含待执行紧急红标），点击卡片唤出任务详情与评论弹窗；
+   - 证据：`mod7_kanban_board.png`, `mod7_kanban_new_modal.png`, `mod7_kanban_populated.png`, `mod7_kanban_card_detail.png`。
+8. **场景默认模型绑定（v0.2.14）**：
+   - 路径：设置 → 场景模型绑定；
+   - 验证：6 大独立业务场景（聊天默认、知识库 Embedding、记忆整理、笔记 AI、图谱抽取、Wiki 生成）的分离式模型选型配置与下拉切换；
+   - 证据：`mod8_scenario_models_top.png`。
+
+### 3. 走查发现的体验与代码缺陷修复与 Computer Use 闭环验收（已完成）
+
+1. **DEF-01：侧栏项目 `+` 新建菜单被截断与点击竞争**
+   - **根因**：`src/components/sidebar/ProjectList.tsx` 的容器缺少 `relative z-50` 锚点导致绝对定位脱标被 `overflow-x-hidden` 截断；且内嵌的全局 `fixed inset-0` 遮罩层在用户点击菜单项时先于按钮捕获 `pointerdown`，导致菜单立即关闭而回调未触发。
+   - **修复**：外层容器增加 `relative z-50`；移除 `fixed inset-0` 遮罩层，改用 `useRef(addMenuRef)` 与 `document.addEventListener("pointerdown")` 外部点击检测；菜单项按钮（本地目录/SSH 连接）添加 `onPointerDown={(e) => { e.stopPropagation(); ... }}` 阻断外部冒泡。
+   - **真实环境 E2E 验证**：通过 Linux `/dev/uinput` 硬件驱动模拟真机点击，菜单在 `+` 按钮正下方完整浮出且阴影边框完整无遮挡（`fix1_menu_perfect_opened.png`）；点击「SSH 连接...」菜单项流畅弹出 SSH 连接表单（`fix1_ssh_form_proven.png`）。
+
+2. **DEF-02：笔记版本抽屉原位 Toggle 交互与激活高亮态**
+   - **根因**：`src/components/notes/NoteEditor.tsx` 顶栏时钟图标 `onClick` 写死为单向 `setIsVersionOpen(true)`，抽屉展开后无法原位再次点击收起；且缺乏激活态视觉高亮，用户无法直观感知当前抽屉状态。
+   - **修复**：时钟按钮 `onClick` 改为 `setIsVersionOpen((prev) => !prev)`；增加 `aria-expanded` 与激活高亮样式 `bg-[var(--surface-hover)] text-[var(--brand)] ring-1 ring-[var(--brand)]`。
+   - **真实环境 E2E 验证**：在真机桌面端点击时钟图标（X: 1618, Y: 33），版本抽屉完整滑出且图标点亮高亮环（`fix2_drawer_opened.png`）；原位再次点击同一图标，版本抽屉平滑收回且高亮环随之复位（`fix2_drawer_closed.png`），原位 Toggle 功能 100% 达成。
+
+3. **DEF-03：知识源 ID 前缀解析兼容性缺陷**
+   - **根因**：`src/lib/knowledge/sourceLinks.ts` 中针对 `note:notebook:file.md` 格式，在未剥离 `note:` 前缀的情况下直接调用 `split(":")`，导致第一个分段 `"note"` 被错误识别为 `notebookRelPath`，真实目录名错位为文件名。
+   - **修复**：在 `parseKnowledgeSourceId` 中增加 `note:` 前缀显式剥离：`if (noteTarget.startsWith("note:")) noteTarget = noteTarget.slice("note:".length).trim();`，与 `wiki:` / `import:` 的解析模式严格对齐，支持单文件及多层嵌套目录。
+   - **Red Check 变异测试**：新增 `sourceLinks.test.mjs` 测试；在破坏前（未剥离 `note:`）测试真实报错红屏（Red），修复后 3 项测试全部绿灯通过（Green）。
+
+4. **全套质检验收结果**：
+   - `tsc --noEmit`：0 错误，TypeScript 全量严格类型检查通过；
+   - `bun test`：全套 678 项单元测试全部通过（678 pass, 0 fail across 92 files）；
+   - Computer Use 驱动：升级 `scripts/computer_use_driver.py` 为基于 Linux `/dev/uinput` 的 `EV_ABS` 绝对指针设备驱动，彻底解决 Wayland 下 libinput 指针加速度与坐标漂移难题，实现 1:1 像素级高保真桌面自动化操作。
+

@@ -10,6 +10,12 @@ test("parse：note / wiki / import 三路 + 根笔记无前缀", () => {
   assert.deepEqual(parseKnowledgeSourceId("default:子目录/a.md"), {
     kind: "note", notebookRelPath: "default", fileName: "子目录/a.md",
   });
+  assert.deepEqual(parseKnowledgeSourceId("note:default:子目录/a.md"), {
+    kind: "note", notebookRelPath: "default", fileName: "子目录/a.md",
+  });
+  assert.deepEqual(parseKnowledgeSourceId("note:a.md"), {
+    kind: "note", notebookRelPath: "", fileName: "a.md",
+  });
   assert.deepEqual(parseKnowledgeSourceId("a.md"), { kind: "note", notebookRelPath: "", fileName: "a.md" });
   assert.deepEqual(parseKnowledgeSourceId("wiki:wdoc-123"), { kind: "wiki", docId: "wdoc-123" });
   assert.deepEqual(parseKnowledgeSourceId("import-task-9"), { kind: "import", taskId: "import-task-9" });

@@ -715,9 +715,13 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
           {/* 版本历史入口（ROADMAP ④） */}
           <button
             type="button"
-            onClick={() => setIsVersionOpen(true)}
+            onClick={() => setIsVersionOpen((prev) => !prev)}
             title={t("notesVersionTitle", "版本历史")}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--text)] transition-colors cursor-pointer"
+            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
+              isVersionOpen
+                ? "bg-[var(--surface-hover)] text-[var(--brand)] ring-1 ring-[var(--brand)]"
+                : "text-[var(--text-dim)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)]"
+            }`}
           >
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="w-4 h-4"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M12 7v5l4 2"/></svg>
           </button>

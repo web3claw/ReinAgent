@@ -30,13 +30,17 @@ export function parseKnowledgeSourceId(sourceId: string): KnowledgeSourceTarget 
   if (id.startsWith("import-") || id.startsWith("import:")) {
     return { kind: "import", taskId: id.startsWith("import:") ? id.slice("import:".length) : id };
   }
-  const idx = id.indexOf(":");
-  if (idx > 0 && idx < id.length - 1) {
-    return { kind: "note", notebookRelPath: id.slice(0, idx), fileName: id.slice(idx + 1) };
+  let noteTarget = id;
+  if (noteTarget.startsWith("note:")) {
+    noteTarget = noteTarget.slice("note:".length).trim();
+  }
+  const idx = noteTarget.indexOf(":");
+  if (idx > 0 && idx < noteTarget.length - 1) {
+    return { kind: "note", notebookRelPath: noteTarget.slice(0, idx), fileName: noteTarget.slice(idx + 1) };
   }
   // 无冒号 = 根笔记本文件名
-  if (/\.(md|markdown)$/i.test(id)) {
-    return { kind: "note", notebookRelPath: "", fileName: id };
+  if (/\.(md|markdown)$/i.test(noteTarget)) {
+    return { kind: "note", notebookRelPath: "", fileName: noteTarget };
   }
   return { kind: "unknown" };
 }
