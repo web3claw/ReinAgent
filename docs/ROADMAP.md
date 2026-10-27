@@ -178,3 +178,43 @@ Rust 侧简化：**砍掉内存队列层，SQLite 表即队列**——`INSERT OR
 | Wiki / 图谱 | `src/Hetu.Core/Services/WikiService.cs`、`WikiContextCollector.cs`、`WikiKnowledgeSyncService.cs`、`GraphService.cs`；`frontend/src/pages/GraphPage.tsx`（自绘力导向） |
 | 用量 / 代理 | `src/Hetu.Core/Entities/LlmUsageLog.cs`、`src/Hetu.Core/Services/UsageService.cs`；`OpenAiProxyController` / `AnthropicProxyController`（⚠️ 无鉴权） |
 | 数据模型全景 | `src/Hetu.Infrastructure/Data/HetuDbContext.cs`（约 55 个 DbSet） |
+
+---
+
+## 七、待办清单（2026-10-27 归档，主线收官后的剩余项）
+
+> 主线（⑧⑨⑩⑪⑫ + ⓪ 队列语义）已于 2026-10-27 全部落地（v0.2.15）。以下为明确记录、待后续排期的剩余项，按性质分组。**未排期，勿视为承诺**。
+
+### A. 待用户拍板的修复项
+
+| 项 | 现状与备选 | 备注 |
+| --- | --- | --- |
+| **Linux 窗口大小/位置记忆** | 2026-09-27 三层根因已诊断（Wayland 恢复被合成器覆盖 + 插件仅优雅退出才写盘 + 位置协议禁止）；过渡方案＝固定 1800×1200 居中。待选：**A** 启动前 `GDK_BACKEND=x11` 走 XWayland（尺寸+位置均可恢复；分数缩放需重评）；**B** 纯 Wayland 折中（尺寸可恢复、位置记不住） | 见 PROJECT_CONTEXT 第十二节 |
+| **GonkaRouter「无终止事件被当正常结束」** | 客户端对「流无终止事件」误判为正常完成；三个修法已备选，待拍板选一 | 见记忆 gonkarouter-cors-blocked |
+| glab（GitLab）PR 链路 | 实现完整、单测覆盖，但**真实链路 Not run**（本机无 GitLab 仓库） | 有仓库即可补验 |
+| Ollama embedding 真链路 | **唯一功能性 Not run**：本机未安装 Ollama（11434 不通已实测） | 装好后跑知识库索引+检索闭环 |
+
+### B. 自动化二期（表和命令已备，仅缺 UI）
+
+- **运行历史 tab**：`automation_runs` 表与 `automation_list_runs` 命令已就绪，缺列表页 + 「跳转会话」+ 与通知收件箱联动（点通知直达运行记录）——**性价比最高**
+- OffPeak 闲时任务 tab、任务模板库、cron 自定义对话框、workspace 选择器（一期工作区取创建时 selectedProject）
+
+### C. v2 增强候选
+
+| 方向 | 内容 |
+| --- | --- |
+| **SSH v2** | PR over SSH（gh 在远端执行）、Wiki/知识库远端上下文采集（find/cat 采样）、SFTP 批量传输、checkpoint 远端前像（自研，Hetu 未做） |
+| **Wiki v2** | mtime 过期判定 + 整册重生成、导出为静态文档站、代码语义索引（当前仅源码采样兜底） |
+| 压缩管线 | `llm_summary` 第四节点（需 async 改造 + 新增 fast 场景模型行；当前拍板挂起） |
+| 用量 | 明细导出 CSV、按日期范围对比已做（⑦ 之后可加同比/环比图） |
+| 图谱 | 力导向参数可调（斥力/弹簧）、实体编辑（新建/改描述）UI |
+| RAG | sqlite-vec 虚表升级位（当前暴力余弦，数百 chunk 无瓶颈，继续挂账） |
+
+### D. 老 Gap 清单（2026-09-24 版本，未复核时效）
+
+PPTX / PDF / Office / 媒体预览引擎（PreviewPane 模式壳已移植、渲染引擎未引入）、流式「正在思考」shimmer 动画、`<think>...</think>` 内联标签解析兜底、查阅卡搜索类 bucket、多文件编辑子卡、工具卡展开态跨重挂载记忆、权威工时口径（排除权限/输入等待）、长会话历史分页 hydration（虚拟滚动已做）。
+
+### E. 仓库运营
+
+- **Dependabot**：加 `.github/dependabot.yml`（npm/cargo 每周检查）——依赖安全更新 + Contributors 面显示 dependabot[bot]
+- 发版：main 现有 2 个未发版提交（62abfa3 用量下钻、0b3c5bd 图谱增强），攒够一批发 v0.2.16
