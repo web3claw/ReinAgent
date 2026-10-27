@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.14</span>
+        下载 <span data-latest-version>v0.2.15</span>
       </a>
     </div>
   </div>
@@ -66,6 +66,7 @@
       <li><a href="models.html">模型与协议</a></li>
       <li><a href="scenario-models.html">场景默认模型</a></li>
       <li><a href="usage.html">用量统计</a></li>
+      <li><a href="ssh.html">SSH 项目</a></li>
       <li><a href="memory.html">本地长期记忆</a></li>
       <li><a href="git.html">Git 工作台</a></li>
       <li><a href="extensions.html">扩展与集成</a></li>
@@ -3670,6 +3671,97 @@ Hetu 的 number_normalize（数值改写风险）/stopwords（其默认关）/ke
 <li>Rust graph_tests 6 例：大小写去重+别名归一+三元组去重 / 未知实体关系跳过 / 按源删关系 / 合并改挂去重 / <strong>1 跳扩展</strong>（含无关源排除+fromGraph+score0）/ 手工 upsert 唯一性；<strong>Red Check</strong>：投毒 belongs_to 映射值 → delete 测试断言红 → 恢复绿（第一轮 Red Check 静默未命中被命中数断言拦住——patch 必须断言命中）</li>
 <li>前端 graphExtract 4 例（解析容错/prompt 枚举）；全量 Rust 313 绿 + 前端 13 绿 + tsc 0</li>
 <li>Not run：真实 LLM 抽取全链（需用户在窗口对真实笔记点「提取图谱」目检）；图谱页视觉（dev 窗口目检）</li>
+</ul>
+<h2>二十三、Wiki 项目文档生成（ROADMAP ⑨ + ⓪ 队列落地，2026-10-26，Hetu WikiService 移植）</h2>
+<p>侧栏「Wiki 文档」独立页：对任意工作区一键生成整套 DeepWiki 风格文档（总览 + 3-6 章 / 8-16 页）。</p>
+<h3>存储（knowledge.db 三件套）</h3>
+<ul>
+<li><code>wiki_documents</code>（set_id 分组，(set_id, sort_order) 唯一——单页重生成覆盖写）+ <code>wiki_jobs</code>（<strong>⓪ 队列语义：先落库再执行</strong>，status 0 排队/1 运行/2 完成/3 失败 + stage 文案 + progress 0-100 + totalPages/donePages + warning）</li>
+<li><strong>schema v2 迁移</strong>：<code>knowledge_sources.source_type</code> CHECK 放宽至 'wiki'——按 sqlite_master 建表 SQL 判定旧库，事务内重建表拷数据（新库 DDL 直含 'wiki'；迁移幂等）</li>
+<li><strong>陈旧回收</strong>：wiki_jobs 运行态超 10 分钟无更新 → list 时标记失败「生成中断」（对齐 Hetu 启动恢复语义的轮询版）</li>
+</ul>
+<h3>三段链路（执行器在前端 TS，LLM 全在 TS 侧）</h3>
+<ol>
+<li><strong>采集（5%）</strong>：Rust <code>wiki_collect_context</code>——README 优先 + docs/*.md（48KB 预算）+ 目录树（深度 3/300 项/忽略规则 23 目录）+ 源码采样（32 文件 × 2400B / 总 40KB / 按路径排序确定性）+ 顶层模块统计（兜底大纲用）</li>
+<li><strong>规划（10%）</strong>：<code>buildPlanPrompt</code>（Hetu 同构，3-6 章/8-16 页/covers 必须来自资料）→ 解析三层容错（直接 parse → 剥围栏 → <strong>正则抢救</strong>，章节标题后瞻 &quot;pages&quot; 排除）→ 带原文重试一次 → <code>fallbackPlanFromModules</code> 模块兜底</li>
+<li><strong>并行成页（15-85%）</strong>：并发 4 worker 池 + 失败重试 1 次（800ms backoff）+ <strong>截断续写 ≤4 轮</strong>（completeOneShotText 新增第 7 参 maxContinueRounds：stopReason=length 或 ``` 围栏奇数 → 携带全文续写；缺省 0 不影响既有调用方）+ <code>sanitizeWikiContent</code> 清洗（粘连标题断行/元对话行过滤/围栏内不动）</li>
+<li><strong>总览（90%）</strong>：强制 mermaid 架构图 + 文档导航；进度写库 fire-and-forget（失败不影响生成）</li>
+<li><strong>投影</strong>：页面自动注册知识库源（wiki_scan_sources_conn → source_id=<code>wiki:&lt;docId&gt;</code>、fingerprint=updated_at:len 变更即重索引）；indexingService loadSourceText 加 wiki 分支（wiki_get_document 读正文）；WikiPage 每页「提取图谱」按钮（graph_apply_extraction，source_id 同款）</li>
+</ol>
+<h3>用量与场景模型</h3>
+<ul>
+<li>用量来源 <code>wiki</code>（规划/每页/续写每轮各自记账经 completeOneShotText usageSource）</li>
+<li>场景默认模型第 6 行「Wiki 生成」（kv <code>reinagent-wiki-model</code>，未配置回退聊天默认）</li>
+</ul>
+<h3>前端（src/components/wiki/WikiPage.tsx）</h3>
+<ul>
+<li>顶栏：工作区选择（最近任务工作区下拉 + 手动输入）+ 生成/中止；运行中 2s 轮询 job 进度条（stage 文案 + 页数计数）</li>
+<li>套件 chips（删除）→ 章节分组文档树 → 查看器（<code>WikiMarkdown</code>：mermaid 围栏拆分 + mermaid.render 主题跟随 + MarkdownText 正文；渲染失败如实显示源码）；hover 操作：单页重生成（RefreshCw）/ 提取图谱（Network）</li>
+<li>ViewMode 加 &quot;wiki&quot;；侧栏 BookText 图标入口</li>
+</ul>
+<h3>测试（交付三铁律）</h3>
+<ul>
+<li>Rust wiki_tests 4 例：<strong>v1→v2 迁移</strong>（旧 CHECK 拒 wiki → 迁移 → 放行 + 数据保留 + 幂等）、任务状态机与陈旧回收、页面写入覆盖 + scan 投影、上下文采集（README/树/采样/忽略目录/不存在路径如实 failure）；<strong>Red Check</strong>：禁用迁移 → 迁移测试真实红（首轮 Red Check 暴露「新 DDL 已含 wiki 导致测试未走旧库路径」盲区，测试重写为真实 v1 旧表）</li>
+<li>前端 wikiLogic 8 例（解析三态/顶层 pages/正则抢救含章节排除/上限截断/模块兜底/清洗三规则/续写判定/prompt 约束）；<strong>Red Check</strong>：破坏粘连标题断行 → 清洗测试真实红；正则抢救首个版本把章节标题捞成页面——单测抓出后加后瞻排除</li>
+<li>全量：Rust 317 绿 + 前端 16 绿 + tsc 0</li>
+<li>Not run：真实 LLM 全链生成（需窗口对真实工作区点「生成 Wiki」目检）</li>
+</ul>
+<h2>二十四、v2 尾巴打包批（⑤③④⑥ 收口，2026-10-26 落地）</h2>
+<p>四个 v1 功能的 v2 缺口一批清掉；①（Ollama 补验/sqlite-vec）按拍板缓置。</p>
+<h3>⑤ 应用内通知收件箱（Hetu InboxService 精简版）</h3>
+<ul>
+<li><strong>Rust <code>notifications.rs</code></strong>（conversations.db）：<code>notifications</code> 表（<code>category_key</code> 唯一聚合键、count/unread/link_view/link_task_id）；<code>notify_push</code>（同键未归档合并：正文刷新/计数+1/回未读）/ <code>notify_list</code> / <code>notify_archive</code>（删行）/ <code>notify_archive_all</code>；单测 3（合并/归档重计/空键拒绝）</li>
+<li><strong>接入点</strong>：看板 blocked/failed（runDispatcher，categoryKey=<code>kanban:{cardId}</code>）+ 自动化派发失败三处（provider/model 不存在、dispatch rejected，categoryKey=<code>automation:{runId}</code>）+ 自动化任务终态失败（App subscribeTaskTerminal，source==='automation' &amp;&amp; outcome!=='done'）</li>
+<li><strong>前端</strong>：<code>InboxBell</code>（侧栏底栏 Monitor 按钮后）——未读徽标 + 弹出面板（×N 计数、时间、单条归档 ✕、全部清空、点击跳转 kanban/automations 视图并归档）；push 经 window 事件 <code>reinagent-inbox-change</code> 即时刷新徽标；push 失败只警告不阻塞（通知不倒置主链路优先级）</li>
+</ul>
+<h3>③ 记忆会话作用域（免 schema 手术）</h3>
+<ul>
+<li><strong>键设计</strong>：PK 本就含 (scope, workdir_hash, slug)——session 条目 <code>workdir_hash = sha256(taskId)[..16]</code>（<code>session_hash</code>），物理隔离在 <code>~/.ReinAgent/memory/sessions/&lt;hash&gt;/</code>（记忆抽屉的目录扫描天然不显示，零污染）</li>
+<li><strong>写入</strong>：normalize_write_scope 放行 'session'；write_entry session 分支要求 options.conversation_id（缺则如实报错）；<strong>仅自动提取可产</strong>（MemoryManager 手写工具 requireWriteScope 仍限 global/project，对齐 Hetu）</li>
+<li><strong>检索</strong>：memory_semantic_search 加 <code>session_id</code> 参数，SQL 三路并集 <code>global ∪ project(workdir) ∪ session(taskId)</code>；recall.buildMemoryRecallSection 加 sessionId 参（runAgentTurn 传 resolvedConversationId）</li>
+<li><strong>提取</strong>：planTool scope 枚举加 session（extractionEngine 本就传 conversationId=params.taskId）；Dream 聚类组内=同 scope+workdir_hash 天然隔离</li>
+<li>契约测试更新（MEMORY_SCOPES 三值）；memory 42 测全绿</li>
+</ul>
+<h3>④ 笔记 agent 标签工具 + 词级 diff</h3>
+<ul>
+<li><strong>agent 工具 2 枚</strong>（tools.js，注册表 16→18）：<code>list_note_tags</code>（notes_all_tags + 标签计数汇总）/ <code>set_note_tags</code>（整组覆盖，notebook/file/tags 三参；未知工具保守视为 write 级审批）</li>
+<li><strong>词级 diff</strong>（<code>src/lib/notes/wordDiff.ts</code> 纯函数）：token 切分（CJK 连串成词/拉丁点分串成词/空白段）+ LCS 对齐 + same/add/del 片段合并；2000 token 上限降级整体替换；NoteVersionPanel 对照从「并排前 1000 字」升级为<strong>词级红绿视图</strong>（--diff-added/--diff-removed 语义变量）；6 单测</li>
+</ul>
+<h3>⑥ 压缩管线补三节点（8→11 节点语义）</h3>
+<ul>
+<li><code>normalizeNumbers</code>（≥3 位数字 → [N]；≤2 位保留，Hetu 同款）恒跑；<code>extractKeyLines</code>（关键行打分：error/warn/结论/路径/命令/标题加分 + 流水负分，首尾 3 行保护带 + 预算裁剪 + 折叠标记）<strong>自适应运行</strong>——仅当去重后仍超 maxBytes（否则必被 headtail 盲截）才执行，严格优于盲截且保住 v1 语义；<code>removeStopwords</code>（中英虚词，激进有损）默认关（CompressOptions.stopwords 显式开）</li>
+<li>13 单测（新增 4）；<strong>headtail 测试输入改为 error 密集行</strong>（关键行超预算 → bail → headtail 兜底）——新节点改变了原测试输入的路径</li>
+<li><strong>挂起项</strong>：llm_summary（需 async 改造 + 专用 fast 模型，收益存疑，用户拍板不做）；sqlite-vec（暴力余弦当前量级无瓶颈，继续挂账）；Ollama 补验（本机未安装，装后补）</li>
+</ul>
+<h3>测试与验证（交付三铁律）</h3>
+<ul>
+<li>全量：Rust 320 绿（notifications 3 + memory session 相关）+ 前端 43 绿（wikiLogic 8/wordDiff 6/compressPipeline 13/tools 16）+ memory bun 42 绿 + tsc 0</li>
+<li><strong>Red Check</strong>：wordDiff LCS 比较破坏 → 真实红；compressPipeline scoreKeyLine 长度惩罚移除 → 真实红（迁移 Red Check 见二十二节）</li>
+<li>Not run：通知收件箱与 session 记忆的真实链路目检（需窗口实操：看板跑失败卡 → 铃铛出现徽标）</li>
+</ul>
+<h2>二十五、SSH 项目（ROADMAP ⑫，2026-10-27 落地，Hetu WorkCommandRunner/WorkRemoteFs 移植）</h2>
+<p>侧栏「+ 新建项目」菜单二选一（本地目录 / SSH 连接），SSH 工作区以 <code>ssh://[user@]host[:port]/path</code> scheme 表示——任务/看板/自动化零迁移获得远程操作能力。</p>
+<h3>架构（系统 ssh 客户端 + shell 模拟文件 API；非 sshfs、零 SSH 库依赖）</h3>
+<ul>
+<li><strong>Rust <code>ssh_remote.rs</code></strong>：SshTarget 解析（逃逸守卫 rel_escapes/join_remote；<strong>~ 前缀统一转 $HOME 形态</strong>——单引号阻止波浪号展开是 Hetu 踩过的坑，quote_remote_path 对 $HOME 用双引号保留展开）；runner（BatchMode 仅 Key/Agent 模式开启——<strong>密码认证下 BatchMode 会禁用 askpass</strong>；StrictHostKeyChecking=accept-new；ConnectTimeout=10；keepalive 5s×3；60s 超时可读报错；kill_on_drop；argv 无转义面）</li>
+<li><strong>密码认证</strong>：SSH_ASKPASS 临时脚本（0700 用后即删 + SSH_ASKPASS_REQUIRE=force，OpenSSH ≥8.4）；密码存 <code>~/.ReinAgent/ssh_auth.json</code>（0600，键 <code>user@host:port</code>）；env <code>REINAGENT_SSH_PASSWORD</code> 测试覆盖；Windows 如实拒绝（无 askpass）</li>
+<li><strong>代理</strong>：env <code>REINAGENT_SSH_PROXY</code> &gt; 应用出网代理 kv（reinagent-web-proxy）；ProxyCommand = <code>nc -X connect -x {proxy} %h %p</code>（HTTP CONNECT，OpenBSD nc）；no_proxy 规则精确/后缀匹配（<code>*</code> 不通配 IP 字面量——与 reqwest 同款教训）</li>
+<li><strong><code>ssh_config.rs</code></strong>：~/.ssh/config 解析（Host 块/HostName/User/Port/IdentityFile + Include 防环展开，通配符忽略）→ 表单一键预填</li>
+<li><strong>路由</strong>：fs_cmd 8 命令（list/read/read_text/write/delete/create_dir/rename/execute）+ fs_search 2（glob=远端 find+本地正则、grep=远端 grep -rnE 解析，<code>:数字:</code> 行号锚定容忍路径含冒号）+ git_panel（run_git 内嗅探，<strong>只读白名单</strong> status/log/diff/branch 等放行、写命令如实拒绝）+ terminal（PTY 直接 spawn <code>ssh -t</code>，登录后 cd 项目根）；checkpoint 对 SSH 显式跳过（无前像可留）</li>
+<li>语义对照 Hetu：ls -la/cat 切片/mkdir+cat stdin 写/test -f 守卫删/find head 20000+正则/grep 解析/ApplyPatch 读改写回</li>
+</ul>
+<h3>UI</h3>
+<ul>
+<li>ProjectList「+」按钮 → 菜单（选择本地目录 / SSH 连接…）；SSH 表单：host/port/user/远端路径/密码（可选）/私钥路径（可选）+ <strong>测试连接</strong>（ssh_probe）+ 从 ~/.ssh/config 导入下拉；保存 = addProject(ssh:// URL) + 密码入认证文件</li>
+<li>工作区输入框直接粘贴 ssh:// URL 亦可用；resolveWorkspacePath 对 ssh 工作区走 remote-join 分支（../ 逃逸拒绝）</li>
+</ul>
+<h3>测试（交付三铁律）</h3>
+<ul>
+<li>单测 ssh_remote_tests 9 例（解析变体/逃逸/引号规则含 ~ 归一/Key vs Password 参数差异含 ProxyCommand/代理 no_proxy/grep 行号锚定/git 只读门禁/认证文件往返+env 覆盖）+ workspace ssh 2 例；<strong>Red Check</strong>：rel_escapes 破坏 → 真实红</li>
+<li><strong>Real Usage（经代理连 47.82.144.54 真机，81s 十一步）</strong>：whoami/list/read/write/edit(等长替换 delta=0 合法)/glob/grep/逃逸拒绝/git 非仓库 GIT_NOT_REPO + 写命令拒绝/删除守卫/<strong>断链</strong>（坏代理端口 30s 内快速失败）；ssh_real_tests #[ignore] + env 凭据（TEST_PASSWORD→REINAGENT_SSH_PASSWORD 映射，凭据不入仓库）</li>
+<li><strong>过程抓出的真实问题</strong>：①ssh_run 对非 0 退出返回 Ok（exit code 是业务语义）——setup 类 bootstrap 命令必须自查 code；②两真实测试并行跑因 env 污染互踩（REINAGENT_SSH_PROXY 全局态）——合并单测顺序执行；③stderr 首行是 post-quantum 横幅——错误抽取过滤 <code>**</code>/Warning 行；④远端测试机无 git——yum 真实安装后通过</li>
+<li>全量：Rust 329 绿 + 前端 52 绿 + tsc 0</li>
+<li>已知边界：SSH 工作区无 checkpoint/worktree/PR 面板/Wiki/知识库（如实提示，v2 候选）；终端为 ssh -t 远端 shell（本地 shell 配置不生效）</li>
 </ul>
 </div>
     <div class="docs-pager"><span><a href="dev.html">← 参与开发</a></span><span><a href="PROMPTS.html">提示词参考与现状 →</a></span></div>

@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.14</span>
+        下载 <span data-latest-version>v0.2.15</span>
       </a>
     </div>
   </div>
@@ -57,7 +57,7 @@
 <main id="main">
   <section class="hero">
     <div class="wrap hero-copy">
-        <span class="tag">当前版本 <span data-latest-version>v0.2.14</span> · MIT · 本地优先</span>
+        <span class="tag">当前版本 <span data-latest-version>v0.2.15</span> · MIT · 本地优先</span>
         <h1>高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台</h1>
         <p class="lede">ReinAgent 把对话、任务、代码改动与模型配置放进同一套本地底座：Tauri 2（Rust）负责系统能力与持久化，React 19 前端负责界面与 Agent 回路，数据落在本地 SQLite WAL。模型调用只发往你自己配置的供应商。</p>
         <div class="hero-cta">
@@ -121,6 +121,10 @@
         <div class="card">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19V9M9.5 19V5M15 19v-6M20.5 19v-9"/></svg></span>用量可观测</h3>
           <p>token 总览、年热力图、逐日分模型趋势与模型份额；新增按来源（聊天/看板/定时/子代理/笔记 AI/记忆整理/图谱…）拆分与 7×24 周热力图。</p>
+        </div>
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 15l3-3-3-3M12 15h5"/></svg></span>SSH 远程项目</h3>
+          <p>工作区直填 ssh:// 地址：Agent 文件工具 / 命令 / Git 查看全程作用在远端机器；密码与密钥双认证、链路 keepalive 自检、终端即远端 shell。</p>
         </div>
       </div>
     </div>
@@ -191,6 +195,7 @@ bun run tauri dev
         <a href="guide/models.html"><strong>模型与协议</strong><span>四协议接入、元数据解析与统一代理</span></a>
         <a href="guide/scenario-models.html"><strong>场景默认模型</strong><span>按场景分配模型：聊天 / 向量 / 记忆 / 笔记 / 图谱</span></a>
         <a href="guide/usage.html"><strong>用量统计</strong><span>token 总览、年热力图与按来源拆分的消耗</span></a>
+        <a href="guide/ssh.html"><strong>SSH 项目</strong><span>连接远程机器：文件工具/命令/Git 查看全程作用在远端</span></a>
         <a href="guide/memory.html"><strong>本地长期记忆</strong><span>作用域隔离、自动沉淀与审查合并</span></a>
         <a href="guide/git.html"><strong>Git 工作台</strong><span>分支、行级差异与 AI 提交信息</span></a>
         <a href="guide/extensions.html"><strong>扩展与集成</strong><span>生态导入、Skills、MCP 与语音输入</span></a>
