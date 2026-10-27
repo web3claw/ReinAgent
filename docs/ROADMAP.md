@@ -124,7 +124,7 @@ Hetu 单表 `LlmUsageLog` 十二种来源记账（chat/work/kanban/workflow/wiki
 
 选题→大纲→并行成页三段（`WikiService.cs` 1314 行 + `WikiContextCollector.cs`）：规划一次调用出 `{chapters:[{title,pages:[{title,brief,covers}]}]}`（3–6 章/8–16 页，解析三层容错含正则抢救）；并行成页（并发 4，每页独立上下文，代码语义索引就绪则按页检索 24 条代码块，否则源码采样）；截断续写最多 4 轮（finish reason=length + 代码围栏未闭合检测）；总览页强制 mermaid 架构图；生成后自动投影进知识库与图谱；单页可重生成（Brief 复用）、按 mtime 判过期。依赖 ① 知识库先行。
 
-### ⑩ 知识图谱 ✅（2026-10-25 落地，实现细节见 PROJECT_CONTEXT「二十二、知识图谱」节。落地差异：抽取在前端走 completeOneShotText（场景模型 graph 行）；关系别名归一 belongs_to 等为测试驱动新增；Canvas 力导向零依赖自绘）
+### ⑩ 知识图谱 ✅（2026-10-25 落地 + 2026-10-27 v2 增强〔fromGraph 徽标/实体跳源/抽取范围扩展〕见 PROJECT_CONTEXT「二十七」节。落地差异：抽取在前端走 completeOneShotText（场景模型 graph 行）；关系别名归一 belongs_to 等为测试驱动新增；Canvas 力导向零依赖自绘）
 
 实体 6 类（concept/person/organization/technology/project/custom）/关系 5 类封闭枚举抽取（`GraphService.cs`），实体小写名全局去重、关系 (source,target,type) 去重、LLM 关系 Confidence=0.8 手工 1.0；前端自绘 Canvas 力导向（手写 d3-force 风格，无 ReactFlow 依赖）。最大价值=给语义检索做 1 跳扩展（①的增强件），独立可视化价值次之。依赖 ①。
 

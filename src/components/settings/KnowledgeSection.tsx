@@ -50,7 +50,7 @@ export function KnowledgeSection({ modelOptions }: { modelOptions: Array<{ value
   const knowledge = useHubSettings((s) => s.settings.knowledge);
   const { settings: appSettings } = useSettings();
   // 图谱提取状态（⑩）
-  const [noteRows, setNoteRows] = useState<Array<{ sourceId: string; title: string; sourcePath: string }>>([]);
+  const [noteRows, setNoteRows] = useState<Array<{ sourceId: string; sourceType: string; title: string; sourcePath: string }>>([]);
   const [scanLoading, setScanLoading] = useState(false);
   const [extractBusy, setExtractBusy] = useState(false);
   const [extractingId, setExtractingId] = useState<string | null>(null);
@@ -61,8 +61,9 @@ export function KnowledgeSection({ modelOptions }: { modelOptions: Array<{ value
     setScanLoading(true);
     try {
       const { invoke } = await import("@tauri-apps/api/core");
-      const rows = await invoke<Array<{ sourceId: string; sourceType: string; title: string; sourcePath: string }>>("knowledge_scan_sources");
-      setNoteRows(rows.filter((r) => r.sourceType === "note"));
+      const rows = await invoke<Array<{ sourceId: string; sourceType: string; title: string; sourcePath: string; fingerprint: string }>>("knowledge_scan_sources");
+      // 图谱抽取范围（v2）：笔记 + Wiki 页 + 导入会话——正文经统一 loader 读取（与 RAG 同源）
+      setNoteRows(rows.filter((r) => r.sourceType === "note" || r.sourceType === "wiki" || r.sourceType === "import"));
     } catch (err) {
       console.warn("[graph] scan sources failed:", err);
     } finally {
@@ -75,16 +76,18 @@ export function KnowledgeSection({ modelOptions }: { modelOptions: Array<{ value
   }, [loadNoteRows]);
 
   const extractOne = useCallback(
-    async (row: { sourceId: string; title: string }) => {
+    async (row: { sourceId: string; sourceType: string; title: string; sourcePath: string }) => {
       setExtractingId(row.sourceId);
       setGraphError(false);
       setGraphMessage(null);
       try {
-        const { invoke } = await import("@tauri-apps/api/core");
-        const idx = row.sourceId.indexOf(":");
-        const notebookRel = idx > 0 ? row.sourceId.slice(0, idx) : "";
-        const fileName = idx > 0 ? row.sourceId.slice(idx + 1) : row.sourceId;
-        const content = await invoke<string>("notes_read_note", { notebookRelPath: notebookRel, fileName });
+        const { loadKnowledgeSourceText } = await import("../../lib/knowledge/indexingService");
+        const content = await loadKnowledgeSourceText({
+          sourceId: row.sourceId,
+          sourceType: row.sourceType as "note" | "import" | "wiki",
+          title: row.title,
+          sourcePath: row.sourcePath,
+        });
         const providers = await loadProvidersConfigFromDisk(appSettings).catch(() => []);
         const binding = kvGetJSON<{ providerId: string; modelId: string }>(GRAPH_MODEL_KV_KEY);
         const { config } = scenarioBindingToProviderConfig(
@@ -97,7 +100,7 @@ export function KnowledgeSection({ modelOptions }: { modelOptions: Array<{ value
           setGraphMessage(t("graphExtractNoModel"));
           return null;
         }
-        const extracted = await runGraphExtraction(config as never, row.title || fileName, content, new AbortController().signal);
+        const extracted = await runGraphExtraction(config as never, row.title || row.sourceId, content, new AbortController().signal);
         return await applyGraphExtraction(row.sourceId, extracted);
       } catch (err) {
         setGraphError(true);
@@ -388,7 +391,12 @@ export function KnowledgeSection({ modelOptions }: { modelOptions: Array<{ value
         <div className="max-h-56 overflow-y-auto space-y-1">
           {noteRows.map((row) => (
             <div key={row.sourceId} className="flex items-center justify-between gap-2 rounded-lg border border-[var(--border)] px-2.5 py-1.5">
-              <span className="min-w-0 flex-1 truncate text-xs" title={row.sourceId}>{row.title || row.sourceId}</span>
+              <span className="min-w-0 flex-1 truncate text-xs" title={row.sourceId}>
+                <span className="mr-1 rounded bg-[var(--surface-hover)] px-1 text-[9px] text-[var(--text-dim)]">
+                  {row.sourceType === "wiki" ? t("graphSourceWiki") : row.sourceType === "import" ? t("graphSourceImport") : t("graphSourceNote")}
+                </span>
+                {row.title || row.sourceId}
+              </span>
               <button
                 type="button"
                 onClick={() => void extractOne(row)}

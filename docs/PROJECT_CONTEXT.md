@@ -2738,3 +2738,23 @@ UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在�
 - 前端：`usageDrilldown.test.mjs` 2 例（compareDelta 五分支 + 精度阈值；bun 可直跑含 JSX 的 tsx 模块）；**Red Check**：new 分支改回 up → 真实红；all 范围守卫是开发中自查补的（首版「对比」在 all 下会显示两份相同数据误导）
 - tsc 0；全量 Rust 330 绿 + 前端 52+2 绿
 - 来源标签补 `graph-extract`/`wiki`（⑨⑩ 上线后快照里会出现但 UI 缺标签，顺手补全双语）
+
+## 二十七、图谱/检索增强三小件（2026-10-27 落地）
+
+### ① fromGraph 徽标（检索命中区分语义 vs 图谱扩展）
+- `KnowledgeSearchHit` TS 镜像补 `fromGraph?`（Rust 早已返回，TS 侧此前丢字段）
+- 注入段：图谱扩展命中追加 ` graph="1"` 属性；`formatKnowledgeHitLines` 清单行尾追加「· 图谱扩展」——模型能区分「语义命中」与「1 跳扩展来的关联笔记」
+- 3 单测（属性存在/缺失/混合块数）+ Red Check（删除属性插值 → 真实红）
+
+### ② 图谱实体跳源（`src/lib/knowledge/sourceLinks.ts` 纯函数）
+- `parseKnowledgeSourceId`：`wiki:<docId>` → wiki；`import-*`/`import:` → 导入任务；`notebook:file` → 笔记；无冒号且 `.md/.markdown` → 根笔记本；其余 unknown（不猜）
+- `firstNavigableSourceId`：实体详情回溯首个可跳转关系来源（跳过手工 null 与未知）
+- 跳转经 window 事件 `reinagent-open-knowledge-source` → App 监听三路分发：note→`targetNoteToOpen` + notes 视图；wiki→`activeWikiDocId` + wiki 视图（WikiPage 新增 initialDocId prop，加载该文档并切套件）；import→`setActiveTaskId` + workbench
+- GraphPage：每条关系行「查看来源」按钮（有可跳 sourceId 才显示）+ 实体详情顶部「查看来源（笔记/Wiki 页/导入会话）」按钮
+- 3 单测 + Red Check（删除 import 路由 → 真实红）
+
+### ③ 图谱抽取范围扩展（note + wiki + import 三类源）
+- `indexingService` 导出 `loadKnowledgeSourceText`——统一三类正文读取（note=文件 / wiki=knowledge.db / import=会话拼接），图谱抽取与 RAG 索引**共用同一实现**（防两套口径漂移）
+- 知识库设置页提取区行列表放宽到三类源，行首类型徽标（笔记/Wiki 页/导入会话）；批量按钮自然覆盖全量
+- 顺带修复：原 extractOne 只走 `notes_read_note`（wiki/导入源会读失败）
+- tsc 0；全量 Rust 330 绿 + knowledge 相关前端 30 绿

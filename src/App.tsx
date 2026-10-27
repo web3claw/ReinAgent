@@ -166,6 +166,7 @@ export default function App() {
   
   const [providers, setProviders] = useState<ProviderItem[]>([]);
   const [targetNoteToOpen, setTargetNoteToOpen] = useState<NoteFileItem | null>(null);
+  const [activeWikiDocId, setActiveWikiDocId] = useState<string | null>(null);
   useEffect(() => {
     // F18：读取失败（配置损坏）绝不静默吞掉——如实告警；loadProvidersConfigFromDisk
     // 在解析失败时抛错且不写盘，用户配置保持原样。
@@ -487,6 +488,39 @@ export default function App() {
   // 深层组件（如 PrPanel「交给 Agent 修」）经 window 事件请求预填输入框——对齐
   // messageTheme 的 window 事件广播模式，避免三层 prop 钻孔。⚠️ 必须放在设置页
   // 早退 return 之前的 hooks 区，否则打开设置页 hooks 数量变化 → React 卸载整树白屏。
+  // 知识源跳转（图谱/检索增强 v2）：note→笔记页 / wiki→Wiki 页 / import→任务
+  useEffect(() => {
+    const onOpenSource = (e: Event) => {
+      const target = (e as CustomEvent).detail as import("./lib/knowledge/sourceLinks").KnowledgeSourceTarget | undefined;
+      if (!target) return;
+      if (target.kind === "note") {
+        setTargetNoteToOpen({
+          id: `${target.notebookRelPath}:${target.fileName}`,
+          title: target.fileName.replace(/\.(md|markdown)$/i, ""),
+          fileName: target.fileName,
+          notebookRelPath: target.notebookRelPath || "default",
+          fullPath: "",
+          snippet: "",
+          updatedAt: Date.now(),
+          createdAt: Date.now(),
+        } as Parameters<typeof setTargetNoteToOpen>[0]);
+        setCurrentView("notes");
+        return;
+      }
+      if (target.kind === "wiki") {
+        setActiveWikiDocId(target.docId);
+        setCurrentView("wiki");
+        return;
+      }
+      if (target.kind === "import") {
+        useAppStore.getState().setActiveTaskId(target.taskId);
+        setCurrentView("workbench");
+      }
+    };
+    window.addEventListener("reinagent-open-knowledge-source", onOpenSource);
+    return () => window.removeEventListener("reinagent-open-knowledge-source", onOpenSource);
+  }, []);
+
   useEffect(() => {
     const onPrefillPrompt = (e: Event) => {
       const text = (e as CustomEvent<string>).detail;
@@ -2418,7 +2452,7 @@ export default function App() {
         {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {currentView === "wiki" ? (
-            <WikiPage />
+            <WikiPage initialDocId={activeWikiDocId} />
           ) : currentView === "graph" ? (
             <GraphPage />
           ) : currentView === "kanban" ? (

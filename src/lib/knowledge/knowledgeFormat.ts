@@ -15,6 +15,8 @@ export interface KnowledgeSearchHit {
   headingPath: string;
   content: string;
   score: number;
+  /** 图谱 1 跳扩展追加的命中（Rust fromGraph；语义命中缺省 false） */
+  fromGraph?: boolean;
 }
 
 /** 命中块 → <knowledge-source> 注入段（免责句 + 每块/总量截断如实标注）。 */
@@ -32,7 +34,7 @@ export function formatKnowledgeSection(hits: KnowledgeSearchHit[]): string {
     const body = truncated ? hit.content.slice(0, KNOWLEDGE_HIT_MAX_CHARS) : hit.content;
     const block =
       `<knowledge-source id="${hit.sourceId}" title="${hit.title}" path="${hit.sourcePath}" ` +
-      `chunk="${hit.chunkIndex}" score="${hit.score.toFixed(4)}">\n` +
+      `chunk="${hit.chunkIndex}" score="${hit.score.toFixed(4)}"${hit.fromGraph ? ' graph="1"' : ""}>\n` +
       `${body}${truncated ? "\n…[truncated: 命中块超过 1200 字符，仅注入前 1200]" : ""}\n` +
       `</knowledge-source>`;
     if (total + block.length > KNOWLEDGE_SECTION_MAX_CHARS) {
@@ -50,7 +52,8 @@ export function formatKnowledgeHitLines(hits: KnowledgeSearchHit[]): string {
   return (hits ?? [])
     .map(
       (h, i) =>
-        `${i + 1}. [${h.sourceType}] ${h.title} (chunk ${h.chunkIndex}, score ${h.score.toFixed(4)}, id: ${h.sourceId})`,
+        `${i + 1}. [${h.sourceType}] ${h.title} (chunk ${h.chunkIndex}, score ${h.score.toFixed(4)}, id: ${h.sourceId})` +
+        (h.fromGraph ? " · 图谱扩展" : ""),
     )
     .join("\n");
 }

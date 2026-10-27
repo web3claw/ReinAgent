@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Network, RefreshCw, Search } from "lucide-react";
 import { useTranslation, type TranslationKey } from "../../i18n";
 import { invoke } from "@tauri-apps/api/core";
+import { firstNavigableSourceId, parseKnowledgeSourceId, requestOpenKnowledgeSource } from "../../lib/knowledge/sourceLinks";
 import { useAppStore } from "../../store/useAppStore";
 
 interface GraphEntity {
@@ -510,6 +511,22 @@ export function GraphPage() {
             {labelOf(ENTITY_TYPE_KEYS, selected.type)} · {fmtG(t("graphRelationCount"), { n: selected.relationCount })}
           </div>
           {selected.description ? <p className="mb-3 text-xs leading-relaxed text-[var(--text-dim)]">{selected.description}</p> : null}
+          {(() => {
+            const srcId = firstNavigableSourceId(selectedRelations);
+            if (!srcId) return null;
+            const target = parseKnowledgeSourceId(srcId);
+            const kindLabel = target.kind === "wiki" ? t("graphSourceWiki") : target.kind === "note" ? t("graphSourceNote") : t("graphSourceImport");
+            return (
+              <button
+                type="button"
+                onClick={() => requestOpenKnowledgeSource(srcId)}
+                className="mb-3 w-full truncate rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1 text-left text-[11px] text-[var(--brand)] hover:bg-[var(--surface-hover)]"
+                title={srcId}
+              >
+                {t("graphOpenSource")}（{kindLabel}）
+              </button>
+            );
+          })()}
           <div className="mb-2 text-xs font-medium text-[var(--text)]">{t("graphRelationsTitle")}</div>
           <ul className="mb-3 space-y-1">
             {selectedRelations.map((rel) => {
@@ -518,6 +535,16 @@ export function GraphPage() {
                 <li key={rel.id} className="flex items-center justify-between gap-1 rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-2 py-1 text-xs">
                   <span className="min-w-0 flex-1 truncate">
                     <span className="text-[var(--text-dim)]">{labelOf(RELATION_TYPE_KEYS, rel.type)} →</span> {other}
+                    {rel.sourceId && parseKnowledgeSourceId(rel.sourceId).kind !== "unknown" ? (
+                      <button
+                        type="button"
+                        onClick={() => requestOpenKnowledgeSource(rel.sourceId as string)}
+                        title={`${t("graphOpenSource")}: ${rel.sourceId}`}
+                        className="ml-1 shrink-0 rounded px-1 text-[10px] text-[var(--brand)] hover:underline"
+                      >
+                        {t("graphOpenSource")}
+                      </button>
+                    ) : null}
                   </span>
                   <button type="button" onClick={() => void deleteRelation(rel.id)} title={t("graphDeleteRelation")} className="shrink-0 rounded px-1 text-[10px] text-[var(--text-dim)] hover:text-[var(--danger)]">
                     ✕

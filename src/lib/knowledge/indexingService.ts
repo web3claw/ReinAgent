@@ -74,6 +74,18 @@ async function loadImportSourceText(taskId: string): Promise<string> {
   return lines.join("\n\n");
 }
 
+/** 知识源正文读取（note=文件 / wiki=knowledge.db / import=会话消息拼接）。
+ *  图谱抽取与 RAG 索引共用同一份读取实现——避免两套口径漂移。 */
+export async function loadKnowledgeSourceText(row: {
+  sourceId: string;
+  sourceType: "note" | "import" | "wiki";
+  title?: string;
+  sourcePath: string;
+  fingerprint?: string;
+}): Promise<string> {
+  return loadSourceText(row as KnowledgeScanRow);
+}
+
 async function loadSourceText(row: KnowledgeScanRow): Promise<string> {
   if (row.sourceType === "wiki") {
     // wiki 页正文在 knowledge.db（source_id = "wiki:<docId>"），不走文件系统

@@ -126,7 +126,7 @@ function MermaidBlock({ code, dark }: { code: string; dark: boolean }) {
 const fmtW = (template: string, params: Record<string, string | number>): string =>
   template.replace(/\{(\w+)\}/g, (_, key: string) => String(params[key] ?? ""));
 
-export function WikiPage() {
+export function WikiPage({ initialDocId }: { initialDocId?: string | null } = {}) {
   const { t } = useTranslation();
   const { settings } = useSettings();
   const tasks = useAppStore((s) => s.tasks);
@@ -180,6 +180,21 @@ export function WikiPage() {
   useEffect(() => {
     if (isTauri) void loadSets();
   }, [isTauri, loadSets]);
+
+  // 外部跳转定位（图谱实体 → wiki 页）：打开指定文档并切到其套件
+  useEffect(() => {
+    if (!initialDocId) return;
+    let cancelled = false;
+    void (async () => {
+      const doc = await invoke<WikiDocFull | null>("wiki_get_document", { id: initialDocId });
+      if (cancelled || !doc) return;
+      setActiveSetId(doc.setId);
+      setCurrentDoc(doc);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialDocId]);
 
   const loadDocs = useCallback(async (setId: string | null) => {
     if (!setId) {
