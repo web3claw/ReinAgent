@@ -111,6 +111,57 @@ unsafe fn take_pwstr(ptr: PWSTR) -> String {
     s
 }
 
+#[cfg(target_os = "linux")]
+pub fn disable_webkit_view_transitions(settings_ptr: *mut libc::c_void) {
+    if settings_ptr.is_null() {
+        return;
+    }
+    unsafe {
+        let handle = libc::dlopen(b"libwebkit2gtk-4.1.so.0\0".as_ptr() as _, libc::RTLD_LAZY | libc::RTLD_NOLOAD);
+        if handle.is_null() {
+            return;
+        }
+        type GetAllFeaturesFn = unsafe extern "C" fn() -> *mut libc::c_void;
+        type GetLenFn = unsafe extern "C" fn(*mut libc::c_void) -> usize;
+        type GetFeatureFn = unsafe extern "C" fn(*mut libc::c_void, usize) -> *mut libc::c_void;
+        type GetIdFn = unsafe extern "C" fn(*mut libc::c_void) -> *const libc::c_char;
+        type SetEnabledFn = unsafe extern "C" fn(*mut libc::c_void, *mut libc::c_void, libc::c_int);
+
+        let get_all = libc::dlsym(handle, b"webkit_settings_get_all_features\0".as_ptr() as _);
+        let get_len = libc::dlsym(handle, b"webkit_feature_list_get_length\0".as_ptr() as _);
+        let get_feat = libc::dlsym(handle, b"webkit_feature_list_get\0".as_ptr() as _);
+        let get_id = libc::dlsym(handle, b"webkit_feature_get_identifier\0".as_ptr() as _);
+        let set_feat = libc::dlsym(handle, b"webkit_settings_set_feature_enabled\0".as_ptr() as _);
+
+        if !get_all.is_null() && !get_len.is_null() && !get_feat.is_null() && !get_id.is_null() && !set_feat.is_null() {
+            let get_all_fn: GetAllFeaturesFn = std::mem::transmute(get_all);
+            let get_len_fn: GetLenFn = std::mem::transmute(get_len);
+            let get_feat_fn: GetFeatureFn = std::mem::transmute(get_feat);
+            let get_id_fn: GetIdFn = std::mem::transmute(get_id);
+            let set_feat_fn: SetEnabledFn = std::mem::transmute(set_feat);
+
+            let flist = get_all_fn();
+            if !flist.is_null() {
+                let count = get_len_fn(flist);
+                for i in 0..count {
+                    let f = get_feat_fn(flist, i);
+                    if !f.is_null() {
+                        let id_p = get_id_fn(f);
+                        if !id_p.is_null() {
+                            let id_str = std::ffi::CStr::from_ptr(id_p).to_bytes();
+                            if id_str == b"ViewTransitions" || id_str == b"CrossDocumentViewTransitions" {
+                                set_feat_fn(settings_ptr, f, 0);
+                                eprintln!("🛡️ [ReinAgent Guard] Disabled WebKit hardware feature: {}", String::from_utf8_lossy(id_str));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        libc::dlclose(handle);
+    }
+}
+
 #[command]
 pub async fn browser_open(app: AppHandle, url: String) -> Result<(), String> {
     // add_child 在 Window 上（WebviewWindow 未转发 unstable 方法）
@@ -124,17 +175,124 @@ pub async fn browser_open(app: AppHandle, url: String) -> Result<(), String> {
             .map_err(|e| format!("browser navigate: {e}"))?;
         return Ok(());
     }
-    let app_handle = app.clone();
+    let app_handle_for_load = app.clone();
+    let app_handle_for_new_win = app.clone();
+    let user_agent = if cfg!(target_os = "windows") {
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0"
+    } else if cfg!(target_os = "macos") {
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+    } else {
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15"
+    };
+    let init_script = r#"
+        (function() {
+            try {
+                // 1. 拦截 window.close()，触发原生 close 行为并防止破坏性跳转
+                try {
+                    const _origClose = typeof window.close === "function" ? window.close.bind(window) : null;
+                    window.close = function() {
+                        console.log("[ReinAgent] window.close() invoked in embedded browser");
+                        try {
+                            if (_origClose) _origClose();
+                        } catch (e) {}
+                    };
+                } catch (e) {}
+
+                // 2. 模拟 window.opener 弹窗桥接：
+                //    OAuth 授权回调页通常执行 window.opener.postMessage(...)，然后紧接着调用 window.close()
+                try {
+                    if (!window.opener) {
+                        window.opener = {
+                            postMessage: function(msg, origin) {
+                                console.log("[ReinAgent] opener.postMessage intercepted:", msg);
+                            },
+                            location: {
+                                reload: function() {},
+                                replace: function(url) {},
+                                href: "",
+                            },
+                            closed: false,
+                        };
+                    }
+                } catch (e) {}
+
+                // 2. 规范级屏蔽 WebAuthn / Passkey 特性：
+                //    OpenAI / Auth0 / Google 登录流在检测到 Linux WebKitGTK 缺少 DBus 守护时会引发 C++ 空指针段错误。
+                //    设置 PublicKeyCredential 为 undefined，并对 credentials.get/create 抛出标准的 NotSupportedError，
+                //    让前端 SDK 100% 优雅降级为常规邮箱密码/验证码流。
+                try {
+                    delete window.PublicKeyCredential;
+                    Object.defineProperty(window, 'PublicKeyCredential', {
+                        get: function() { return undefined; },
+                        set: function() {},
+                        configurable: false,
+                    });
+                } catch (e) {}
+
+                try {
+                    if (window.navigator && window.navigator.credentials) {
+                        const origGet = window.navigator.credentials.get ? window.navigator.credentials.get.bind(window.navigator.credentials) : null;
+                        window.navigator.credentials.get = async function(options) {
+                            if (options && (options.publicKey || options.mediation === 'conditional')) {
+                                throw new DOMException("WebAuthn is not supported on this platform", "NotSupportedError");
+                            }
+                            if (origGet) return origGet(options);
+                            return null;
+                        };
+                        const origCreate = window.navigator.credentials.create ? window.navigator.credentials.create.bind(window.navigator.credentials) : null;
+                        window.navigator.credentials.create = async function(options) {
+                            if (options && options.publicKey) {
+                                throw new DOMException("WebAuthn is not supported on this platform", "NotSupportedError");
+                            }
+                            if (origCreate) return origCreate(options);
+                            return null;
+                        };
+                    }
+                } catch (e) {}
+                // 3. 彻底禁用 ViewTransition API（根除 WebKit Bug 321683）：
+                //    WebKitGTK 在 Linux + NVIDIA / X11 环境下未启用硬件合成时，
+                //    任何调用 document.startViewTransition() 都会触发 DrawingAreaProxy 向空 BackingStore
+                //    发送更新，引发底层 SIGSEGV 闪退。
+                //    直接将 startViewTransition 声明为 undefined，促使现代 SPA（ChatGPT / Next.js）
+                //    100% 自动优雅回落到标准 DOM 同步渲染，彻底切断硬件合成崩溃链！
+                try {
+                    delete Document.prototype.startViewTransition;
+                    delete document.startViewTransition;
+                    Object.defineProperty(Document.prototype, 'startViewTransition', {
+                        get: function() { return undefined; },
+                        set: function() {},
+                        configurable: false,
+                    });
+                    Object.defineProperty(document, 'startViewTransition', {
+                        get: function() { return undefined; },
+                        set: function() {},
+                        configurable: false,
+                    });
+                } catch (e) {}
+            } catch (e) {
+                console.error("[ReinAgent] init_script error:", e);
+            }
+        })();
+    "#;
     let builder = tauri::webview::WebviewBuilder::new(BROWSER_LABEL, WebviewUrl::External(parse_url(&url)?))
+        .user_agent(user_agent)
+        .initialization_script(init_script)
         .on_page_load(move |_webview, payload| {
             match payload.event() {
                 tauri::webview::PageLoadEvent::Started => {
-                    let _ = app_handle.emit("browser-page-loading", true);
+                    let _ = app_handle_for_load.emit("browser-page-loading", true);
                 }
                 tauri::webview::PageLoadEvent::Finished => {
-                    let _ = app_handle.emit("browser-page-loading", false);
+                    let _ = app_handle_for_load.emit("browser-page-loading", false);
                 }
             }
+        })
+        .on_new_window(move |target_url, _features| {
+            let u = target_url.to_string();
+            if !u.is_empty() && u != "about:blank" {
+                let _ = app_handle_for_new_win.emit("browser-new-window", u);
+            }
+            tauri::webview::NewWindowResponse::Deny
         });
     if let Err(e) = window.add_child(
         builder,
@@ -158,7 +316,40 @@ pub async fn browser_open(app: AppHandle, url: String) -> Result<(), String> {
     // 堆叠 → 子 webview 排在主 webview 之下），而 wry 的 set_bounds 仅在 GtkFixed
     // 容器（is_in_fixed_parent）里才真正生效。实际的重挂延迟到首次
     // browser_set_bounds（面板已布局、页面已加载，重挂后立即精确 allocate）。
-    // Windows 走原生子 HWND，无需此修复。
+    #[cfg(target_os = "linux")]
+    if let Some(wv) = window.get_webview(BROWSER_LABEL) {
+        let app_handle_for_close = app.clone();
+        let _ = wv.with_webview(move |platform| {
+            use webkit2gtk::{WebContextExt, WebViewExt};
+            let wk = platform.inner();
+            if let Some(settings) = WebViewExt::settings(&wk) {
+                use gtk::glib::translate::ToGlibPtr;
+                let ptr: *mut webkit2gtk::ffi::WebKitSettings = settings.to_glib_none().0;
+                disable_webkit_view_transitions(ptr as _);
+            }
+            if let Some(ctx) = wk.context() {
+                ctx.set_tls_errors_policy(webkit2gtk::TLSErrorsPolicy::Ignore);
+            }
+            wk.connect_load_failed_with_tls_errors(|view, failing_uri, cert, _errors| {
+                if let Some(ctx) = view.context() {
+                    ctx.allow_tls_certificate_for_host(cert, failing_uri);
+                }
+                true
+            });
+            wk.connect_close(move |view| {
+                use gtk::glib;
+                glib::signal::signal_stop_emission_by_name(view, "close");
+                let _ = app_handle_for_close.emit("browser-window-close", ());
+            });
+            wk.connect_web_process_crashed(|_| {
+                eprintln!("[ReinAgent] WebKit WebProcess crash caught, protecting host window!");
+                true
+            });
+            wk.connect_web_process_terminated(|_, reason| {
+                eprintln!("[ReinAgent] WebKit WebProcess terminated caught: {:?}", reason);
+            });
+        });
+    }
     Ok(())
 }
 
@@ -183,6 +374,7 @@ fn reparent_browser_webview_to_fixed(
     let webview = window
         .get_webview(BROWSER_LABEL)
         .ok_or_else(|| "reparent: 浏览器 webview 不存在".to_string())?;
+    let app_handle_for_close = window.app_handle().clone();
     webview
         .with_webview(move |platform| {
             use gtk::prelude::*;
@@ -248,6 +440,33 @@ fn reparent_browser_webview_to_fixed(
                 }
             }
             fixed.put(&widget, 0, 0);
+            use webkit2gtk::{WebContextExt, WebViewExt};
+            if let Some(settings) = WebViewExt::settings(&wk) {
+                use gtk::glib::translate::ToGlibPtr;
+                let ptr: *mut webkit2gtk::ffi::WebKitSettings = settings.to_glib_none().0;
+                disable_webkit_view_transitions(ptr as _);
+            }
+            if let Some(ctx) = wk.context() {
+                ctx.set_tls_errors_policy(webkit2gtk::TLSErrorsPolicy::Ignore);
+            }
+            wk.connect_load_failed_with_tls_errors(|view, failing_uri, cert, _errors| {
+                if let Some(ctx) = view.context() {
+                    ctx.allow_tls_certificate_for_host(cert, failing_uri);
+                }
+                true
+            });
+            wk.connect_close(move |view| {
+                use gtk::glib;
+                glib::signal::signal_stop_emission_by_name(view, "close");
+                let _ = app_handle_for_close.emit("browser-window-close", ());
+            });
+            wk.connect_web_process_crashed(|_| {
+                eprintln!("[ReinAgent] WebKit WebProcess crash caught in reparented webview, protecting host window!");
+                true
+            });
+            wk.connect_web_process_terminated(|_, reason| {
+                eprintln!("[ReinAgent] WebKit WebProcess terminated in reparented webview: {:?}", reason);
+            });
         })
         .map_err(|e| format!("reparent: with_webview 派发失败: {e}"))?;
     Ok(())

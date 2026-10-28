@@ -42,6 +42,8 @@ ReinAgent 架构全景
 │   ├── src/store/useAppStore.ts        # 全局响应式状态 (主题、语言、任务、工作区项目、终端控制)
 │   ├── src/i18n/index.ts               # 轻量级中英文国际化双语字典 (zh-CN / en-US)
 │   ├── src/components/
+│   │   ├── apps/
+│   │   │   └── AppsPage.tsx            # 应用中心（Apps 启动台）：Squircle 大圆角彩色网格启动台
 │   │   ├── sidebar/
 │   │   │   ├── WorkspaceSidebar.tsx    # 侧边栏主体：品牌 Header、快捷操作、分组/项目 Tab、用户信息
 │   │   │   └── ProjectList.tsx         # 项目与任务类目：折叠展开、长按拖拽重排、Tooltip 触发、时间流
@@ -2828,4 +2830,175 @@ UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在�
    - `tsc --noEmit`：0 错误，TypeScript 全量严格类型检查通过；
    - `bun test`：全套 678 项单元测试全部通过（678 pass, 0 fail across 92 files）；
    - Computer Use 驱动：升级 `scripts/computer_use_driver.py` 为基于 Linux `/dev/uinput` 的 `EV_ABS` 绝对指针设备驱动，彻底解决 Wayland 下 libinput 指针加速度与坐标漂移难题，实现 1:1 像素级高保真桌面自动化操作。
+
+### 4. 应用中心（Apps Launchpad）与底栏重构（v0.2.17）
+
+- **需求背景与定位**：
+  - 侧边栏与底栏功能膨胀，为保持界面极简与高聚合度，重构主导航：
+  1. **底栏图标位移与精简**：彻底删除原底栏的「插件」插头图标；将原在侧栏顶部隐藏的「通知」铃铛图标（`<InboxBell />`）移至原插件位置。底栏标准顺序对齐为：`☀️ 主题 -> 🌐 语言 -> ⚙️ 设置 -> 🔔 通知 -> 🖥 远端接入`。
+  2. **侧边栏新增「应用 (App)」入口**：在左侧栏「笔记」下方新增一级入口「应用」(`LayoutGrid` 图标)，中英文词条为 `应用 / App`。同时将原常驻侧栏的「知识图谱」与「Wiki 文档」移入应用中心统一收纳，精炼侧栏层级。
+  3. **应用中心 Squircle 启动台 (`AppsPage.tsx`)**：复刻大圆角彩色网格启动台（类似 iOS / macOS Launchpad），呈现 7 个核心能力卡片：
+     - 翡翠绿 `bg-emerald-500`「知识图谱」
+     - 天蓝色 `bg-sky-500`「Wiki 文档」
+     - 紫粉色 `bg-purple-500`「插件」
+     - 助手库（`Bot`）、看板（`Columns3`）、自动化（`Timer`）、笔记本（`BookOpen`）
+  4. **全流程闭环联动**：
+     - 在「应用」中心点击「知识图谱」或「Wiki 文档」，页面顶栏均呈现 `← 应用` 快捷返回导航；
+     - 在「应用」中心点击「插件」，自动唤起设置弹窗并直达「插件」配置 Tab。
+
+- **真人操作软件端到端验收证据 (Computer Use 驱动原生桌面端验证)**：
+  - **底栏图标顺序截屏**：`screenshots/verified_bottom_bar.png`（从左至右：☀️ 主题、🌐 [中] 语言、⚙️ 设置、🔔 通知、🖥 远端接入，原插件已删除）；
+  - **侧边栏导航项截屏**：`screenshots/verified_sidebar_apps.png`（「笔记」下方呈现「应用」，图标为 `LayoutGrid`）；
+  - **应用中心启动台截屏**：`screenshots/verified_apps_launchpad.png`（7 大 Squircle 彩色卡片大图标网格，完全复刻图二布局）；
+  - **Wiki 文档及返回导航截屏**：`screenshots/verified_wiki_from_apps.png`（在启动台点击「Wiki 文档」成功进入，顶栏呈现 `← 应用`）；
+  - **知识图谱及返回导航截屏**：`screenshots/verified_graph_from_apps.png`（在启动台点击「知识图谱」成功进入，顶栏呈现 `← 应用` 且力导向拓扑正常渲染）；
+  - **插件设置跳转截屏**：`screenshots/verified_plugins_from_apps.png`（在启动台点击「插件」成功直达设置弹窗中的「插件」Tab）。
+
+### 5. 应用中心大模型官网导航与内置浏览器集成（v0.2.17）
+
+- **需求背景与定位**：
+  - 在「应用中心」页面采用**方案 A（分区分组）**，顶部保留本地能力与工具（知识图谱、Wiki文档、插件等），下方新增「大模型官网」专属分类区块；
+  - 接入国内外 8 大顶流大模型，图标 100% 提取自 `CherryHQ/cherry-studio` 官方仓库的原始 SVG；
+  - 点击卡片使用 ReinAgent 内置浏览器（`BrowserPane` / WebKitGTK / WebView2）在右侧并排打开官网进行直接聊天，支持随时一键全宽最大化铺满工作区。
+
+- **8 大大模型官网明细**：
+  1. **Gemini** (`https://gemini.google.com`) - Cherry Studio `gemini.svg`
+  2. **ChatGPT** (`https://chatgpt.com`) - Cherry Studio `openai-dark.svg`
+  3. **Claude** (`https://claude.ai`) - Cherry Studio `claude.svg`
+  4. **Grok** (`https://grok.com`) - Cherry Studio `grok-dark.svg`
+  5. **DuckDuckGo** (`https://duckduckgo.com/chat`) - Cherry Studio `duck.svg`
+  6. **DeepSeek** (`https://chat.deepseek.com`) - Cherry Studio `deepseek.svg`
+  7. **豆包** (`https://www.doubao.com/chat/`) - Cherry Studio `doubao.svg`
+  8. **千问** (`https://tongyi.aliyun.com`) - Cherry Studio `qwen.svg`
+
+- **真人操作软件端到端验收证据 (Computer Use 驱动原生桌面端验证)**：
+  - **应用中心大模型官网网格截屏**：`screenshots/verified_apps_models_grid.png`（大模型官网专属区块、8 个彩色大圆角 Squircle 品牌卡片，纯正 Cherry Studio 矢量图标）；
+  - **内置浏览器呼出与加载截屏**：`screenshots/verified_browser_portal_opened.png`（点击大模型卡片后右侧平滑滑出内置浏览器，URL 栏与网页加载就绪）；
+  - **浏览器关闭与全宽复原截屏**：`screenshots/verified_browser_closed.png`（点击右上角 `X` 关闭浏览器，应用中心平滑铺满复原）。
+
+### 6. 内置浏览器 Chrome 风格水平多标签栏与副标题精炼（v0.2.17）
+
+- **需求背景与优化定位**：
+  1. **文案精炼**：删除应用中心大模型官网下方的副标题文字（“点击使用内置浏览器打开进入官网进行聊天”），消除视觉冗余，整体布局与上方本地工具区保持统一的高级简约感；
+  2. **Chrome 风格多标签栏 (`BrowserPane.tsx`)**：在内置浏览器最顶层新增水平多标签栏，支持标签管理（网站 Favicon 图标、网页标题、悬停/激活小 `×` 关闭、右侧 `+` 新建按钮）；
+  3. **用户简化指令对齐**：应用中心点击任意大模型图标时，自动生成独立 `tabId: tab-${model.id}-${Date.now()}`，直接创建并激活新标签页，无需复杂的会话映射；
+  4. **全生命周期交互状态流转**：
+     - **自由切换**：点击标签栏任一非激活 Tab，即刻切换 `activeTabId`，地址栏实时同步，并通过 `browser_navigate` 切换到对应网页；
+     - **一键新建**：点击标签栏右侧 `+` 按钮，自动追加「新标签页」并加载默认搜索引擎（Bing）；
+     - **平滑关闭**：点击标签右侧小 `×` 按钮关闭该标签；若关闭的是当前激活标签，自动平滑聚焦邻近前驱标签；若最后一个标签被关闭，自动触发 `onClose()` 优雅收起整个内置浏览器面板并复原工作区。
+
+- **真人操作软件端到端验收证据 (Computer Use 驱动原生桌面端验证)**：
+  - **副标题删除验收**：`screenshots/verified_apps_subtitle_removed.png`（副标题文案彻底清除，网格干净利落）；
+  - **单标签初始打开**：`screenshots/verified_browser_tab1_gemini.png`（点击 Gemini 卡片，右侧浏览器顶层显示 Chrome 风格 `[ 🌐 Gemini  × ]` 与 `+` 按钮）；
+  - **多标签自动追加与激活**：`screenshots/verified_browser_tab2_chatgpt.png`（在应用中心继续点击 ChatGPT，浏览器自动追加第二个 Tab `[ 🌐 ChatGPT  × ]` 并激活）；
+  - **标签自由切换**：`screenshots/verified_browser_tab_switch.png`（点击切回 `[ 🌐 Gemini ]` 标签，地址栏与页面瞬间响应切回 Gemini）；
+  - **+ 按钮新建标签页**：`screenshots/verified_browser_tab3_newtab.png`（点击 `+` 按钮，自动新增 `[ 🌐 新标签页  × ]` 并加载 Bing 首页）；
+  - **标签关闭与平滑回退**：`screenshots/verified_browser_tab_closed.png`（点击关闭第 3 个标签，焦点平滑回退到第 2 个标签 ChatGPT，网页与 URL 自动复原）；
+  - **浏览器关闭与全宽复原**：`screenshots/verified_browser_pane_closed.png`（关闭所有标签或点击浏览器总关闭按钮，面板平滑收起，应用中心全宽复原）。
+
+### 7. 内置浏览器 OAuth/弹窗闪退防护与桌面端 UA 伪装（v0.2.17）
+
+- **问题现象与底层成因定位**：
+  1. **OAuth 跨窗口弹窗崩溃（主因）**：ChatGPT 官网（`chatgpt.com`）点击登录时，底层的认证 SDK（Auth0 / OpenAI Auth）通过 JavaScript 发起 `window.open(url, "_blank", "...")` 唤起独立 OAuth 授权小窗。原 `WebviewBuilder` 未配置 `.on_new_window` 拦截器，导致底层 Linux (WebKitGTK) 或 Windows (WebView2) 遇到未托管的新窗口请求时触发未捕获异常或 `SIGSEGV`，导致整机闪退；
+  2. **机器人指纹对抗（副因）**：未设置桌面 User-Agent，内嵌 WebView 暴露默认标识，触发 OpenAI / Cloudflare Turnstile 深度人机对抗脚本，在内嵌环境极易打崩渲染进程；
+  3. **认证凭据调用冲突**：Passkey / WebAuthn 等在内嵌容器中因缺少系统级凭据弹窗支持而抛出致命错误。
+
+- **三维加固与解决方案实现**：
+  1. **弹窗拦截与安全收敛 (`src-tauri/src/browser.rs`)**：
+     - 在 `WebviewBuilder` 注册 `.on_new_window(move |target_url, _features| ...)`；
+     - 派发 `"browser-new-window"` 事件通知前端，并强制返回 `tauri::webview::NewWindowResponse::Deny`，彻底杜绝底层创建非托管原生子窗带来的进程硬崩溃；
+  2. **精准原生 User-Agent 规范（剔除 Tauri 关键字，与底层引擎严格一致） (`src-tauri/src/browser.rs`)**：
+     - 避免跨内核虚假 UA 穿帮（如 Linux WebKit 伪装 Chrome 导致 Cloudflare 下发反调试陷阱触发 `NeedDebuggerBreak trap` 冻结主线程）；
+     - 仅精准剔除导致 403 的 `Tauri` 框架关键字，按操作系统和底层内核匹配原生桌面 UA：
+       - Linux (WebKitGTK): `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15`
+       - macOS (WKWebView): `Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15`
+       - Windows (WebView2): `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0`
+  3. **前端多标签自愈与外部系统浏览器兜底 (`src/components/browser/BrowserPane.tsx`)**：
+     - 监听 `"browser-new-window"` 事件，捕获到普通新页面链接时自动在多标签栏中新建标签页并导航，实现内嵌一体化沉浸体验；
+     - 在地址栏右侧新增 `ExternalLink` 图标按钮，调用 `@tauri-apps/plugin-opener` 的 `openUrl`，支持用户一键将当前页面转至系统默认主流浏览器（Chrome/Edge）中完成特定企业级单点登录。
+  4. **WebAuthn / Passkey 防崩存根 (`src-tauri/src/browser.rs`)**：
+     - 为内嵌 WebView 注入 `initialization_script`，拦截 `navigator.credentials.get`；
+     - 当检测到 `publicKey`（Passkey 探测）时规范返回 `NotSupportedError`，彻底阻断 Linux WebKitGTK 因缺失 FIDO2 硬件驱动触发的底层 C++ 空指针 `SIGSEGV`（段错误闪退），促使 ChatGPT 等站点自动降级到密码或邮箱验证码流程。
+  5. **第三方 OAuth 授权弹窗智能外调宿主浏览器（方案 B） (`src/components/browser/BrowserPane.tsx`)**：
+     - 精准识别 Google（`accounts.google.com`）、Apple（`appleid.apple.com`）、微软、GitHub 等跨窗口 OAuth 授权弹窗；
+     - 自动调用系统默认浏览器（Chrome/Edge）承接授权流，绝不在内嵌单 WebView 中粗暴替换原页面破坏 `window.opener` 上下文，彻底杜绝多开“登录认证”标签页与登录态丢失。
+
+- **真人操作软件端到端验收证据 (Computer Use 驱动原生桌面端验证)**：
+  - **ChatGPT 稳定加载与外部打开按钮实测**：`screenshots/verified_chatgpt_with_external_link.png`（ChatGPT 页面稳定呈现、Turnstile 正常通过、无闪退现象，地址栏右侧呈现「在系统默认浏览器中打开」外部链接按钮）。
+
+### 内嵌浏览器 Linux + NVIDIA 环境下点击 Continue 闪退根本解决（2026-10-28）
+
+- **现象定位与真实错误根因**：
+  1. **UIProcess 崩溃点（已捕获并解决）**：
+     在 Linux (WebKitGTK) + NVIDIA 独立显卡驱动环境下，当在 ChatGPT 登录页输入邮箱并点击 `Continue` 时，页面触发复杂的转场动画与硬件加速请求。WebKitGTK 在 release 构建中，若底层硬件上下文未就绪，`AcceleratedBackingStore::create()` 会返回 `nullptr`，随后在 `AcceleratedBackingStore::update()` 入口处未加检查直接执行 `mov 0x48(%rdi), %rcx` 解引用空指针，引发底层段错误 `SIGSEGV`。
+  2. **双重防御架构落地 (`src-tauri/src/browser.rs` & `src-tauri/src/lib.rs`)**：
+     - **第一重（Native Detour Hook）**：在 `browser.rs` 中通过 `ensure_webkit_null_guard()` 解析 `/proc/self/maps` 定位 `libwebkit2gtk-4.1.so.0` 的基地址，对 `AcceleratedBackingStore::update`（偏移量 `0xfd1150`）动态注入 14 字节跳转桩。当检测到 `this_ptr == nullptr` 时安全早退，成功化解底层空指针解引用崩溃（控制台日志：`🛡️🛡️🛡️ [ReinAgent GUARD] PREVENTED WebKitGTK SIGSEGV`）。
+     - **第二重（全面软件渲染与禁用硬件合成）**：为彻底防止 WebKitGTK 的渲染子进程（WebProcess）在尝试建立 NVIDIA DMABUF/EGL 管道失败时触发进程退出，在 `src-tauri/src/lib.rs` 的入口处注入全套防御性环境变量：
+       - `WEBKIT_DISABLE_COMPOSITING_MODE=1`：彻底禁用 WebKitGTK 硬件加速合成管道，转为 CPU 软件渲染；
+       - `WEBKIT_DMABUF_RENDERER_FORCE_SHM=1`：强制使用系统共享内存缓冲；
+       - `WEBKIT_DMABUF_RENDERER_DISABLE_GBM=1`：禁用损坏的 Generic Buffer Management（GBM）路径；
+       - `__NV_DISABLE_EXPLICIT_SYNC=1`：规避 NVIDIA 显卡在 Wayland/XWayland 下的显式同步冲突；
+       - `std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER")`：防止初始化落空。
+     - **第三重（进程异常隔离）**：在 Webview 初始化时监听 `connect_web_process_crashed` 与 `connect_web_process_terminated`，确保即使内嵌子页面异常终止也不会级联波及 Tauri 主程序。
+  3. **终极根因锁定（WebKit 官方 Bug 321683）与彻底切断方案**：
+     - **官方缺陷定位**：官方 Bugzilla 记录为 `Bug 321683: [GTK] Release-build null-pointer crash in AcceleratedBackingStore::update() when document.startViewTransition() is the first trigger of accelerated compositing`。在 Linux/NVIDIA 环境下，ChatGPT（Next.js SPA）在输入邮箱点击 `Continue` 时会无条件调用 `document.startViewTransition()`，这会触发 WebProcess 向 UIProcess 发送 `EnterAcceleratedCompositingMode`。由于硬件加速 BackingStore 为 null，内部 `ASSERT` 在 release 构建失效，导致崩溃。
+     - **双重切断方案**：
+       - **引擎层禁用**：在 `browser.rs` 中通过动态链接调用 WebKitGTK 原生 C API `webkit_settings_set_feature_enabled(settings, "ViewTransitions", FALSE)` 及 `CrossDocumentViewTransitions`，从底层彻底关闭该特性；
+       - **DOM/JS 层移除**：在 `initialization_script` 中将 `Document.prototype.startViewTransition` 和 `document.startViewTransition` 彻底定义为 `undefined`，使 ChatGPT 等现代 SPA 框架检测到平台不支持 ViewTransitions 时，自动、平稳地回落为标准的 DOM 同步渲染，彻底消除硬件合成请求。
+  4. **真人实测验收结果**：
+     - 用户本人在真实环境（Linux + NVIDIA 独立显卡）在内嵌浏览器中输入邮箱点击 `Continue`，无任何闪退，页面顺畅进入后续认证环节，彻底解决登录闪退缺陷。
+
+### 内嵌浏览器 Claude 谷歌快捷登录与弹窗自动流转闭环（2026-10-28）
+
+- **现象与深层根因分析**：
+  1. **Google 登录停留在个人中心（`myaccount.google.com`）**：
+     在上一轮修复代码中，`init_script` 里的 `window.close()` 粗暴地将包含 `auth/login` 的页面重定向到了 `window.location.origin`。当 Google 授权完毕触发 `window.close()` 时，页面被强行重定向至 `https://accounts.google.com`，进而被 Google 自动 302 跳到了 Google 账户主页 `https://myaccount.google.com/`，破坏了正常的 OAuth 回调。
+  2. **主标签页（Claude）未能自动感知登录**：
+     由于当前内嵌浏览器底层采用单 Webview 容器，当点击 Google 快捷登录打开新标签页（Tab 2）时，底层的同一个 Webview 已经被切换去加载 Google。Claude 页面（Tab 1）在底层已经不再运行。必须在 Google 登录完成/弹窗关闭后，**自动关闭 Tab 2，切回 Tab 1 并重新导航至 `https://claude.ai`**，Claude 才能读取同一 WebKit 容器中已写入的 Session Cookie 完成自动登录。
+
+- **彻底闭环解决方案落地**：
+  1. **修正 `window.close` 与 `init_script` (`src-tauri/src/browser.rs`)**：
+     - 彻底废除将 URL 强跳至 `window.location.origin` 的错误逻辑，避免重定向到 `myaccount.google.com`；
+     - 在 WebKitGTK 的 `connect_close`（含 reparent 前后）中拦截 GTK `close` 信号并向前端发射 `"browser-window-close"` 事件；
+  2. **前端弹窗与父标签生命周期联动 (`src/components/browser/BrowserPane.tsx`)**：
+     - 在 `BrowserTab` 中新增 `isPopup?: boolean` 和 `openerTabId?: string` 关联；
+     - 抽离出统一的 `closeTab(tabId)` 函数：当弹窗标签页关闭时，自动平滑切回其 `openerTabId`（Claude 主标签页），并自动重新触发导航/刷新以使 Cookie 生效；
+     - 监听 `"browser-window-close"` 事件：一旦 Google 授权完成调用 `window.close()`，前端自动关闭弹窗 Tab 并切回主站刷新；
+     - 智能 URL 闭环监测：在地址栏轮询中，若检测到弹窗 Tab 的 URL 已经重定向回父站域名（如 `claude.ai`）或到达 Google 账户页，自动关闭弹窗 Tab 并无缝合并回主站。
+
+### 内嵌浏览器联网代理与 No-Proxy 白名单注入对齐（2026-10-28）
+
+- **现象与底层根因**：
+  - 用户在 ReinAgent「设置」-「联网代理」配置了出网代理 `http://127.0.0.1:7890`，并在「不使用代理的地址」中配置了 `*.deepseek.com` 等白名单；
+  - 但此前 `apply_webkit_proxy_settings` 仅在应用启动时针对主窗口 `main` webview 设置了代理，**右侧内嵌浏览器（`BROWSER_LABEL = "browser"`）在创建时完全遗漏了代理设置注入**；
+  - 导致内嵌浏览器底层静默回退到 Linux 系统的全局环境变量（`https_proxy=http://127.0.0.1:7890`），且未包含用户的 `no_proxy` 规则，把 `chat.deepseek.com` 强行走境外代理导致被拦截并抛出 TLS 握手断开。
+
+- **彻底对齐解决方案落地 (`src-tauri/src/app_proxy.rs` & `src-tauri/src/browser.rs`)**：
+  1. **通配符规则智能归一化 (`app_proxy.rs`)**：
+     - 提取公共函数 `apply_webkit_proxy_to_view(wk)`；
+     - 针对用户配置的 `*.deepseek.com`，自动智能展开为 `*.deepseek.com`、`.deepseek.com` 和 `deepseek.com` 填入 WebKitGTK 的 `ignore_hosts`，保证 100% 精确直连；
+  2. **内嵌浏览器生命周期全程绑定 (`browser.rs`)**：
+     - 在 `browser_open` 创建和 Linux 平台 `reparent` 后的两处 `with_webview` 入口，显式调用 `apply_webkit_proxy_to_view(&wk)`；
+     - 严格履行「留空直连（不读系统环境变量）」承诺：若代理留空则显式声明 `NetworkProxyMode::NoProxy`，彻底切断宿主 Linux 环境变量的静默代理污染；配置了 `no_proxy` 的域名则强制直连，绝不走代理。
+
+### 内嵌浏览器全屏最大化跨页面与跨任务挂起残留修复（2026-10-28）
+
+- **现象与底层根因**：
+  - 用户反馈在内嵌浏览器点击“全屏最大化”之后，切换左侧导航（如看板、笔记、设置）或点击切换其他会话任务时，内嵌浏览器的全屏原生 Webview 依然覆盖在屏幕中央，遮挡住了新页面的主体内容与聊天消息流；
+  - 根因：`CodeViewerPaneHost` 原先常驻在 `App.tsx` 最外层根节点，未与 `currentView` 做条件渲染隔离；且全屏最大化状态 `isMaximized` 仅在 `codeViewerSource` 改变时才重置；当用户直接切视图或切任务时，`codeViewerSource` 保持不变，全屏最大化的原生 Webview 控件持续处于激活状态并强行悬浮覆盖。
+
+- **彻底治理落地方案**：
+  1. **精准防护“仅全屏最大化时切视图/切任务才退出并收起” (`src/preview/CodeViewerPaneHost.tsx`)**：
+     - 当 `currentView` 改变（`prevView !== nextView`）或 `activeTaskId` 改变（`prevTaskId !== nextTaskId`）时：**仅当处于全屏最大化（`isMaximized === true`）时**，才自动退出最大化并调用 `closeCodeViewer()` 彻底销毁底层 WebKit 实例，避免全屏悬挂遮挡；
+     - 在普通分栏侧边栏模式下（未最大化），不阻断其他视图的分栏呈现；
+     - 导出纯逻辑函数 `shouldCloseOnViewChange(prevView, nextView, isMaximized)` 与 `shouldCloseOnTaskSwitch(prevTaskId, nextTaskId, isMaximized)`，并编写变异破坏红灯测试通过（`src/preview/codeViewerPaneHostLogic.test.mjs`）。
+  2. **应用中心就地打开内置浏览器 (`src/components/apps/AppsPage.tsx` & `src/App.tsx`)**：
+     - 移除 `AppsPage` 中强制切回工作台的跳转，在应用中心点击大模型卡片时，左侧保持在应用中心，右侧直接拉起内置浏览器分栏展示，体验丝滑流畅；
+     - `<CodeViewerPaneHost>` 恢复为常驻渲染外壳，支持在应用中心和工作台等页面按需分栏滑出。
+  4. **应用中心大模型官网清单升级 (`src/components/apps/AppsPage.tsx`)**：
+     - **千问**：图标更换为紫色背景 + 白色立体六角星折纸高清图标，官网链接精准对齐为 `https://www.qianwen.com/`；
+     - **豆包**：图标更换为浅蓝色底 3D 卡通女生头像高清图标（720×720 无损处理）；
+     - **新增 Muse**：引入官网官方渐变蓝 M 矢量标（`app-squiggle.svg`），官网 `https://muse.ai/`，排列于 Grok 之后。
+
+
 

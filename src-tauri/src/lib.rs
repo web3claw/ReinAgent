@@ -123,6 +123,12 @@ pub fn run() {
     }
     #[cfg(target_os = "linux")]
     {
+        // 关键防护：WebKitGTK 在 NVIDIA / XWayland 环境下，若启用硬加速 DMABUF 渲染器或其回退异常，
+        // 在网页触发硬件加速合成时可能引发驱动异常或空指针；
+        // 设置 WEBKIT_DMABUF_RENDERER_FORCE_SHM=1 强制 WebKitGTK 使用共享内存传输缓冲区，稳定可靠；
+        // 同时清理可能导致 backing store 初始化彻底落空的 WEBKIT_DISABLE_DMABUF_RENDERER。
+        std::env::set_var("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1");
+        std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
         gtk::glib::set_prgname(Some("ReinAgent"));
         gtk::glib::set_application_name("ReinAgent");
     }

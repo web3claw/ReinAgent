@@ -126,6 +126,7 @@ import { computeNextMemoryOrganizerRunAt } from "./components/memory/organizerSc
 import { GraphPage } from "./components/knowledge/GraphPage";
 import { pushNotification } from "./lib/inbox/api";
 import { WikiPage } from "./components/wiki/WikiPage";
+import { AppsPage } from "./components/apps/AppsPage";
 import { loadProvidersConfigFromDisk, providerAllowsMissingApiKey, resolveSupportedEffortLevels, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe, Gauge, X
@@ -2451,7 +2452,15 @@ export default function App() {
 
         {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {currentView === "wiki" ? (
+          {currentView === "apps" ? (
+            <AppsPage
+              onNavigate={(view) => setCurrentView(view)}
+              onOpenPlugins={() => {
+                setSettingsInitialTab("plugins");
+                setCurrentView("settings");
+              }}
+            />
+          ) : currentView === "wiki" ? (
             <WikiPage initialDocId={activeWikiDocId} />
           ) : currentView === "graph" ? (
             <GraphPage />

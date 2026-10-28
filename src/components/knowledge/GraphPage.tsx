@@ -93,6 +93,7 @@ export function GraphPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const theme = useAppStore((st) => st.theme);
+  const setCurrentView = useAppStore((st) => st.setCurrentView);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const palette = useMemo(() => readCanvasPalette(), [theme]);
 
@@ -437,6 +438,14 @@ export function GraphPage() {
     <div className="flex h-full min-h-0">
       <div className="flex min-w-0 flex-1 flex-col p-4">
         <div className="mb-3 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setCurrentView("apps")}
+            className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-dim)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition-colors mr-1 cursor-pointer"
+            title={t("appsBackToApps")}
+          >
+            ← {t("appsNav")}
+          </button>
           <Network className="h-4 w-4 text-[var(--text-dim)]" />
           <span className="text-sm font-semibold">{t("graphTitle")}</span>
           <span className="text-xs text-[var(--text-dim)]">

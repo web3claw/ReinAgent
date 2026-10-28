@@ -6,7 +6,7 @@ import { useAppStore } from '../../store/useAppStore';
 import { useTranslation } from '../../i18n';
 import {
   Sun, Moon, Plus, Search,
-  Timer, Settings, Monitor, Plug, Bot, BookOpen, Columns3, Network, BookText,
+  Timer, Settings, Monitor, Bot, BookOpen, Columns3, LayoutGrid,
 } from 'lucide-react';
 import { ProjectList, ProjectGroup } from './ProjectList';
 import { InboxBell } from './InboxBell';
@@ -133,7 +133,7 @@ export const MOCK_PROJECTS: ProjectGroup[] = [];
 export function WorkspaceSidebar({
   onNewTask,
   onOpenSearch,
-  onOpenPlugins,
+  onOpenPlugins: _onOpenPlugins,
   onOpenRemoteAccess,
 }: {
   onNewTask?: (project?: string | null) => void;
@@ -260,22 +260,12 @@ export function WorkspaceSidebar({
         </button>
 
         <button
-          onClick={() => setCurrentView('graph')}
+          onClick={() => setCurrentView('apps')}
           className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
         >
           <div className="flex items-center gap-2">
-            <Network className="w-4 h-4" />
-            <span className="text-sm font-semibold">{t('graphNav')}</span>
-          </div>
-        </button>
-
-        <button
-          onClick={() => setCurrentView('wiki')}
-          className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md cursor-pointer"
-        >
-          <div className="flex items-center gap-2">
-            <BookText className="w-4 h-4" />
-            <span className="text-sm font-semibold">{t('wikiNav')}</span>
+            <LayoutGrid className="w-4 h-4" />
+            <span className="text-sm font-semibold">{t('appsNav')}</span>
           </div>
         </button>
       </div>
@@ -286,13 +276,12 @@ export function WorkspaceSidebar({
       </div>
 
       {/* 底部图标条（对齐 PI-Desktop sidebar-footer）：主题/语言开关 + 齿轮=设置 /
-          插头=插件页（直落设置插件 tab）/ 电脑占位；提示为纯 CSS hover（无残留）。 */}
+          通知铃铛 / 电脑远端接入占位；提示为纯 CSS hover（无残留）。 */}
       <div className="flex items-center justify-between p-3 mt-auto border-t border-[var(--border)]">
         <div className="flex items-center">
           <FooterIconButton tooltip={theme === 'dark' ? t('lightMode') : t('darkMode')} onClick={toggleTheme}>
             {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
           </FooterIconButton>
-          <InboxBell />
           <FooterIconButton
             tooltip={locale === 'zh-CN' ? 'Switch to English' : '切换为简体中文'}
             onClick={toggleLocale}
@@ -302,9 +291,7 @@ export function WorkspaceSidebar({
           <FooterIconButton tooltip={t('settings')} onClick={() => setCurrentView('settings')}>
             <Settings className="w-4 h-4" />
           </FooterIconButton>
-          <FooterIconButton tooltip={t('navPlugins')} onClick={onOpenPlugins}>
-            <Plug className="w-4 h-4" />
-          </FooterIconButton>
+          <InboxBell />
           <FooterIconButton tooltip={remoteTooltip} onClick={onOpenRemoteAccess}>
             <span className="relative inline-flex">
               {/* 图标颜色跟随状态：未开启=默认灰、开启=橙、有设备连接=绿（对齐 ZCode runtimeDot） */}

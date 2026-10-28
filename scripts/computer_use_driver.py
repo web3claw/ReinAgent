@@ -110,6 +110,19 @@ class ComputerUse:
             raise RuntimeError(f"Window '{self.window_name}' not found!")
         win_id = int(out[-1])
         info = subprocess.check_output(['xwininfo', '-id', str(win_id)]).decode()
+        for line in info.splitlines():
+            if line.strip().startswith("Parent window id:"):
+                parts = line.strip().split(":")
+                parent_hex = parts[1].strip().split()[0]
+                parent_id = int(parent_hex, 16)
+                try:
+                    pinfo = subprocess.check_output(['xprop', '-id', str(parent_id), 'WM_CLASS']).decode()
+                    if 'mutter-x11-frames' in pinfo:
+                        win_id = parent_id
+                        info = subprocess.check_output(['xwininfo', '-id', str(win_id)]).decode()
+                except Exception:
+                    pass
+                break
         abs_x, abs_y, w, h = 0, 0, 0, 0
         for line in info.splitlines():
             line = line.strip()
@@ -132,7 +145,7 @@ class ComputerUse:
         os.write(self.fd, data)
 
     def mouse_move_to(self, rel_x: int, rel_y: int):
-        subprocess.run(['xdotool', 'windowactivate', '--sync', str(self.win_id)])
+        subprocess.run(['xdotool', 'windowactivate', str(self.win_id)])
         abs_x = self.win_x + rel_x
         abs_y = self.win_y + rel_y
         self._emit(EV_ABS, ABS_X, abs_x)

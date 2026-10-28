@@ -130,6 +130,7 @@ export function WikiPage({ initialDocId }: { initialDocId?: string | null } = {}
   const { t } = useTranslation();
   const { settings } = useSettings();
   const tasks = useAppStore((s) => s.tasks);
+  const setCurrentView = useAppStore((s) => s.setCurrentView);
   const isTauri = typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
   const [workspace, setWorkspace] = useState("");
@@ -386,6 +387,14 @@ export function WikiPage({ initialDocId }: { initialDocId?: string | null } = {}
     <div className="flex h-full min-h-0 flex-col">
       {/* 顶栏：工作区 + 生成 */}
       <div className="flex flex-wrap items-center gap-2 border-b border-[var(--border)] p-3">
+        <button
+          type="button"
+          onClick={() => setCurrentView("apps")}
+          className="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-[var(--text-dim)] hover:text-[var(--text)] hover:bg-[var(--surface-hover)] transition-colors mr-1 cursor-pointer"
+          title={t("appsBackToApps")}
+        >
+          ← {t("appsNav")}
+        </button>
         <BookText className="h-4 w-4 shrink-0 text-[var(--text-dim)]" />
         <span className="text-sm font-semibold">{t("wikiNav")}</span>
         <span className="flex-1" />

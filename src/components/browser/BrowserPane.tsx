@@ -1,32 +1,68 @@
 /**
- * BrowserPane —— 右侧面板内嵌浏览器（路线 B：WebView2 子控件）。
+ * BrowserPane —— 右侧面板内嵌浏览器（路线 B：WebView2 / WebKitGTK 子控件）。
  *
- * 布局：顶部 URL 栏（前端 UI），下方为「镂空」占位区——Rust 侧 WebView2
- * Controller 的 bounds 精确对齐占位区矩形（物理像素），原生网页渲染在
- * Tauri WebView 之上。占位区必须保持无前端可交互元素（会被子控件遮挡）。
- * bounds 同步：ResizeObserver + 窗口 resize 时上报；卸载时 browser_close。
+ * 增强特性：Chrome 风格水平多标签栏（Tabs Bar），支持多标签自由切换、
+ * + 新建标签、× 关闭单个标签、以及在应用中心点击大模型卡片自动打开新标签页。
  */
 
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { ArrowLeft, ArrowRight, Globe, Maximize2, Minimize2, RotateCw, X } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  ExternalLink,
+  Globe,
+  Maximize2,
+  Minimize2,
+  Plus,
+  RotateCw,
+  X,
+} from "lucide-react";
 import { useTranslation } from "../../i18n";
+
+export interface BrowserTab {
+  id: string;
+  title: string;
+  url: string;
+  isPopup?: boolean;
+  openerTabId?: string;
+}
 
 const START_URL = "https://www.bing.com";
 
 export function BrowserPane({
   url,
+  title,
+  incomingTabId,
   onClose,
   isMaximized,
   onToggleMaximize,
 }: {
   url?: string;
+  title?: string;
+  incomingTabId?: string;
   onClose: () => void;
   isMaximized?: boolean;
   onToggleMaximize?: () => void;
 }) {
   const { t } = useTranslation();
+
+  // 多标签状态管理
+  const [tabs, setTabs] = useState<BrowserTab[]>(() => {
+    const initialUrl = url || START_URL;
+    const initialTitle = title || (initialUrl === START_URL ? "Bing" : "新标签页");
+    return [{ id: incomingTabId || `tab-${Date.now()}`, title: initialTitle, url: initialUrl }];
+  });
+  const [activeTabId, setActiveTabId] = useState<string>(
+    () => incomingTabId || tabs[0]?.id || `tab-${Date.now()}`,
+  );
+
+  const tabsRef = useRef<BrowserTab[]>(tabs);
+  tabsRef.current = tabs;
+  const activeTabIdRef = useRef<string>(activeTabId);
+  activeTabIdRef.current = activeTabId;
+
   const [address, setAddress] = useState(url ?? START_URL);
   const [ready, setReady] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -34,19 +70,24 @@ export function BrowserPane({
   const slotRef = useRef<HTMLDivElement | null>(null);
   const addressRef = useRef<HTMLInputElement | null>(null);
   const boundsRef = useRef<{ x: number; y: number; w: number; h: number } | null>(null);
+  const lastIncomingTabRef = useRef<string | undefined>(incomingTabId);
+  const lastUrlRef = useRef<string | undefined>(url);
 
   // 页面加载生命周期事件监听
   useEffect(() => {
+    let active = true;
     let unlisten: UnlistenFn | undefined;
     listen<boolean>("browser-page-loading", (event) => {
-      setLoading(Boolean(event.payload));
+      if (active) setLoading(Boolean(event.payload));
     })
       .then((fn) => {
-        unlisten = fn;
+        if (active) unlisten = fn;
+        else fn();
       })
       .catch(() => {});
     return () => {
-      if (unlisten) unlisten();
+      active = false;
+      unlisten?.();
     };
   }, []);
 
@@ -76,7 +117,7 @@ export function BrowserPane({
     invoke("browser_set_bounds", { x, y, width: w, height: h }).catch(() => {});
   };
 
-  // 打开：创建子控件并导航
+  // 打开：创建子控件并导航至初始地址
   useEffect(() => {
     let disposed = false;
     setLoading(true);
@@ -100,17 +141,150 @@ export function BrowserPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 外部 url prop 发生变化时（如用户在聊天中点击新链接），若浏览器已就绪则自动导航
+  // 外部每次点击大模型卡片传入新的 incomingTabId 时：自动追加新标签页并激活
   useEffect(() => {
-    if (!ready || !url) return;
-    setAddress(url);
-    setLoading(true);
-    void invoke("browser_navigate", { url }).catch((err) => {
-      setLoading(false);
-      setError(String(err).slice(0, 300));
-    });
-  }, [ready, url]);
+    if (!incomingTabId || incomingTabId === lastIncomingTabRef.current) return;
+    lastIncomingTabRef.current = incomingTabId;
+    const targetUrl = url || START_URL;
+    const targetTitle = title || "新标签页";
+    const newTab: BrowserTab = {
+      id: incomingTabId,
+      title: targetTitle,
+      url: targetUrl,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(incomingTabId);
+    setAddress(targetUrl);
+    if (ready) {
+      setLoading(true);
+      void invoke("browser_navigate", { url: targetUrl }).catch((err) => {
+        setLoading(false);
+        setError(String(err).slice(0, 300));
+      });
+    }
+  }, [incomingTabId, url, title, ready]);
 
+  // 外部未带 incomingTabId（如常规链接点击）且 url 变化时：追加新标签页
+  useEffect(() => {
+    if (!url || incomingTabId) return;
+    if (url === lastUrlRef.current) return;
+    lastUrlRef.current = url;
+    const targetTitle = title || url;
+    const newTabId = `tab-${Date.now()}`;
+    const newTab: BrowserTab = {
+      id: newTabId,
+      title: targetTitle,
+      url,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTabId);
+    setAddress(url);
+    if (ready) {
+      setLoading(true);
+      void invoke("browser_navigate", { url }).catch((err) => {
+        setLoading(false);
+        setError(String(err).slice(0, 300));
+      });
+    }
+  }, [url, title, incomingTabId, ready]);
+
+  // 监听子 WebView 拦截的 window.open / target="_blank" 弹窗（如 OAuth 登录流）
+  useEffect(() => {
+    let active = true;
+    let unlisten: UnlistenFn | undefined;
+    void (async () => {
+      try {
+        const u = await listen<string>("browser-new-window", (event) => {
+          if (!active) return;
+          const targetUrl = event.payload;
+          if (!targetUrl || targetUrl === "about:blank") return;
+
+          let targetTitle = "新标签页";
+          try {
+            const parsed = new URL(targetUrl);
+            targetTitle = parsed.hostname.replace(/^www\./, "");
+            if (targetUrl.includes("auth") || targetUrl.includes("login")) {
+              targetTitle = "登录认证";
+            }
+          } catch {
+            // fallback
+          }
+          setTabs((prev) => {
+            const existing = prev.find((t) => t.url === targetUrl);
+            if (existing) {
+              setActiveTabId(existing.id);
+              setAddress(targetUrl);
+              return prev;
+            }
+            const newTabId = `tab-popup-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+            const newTab: BrowserTab = {
+              id: newTabId,
+              title: targetTitle,
+              url: targetUrl,
+              isPopup: true,
+              openerTabId: activeTabIdRef.current,
+            };
+            setActiveTabId(newTabId);
+            setAddress(targetUrl);
+            return [...prev, newTab];
+          });
+          setLoading(true);
+          void invoke("browser_navigate", { url: targetUrl }).catch((err) => {
+            setLoading(false);
+            setError(String(err).slice(0, 300));
+          });
+        });
+        if (active) {
+          unlisten = u;
+        } else {
+          u();
+        }
+      } catch {
+        // web mock fallback
+      }
+    })();
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, []);
+
+  // 监听原生窗口 close 事件（如 Google / OAuth 认证完成后调用 window.close()）
+  useEffect(() => {
+    let active = true;
+    let unlisten: UnlistenFn | undefined;
+    void (async () => {
+      try {
+        const u = await listen("browser-window-close", () => {
+          if (!active) return;
+          console.log("[ReinAgent] browser-window-close received, closing popup tab:", activeTabIdRef.current);
+          const currentTab = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
+          if (currentTab && tabsRef.current.length > 1) {
+            closeTab(currentTab.id);
+          }
+        });
+        if (active) unlisten = u;
+        else u();
+      } catch {
+        // web mock fallback
+      }
+    })();
+    return () => {
+      active = false;
+      unlisten?.();
+    };
+  }, [ready]);
+
+  // 在外部系统默认浏览器中打开当前网页
+  const handleOpenExternal = async () => {
+    if (!address) return;
+    try {
+      const { openUrl } = await import("@tauri-apps/plugin-opener");
+      await openUrl(address);
+    } catch {
+      window.open(address, "_blank");
+    }
+  };
 
   // 最大化/还原切换时立即刷新 bounds
   useEffect(() => {
@@ -139,8 +313,7 @@ export function BrowserPane({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready]);
 
-  // 地址栏跟随子 WebView 的实际 URL：页内点击链接/重定向时 React 态不会自动更新。
-  // 1s 轮询（无推送事件可用）；用户正在地址栏输入时不抢占。
+  // 地址栏跟随子 WebView 的实际 URL，并智能识别 OAuth 授权完成自动关闭弹窗切回主站
   useEffect(() => {
     if (!ready) return;
     let cancelled = false;
@@ -151,6 +324,33 @@ export function BrowserPane({
         .then((u) => {
           if (cancelled || typeof u !== "string" || !u) return;
           setAddress((prev) => (prev === u ? prev : u));
+          setTabs((prev) =>
+            prev.map((t) => (t.id === activeTabId && t.url !== u ? { ...t, url: u } : t)),
+          );
+
+          // 智能 OAuth 回调完成检测：
+          // 若当前是 OAuth 弹窗标签页，且检测到 URL 已经回调回到父站域名（如 claude.ai），
+          // 或已完成登录跳转至 Google 账户首页，自动关闭弹窗标签页并切回父站刷新生效！
+          const currentTab = tabsRef.current.find((t) => t.id === activeTabIdRef.current);
+          if (currentTab?.isPopup && currentTab.openerTabId) {
+            const opener = tabsRef.current.find((t) => t.id === currentTab.openerTabId);
+            if (opener) {
+              try {
+                const currentUrl = new URL(u);
+                const openerUrl = new URL(opener.url);
+                const isReturnedToOpener = currentUrl.origin === openerUrl.origin &&
+                  !u.includes("oauth") &&
+                  !u.includes("login") &&
+                  !u.includes("callback");
+                const isGoogleAccountDone = currentUrl.hostname === "myaccount.google.com";
+
+                if (isReturnedToOpener || isGoogleAccountDone) {
+                  console.log("[ReinAgent] OAuth login flow completed, auto-closing popup and switching to opener:", u);
+                  closeTab(currentTab.id);
+                }
+              } catch {}
+            }
+          }
         })
         .catch(() => {});
     }, 1000);
@@ -158,16 +358,28 @@ export function BrowserPane({
       cancelled = true;
       window.clearInterval(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready]);
+  }, [ready, activeTabId]);
 
   const navigate = (raw: string) => {
     let next = raw.trim();
     if (!next) return;
     if (!/^https?:\/\//i.test(next)) {
-      next = /^[\w-]+(\.[\w-]+)+/.test(next) ? `https://${next}` : `https://www.bing.com/search?q=${encodeURIComponent(next)}`;
+      next = /^[\w-]+(\.[\w-]+)+/.test(next)
+        ? `https://${next}`
+        : `https://www.bing.com/search?q=${encodeURIComponent(next)}`;
     }
     setAddress(next);
+    setTabs((prev) =>
+      prev.map((t) =>
+        t.id === activeTabId
+          ? {
+              ...t,
+              url: next,
+              title: t.title === "新标签页" ? next.replace(/^https?:\/\//, "") : t.title,
+            }
+          : t,
+      ),
+    );
     setLoading(true);
     void invoke("browser_navigate", { url: next }).catch((err) => {
       setLoading(false);
@@ -181,7 +393,6 @@ export function BrowserPane({
     try {
       await invoke("browser_reload");
     } catch {
-      // 降级兜底：若 reload 不可达，退化为 navigate(address)
       try {
         await invoke("browser_navigate", { url: address });
       } catch (err) {
@@ -191,7 +402,6 @@ export function BrowserPane({
     }
   };
 
-  /** 历史导航：子 WebView 内 history.back/forward。 */
   const historyNavigate = async (delta: number) => {
     try {
       await invoke("browser_eval", {
@@ -207,15 +417,163 @@ export function BrowserPane({
     }
   };
 
+  // 切换标签
+  const handleSwitchTab = (tab: BrowserTab) => {
+    if (tab.id === activeTabId) return;
+    setActiveTabId(tab.id);
+    setAddress(tab.url);
+    if (ready) {
+      setLoading(true);
+      void invoke("browser_navigate", { url: tab.url }).catch((err) => {
+        setLoading(false);
+        setError(String(err).slice(0, 300));
+      });
+    }
+  };
+
+  // 新建标签页
+  const handleNewTab = () => {
+    const newTabId = `tab-${Date.now()}`;
+    const newTab: BrowserTab = {
+      id: newTabId,
+      title: "新标签页",
+      url: START_URL,
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(newTabId);
+    setAddress(START_URL);
+    if (ready) {
+      setLoading(true);
+      void invoke("browser_navigate", { url: START_URL }).catch((err) => {
+        setLoading(false);
+        setError(String(err).slice(0, 300));
+      });
+    }
+  };
+
+  // 关闭指定标签页，并在关闭弹窗时自动平滑切回父标签页并刷新
+  const closeTab = (tabId: string) => {
+    const currentTabs = tabsRef.current;
+    const nextTabs = currentTabs.filter((t) => t.id !== tabId);
+    if (nextTabs.length === 0) {
+      // 最后一个标签关闭时退出整个浏览器
+      onClose();
+      return;
+    }
+    const closingTab = currentTabs.find((t) => t.id === tabId);
+    setTabs(nextTabs);
+
+    if (activeTabIdRef.current === tabId) {
+      let targetTab = closingTab?.openerTabId
+        ? nextTabs.find((t) => t.id === closingTab.openerTabId)
+        : undefined;
+      if (!targetTab) {
+        const closedIndex = currentTabs.findIndex((t) => t.id === tabId);
+        targetTab = nextTabs[Math.max(0, closedIndex - 1)];
+      }
+      if (targetTab) {
+        setActiveTabId(targetTab.id);
+        setAddress(targetTab.url);
+        if (ready) {
+          setLoading(true);
+          // 重新导航至父标签页以使已完成写入的 OAuth 凭据 Cookie 立即生效！
+          void invoke("browser_navigate", { url: targetTab.url }).catch((err) => {
+            setLoading(false);
+            setError(String(err).slice(0, 300));
+          });
+        }
+      }
+    }
+  };
+
+  // 关闭单个标签页
+  const handleCloseTab = (e: React.MouseEvent, tabId: string) => {
+    e.stopPropagation();
+    closeTab(tabId);
+  };
+
   return (
-    <div className="flex h-full flex-col">
-      {/* URL 栏（在 WebView 区域外，不被子控件遮挡） */}
-      <div className="flex h-9 flex-shrink-0 items-center gap-1 border-b border-[var(--border)] px-2">
+    <div className="flex h-full flex-col bg-[var(--bg)] select-none">
+      {/* 1. Chrome 风格水平多标签栏 */}
+      <div className="flex h-9 shrink-0 items-end bg-[var(--sidebar-bg)] border-b border-[var(--border)] px-2 gap-1 overflow-x-auto no-scrollbar">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar flex-1 min-w-0">
+          {tabs.map((tab) => {
+            const isActive = tab.id === activeTabId;
+            return (
+              <div
+                key={tab.id}
+                onClick={() => handleSwitchTab(tab)}
+                className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-t-lg text-xs cursor-pointer max-w-[170px] min-w-[90px] border-t border-l border-r transition-all relative select-none ${
+                  isActive
+                    ? "bg-[var(--bg)] text-[var(--foreground)] font-medium border-[var(--border)] shadow-xs -mb-[1px] z-10"
+                    : "bg-transparent text-[var(--text-dim)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)] border-transparent"
+                }`}
+                title={`${tab.title} (${tab.url})`}
+              >
+                <Globe
+                  className={`w-3.5 h-3.5 shrink-0 ${
+                    isActive ? "text-sky-400" : "text-[var(--text-dim)]"
+                  }`}
+                />
+                <span className="truncate flex-1 text-xs">{tab.title}</span>
+                <button
+                  type="button"
+                  onClick={(e) => handleCloseTab(e, tab.id)}
+                  className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-[var(--surface-hover)] text-[var(--text-dim)] hover:text-[var(--foreground)] transition-opacity cursor-pointer shrink-0"
+                  title="关闭标签页"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+            );
+          })}
+
+          {/* 新建标签 + 按钮 */}
+          <button
+            type="button"
+            onClick={handleNewTab}
+            className="p-1 rounded-md text-[var(--text-dim)] hover:text-[var(--foreground)] hover:bg-[var(--surface-hover)] transition-colors cursor-pointer shrink-0 ml-0.5"
+            title="新建标签页"
+          >
+            <Plus className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {/* 窗口控制：最大化 / 还原 / 关闭浏览器 */}
+        <div className="flex items-center gap-0.5 pb-1 pl-2 shrink-0">
+          {onToggleMaximize && (
+            <button
+              type="button"
+              onClick={onToggleMaximize}
+              title={isMaximized ? t("restore") : t("maximize")}
+              className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+              aria-label={isMaximized ? t("restore") : t("maximize")}
+            >
+              {isMaximized ? (
+                <Minimize2 className="h-3.5 w-3.5" />
+              ) : (
+                <Maximize2 className="h-3.5 w-3.5" />
+              )}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
+            title="关闭浏览器"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      </div>
+
+      {/* 2. URL 地址与导航栏 */}
+      <div className="flex h-9 flex-shrink-0 items-center gap-1 border-b border-[var(--border)] px-2 bg-[var(--bg)]">
         <button
           type="button"
           title="后退"
           onClick={() => void historyNavigate(-1)}
-          className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+          className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
         </button>
@@ -223,7 +581,7 @@ export function BrowserPane({
           type="button"
           title="前进"
           onClick={() => void historyNavigate(1)}
-          className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
+          className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] cursor-pointer"
         >
           <ArrowRight className="h-3.5 w-3.5" />
         </button>
@@ -233,7 +591,7 @@ export function BrowserPane({
           title={loading ? t("refreshing") : t("refresh")}
           aria-label={loading ? t("refreshing") : t("refresh")}
           onClick={() => void handleReload()}
-          className={`rounded p-1 text-[var(--text-dim)] transition-opacity ${
+          className={`rounded p-1 text-[var(--text-dim)] transition-opacity cursor-pointer ${
             loading
               ? "cursor-not-allowed opacity-60"
               : "hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
@@ -249,7 +607,6 @@ export function BrowserPane({
             value={address}
             onChange={(e) => setAddress(e.currentTarget.value)}
             onKeyDown={(e) => {
-              // 中文 IME 合成中的 Enter（上屏用）不触发导航；上屏后再按 Enter 才跳转
               if (e.key === "Enter" && !e.nativeEvent.isComposing) {
                 e.preventDefault();
                 navigate(e.currentTarget.value);
@@ -259,47 +616,42 @@ export function BrowserPane({
             placeholder="输入网址或搜索词"
           />
         </div>
-        {onToggleMaximize && (
-          <button
-            type="button"
-            onClick={onToggleMaximize}
-            title={isMaximized ? t("restore") : t("maximize")}
-            className="flex-shrink-0 rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-            aria-label={isMaximized ? t("restore") : t("maximize")}
-          >
-            {isMaximized ? (
-              <Minimize2 className="h-3.5 w-3.5" />
-            ) : (
-              <Maximize2 className="h-3.5 w-3.5" />
-            )}
-          </button>
-        )}
         <button
           type="button"
-          onClick={onClose}
-          className="flex-shrink-0 rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)]"
-          aria-label="关闭浏览器"
+          title="在系统默认浏览器中打开当前网页"
+          aria-label="在系统默认浏览器中打开当前网页"
+          onClick={() => void handleOpenExternal()}
+          className="rounded p-1 text-[var(--text-dim)] hover:bg-[var(--surface-hover)] hover:text-[var(--text)] transition-colors cursor-pointer shrink-0"
         >
-          <X className="h-4 w-4" />
+          <ExternalLink className="h-3.5 w-3.5" />
         </button>
       </div>
 
-      {/* 镂空区：WebView2 子控件渲染于此矩形之上；就绪前显示占位提示 */}
-      <div className="relative min-h-0 flex-1">
-        <div
-          ref={slotRef}
-          className="absolute inset-0"
-          style={{ background: ready ? "transparent" : undefined }}
-        />
-        {!ready ? (
-          <div className="absolute inset-0 flex items-center justify-center">
-            {error ? (
-              <p className="max-w-[80%] break-all text-center text-xs text-[var(--danger)]">{error}</p>
-            ) : (
-              <p className="text-xs text-[var(--text-dim)]">正在启动内嵌浏览器…</p>
-            )}
+      {/* 3. 错误提示条 */}
+      {error ? (
+        <div className="flex items-center justify-between bg-red-950/60 px-3 py-1 text-xs text-red-300">
+          <span className="truncate">{error}</span>
+          <button
+            type="button"
+            onClick={() => setError(null)}
+            className="ml-2 hover:underline cursor-pointer"
+          >
+            忽略
+          </button>
+        </div>
+      ) : null}
+
+      {/* 4. 原生子 WebView 占位区（bounds 由前端上报，原生视图绘制在上方） */}
+      <div
+        ref={slotRef}
+        data-testid="browser-webview-slot"
+        className="flex-1 w-full bg-[var(--bg)] relative overflow-hidden"
+      >
+        {!ready && (
+          <div className="flex h-full items-center justify-center text-xs text-[var(--text-dim)]">
+            浏览器加载中…
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );

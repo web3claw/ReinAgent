@@ -4,7 +4,7 @@
  * ZCode 移植的 PreviewPane；顶部提供标题栏与关闭按钮（PreviewPane 自身不渲染关闭）。
  */
 import { Maximize2, Minimize2, X } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { BundledLanguage } from "shiki";
 import { PlatformProvider } from "./hooks/usePlatform";
 import { PreviewPane } from "./PreviewPane";
@@ -75,6 +75,22 @@ function buildSource(
   };
 }
 
+export function shouldCloseOnViewChange(
+  prevView: string | null,
+  nextView: string | null,
+  isMaximized: boolean
+): boolean {
+  return prevView !== nextView && isMaximized;
+}
+
+export function shouldCloseOnTaskSwitch(
+  prevTaskId: string | null,
+  nextTaskId: string | null,
+  isMaximized: boolean
+): boolean {
+  return prevTaskId !== nextTaskId && isMaximized;
+}
+
 export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }) {
   const codeViewerSource = useAppStore((state) => state.codeViewerSource);
   const openCodeViewer = useAppStore((state) => state.openCodeViewer);
@@ -104,6 +120,29 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
   const [replayRunId, setReplayRunId] = useState<string | null>(null);
   // 所有侧边栏面板通用全宽最大化状态
   const [isMaximized, setIsMaximized] = useState(false);
+  const currentView = useAppStore((state) => state.currentView);
+  const activeTaskId = useAppStore((state) => state.activeTaskId);
+
+  // 1. 切换页面（currentView 改变）时：若当前处于全屏最大化状态，立即退出最大化并关闭，防止全屏原生 Webview 遮挡新页面
+  const lastViewRef = useRef<string | null>(currentView);
+  useEffect(() => {
+    if (shouldCloseOnViewChange(lastViewRef.current, currentView, isMaximized)) {
+      setIsMaximized(false);
+      closeCodeViewer();
+    }
+    lastViewRef.current = currentView;
+  }, [currentView, isMaximized, closeCodeViewer]);
+
+  // 2. 切换对话任务（activeTaskId 改变）时：若当前处于全屏最大化状态，立即退出最大化并关闭，让新任务聊天流完整呈现
+  const lastTaskIdRef = useRef<string | null>(activeTaskId);
+  useEffect(() => {
+    if (shouldCloseOnTaskSwitch(lastTaskIdRef.current, activeTaskId, isMaximized)) {
+      setIsMaximized(false);
+      closeCodeViewer();
+    }
+    lastTaskIdRef.current = activeTaskId;
+  }, [activeTaskId, isMaximized, closeCodeViewer]);
+
   useEffect(() => {
     // 每次面板重开/切换源时退出回放态并重置最大化态
     setReplayRunId(null);
@@ -145,6 +184,8 @@ export function CodeViewerPaneHost({ workspacePath }: { workspacePath?: string }
         )}
         <BrowserPane
           url={codeViewerSource.url}
+          title={codeViewerSource.title}
+          incomingTabId={codeViewerSource.tabId}
           isMaximized={isMaximized}
           onToggleMaximize={() => setIsMaximized((v) => !v)}
           onClose={() => {
