@@ -48,7 +48,6 @@ import { CuaDriverSection } from './CuaDriverSection';
 import { SkillsHubPage } from '../skills/SkillsHubPage';
 import { MemoryPanel } from '../memory/MemoryPanel';
 import { KnowledgeSection } from './KnowledgeSection';
-import { ScenarioModelsSection } from './ScenarioModelsSection';
 
 interface SettingsPageProps {
   settings: Settings;
@@ -281,8 +280,6 @@ export function SettingsPage({ settings, status, onChange, onBack, workspaceRoot
                 </button>
               </div>
             </div>
-            {/* 场景默认模型（ROADMAP ⑪ 方案 A）：统一读写四个场景的现有模型绑定 */}
-            <ScenarioModelsSection />
 
             {/* 消息配色：仅作用于消息/对话区（message-theme 作用域换肤），切换即时生效 */}
             <div className="p-4 bg-[var(--bg-elev)] rounded-xl border border-[var(--border)] flex items-center justify-between">

@@ -10,6 +10,8 @@ import {
   resolveScenario,
   bindingToNoteKey,
   noteKeyToBinding,
+  scenarioBindingToProviderConfig,
+  getActiveOrChatModelConfig,
 } from "./scenarioModels.ts";
 
 const providers = [
@@ -81,3 +83,49 @@ test("noteKey ⇄ binding 互转：空、斜杠边界、模型 id 含斜杠", ()
   assert.deepEqual(noteKeyToBinding("/m"), null);
   assert.deepEqual(noteKeyToBinding("p/"), null);
 });
+
+test("scenarioBindingToProviderConfig：activeTask 优先回退，再回退全局默认", () => {
+  const providersWithConfig = [
+    { id: "prov-a", enabled: true, apiKey: "key-a", baseUrl: "https://a.com", models: [{ id: "m1", enabled: true }, { id: "m2", enabled: true }] },
+    { id: "prov-b", enabled: true, apiKey: "key-b", baseUrl: "https://b.com", models: [{ id: "b1", enabled: true }] },
+  ];
+  const settings = { provider: "prov-a", modelId: "m1", apiKey: "default-key" };
+
+  // 1. 显式 binding 存在时优先采用
+  const res1 = scenarioBindingToProviderConfig({ providerId: "prov-b", modelId: "b1" }, providersWithConfig, settings, { providerId: "prov-a", modelId: "m2" });
+  assert.equal(res1.config?.provider, "prov-b");
+  assert.equal(res1.config?.modelId, "b1");
+  assert.equal(res1.fallbackUsed, false);
+
+  // 2. 无显式 binding，但 activeTask 指定了模型 → 优先使用 activeTask 模型
+  const res2 = scenarioBindingToProviderConfig(null, providersWithConfig, settings, { providerId: "prov-a", modelId: "m2" });
+  assert.equal(res2.config?.provider, "prov-a");
+  assert.equal(res2.config?.modelId, "m2");
+  assert.equal(res2.fallbackUsed, true);
+
+  // 3. 无显式 binding，activeTask 未指定 → 回退全局默认
+  const res3 = scenarioBindingToProviderConfig(null, providersWithConfig, settings, null);
+  assert.equal(res3.config?.provider, "prov-a");
+  assert.equal(res3.config?.modelId, "m1");
+  assert.equal(res3.fallbackUsed, true);
+});
+
+test("getActiveOrChatModelConfig：统一模型决议（优先当前会话，回退全局设置）", () => {
+  const providersWithConfig = [
+    { id: "prov-a", enabled: true, apiKey: "key-a", baseUrl: "https://a.com", models: [{ id: "m1", enabled: true }, { id: "m2", enabled: true }] },
+  ];
+  const settings = { provider: "prov-a", modelId: "m1" };
+
+  // 有活动会话模型
+  const activeRes = getActiveOrChatModelConfig({ providerId: "prov-a", modelId: "m2" }, settings, providersWithConfig);
+  assert.equal(activeRes.config?.provider, "prov-a");
+  assert.equal(activeRes.config?.modelId, "m2");
+  assert.equal(activeRes.fromActiveTask, true);
+
+  // 无活动会话模型 → 回退全局默认
+  const defaultRes = getActiveOrChatModelConfig(null, settings, providersWithConfig);
+  assert.equal(defaultRes.config?.provider, "prov-a");
+  assert.equal(defaultRes.config?.modelId, "m1");
+  assert.equal(defaultRes.fromActiveTask, false);
+});
+

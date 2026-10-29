@@ -932,27 +932,37 @@ export default function App() {
           m.resolveIndependentMemoryModelDeps(memory, providers),
         );
         if (independent) return independent;
-        // organizerModel 未配置（或供应商已不存在）→ 回落主对话模型（LA fallback 语义）
+        // organizerModel 未配置（或供应商已不存在）→ 回落主对话模型（优先当前活动会话模型，其次全局默认）
         const fallback = settingsRef.current;
-        if (!fallback.apiKey?.trim()) {
-          throw new Error("主对话模型未配置 API Key，且未选择独立的记忆整理模型。");
+        const { activeTaskId, tasks } = useAppStore.getState();
+        const activeTask = activeTaskId ? tasks.find((t) => t.id === activeTaskId) : null;
+        const activeOrChatProvider = (activeTask?.providerId && activeTask?.modelId)
+          ? activeTask.providerId
+          : fallback.provider;
+        const activeOrChatModelId = (activeTask?.providerId && activeTask?.modelId)
+          ? activeTask.modelId
+          : fallback.modelId;
+        const targetProvider = providers.find((p) => p.id === activeOrChatProvider);
+        const apiKey = targetProvider?.apiKey || fallback.apiKey;
+        if (!apiKey?.trim()) {
+          throw new Error("模型未配置 API Key，且未选择独立的记忆整理模型。");
         }
         const { buildModel } = await import("./lib/providers/modelFactory");
         const { getStreamFnForApi } = await import("./lib/providers/runAgentTurn");
         const model = buildModel({
-          provider: fallback.provider as any,
-          apiKey: fallback.apiKey,
-          modelId: fallback.modelId,
-          baseUrl: fallback.baseUrl,
-          apiFormat: providers.find((p) => p.id === fallback.provider)?.apiFormat,
+          provider: activeOrChatProvider as any,
+          apiKey,
+          modelId: activeOrChatModelId,
+          baseUrl: targetProvider?.baseUrl || fallback.baseUrl,
+          apiFormat: targetProvider?.apiFormat,
         });
         const stream = await getStreamFnForApi(model.api);
         return {
           model,
           stream,
           api: model.api,
-          label: `${fallback.provider}/${fallback.modelId}`,
-          getApiKey: () => fallback.apiKey,
+          label: `${activeOrChatProvider}/${activeOrChatModelId}`,
+          getApiKey: () => apiKey,
           thinkingLevel: undefined,
         };
       },

@@ -351,6 +351,9 @@ function isSkillReadmePath(path: string) {
 }
 
 export async function ensureBuiltinSkills() {
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+    return [];
+  }
   try {
     return await invoke<SystemBuiltinSkillSeedResponse[]>("system_ensure_builtin_skills");
   } catch (error) {
@@ -395,6 +398,9 @@ function sortAndDedupeSkills(skills: SkillSummary[]) {
 
 async function maybeAttachReadmeFallbackInline(skill: SkillSummary): Promise<SkillSummary> {
   if (!isSkillReadmePath(skill.skillFile)) {
+    return skill;
+  }
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
     return skill;
   }
 
@@ -499,6 +505,9 @@ async function loadSkillsDiscovery(): Promise<SkillDiscovery> {
   // 插件技能贡献（P2-G2 v2）：启用插件的 skills 目录（每子目录一个 SKILL.md）
   // 追加进发现结果；单条失败仅跳过（不拖垮整体发现）。
   try {
+    if (typeof window !== "undefined" && !("__TAURI_INTERNALS__" in window)) {
+      return discovery;
+    }
     const dirs = await getEnabledPluginSkillDirs();
     for (const dir of dirs) {
       try {
@@ -592,6 +601,12 @@ export async function readSkillText(params: {
   offset?: number;
   length?: number;
 }): Promise<SystemReadSkillTextResponse> {
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+    return {
+      content: `# ${params.path.split(/[\\/]/).pop() || "Skill"}\n\nWeb 模式下的 Skill 说明文档预览。\n\n在桌面端运行 ReinAgent 时将实时读取本地或插件中的 \`SKILL.md\` 文件。`,
+      truncated: false,
+    };
+  }
   return invoke<SystemReadSkillTextResponse>("system_read_skill_text", {
     path: params.path,
     offset: params.offset,
@@ -602,6 +617,66 @@ export async function readSkillText(params: {
 export async function manageSkill(
   params: Record<string, unknown>,
 ): Promise<SystemManageSkillResponse> {
+  if (typeof window === "undefined" || !("__TAURI_INTERNALS__" in window)) {
+    const action = typeof params.action === "string" ? params.action : "";
+    if (action === "list") {
+      return {
+        action: "list",
+        rootDir: "/mock/skills",
+        skills: [
+          {
+            name: "grill-me",
+            description: "交互式需求对齐与设计反思工具，帮助细化开发方案与设计决策。",
+            target: "/mock/skills/grill-me",
+            skillFile: "/mock/skills/grill-me/SKILL.md",
+            baseDir: "grill-me",
+            builtIn: true,
+            installedAt: 1730000000000,
+          },
+          {
+            name: "skills-creator",
+            description: "用于编写、调试、打包与发布自定义 Agent 技能的内置工具集。",
+            target: "/mock/skills/skills-creator",
+            skillFile: "/mock/skills/skills-creator/SKILL.md",
+            baseDir: "skills-creator",
+            builtIn: true,
+            installedAt: 1729800000000,
+          },
+          {
+            name: "skills-installer",
+            description: "快速发现并安装 ClawHub 或 GitHub 上开源的通用开发辅助技能。",
+            target: "/mock/skills/skills-installer",
+            skillFile: "/mock/skills/skills-installer/SKILL.md",
+            baseDir: "skills-installer",
+            builtIn: true,
+            installedAt: 1729600000000,
+          },
+          {
+            name: "liveagent-code-review",
+            description: "自动化代码走查规范与架构对齐检查工具，杜绝潜在缺陷与规范偏离。",
+            target: "/mock/skills/liveagent-code-review",
+            skillFile: "/mock/skills/liveagent-code-review/SKILL.md",
+            baseDir: "liveagent-code-review",
+            builtIn: false,
+            installedAt: 1729900000000,
+          },
+        ],
+      };
+    }
+    if (action === "read_file" || action === "read") {
+      return {
+        action,
+        rootDir: "/mock/skills",
+        content: "# Mock Skill\nThis is a mock skill preview in Web mode.",
+      };
+    }
+    return {
+      action,
+      rootDir: "/mock/skills",
+      skills: [],
+    };
+  }
+
   const response = await invoke<SystemManageSkillResponse>("system_manage_skill", {
     payload: params,
   });

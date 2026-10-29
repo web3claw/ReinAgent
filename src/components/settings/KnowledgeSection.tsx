@@ -19,8 +19,8 @@ import { resolveKnowledgeEmbeddingTarget } from "../../lib/knowledge/providerBin
 import { knowledgeSweep } from "../../lib/knowledge/indexingService";
 import { PlugZap, RefreshCw, Trash2, Loader2, Network } from "lucide-react";
 import { runGraphExtraction, applyGraphExtraction } from "../../lib/knowledge/graphExtract";
-import { GRAPH_MODEL_KV_KEY, scenarioBindingToProviderConfig } from "../../lib/settings/scenarioModels";
-import { kvGetJSON } from "../../lib/storage/db";
+import { getActiveOrChatModelConfig } from "../../lib/settings/scenarioModels";
+import { useAppStore } from "../../store/useAppStore";
 import { loadProvidersConfigFromDisk } from "./model-provider/types";
 import { useSettings } from "../../lib/settings/useSettings";
 
@@ -89,12 +89,9 @@ export function KnowledgeSection({ modelOptions }: { modelOptions: Array<{ value
           sourcePath: row.sourcePath,
         });
         const providers = await loadProvidersConfigFromDisk(appSettings).catch(() => []);
-        const binding = kvGetJSON<{ providerId: string; modelId: string }>(GRAPH_MODEL_KV_KEY);
-        const { config } = scenarioBindingToProviderConfig(
-          binding && binding.providerId ? binding : null,
-          providers,
-          { provider: appSettings.provider, modelId: appSettings.modelId, apiKey: appSettings.apiKey, baseUrl: appSettings.baseUrl },
-        );
+        const { activeTaskId, tasks } = useAppStore.getState();
+        const activeTask = activeTaskId ? tasks.find((t) => t.id === activeTaskId) : null;
+        const { config } = getActiveOrChatModelConfig(activeTask, appSettings, providers);
         if (!config) {
           setGraphError(true);
           setGraphMessage(t("graphExtractNoModel"));

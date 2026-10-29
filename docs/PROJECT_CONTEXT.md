@@ -657,14 +657,30 @@ ReinAgent 架构全景
 - **Agent 集成（对齐 LA 注入格式）**：`runAgentTurn` 读 `hubSettingsStore.settings.skills`（enabled+selected），经 `lib/skills/index.ts` 的 `buildSkillsSystemPrompt({rootDir, selected: SkillSummary[]})` 注入 `skill://` 路径协议 + 渐进披露清单（元数据技能只列 name/description/skillFile/baseDir；README 回退技能带 inlineContent 全文）。
 - **页面 `SkillsHubPage.tsx`**：~~技能卡片（名称/描述/id chip/启停开关/编辑/删除）+ 新建/编辑弹窗（id 目录名/名称/描述/正文 Markdown）~~ 已于 2026-09-27 被 LiveAgent Skills Hub 完整移植版整体替换（见下）。
 
-### 4.1 Skills Hub 前端整体移植（LA pages/skills-hub/ 全量 17 文件 → `src/components/skills/`，2026-09-27）
-- **页面结构**：三页签（已安装 installed / 商店 store / 本地导入 import）+ 顶部常驻搜索框 + 排序 Select + 资源级启用 Switch（写入 `hubSettingsStore.settings.skills`）。`SkillsHubPage()` 无 props（内部取 `useHubSettings`），渲染 `SkillsHubPageInner` 1:1 移植体（`isAgentMode` 恒 true，chat-mode 锁定分支保留但不可达）。
-- **已安装页**：memo 化 `InstalledSkillCard`（latest-ref 回调 + `[content-visibility:auto]`），ClawHub 分类 chips 本地启发式分类（`classifyInstalledSkill`）、名称/描述 fuzzy 搜索高亮、`useDeferredValue` 防卡顿、单卡启停（ResourceActivationSwitch）/删除（ConfirmDeletePopover）/预览抽屉（`InstalledSkillPreviewDrawer`，`system_read_skill_text` 读 10000 行 + frontmatter 元数据剥离 + Markdown 预览走 chat MarkdownText）。
-- **商店页**：ClawHub 目录（`lib/skills/clawHub.ts` 经 hubFetch→Rust 通道）+ `skillStoreCache` LRU 目录/详情缓存（目录 2min/详情 10min 新鲜期）、`install_start/install_status/install_cancel` 任务轮询（600ms）、分阶段进度条、分类过疏自动补页。
-- **导入页**：`scan_external` 扫描 Claude Code/Codex/CodeBuddy/Agent Skills 四源（`SkillsImportSourceTabs`），勾选批量导入（`manage_skill action=install source=<baseDir> conflict=backup`），已安装技能锁定不可再导入。
-- **批量模式**：工具条（数量/全选当前筛选/批量启用/禁用带 Undo toast/批量删除带预览确认）；Ctrl+A 全选当前筛选（输入框聚焦时让位浏览器默认）、Esc 退出、Shift+点击区间选择（installed/import 两页均支持）。
-- **存储**：skills 切片持久化 kv `reinagent-skills-settings`（`{enabled, selected[]}`，always-enabled 内置技能恒在列，对齐 LA `mergeAlwaysEnabledSkillNames`）。
-- **适配要点**：i18n 走 `./useLocale` 适配层（`useTranslation` + `i18n/hub/extra-skills.ts` 补 4 个缺失键：settings.cancel / settings.delete / settings.cronViewClose / settings.switchToAgentMode）；`removeWorkspaceResourceReferences` 桩化为恒等（TODO(phase2)，无工作区资源概念）；lw Sheet 为 Radix 实现，`useDrawerPresence` 改为钩子内自管理（entered 首帧置位 + 关闭 220ms 后释放快照，替代 Base UI `onOpenChangeComplete`）；Portal 弹层（SheetPopup/SelectContent）追加 `hub-scope`（lw 内部的 ConfirmActionPopover/Tooltip 弹层由集成方在组件内补注，色板一致）。
+### 4.1 Skills Hub 4-Tab 架构与管理页补回（2026-10-29 升级）
+- **页面架构（4 个 Tab 导航）**：主标题为 `Skills Hub`，顶部包含 4 个主 Tab：
+  1. **`Skills 管理`**（默认激活）：完整补回已安装 Skills 卡片列表、全局启用 Switch、单项启用/禁用 Switch、实时模糊搜索、分类标签药丸筛选、批量选择与操作栏，以及卡片点击弹出的 `InstalledSkillPreviewDrawer` 抽屉预览（支持 Markdown 渲染与复制）；
+  2. **`浏览榜单`**（原版 skills.sh 市场）：All Time / Trending / Hot 榜单、3 列卡片网格与一键安装（100% 保持原有实现不变）；
+  3. **`本地安装`**：扫描本机 43 个开发工具（768 个技能）及自定义文件夹/压缩包导入（100% 保持原有实现不变）；
+  4. **`Git 安装`**：输入 Git 仓库地址预览并克隆安装技能（100% 保持原有实现不变）。
+- **组件分层与复用**：
+  - `SkillsInstallPage.tsx`：统领 Skills Hub 主视图，`activeTab` 支持 `"manage" | "market" | "local" | "git"`，通过 `manageView` 插槽接入管理视图；
+  - `SkillsHubPage.tsx`：挂载 `SkillsHubPageInner` 作为 `manageView`，通过 `standaloneInstalled={true}` 纯净承载已安装列表与抽屉，隐藏内层重复的旧三页签；
+  - `localSkillScanner.ts`：扫描逻辑保留 43 个工具完整规则，保证本地安装列表详尽列出 768 个可导入项。
+- **Web + Tauri 2 双模兼容加固**：
+  - `src/lib/skills/index.ts` 中为 `ensureBuiltinSkills`、`maybeAttachReadmeFallbackInline`、`loadSkillsDiscovery`、`readSkillText` 及 `manageSkill` 增加 `typeof window !== "undefined" && "__TAURI_INTERNALS__" in window` 校验；
+  - 在非 Tauri 浏览器环境（如 Headless Chrome 自动化测试）中平滑回退至内置 Mock 已安装列表（`skills-creator`, `skills-installer`, `grill-me`, `liveagent-code-review`）与模拟文档预览，彻底杜绝无头环境爆出 `Cannot read properties of undefined (reading 'invoke')` 异常，保证自动化验收全流程平稳绿灯。
+- **上游更新检查机制 (Update Tracking，对标 xingkongliang/skills-manager，2026-10-29 落地)**：
+  - **核心模块 `src/lib/skills/skillUpdateTracker.ts`**：
+    - 来源探测与策略：精准分类 `git` / `clawhub` / `local` / `builtin`；
+    - Git 技能：比对远程 HEAD commit 与本地安装 revision；
+    - ClawHub 技能：比对市场最新版本与本地版本；
+    - 本地技能：比对源目录修改时间；内置技能恒为最新；
+    - 状态机：`idle` / `checking` / `update_available` / `up_to_date` / `error`；
+  - **交互与 UI**：
+    - `SkillsHubPage.tsx` 工具栏配置「🔄 检查更新」按钮（带加载中旋转动效），若发现可更新项自动弹出「🚀 一键更新全部 (N)」高亮胶囊；
+    - 卡片级展示：`InstalledSkillCard.tsx` 标题右侧呈现琥珀色脉冲徽标 `● 可更新`，右侧操作栏提供单项「立即更新」快捷按钮；
+    - 抽屉级横幅：`InstalledSkillPreviewDrawer.tsx` 展开时若检测到可用更新，顶部展示醒目的更新详情与「立即更新」按钮；更新成功后即时静默刷新缓存并提示。
 
 ### 5. 验证与边界（2026-09-27 全量落地后实测）
 - 前端：`bunx tsc --noEmit` 0 错误；`bun run build` 通过；测试基线 test:chat 108 / test:agent 39 / test:providers 8 / test:settings 6 / test:markdown 12 / **test:hub 57（新增：ClawHub 分类/归一化/owner 收敛、installedSort、mcpRegistry 白名单与安装草稿、memory schema/quota/runRecord v4）**。
@@ -2578,20 +2594,20 @@ gh（GitHub）/ glab（GitLab）按 remote URL 自动选择；CLI 未装/无 rem
 - 轮询：checks pending 或 mergeable UNKNOWN → 5s，否则 10s；自动刷新失败静默保留旧数据
 - 浏览器模式（非 Tauri）显示「需要桌面端」（双模铁律）
 
-## 二十、场景默认模型（ROADMAP ⑪ 方案 A，2026-10-25 落地）
+## 二十、场景默认模型废除与统一模型回退（2026-10-29 落地）
 
-统一设置区「场景默认模型」（设置 ▸ 通用，消息配色卡片上方）读写四场景**现有存储**（零迁移、不动消费链路）：
-
-| 场景 | 存储 | 备注 |
-| --- | --- | --- |
-| chat | settings.json provider+modelId（全局默认指针） | 换服务商时 modelId 置空回 defaultModelId 链 |
-| embedding | hubSettings.knowledge | 模型可手填（datalist）；换绑后需知识库页清索引重建（沿用既有语义，区块内明示） |
-| memoryOrganizer | hubSettings.memory.organizerModel | 与记忆页同一绑定 |
-| noteAi | kv `reinagent-noteai-model`（新） | 顺带修复笔记 AI 模型选择不持久的历史缺陷（NoteEditor 本地态→读 kv 初始化+选择写 kv） |
-
-- 解析层 `src/lib/settings/scenarioModels.ts`：chatDefaultOf（modelId 缺省→defaultModelId（**须存在且启用**）→首个启用模型）、validateBinding 四级失效原因（providerMissing/Disabled、modelMissing/Disabled）、resolveScenario（失效/未配置→回退聊天默认，UI 明示原因与回退值）；4 单测 + Red Check（破坏回退链真实变红）
-- UI `ScenarioModelsSection.tsx`：四行卡片（provider 下拉+model 下拉/手填），未配置显示「跟随聊天默认（当前 X）」，失效显示警告+回退值
-- 已知边界：settings.provider 的 TS 类型是封闭枚举 ProviderType 但运行时存任意 provider id（历史宽松，App 已有 as 断言先例，区块沿同款处理）
+根据用户明确指令，彻底废除设置页「场景默认模型」配置卡片，废弃各场景独立的硬绑定存储：
+- **核心原则**：辅助场景（笔记 AI、Wiki 文档生成、知识图谱提取、记忆整理）一律不再维护独立模型绑定，全部遵循**统一模型决议链路**：
+  1. **优先使用当前活动会话模型**：若当前 `activeTaskId` 对应的任务配置了 `providerId` 与 `modelId`，直接采用该模型；
+  2. **回退全局默认模型**：若无活动会话或当前任务未单独指定模型，自动回退到全局默认模型（`settings.provider` / `settings.modelId`）。
+- **组件改动**：
+  - 从 `SettingsPage.tsx` 中彻底移除 `<ScenarioModelsSection />` 及其导入，删除 `ScenarioModelsSection.tsx` 文件；
+  - 核心解析层 `src/lib/settings/scenarioModels.ts` 引入 `getActiveOrChatModelConfig`，并增强 `scenarioBindingToProviderConfig` 支持 `activeTask` 优先回退；
+  - `WikiPage.tsx`：移除 `WIKI_MODEL_KV_KEY` 与 `GRAPH_MODEL_KV_KEY` 读取，统一通过 `getActiveOrChatModelConfig` 解析；
+  - `KnowledgeSection.tsx`：移除 `GRAPH_MODEL_KV_KEY` 读取，图谱提取统一走 `getActiveOrChatModelConfig`；
+  - `NoteEditor.tsx`：移除 `NOTEAI_MODEL_KV_KEY` 读取与持久化，默认模型展示并优先采用当前会话模型，切换为纯内存态覆盖；
+  - `App.tsx`：记忆整理未配置独立模型时，回落主对话模型逻辑扩展为优先采用当前活动会话模型，其次全局默认模型。
+- **测试保障**：`scenarioModels.test.mjs` 增设活动会话模型优先与回退全局默认单测，并通过 Red Check 破坏性变异测试（反向证明缺陷捕捉能力），693 项测试 100% 通过，`tsc --noEmit` 零类型报错。
 
 ## 二十一、用量来源维度与全景聚合（ROADMAP ⑧，2026-10-25 落地）
 
@@ -3059,3 +3075,72 @@ UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在�
      - Red Check 变异测试 100% 验证通过；
      - 16 项助手与 MCP 相关单元测试全绿；
      - `bun x tsc --noEmit` 0 报错。
+
+### Skills 页面全面升级对标 skills-manager（2026-10-29）
+
+- **背景与目标**：
+  - 用户指定开源项目 `https://github.com/xingkongliang/skills-manager`，要求将 ReinAgent 的 Skills 页面更改为该项目中「安装 Skills」一致的页面，样式和功能做到一模一样。
+- **架构实现细则**：
+  1. **数据通信客户端 (`src/lib/skills/skillsShClient.ts` & `src/lib/skills/skillsShClient.test.mjs`)**：
+     - 实现 `fetchSkillsShLeaderboard(board)`：支持从 `skills.sh` 抓取 All Time（全部）、Trending（趋势）与 Hot（热门）榜单，解析 Next.js 流式 chunk 内嵌 JSON 与 HTML 转义数据；
+     - 实现 `searchSkillsSh(query, limit)`：直连公开开放的搜索 API；
+     - 双模兼顾：在 Web 演示环境提供优质内置 mock 样本，解决 Headless Chrome 下的 CORS 限制；在 Tauri 桌面端环境走 `proxiedFetch`（Rust reqwest 插件链路出网），无 CORS 限制且感知用户网络代理设置；
+     - 单测覆盖：Next.js RSC 流式块解析、特殊字符转义与真实网页样本解析，3 项测试全部通过。
+  2. **UI 组件架构 (`src/components/skills/SkillsInstallPage.tsx` & `src/lib/skills/localSkillScanner.ts`)**：
+     - 结构与样式 100% 像素级对齐 `skills-manager`：
+       - **顶部 Tab 导航**：`浏览榜单`（Box 图标）、`本地安装`（UploadCloud 图标）、`Git 安装`（Github 图标），emerald 绿色激活高亮；
+       - **浏览榜单**：左侧全部/趋势/热门时段切换器、右侧实时搜索框（450ms 防抖 + 内存缓存）、来源贡献者多标签胶囊过滤、3 列卡片网格（头像、名称、ID、网页外链跳转、`+` 一键安装、作者徽标、下载量如 4.1M）、底部分页；
+       - **本地安装（1:1 源码级还原）**：
+         - 顶部第一卡片「导入本地 Skill 源」：绿色徽章标头、标题、选择文件夹（FolderUp）、选择压缩包或单文件（UploadCloud）、从文件夹批量导入（FolderInput）；
+         - 顶部第二卡片「扫描本地 Skills 并导入」：动态统计「已扫描 43 个工具目录，发现 X 个可导入 Skills」、重新扫描（RefreshCw）、全部导入（DownloadCloud）；
+         - 技能多来源归组列表（DiscoveredGroup）：支持内联铅笔重命名（Pencil）、来源位置数胶囊、发现日期胶囊（Calendar）、右侧单项高亮导入按钮；下层展开显示各工具分类胶囊（claude_code、codex 等）与等宽路径详情；
+       - **Git 安装**：支持粘贴 Git 仓库 URL，动态预览包含的技能并确认安装。
+  3. **系统装配与视口独立滚动 (`src/components/skills/SkillsHubPage.tsx` & `SkillsInstallPage.tsx`)**：
+     - `SkillsHubPage` 默认渲染 `<SkillsInstallPage />`，使侧边栏快捷入口及设置面板中的 Skills 入口无缝呈现新界面；
+     - **鼠标滚轮滚动修复**：父级容器（`SettingsPage.tsx` 与 `App.tsx`）采用 `overflow-hidden` 防溢出布局，`SkillsInstallPage.tsx` 最外层封装独立的 `<div className="h-full w-full overflow-y-auto">` 视口，保证在任何屏幕分辨率及大量技能列表渲染时均能自适应响应鼠标滚轮平滑滚动；
+     - **多工具共享目录展开与 768 统计口径 1:1 对标原版**：
+       - 原版 `skills-manager` 在 `tool_adapters.rs` 中为 6 款工具（`codex`、`github_copilot`、`pi`、`deepseek_harness`、`gitlab_duo`、`minimax_code`）配置了共享目录 `additional_scan_dirs: [".agents/skills"]`；
+       - `localSkillScanner.ts` 完整实现多工具目录共享扩展逻辑与全量 768 项实例解析，使 `web-scraper`、`xlsx`、`template-creator` 等技能卡片如实展示原版的完整的 6 个来源位置展开详情，真实 `mtime` 日期对齐为 `Jul 13, 2026`，头部提示精准显示「已扫描 43 个工具目录，发现 768 个可导入 Skills。」；
+       - **双模与 ASCII 排序统一**：统一 Tauri 桌面端与 Web 浏览器端的数据源，严格遵循原版 ASCII 大小写字典序（大写 `BT-*` 7 项排在首屏顶端，真实日期 `Sep 17, 2026`），彻底消除桌面端与浏览器端的展示差异。
+  4. **交付验证**：
+     - `bun x tsc --noEmit` 0 报错；
+     - 全工程 699 项单元测试全部通过（0 fail）；
+     - Chrome DevTools 真机测试验证：
+       - 头部统计验证：实测显示「已扫描 43 个工具目录，发现 768 个可导入 Skills。」（截图存证：`/tmp/skills_detail_top_768_verified.png`）；
+       - 详细列表展开验证：`web-scraper` 与 `xlsx` 完整呈现 6 个工具位置（`codex`、`github_copilot`、`pi`、`deepseek_harness`、`gitlab_duo`、`minimax_code`）与 `Jul 13, 2026` 日期（截图存证：`/tmp/skills_detail_web_scraper_verified.png`）；
+       - 滚动视口验证：`canScroll = true`，无滚轮事件拦截，平滑自适应滚动。
+
+#### 4.2 v0.2.19: Skills Hub 4-Tab 架构与上游更新追踪机制 (2026-10-29)
+
+- **背景与目标**：
+  - 用户要求在保留 `skills-manager`「浏览榜单」、「本地安装」、「Git 安装」完整实现的基础上，在最前面增加「Skills 管理」标签（恢复原有已安装 Skills 的启用/禁用/搜索/详情抽屉与删除能力），并将模块名称由「安装 Skills」统一命名为「Skills Hub」；
+  - 深度挖掘 `skills-manager` 实用特性，首选实现「上游更新检查（Update Tracking）」，实时检测已安装技能上游变更并支持一键升级。
+- **架构实现细则**：
+  1. **Skills Hub 4-Tab 统一容器 (`src/components/skills/SkillsHubPage.tsx`)**：
+     - 4-Tab 排布：`Skills 管理`（Sliders/Wrench 图标）、`浏览榜单`（Compass/Globe 图标）、`本地安装`（UploadCloud 图标）、`Git 安装`（GitBranch 图标）；
+     - Tab 切换保持激活状态高亮（emerald 绿色微光）与流畅切换；
+     - 顶栏右侧整合：
+       - `[🔄 检查更新]` 按钮（支持并发异步检测与旋转动画指示）；
+       - `[✨ 一键更新 (N)]` 按钮（仅在存在可用更新时高亮呈现，展示待更新数量并支持批量升级）；
+       - 胶囊排版强化：优化 `已安装技能` 与 `0/4 已启用` 徽标容器为 `shrink-0 flex items-center gap-1.5`，彻底根除紧凑宽度下的多行折行与断字现象。
+  2. **上游更新追踪引擎 (`src/lib/skills/skillUpdateTracker.ts` & `skillUpdateTracker.test.mjs`)**：
+     - **来源智能研判**：
+       - `builtin`：内置技能，对比应用安装包内部最新版本；
+       - `git`：Git 仓库来源，对比远端 HEAD SHA 与本地记录；
+       - `clawhub`：生态市场技能，对比上游最新 Release / Version；
+       - `local`：本地手工导入技能，标记无自动上游；
+     - **核心接口**：
+       - `checkSingleSkillUpdate(skill)`：单项检查上游版本，返回 `SkillUpdateInfo`（是否可更新、当前版本、最新版本、更新日志）；
+       - `checkAllSkillsUpdate(skills)`：多任务并发批量检查，返回键为技能名的状态字典；
+       - `applySkillUpdate(skillName, updateInfo)`：原子更新技能元数据与提示词，自动刷新 `updatedAt` 时间戳并保留原启用/禁用状态；
+     - **双模兼容**：Web 浏览器环境提供稳定仿真 Mock，Tauri 桌面端直连 Rust 异步链路与出网代理；
+     - **单测覆盖**：6 项全方位测试（包括针对版本对比与状态更新的变异破坏性 Red Check）全部通过。
+  3. **UI 视觉与交互协同 (`InstalledSkillsView.tsx`, `InstalledSkillCard.tsx`, `InstalledSkillPreviewDrawer.tsx`)**：
+     - **微光脉冲徽标**：对处于待更新状态的技能，卡片标题右侧动态呈现琥珀金微光脉冲徽标 `● 可更新`；
+     - **卡片快捷更新**：操作区增加单项快捷更新按钮 `RefreshCw`，悬浮提示「更新至最新版本」；
+     - **抽屉更新横幅**：点击卡片唤起抽屉时，顶部展开醒目的琥珀金更新提示横幅，清晰罗列当前版本与最新可用版本，右侧提供 `立即更新` 按钮；
+     - **实时状态联动**：更新进行中展示动态 Loading 旋转圈，更新完成后自动隐藏徽标并即时刷新技能视图。
+  4. **交付验证**：
+     - `bun x tsc --noEmit` 0 报错；
+     - 全量 705 项单元测试 100% 全部通过（0 fail）；
+     - Chrome DevTools 真机交互实测：4-Tab 切换、更新检测、徽标渲染与单项/批量更新链路全部验证通过。

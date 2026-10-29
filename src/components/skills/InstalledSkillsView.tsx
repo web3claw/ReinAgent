@@ -16,6 +16,8 @@ export type InstalledSkillListItem = {
   categories: ClawHubCategorySlug[];
 };
 
+import type { SkillUpdateInfo } from "../../lib/skills/skillUpdateTracker";
+
 type InstalledSkillsViewProps = {
   items: readonly InstalledSkillListItem[];
   loading: boolean;
@@ -33,6 +35,9 @@ type InstalledSkillsViewProps = {
   selected: ReadonlySet<string>;
   bulkSelection: ReadonlySet<string>;
   deletingSkillName: string | null;
+  updateMap?: Record<string, SkillUpdateInfo>;
+  updatingSkillName?: string | null;
+  onApplyUpdate?: (skill: SkillSummary) => void;
   onRescan: () => void;
   onToggle: (name: string, on: boolean) => void;
   onEnterBulkMode: (name: string) => void;
@@ -59,6 +64,9 @@ export function InstalledSkillsView({
   selected,
   bulkSelection,
   deletingSkillName,
+  updateMap,
+  updatingSkillName,
+  onApplyUpdate,
   onRescan,
   onToggle,
   onEnterBulkMode,
@@ -149,6 +157,8 @@ export function InstalledSkillsView({
           <div className={SKILL_LIST_GRID_CLASS}>
             {items.map(({ skill, categories }) => {
               const builtIn = skill.builtIn === true || isBuiltinSkillName(skill.name);
+              const updateInfo = updateMap?.[skill.name] ?? null;
+              const updating = updatingSkillName === skill.name;
               return (
                 <div key={`${skill.name}-${rootDir}`} className="min-w-0">
                   <InstalledSkillCard
@@ -162,6 +172,9 @@ export function InstalledSkillsView({
                     deleting={deletingSkillName === skill.name}
                     deleteDisabled={deletingSkillName !== null}
                     searchQuery={searchQuery}
+                    updateInfo={updateInfo}
+                    updating={updating}
+                    onApplyUpdate={onApplyUpdate}
                     onToggle={onToggle}
                     onEnterBulkMode={onEnterBulkMode}
                     onToggleBulkSelection={onToggleBulkSelection}

@@ -2,9 +2,10 @@
 // 适配：lw Sheet 为 Radix 实现，无 onOpenChangeComplete（useDrawerPresence 自管理）；
 // DocumentMarkdown → ReinAgent chat MarkdownText 渲染管线；Portal 弹层追加 hub-scope。
 import { MarkdownText } from "../chat/MarkdownText";
-import { AlertTriangle, BookOpen } from "lucide-react";
+import { AlertTriangle, BookOpen, Loader2, RefreshCw, Sparkles } from "lucide-react";
 import { SkillIcon } from "../lw/icons/brand-icons";
 import { Badge } from "../lw/ui/badge";
+import { Button } from "../lw/ui/button";
 import { CopyButton } from "../lw/ui/copy-button";
 import {
   Sheet,
@@ -16,6 +17,7 @@ import {
 import { Skeleton } from "../lw/ui/skeleton";
 import { cn } from "../lw/lib/utils";
 import type { SkillSummary } from "../../lib/skills/index";
+import type { SkillUpdateInfo } from "../../lib/skills/skillUpdateTracker";
 import { useMemo } from "react";
 import { useDrawerPresence } from "./useDrawerPresence";
 import { useLocale } from "./useLocale";
@@ -206,9 +208,12 @@ export function InstalledSkillPreviewDrawer(props: {
   preview: InstalledSkillPreviewState;
   checked: boolean;
   skillsEnabled: boolean;
+  updateInfo?: SkillUpdateInfo | null;
+  updating?: boolean;
+  onApplyUpdate?: (skill: SkillSummary) => void;
   onClose: () => void;
 }) {
-  const { skillsEnabled } = props;
+  const { skillsEnabled, updateInfo, updating, onApplyUpdate } = props;
   const presence = useDrawerPresence(
     props.skill ? { skill: props.skill, preview: props.preview, checked: props.checked } : null,
   );
@@ -234,6 +239,9 @@ export function InstalledSkillPreviewDrawer(props: {
           previewContent={previewContent}
           checked={snapshot.checked}
           skillsEnabled={skillsEnabled}
+          updateInfo={updateInfo}
+          updating={updating}
+          onApplyUpdate={onApplyUpdate}
           contentReady={presence.entered && !snapshot.preview.loading}
         />
       ) : null}
@@ -247,9 +255,12 @@ function InstalledSkillPreviewPopup(props: {
   previewContent: string;
   checked: boolean;
   skillsEnabled: boolean;
+  updateInfo?: SkillUpdateInfo | null;
+  updating?: boolean;
+  onApplyUpdate?: (skill: SkillSummary) => void;
   contentReady: boolean;
 }) {
-  const { skill, preview, previewContent, checked, skillsEnabled, contentReady } = props;
+  const { skill, preview, previewContent, checked, skillsEnabled, updateInfo, updating, onApplyUpdate, contentReady } = props;
   const { t } = useLocale();
   const source = skill.source;
   const description = skill.description.trim();
@@ -290,6 +301,43 @@ function InstalledSkillPreviewPopup(props: {
 
       <SheetPanel className="p-5">
         <div className="flex flex-col gap-5">
+          {updateInfo?.status === "update_available" ? (
+            <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 p-3.5">
+              <div className="flex items-start gap-2.5">
+                <Sparkles className="mt-0.5 size-4 shrink-0 text-amber-400" />
+                <div>
+                  <div className="text-xs font-semibold text-amber-300">
+                    发现上游新版本可用 ({updateInfo.latestRevision || updateInfo.latestVersion || "最新"})
+                  </div>
+                  <div className="mt-0.5 text-tiny text-amber-400/80">
+                    {updateInfo.message || "可拉取最新更新规则与提示词"}
+                  </div>
+                </div>
+              </div>
+              {onApplyUpdate ? (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="h-7 shrink-0 border border-amber-500/30 bg-amber-500/20 text-xs font-medium text-amber-200 hover:bg-amber-500/30"
+                  disabled={updating}
+                  onClick={() => onApplyUpdate(skill)}
+                >
+                  {updating ? (
+                    <>
+                      <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                      更新中
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw className="mr-1.5 size-3.5" />
+                      立即更新
+                    </>
+                  )}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
+
           <section aria-labelledby="installed-skill-description">
             <div className="flex items-center justify-between gap-3">
               <h3

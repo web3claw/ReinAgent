@@ -17,12 +17,19 @@ import {
   RefreshCw,
   Search,
   Server,
+  Sparkles,
   Trash2,
   X,
 } from "lucide-react";
+import {
+  checkAllSkillsUpdate,
+  applySkillUpdate,
+  type SkillUpdateInfo,
+} from "../../lib/skills/skillUpdateTracker";
 import { GlassPanel, HubHeader } from "../lw/hub/HubChrome";
 import { ResourceTabsList } from "../lw/resources/ResourceTabsList";
 import { Button, RefreshButton } from "../lw/ui/button";
+import { SkillsInstallPage } from "./SkillsInstallPage";
 import { ConfirmActionPopover } from "../lw/ui/confirm-action-popover";
 import { Input } from "../lw/ui/input";
 import {
@@ -162,13 +169,17 @@ function AgentModeRequired(props: { onSwitch: () => void }) {
 export function SkillsHubPage() {
   const settings = useHubSettings((state) => state.settings);
   const setSettings = useHubSettings((state) => state.setSettings);
-  // ReinAgent 桌面端恒为 Agent 模式（无 chat-mode 锁定概念），isAgentMode 恒 true。
   return (
-    <SkillsHubPageInner
-      settings={settings}
-      setSettings={setSettings}
-      isAgentMode
-      embedded={false}
+    <SkillsInstallPage
+      manageView={
+        <SkillsHubPageInner
+          settings={settings}
+          setSettings={setSettings}
+          isAgentMode
+          embedded
+          standaloneInstalled
+        />
+      }
     />
   );
 }
@@ -180,10 +191,11 @@ type SkillsHubPageProps = {
   initialRootDir?: string;
   isAgentMode: boolean;
   embedded?: boolean;
+  standaloneInstalled?: boolean;
 };
 
-function SkillsHubPageInner(props: SkillsHubPageProps) {
-  const { settings, setSettings, initialSkills, initialRootDir, isAgentMode } = props;
+export function SkillsHubPageInner(props: SkillsHubPageProps) {
+  const { settings, setSettings, initialSkills, initialRootDir, isAgentMode, standaloneInstalled = false } = props;
   const { t } = useLocale();
   const lockedByChatMode = !isAgentMode;
 
@@ -247,6 +259,77 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
   );
   const discoverySignatureRef = useRef<string | null>(null);
   const skillsSnapshotRef = useRef<SkillSummary[]>(skills);
+
+  // 上游更新检查状态 (Update Tracking)
+  const [updateMap, setUpdateMap] = useState<Record<string, SkillUpdateInfo>>({});
+  const [checkingUpdates, setCheckingUpdates] = useState(false);
+  const [updatingSkillName, setUpdatingSkillName] = useState<string | null>(null);
+
+  const availableUpdateCount = useMemo(
+    () => Object.values(updateMap).filter((info) => info.status === "update_available").length,
+    [updateMap],
+  );
+
+  const handleCheckAllUpdates = useCallback(async () => {
+    if (checkingUpdates || skills.length === 0) return;
+    setCheckingUpdates(true);
+    try {
+      const res = await checkAllSkillsUpdate(skills);
+      setUpdateMap(res);
+      const updateCount = Object.values(res).filter((info) => info.status === "update_available").length;
+      if (updateCount > 0) {
+        toast.success(`检查完成：发现 ${updateCount} 个技能有可用更新`);
+      } else {
+        toast.success("检查完成：所有技能均已是最新版本");
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "检查更新失败");
+    } finally {
+      setCheckingUpdates(false);
+    }
+  }, [checkingUpdates, skills]);
+
+  const handleApplyUpdate = useCallback(async (skill: SkillSummary) => {
+    setUpdatingSkillName(skill.name);
+    try {
+      const res = await applySkillUpdate(skill);
+      if (res.success) {
+        toast.success(res.message);
+        setUpdateMap((prev) => ({
+          ...prev,
+          [skill.name]: {
+            ...prev[skill.name],
+            skillName: skill.name,
+            status: "up_to_date",
+            message: "已更新到最新版本",
+            sourceKind: prev[skill.name]?.sourceKind ?? "local",
+          },
+        }));
+      } else {
+        toast.error(res.message);
+      }
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "更新失败");
+    } finally {
+      setUpdatingSkillName(null);
+    }
+  }, []);
+
+  const handleBatchUpdateAll = useCallback(async () => {
+    const updatableSkills = skills.filter(
+      (s) => updateMap[s.name]?.status === "update_available"
+    );
+    if (updatableSkills.length === 0) return;
+    let updated = 0;
+    for (const skill of updatableSkills) {
+      setUpdatingSkillName(skill.name);
+      const res = await applySkillUpdate(skill);
+      if (res.success) updated++;
+    }
+    setUpdatingSkillName(null);
+    toast.success(`成功更新了 ${updated} 个技能`);
+    void handleCheckAllUpdates();
+  }, [skills, updateMap, handleCheckAllUpdates]);
 
   const showScanFeedback = useCallback(
     (feedback: SkillScanFeedback) => {
@@ -1447,35 +1530,76 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
               ) : null}
 
               <div className="flex min-h-11 items-center justify-between gap-3 max-sm:flex-col max-sm:items-stretch max-sm:pb-2">
-                <ResourceTabsList
-                  variant="segmented"
-                  value={view}
-                  items={[
-                    {
-                      value: "installed" as const,
-                      label: t("settings.skillsHubInstalledTab"),
-                      icon: Server,
-                      countLabel:
-                        selectableSkills.length > 0
-                          ? `${selectedCount}/${selectableSkills.length}`
-                          : null,
-                    },
-                    {
-                      value: "store" as const,
-                      label: t("settings.skillsHubStoreTab"),
-                      icon: Cloud,
-                    },
-                    {
-                      value: "import" as const,
-                      label: t("settings.skillsHubImportTab"),
-                      icon: Download,
-                    },
-                  ]}
-                  ariaLabel={t("settings.skillsHubTitle")}
-                />
+                {!standaloneInstalled ? (
+                  <ResourceTabsList
+                    variant="segmented"
+                    value={view}
+                    items={[
+                      {
+                        value: "installed" as const,
+                        label: t("settings.skillsHubInstalledTab"),
+                        icon: Server,
+                        countLabel:
+                          selectableSkills.length > 0
+                            ? `${selectedCount}/${selectableSkills.length}`
+                            : null,
+                      },
+                      {
+                        value: "store" as const,
+                        label: t("settings.skillsHubStoreTab"),
+                        icon: Cloud,
+                      },
+                      {
+                        value: "import" as const,
+                        label: t("settings.skillsHubImportTab"),
+                        icon: Download,
+                      },
+                    ]}
+                    ariaLabel={t("settings.skillsHubTitle")}
+                  />
+                ) : (
+                  <div className="flex shrink-0 items-center gap-2.5 whitespace-nowrap">
+                    <span className="text-[13px] font-semibold text-[var(--text)]">
+                      已安装技能
+                    </span>
+                    {selectableSkills.length > 0 ? (
+                      <span className="inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] font-medium text-emerald-400">
+                        {selectedCount}/{selectableSkills.length} 已启用
+                      </span>
+                    ) : null}
+                  </div>
+                )}
 
                 {!lockedByChatMode ? (
-                  <div className="flex w-full min-w-0 items-center justify-end gap-2">
+                  <div className="flex shrink-0 items-center justify-end gap-2">
+                    {view === "installed" ? (
+                      <>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          disabled={checkingUpdates || loading}
+                          onClick={() => void handleCheckAllUpdates()}
+                          title="检查所有已安装技能的上游更新"
+                          className="h-8 shrink-0 gap-1.5 whitespace-nowrap px-2.5 text-xs text-muted-foreground hover:text-foreground"
+                        >
+                          <RefreshCw className={cn("size-3.5", checkingUpdates && "animate-spin")} />
+                          <span>{checkingUpdates ? "正在检查..." : "检查更新"}</span>
+                        </Button>
+                        {availableUpdateCount > 0 ? (
+                          <Button
+                            variant="secondary"
+                            size="sm"
+                            disabled={updatingSkillName !== null}
+                            onClick={() => void handleBatchUpdateAll()}
+                            title="一键更新所有有新版本的技能"
+                            className="h-8 shrink-0 gap-1.5 border border-amber-500/30 bg-amber-500/15 whitespace-nowrap px-2.5 text-xs font-medium text-amber-300 hover:bg-amber-500/25"
+                          >
+                            <Sparkles className="size-3.5 text-amber-400" />
+                            <span>一键更新 ({availableUpdateCount})</span>
+                          </Button>
+                        ) : null}
+                      </>
+                    ) : null}
                     {view === "installed" ? (
                       <Button
                         variant={bulkMode ? "secondary" : "ghost"}
@@ -1614,6 +1738,9 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
                         selected={selected}
                         bulkSelection={bulkSelection}
                         deletingSkillName={deletingSkillName}
+                        updateMap={updateMap}
+                        updatingSkillName={updatingSkillName}
+                        onApplyUpdate={handleApplyUpdate}
                         onRescan={() => void refresh({ announce: true })}
                         onToggle={handleCardToggle}
                         onEnterBulkMode={enterBulkMode}
@@ -1668,6 +1795,9 @@ function SkillsHubPageInner(props: SkillsHubPageProps) {
         preview={installedPreviewState}
         checked={previewInstalledSkill !== null && selected.has(previewInstalledSkill.name)}
         skillsEnabled={skillsEnabled}
+        updateInfo={previewInstalledSkill ? updateMap[previewInstalledSkill.name] : null}
+        updating={previewInstalledSkill ? updatingSkillName === previewInstalledSkill.name : false}
+        onApplyUpdate={handleApplyUpdate}
         onClose={() => setPreviewInstalledSkill(null)}
       />
 

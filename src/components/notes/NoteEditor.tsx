@@ -33,8 +33,7 @@ import { NoteAiSidebar } from "./NoteAiSidebar";
 import { notesService, type NoteFileItem } from "./notesService";
 import { NoteVersionPanel, NoteTagEditor } from "./NoteEnhancePanels";
 import { useSettings } from "../../lib/settings/useSettings";
-import { kvGetJSON, kvSetJSON } from "../../lib/storage/db";
-import { NOTEAI_MODEL_KV_KEY, bindingToNoteKey, noteKeyToBinding } from "../../lib/settings/scenarioModels";
+import { useAppStore } from "../../store/useAppStore";
 import type { ProviderConfig } from "../../lib/providers/modelFactory";
 import { completeOneShotText } from "../../lib/promptEnhancement/enhance";
 import { buildInlineAiPrompt } from "./noteEnhance";
@@ -161,14 +160,15 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
   const [inlineAiLoading, setInlineAiLoading] = useState(false);
   const [inlineAiResult, setInlineAiResult] = useState("");
   const [showModelPicker, setShowModelPicker] = useState(false);
-  // selectedModelKey: "" 表示跟随系统默认模型，否则格式为 "${providerId}/${modelId}"
+  // selectedModelKey: "" 表示跟随系统默认模型（优先当前对话模型，回退全局设置），否则格式为 "${providerId}/${modelId}"
   const [selectedModelKey, setSelectedModelKey] = useState<string>("");
 
-  // 场景默认模型（⑪）：笔记 AI 选择持久化（此前为组件本地态，切页即失忆）
-  useEffect(() => {
-    const saved = kvGetJSON<{ providerId: string; modelId: string }>(NOTEAI_MODEL_KV_KEY);
-    if (saved?.providerId) setSelectedModelKey(bindingToNoteKey(saved));
-  }, []);
+  const activeTaskId = useAppStore((s) => s.activeTaskId);
+  const tasks = useAppStore((s) => s.tasks);
+  const activeTask = useMemo(
+    () => (activeTaskId ? tasks.find((t) => t.id === activeTaskId) : null),
+    [activeTaskId, tasks],
+  );
 
   // 真实已配置的服务商列表
   const [providers, setProviders] = useState<ProviderItem[]>([]);
@@ -226,18 +226,37 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
     return options;
   }, [providers]);
 
-  // 解析系统默认模型显示名
-  const defaultModelDisplayName = useMemo(() => {
+  // 计算当前默认模型：优先当前活动会话模型，若未选择则回退系统全局默认设置
+  const effectiveDefaultModel = useMemo(() => {
+    if (activeTask?.providerId && activeTask?.modelId) {
+      const p = providers.find((x) => x.id === activeTask.providerId);
+      const m = p?.models.find((x) => x.id === activeTask.modelId);
+      return {
+        providerId: activeTask.providerId,
+        modelId: activeTask.modelId,
+        providerName: p?.name || activeTask.providerId,
+        modelName: m?.name || activeTask.modelId,
+        isFromTask: true,
+      };
+    }
     const prov = providers.find((p) => p.id === settings.provider);
     const mod = prov?.models.find((m) => m.id === settings.modelId);
-    if (mod) {
-      return `${prov?.name || settings.provider}: ${mod.name || mod.id}`;
-    }
-    if (settings.modelId) {
-      return `${settings.provider}: ${settings.modelId}`;
+    return {
+      providerId: settings.provider,
+      modelId: settings.modelId,
+      providerName: prov?.name || settings.provider,
+      modelName: mod?.name || settings.modelId,
+      isFromTask: false,
+    };
+  }, [activeTask, providers, settings.provider, settings.modelId]);
+
+  // 解析系统默认模型显示名
+  const defaultModelDisplayName = useMemo(() => {
+    if (effectiveDefaultModel.modelName) {
+      return `${effectiveDefaultModel.providerName}: ${effectiveDefaultModel.modelName}${effectiveDefaultModel.isFromTask ? " (当前会话)" : ""}`;
     }
     return "系统默认";
-  }, [providers, settings.provider, settings.modelId]);
+  }, [effectiveDefaultModel]);
 
   // 当前触发按钮展示的模型名（默认模型时直接显示“默认模型”，对齐 Hetu 图一）
   const activeModelButtonLabel = useMemo(() => {
@@ -405,10 +424,10 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
     inlineAbortRef.current?.abort();
   };
 
-  // 解析当前执行的模型配置：若 selectedModelKey 为空，则取全局默认配置；否则取对应服务商与模型
+  // 解析当前执行的模型配置：若 selectedModelKey 为空，则优先取当前会话配置或全局默认配置；否则取对应服务商与模型
   const resolveCurrentGenerationConfig = useCallback((): ProviderConfig | null => {
-    let targetProviderId = settings.provider;
-    let targetModelId = settings.modelId;
+    let targetProviderId = effectiveDefaultModel.providerId;
+    let targetModelId = effectiveDefaultModel.modelId;
 
     if (selectedModelKey) {
       const [pid, mid] = selectedModelKey.split("/");
@@ -443,7 +462,7 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
       maxOutputTokens: modelItem?.maxOutputTokens ?? null,
       supportsImage: modelItem?.supportsImage ?? null,
     };
-  }, [providers, selectedModelKey, settings]);
+  }, [effectiveDefaultModel, providers, selectedModelKey, settings]);
 
   // 执行行内 AI
   const handleExecuteInlineAi = async (instruction: string) => {
@@ -923,7 +942,6 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
                       type="button"
                       onClick={() => {
                         setSelectedModelKey("");
-                        kvSetJSON(NOTEAI_MODEL_KV_KEY, { providerId: "", modelId: "" });
                         setShowModelPicker(false);
                       }}
                       className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors cursor-pointer ${
@@ -967,7 +985,6 @@ export function NoteEditor({ note, onSaveContent, onRenameTitle, allTags, onTags
                                   type="button"
                                   onClick={() => {
                                     setSelectedModelKey(key);
-                                    kvSetJSON(NOTEAI_MODEL_KV_KEY, noteKeyToBinding(key) ?? { providerId: "", modelId: "" });
                                     setShowModelPicker(false);
                                   }}
                                   className={`flex w-full items-center justify-between px-3 py-1.5 text-left transition-colors cursor-pointer ${

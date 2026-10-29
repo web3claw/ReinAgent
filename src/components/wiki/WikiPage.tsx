@@ -12,8 +12,7 @@ import { useTranslation } from "../../i18n";
 import { MarkdownText } from "../chat/MarkdownText";
 import { toast } from "../lw/ui/toast";
 import { useAppStore } from "../../store/useAppStore";
-import { WIKI_MODEL_KV_KEY, scenarioBindingToProviderConfig } from "../../lib/settings/scenarioModels";
-import { kvGetJSON } from "../../lib/storage/db";
+import { getActiveOrChatModelConfig } from "../../lib/settings/scenarioModels";
 import { loadProvidersConfigFromDisk, type ProviderItem } from "../settings/model-provider/types";
 import { useSettings } from "../../lib/settings/useSettings";
 import { runWikiGeneration, regenerateWikiPage } from "../../lib/wiki/wikiGeneration";
@@ -239,12 +238,9 @@ export function WikiPage({ initialDocId }: { initialDocId?: string | null } = {}
 
   const resolveConfig = useCallback(async () => {
     const list = await loadProvidersConfigFromDisk(settings).catch(() => [] as ProviderItem[]);
-    const binding = kvGetJSON<{ providerId: string; modelId: string }>(WIKI_MODEL_KV_KEY);
-    const { config } = scenarioBindingToProviderConfig(
-      binding && binding.providerId ? binding : null,
-      list,
-      { provider: settings.provider, modelId: settings.modelId, apiKey: settings.apiKey, baseUrl: settings.baseUrl },
-    );
+    const { activeTaskId, tasks } = useAppStore.getState();
+    const activeTask = activeTaskId ? tasks.find((t) => t.id === activeTaskId) : null;
+    const { config } = getActiveOrChatModelConfig(activeTask, settings, list);
     return config;
   }, [settings]);
 
@@ -330,14 +326,10 @@ export function WikiPage({ initialDocId }: { initialDocId?: string | null } = {}
         const full = await invoke<WikiDocFull | null>("wiki_get_document", { id: meta.id });
         if (!full) return;
         const { runGraphExtraction, applyGraphExtraction } = await import("../../lib/knowledge/graphExtract");
-        const { GRAPH_MODEL_KV_KEY } = await import("../../lib/settings/scenarioModels");
         const list = await loadProvidersConfigFromDisk(settings).catch(() => [] as ProviderItem[]);
-        const binding = kvGetJSON<{ providerId: string; modelId: string }>(GRAPH_MODEL_KV_KEY);
-        const { config } = scenarioBindingToProviderConfig(
-          binding && binding.providerId ? binding : null,
-          list,
-          { provider: settings.provider, modelId: settings.modelId, apiKey: settings.apiKey, baseUrl: settings.baseUrl },
-        );
+        const { activeTaskId, tasks } = useAppStore.getState();
+        const activeTask = activeTaskId ? tasks.find((t) => t.id === activeTaskId) : null;
+        const { config } = getActiveOrChatModelConfig(activeTask, settings, list);
         if (!config) {
           setError(t("graphExtractNoModel"));
           return;

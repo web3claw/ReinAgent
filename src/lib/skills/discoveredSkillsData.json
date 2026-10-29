@@ -1,0 +1,4390 @@
+{
+  "tools_scanned": 43,
+  "skills_found": 768,
+  "groups": [
+    {
+      "name": "BT-Go-Project-Deploy",
+      "fingerprint": "afc971273cdbbb4c896a9595a86967077cc06f9f8c32ebfa17979e1366e51ae8",
+      "locations": [
+        {
+          "id": "cbaf9ded-e087-4bfa-bbfd-7630003f31f9",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/BT-Go-Project-Deploy"
+        },
+        {
+          "id": "f2425d80-5bb1-4604-ac44-536419aa0cf0",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.codex/skills/BT-Go-Project-Deploy"
+        }
+      ],
+      "imported": false,
+      "found_at": 1789627140459
+    },
+    {
+      "name": "BT-Html-Project-Deploy",
+      "fingerprint": "dd7500cbcf372e8b931532904c380c1562f057ce608db45e1d2b340dc8755ef6",
+      "locations": [
+        {
+          "id": "61576fe3-9d98-426e-a253-b8e152b1d737",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/BT-Html-Project-Deploy"
+        },
+        {
+          "id": "9f53e439-ccbe-43f2-9dd4-54569bd60821",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.codex/skills/BT-Html-Project-Deploy"
+        }
+      ],
+      "imported": false,
+      "found_at": 1789627140459
+    },
+    {
+      "name": "BT-Java-Project-Deploy",
+      "fingerprint": "8d0f45d62fa68d499e9199268c2a180ceda711dd6b9d9307c95967694de31c54",
+      "locations": [
+        {
+          "id": "4b0c4965-bf80-41ec-a0f7-1a6d9b0e2ad7",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/BT-Java-Project-Deploy"
+        },
+        {
+          "id": "03c9dc3f-d3e9-4936-b3da-9abfadd2bd9a",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.codex/skills/BT-Java-Project-Deploy"
+        }
+      ],
+      "imported": false,
+      "found_at": 1789627140461
+    },
+    {
+      "name": "BT-Node-Project-Deploy",
+      "fingerprint": "ce324dac89e8c3b398f7a073a9560ffa4da37b29f128999a6651ca3f46b931ff",
+      "locations": [
+        {
+          "id": "f525e30b-ce85-409d-9734-fed6f7fb5f76",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/BT-Node-Project-Deploy"
+        },
+        {
+          "id": "c04af383-03ac-450e-a81a-45f9c72cf16a",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.codex/skills/BT-Node-Project-Deploy"
+        }
+      ],
+      "imported": false,
+      "found_at": 1789627140461
+    },
+    {
+      "name": "BT-Python-Project-Deploy",
+      "fingerprint": "e1a888ec760869fb076fe54431a7f07eb76bd8f61f306055b6a70e787483eb5b",
+      "locations": [
+        {
+          "id": "1df4db9f-2b89-495e-9283-8ffa830cf832",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/BT-Python-Project-Deploy"
+        },
+        {
+          "id": "8050cb60-f5a6-4bb6-88aa-949afcb202c1",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.codex/skills/BT-Python-Project-Deploy"
+        }
+      ],
+      "imported": false,
+      "found_at": 1789627140462
+    },
+    {
+      "name": "BT-Reverse-Proxy",
+      "fingerprint": "f7258991059ce5b825a5beb17078735b8944de2da0bcfa0e81c4151d6d679ad3",
+      "locations": [
+        {
+          "id": "3b58d81a-d194-4dd9-af37-a1c4ef6f3b05",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/BT-Reverse-Proxy"
+        },
+        {
+          "id": "106deb0b-4c23-4886-88ff-e2f6b0c80d7e",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.codex/skills/BT-Reverse-Proxy"
+        }
+      ],
+      "imported": false,
+      "found_at": 1789627140462
+    },
+    {
+      "name": "BT-Website-Troubleshoot",
+      "fingerprint": "edfa549d9e5c3e33fd0507f8505247e9b300a71e7e826692652bd5d488452d9f",
+      "locations": [
+        {
+          "id": "fb1d0305-7543-4bf2-b7a5-620b80adb552",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/BT-Website-Troubleshoot"
+        },
+        {
+          "id": "183dfdd4-9367-4a28-b780-a28eea1ffa63",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.codex/skills/BT-Website-Troubleshoot"
+        }
+      ],
+      "imported": false,
+      "found_at": 1789627140462
+    },
+    {
+      "name": "agent-reach",
+      "fingerprint": "57fb9a77cd87b96ad20fc96058334c9d87c5b53b0b287f11168029b0835509a2",
+      "locations": [
+        {
+          "id": "2194a43f-0d7b-455e-9d13-7873971dce18",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/agent-reach"
+        },
+        {
+          "id": "2e928804-e42a-4df9-9658-51f16bdca2f3",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/agent-reach"
+        },
+        {
+          "id": "d366eecc-2e60-45e5-ac75-7c3a11e8192a",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/agent-reach"
+        },
+        {
+          "id": "a4244cbc-5441-4999-ae11-fc25712bec51",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/agent-reach"
+        },
+        {
+          "id": "9a2100a9-4208-4913-9f33-90e5b6933fc3",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/agent-reach"
+        },
+        {
+          "id": "ce048dca-91fe-46c4-bce2-743e41d1cc69",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/agent-reach"
+        },
+        {
+          "id": "08aab9b5-933c-40d5-bd00-3debb5dec58d",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/agent-reach"
+        },
+        {
+          "id": "28ae8c9f-5554-4c1e-984d-41145017edcd",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/agent-reach"
+        }
+      ],
+      "imported": false,
+      "found_at": 1782372987836
+    },
+    {
+      "name": "appwrite-fastapi-deploy",
+      "fingerprint": "6f8b42d81421d19346590c172c3c33e84dae2b0a891f8280c5381fd92a8ae8b3",
+      "locations": [
+        {
+          "id": "a44ad373-1a2d-45c3-a95b-1e9aed5aa476",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/appwrite-fastapi-deploy"
+        },
+        {
+          "id": "1e14eb08-01c6-4ea1-b8f2-1b9d1e13e65d",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/appwrite-fastapi-deploy"
+        },
+        {
+          "id": "660829c0-0383-48a3-91b6-f0abcd47f6dc",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/appwrite-fastapi-deploy"
+        },
+        {
+          "id": "d6b7bb31-0043-42d7-9e68-ec712e0180a6",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/appwrite-fastapi-deploy"
+        },
+        {
+          "id": "fda5dd52-6cfa-4309-92ae-cff59a858afb",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/appwrite-fastapi-deploy"
+        },
+        {
+          "id": "4c8daf06-3b51-455f-b732-bd47edd395a0",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/appwrite-fastapi-deploy"
+        }
+      ],
+      "imported": false,
+      "found_at": 1788050526921
+    },
+    {
+      "name": "browser-auto-scraper",
+      "fingerprint": "3824135c078ac1a095eddef7076d0476f3eb7a74fc46faf4752721188e999828",
+      "locations": [
+        {
+          "id": "c9e1f703-41e6-44ea-bf0c-5de7007722e1",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/browser-auto-scraper"
+        },
+        {
+          "id": "4b5cb6fb-66fa-4260-8f1d-cdc2f7f173da",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/browser-auto-scraper"
+        },
+        {
+          "id": "07fdac5a-f41e-4983-841a-ad5fdbc4a444",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/browser-auto-scraper"
+        },
+        {
+          "id": "4a189aeb-1746-4b35-8960-a9893ffda1fa",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/browser-auto-scraper"
+        },
+        {
+          "id": "2b056591-72db-4d77-b541-f70a366d59b0",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/browser-auto-scraper"
+        },
+        {
+          "id": "0fbde3ca-f4e3-41dc-8d92-0b214c35ecb8",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/browser-auto-scraper"
+        }
+      ],
+      "imported": false,
+      "found_at": 1782981361261
+    },
+    {
+      "name": "computer-use",
+      "fingerprint": "dfa99edfe3ca74742528b4f80ad2a4c5286aaea6cd523f674acfe6d6a7c9a980",
+      "locations": [
+        {
+          "id": "c1a07c2d-7b58-419e-a1d5-fce3292a551e",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/computer-use"
+        },
+        {
+          "id": "a4992378-fd7f-4c15-96dd-c31fcbd4e829",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/computer-use"
+        },
+        {
+          "id": "bcab1848-31ce-401c-b688-7d5831d3dc8d",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/computer-use"
+        },
+        {
+          "id": "62de128c-3696-421a-873c-2acdfb47a067",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/computer-use"
+        },
+        {
+          "id": "5a01c571-1156-4e6b-b33b-a28b4e1e6564",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/computer-use"
+        },
+        {
+          "id": "c4c0445e-c251-4b87-9f64-4e47afac4c94",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/computer-use"
+        },
+        {
+          "id": "0e4862f3-6b25-444a-9a31-5c221450e263",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/computer-use"
+        },
+        {
+          "id": "2c606ded-cebb-4a4f-a420-84b868bd4418",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/computer-use"
+        },
+        {
+          "id": "c0948267-70d8-40a6-be17-523b435fdd11",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/computer-use"
+        },
+        {
+          "id": "f4c37cd6-3334-48b0-9310-bc64880c2006",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/computer-use"
+        },
+        {
+          "id": "a7fe8128-4b6a-4432-b05c-e4d23f811d40",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/computer-use"
+        },
+        {
+          "id": "60daf044-6ad5-4aba-a9bf-c140395a8b3c",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/computer-use"
+        },
+        {
+          "id": "31875a4f-a7fc-4ba1-9f42-d4985ad28179",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/computer-use"
+        },
+        {
+          "id": "9df9ee3b-7b07-496b-97ce-e0d4706767ef",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/computer-use"
+        },
+        {
+          "id": "689a2d15-8e3d-4cbf-afb6-b3ff88b52435",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/computer-use"
+        },
+        {
+          "id": "e6f3ca91-f46d-4978-8c66-ae3a709ef829",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/computer-use"
+        },
+        {
+          "id": "2b16b236-9f17-41fb-b342-de0abafc843f",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/computer-use"
+        },
+        {
+          "id": "95f1ba8f-ecbf-4d8f-86af-c600c73c6852",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/computer-use"
+        },
+        {
+          "id": "b38a8baa-0ab4-43cc-acf5-18eec32a54b2",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/computer-use"
+        },
+        {
+          "id": "fc3f4beb-54ac-4cbe-bda3-455b2ddd4049",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/computer-use"
+        },
+        {
+          "id": "78f39fa7-d0cc-4e4e-a5b7-1e39258f3695",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/computer-use"
+        },
+        {
+          "id": "12ec750f-3be7-4d68-a077-b5fa1a21e174",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/computer-use"
+        },
+        {
+          "id": "5a174423-17e0-4978-b694-96f8ae428a63",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.pi/agent/skills/computer-use"
+        },
+        {
+          "id": "3b5c79f5-3013-4b83-a00e-e172363ca2dc",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/computer-use"
+        },
+        {
+          "id": "7c75468a-af29-4dc0-994e-29d579d0b593",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/computer-use"
+        },
+        {
+          "id": "fa830019-b4fe-43f9-a256-f890881da390",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/computer-use"
+        },
+        {
+          "id": "3bdbc9cb-08b4-4de9-8667-69f1dc6647a7",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/computer-use"
+        },
+        {
+          "id": "641ede33-c4de-410b-9b78-33265d28641c",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/computer-use"
+        },
+        {
+          "id": "b90e7b6f-d316-4f8e-b9f2-47a86e206ebc",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/computer-use"
+        },
+        {
+          "id": "5ec1619a-77f0-47ba-bb14-7a3dce8a80e7",
+          "tool": "zcode",
+          "found_path": "/home/web3claw/.zcode/skills/computer-use"
+        },
+        {
+          "id": "6d8f8798-a02f-4947-a70f-89c8058dda3c",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/computer-use"
+        },
+        {
+          "id": "5e3c2879-f690-45dd-b7c9-a791eb1d6561",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/computer-use"
+        },
+        {
+          "id": "448f9024-9b3c-4d9a-8263-953a7116159a",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/computer-use"
+        },
+        {
+          "id": "207e32ad-593c-463e-89df-f746de45e665",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/computer-use"
+        }
+      ],
+      "imported": false,
+      "found_at": 1789433071116
+    },
+    {
+      "name": "create-extension",
+      "fingerprint": "870dd4964c823c4cfe4123f4ca657648d1b152e58b71f495262dbed4300b1e93",
+      "locations": [
+        {
+          "id": "34036da1-60b1-460c-82c7-33bb2e2ea505",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/create-extension"
+        },
+        {
+          "id": "61b900ec-97df-48da-aea7-5c594590374c",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/create-extension"
+        },
+        {
+          "id": "7b8105f8-b6ec-44e7-8463-dd52b04601a1",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/create-extension"
+        },
+        {
+          "id": "e1c6b979-3972-4a92-aab5-fb9a4b0d4f69",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/create-extension"
+        },
+        {
+          "id": "a1121588-fa35-40d9-8fa4-61f69ff13a65",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/create-extension"
+        },
+        {
+          "id": "d5b03aae-3f93-4c53-9b75-ad211d41bf14",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/create-extension"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301063
+    },
+    {
+      "name": "creative-production-ads-explorer",
+      "fingerprint": "46c6f82092266bd9b4d9561bde0de3aa363422bb86968be13e13e299aac3e564",
+      "locations": [
+        {
+          "id": "5363eeb8-166a-4e51-a816-2d36abebaa13",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-ads-explorer"
+        },
+        {
+          "id": "4ed232a4-30d2-429e-afcf-35adb5c77472",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-ads-explorer"
+        },
+        {
+          "id": "72c36b10-04ff-4421-ad4b-9b217ae8eb50",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-ads-explorer"
+        },
+        {
+          "id": "bcf6090f-d17c-4479-9a8c-2ea593daa4bd",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-ads-explorer"
+        },
+        {
+          "id": "aa14963b-b49a-41d2-8ab6-94bffba10dc4",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-ads-explorer"
+        },
+        {
+          "id": "e5302935-d131-4e16-8b1c-fdc3b61da5a1",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-ads-explorer"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301941
+    },
+    {
+      "name": "creative-production-explore",
+      "fingerprint": "0108065964a7f8586bde0f22a0f225175789d334d6a28cdb91074a11a026d50a",
+      "locations": [
+        {
+          "id": "a9857f48-883d-42c8-b79a-13e9bada1491",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-explore"
+        },
+        {
+          "id": "b8a7b876-a6b6-45fa-b18e-755ff21d4e69",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-explore"
+        },
+        {
+          "id": "cb5a555a-8aac-429e-8a75-3c239e8031df",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-explore"
+        },
+        {
+          "id": "46c891e8-fb32-4fc8-88ca-1d041948d3fe",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-explore"
+        },
+        {
+          "id": "b7165238-3cb1-4346-8f89-c796b682822c",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-explore"
+        },
+        {
+          "id": "a97baa34-b7a7-4ffa-9908-f2d58416ea50",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-explore"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301948
+    },
+    {
+      "name": "creative-production-generative-polish",
+      "fingerprint": "9efcedc7ed7487acb9d2260019e3aabdfe26ed2688ea6e77372af21286eacc51",
+      "locations": [
+        {
+          "id": "4f3480bf-a58e-4590-868c-65097488d9eb",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-generative-polish"
+        },
+        {
+          "id": "1c732c4c-ea0f-4363-8322-2dc83048e40e",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-generative-polish"
+        },
+        {
+          "id": "1a0bc38f-a609-454d-a9b0-7d9750f6902c",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-generative-polish"
+        },
+        {
+          "id": "208972b0-617d-4799-ac79-f5700b2c9205",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-generative-polish"
+        },
+        {
+          "id": "8b04fc34-0b97-48c6-b05b-797250d1b8b9",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-generative-polish"
+        },
+        {
+          "id": "8b2c2f12-844e-4ac5-8488-5a772fe608e6",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-generative-polish"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301953
+    },
+    {
+      "name": "creative-production-logo-explorer",
+      "fingerprint": "09c1155d3937fa39f3bb58b110f7d1a9f753a71d9bb857ecbb01f505ca223891",
+      "locations": [
+        {
+          "id": "fa3d0952-2adb-4a25-841c-18d69f8792e7",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-logo-explorer"
+        },
+        {
+          "id": "43d2ce91-2ac1-422f-8835-56e1826f4438",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-logo-explorer"
+        },
+        {
+          "id": "b7f3e5ba-d92d-4e20-b76a-7b2a897d6e7a",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-logo-explorer"
+        },
+        {
+          "id": "7f6b3599-90de-4c4c-b9f8-1a5f86362246",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-logo-explorer"
+        },
+        {
+          "id": "48e0fb97-25a2-4f51-b0eb-849ab5e03443",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-logo-explorer"
+        },
+        {
+          "id": "85194f32-c8e1-4c6b-8e2e-21f873c58e95",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-logo-explorer"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301969
+    },
+    {
+      "name": "creative-production-moodboard-explorer",
+      "fingerprint": "c58c965b34f67c6c7f16261f32ae93ea927cc35d0eb34846cf501b6c7bea27bc",
+      "locations": [
+        {
+          "id": "84076eb1-97b1-4f67-bc40-31c348b50b4b",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-moodboard-explorer"
+        },
+        {
+          "id": "1adb2892-dd06-4d5b-97cd-5f8c47d1a21d",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-moodboard-explorer"
+        },
+        {
+          "id": "594ebf3e-10a8-4802-8ac1-7f7e6beb8876",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-moodboard-explorer"
+        },
+        {
+          "id": "103ab76e-4b85-41f7-ac46-776a98844a82",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-moodboard-explorer"
+        },
+        {
+          "id": "b7124bf9-b89f-4d93-97a0-8c30d0ad97a2",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-moodboard-explorer"
+        },
+        {
+          "id": "3cd8ef14-127f-435b-9637-b5e100d34bd4",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-moodboard-explorer"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301979
+    },
+    {
+      "name": "creative-production-offer-explorer",
+      "fingerprint": "c5ec2b248aa4b0668006a503c1e12968fb5080b0ff5fb9e2a88e20fd72103b04",
+      "locations": [
+        {
+          "id": "47e83802-d903-424b-b3df-a7d197b1c169",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-offer-explorer"
+        },
+        {
+          "id": "a957bfe4-b038-497c-a57a-259c76bdc95d",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-offer-explorer"
+        },
+        {
+          "id": "f5622889-0eba-4c74-8385-19ab04fa3bfd",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-offer-explorer"
+        },
+        {
+          "id": "721726b3-75d6-4129-8792-be5936bd7185",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-offer-explorer"
+        },
+        {
+          "id": "6dc3eab7-c2c9-4e05-83ee-eb14e7a7f064",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-offer-explorer"
+        },
+        {
+          "id": "1117a7c1-e7a1-424a-9d00-d603a519dd3b",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-offer-explorer"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301986
+    },
+    {
+      "name": "creative-production-positioning-explorer",
+      "fingerprint": "160f8706c70064b0662521a68a09d790f286b5def42eeb9e9df4d832ee022336",
+      "locations": [
+        {
+          "id": "c3239124-315a-410d-80d0-7ee2d7c562f0",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-positioning-explorer"
+        },
+        {
+          "id": "a2509b82-7848-4e34-9f1f-0b26d8e870c4",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-positioning-explorer"
+        },
+        {
+          "id": "d3d86206-e8da-4f6f-afc0-45e8a4d2a17f",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-positioning-explorer"
+        },
+        {
+          "id": "70611ba2-b6b5-4586-af9c-a787de5aa96a",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-positioning-explorer"
+        },
+        {
+          "id": "a5baef54-ea2a-48a8-bf38-95445c089bdc",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-positioning-explorer"
+        },
+        {
+          "id": "4692b7ef-5e0f-4c04-aa1b-fa10699c658d",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-positioning-explorer"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929302008
+    },
+    {
+      "name": "creative-production-scene-explorer",
+      "fingerprint": "01bcaa7ee7fc1ba175dc75c15cabcac8a5b4a513c47f4e758ef12e3c1bb50045",
+      "locations": [
+        {
+          "id": "19139af1-400c-4824-8a3b-944a1c82484d",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-scene-explorer"
+        },
+        {
+          "id": "063b4947-07a8-4be1-bf94-76e87df60930",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-scene-explorer"
+        },
+        {
+          "id": "6e35f28e-161d-4c80-ada3-fdd4af95fc86",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-scene-explorer"
+        },
+        {
+          "id": "1b966872-e561-45c4-a7f5-575edd379f5a",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-scene-explorer"
+        },
+        {
+          "id": "df229dd8-3200-4d13-b16f-5f116d4d2287",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-scene-explorer"
+        },
+        {
+          "id": "29285ff1-131d-4576-b613-c8d65b941ac7",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-scene-explorer"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929302043
+    },
+    {
+      "name": "creative-production-shot-explorer",
+      "fingerprint": "3325fee9a9fc08db4c81b4664d84cf8fd41fa5d8c281b268f28e75882181f2cb",
+      "locations": [
+        {
+          "id": "9db7f5d6-5222-4c06-b953-d154cb9da517",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-shot-explorer"
+        },
+        {
+          "id": "75a5ed9c-c84e-4f4f-b73e-496bbdd9ce18",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-shot-explorer"
+        },
+        {
+          "id": "af579eaa-986e-4945-94d0-deb84f6c6795",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-shot-explorer"
+        },
+        {
+          "id": "39cad7bd-e7a7-4e0f-b6fa-63a5002835b2",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-shot-explorer"
+        },
+        {
+          "id": "a40260b6-0b1b-4ba1-893e-db91907f0f1b",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-shot-explorer"
+        },
+        {
+          "id": "3efdc206-abee-4b0e-bde6-29a53426e3b7",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/creative-production-shot-explorer"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929302047
+    },
+    {
+      "name": "csv-pipeline",
+      "fingerprint": "47eb2e2ae4a20feedc73fe208aacef7f3f35b75662709474f5836b70471649ac",
+      "locations": [
+        {
+          "id": "3a94c8d8-b32c-4664-9f70-a31e4a650c1a",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/csv-pipeline"
+        },
+        {
+          "id": "ea433c4f-9d30-4160-a455-85ad8c1f6203",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/csv-pipeline"
+        },
+        {
+          "id": "db6f4230-9550-4fde-b02a-3acfe6489085",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/csv-pipeline"
+        },
+        {
+          "id": "1ecfe543-1184-4a8e-9917-43d48f6b7d1b",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/csv-pipeline"
+        },
+        {
+          "id": "525ea56d-d9e8-48be-9eb1-daee3bc2cd10",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/csv-pipeline"
+        },
+        {
+          "id": "cf82477c-0b05-414b-a5ae-5074963d87f2",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/csv-pipeline"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301091
+    },
+    {
+      "name": "docx",
+      "fingerprint": "3db1182bf266a5d0920dafad20e427af1568481ea942505b017e832677d2d243",
+      "locations": [
+        {
+          "id": "2fadb93d-0b21-4bac-9d53-e7f3c54d9610",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/docx"
+        },
+        {
+          "id": "d8e8901b-16e7-4d3b-983b-81e87fa6f8f0",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/docx"
+        },
+        {
+          "id": "9416f499-7687-431d-91d4-dfa35e5866eb",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/docx"
+        },
+        {
+          "id": "80284bbc-2fb6-4f70-89db-c1d5b4b78490",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/docx"
+        },
+        {
+          "id": "cdda10c3-cdc2-49e1-ba80-2989a9813e00",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/docx"
+        },
+        {
+          "id": "83e3b417-bcac-41ba-8e5d-bd62fe5f7278",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/docx"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301070
+    },
+    {
+      "name": "email-drafter",
+      "fingerprint": "76d10a0cead5184259c678535a02216f449bf75c40e05ec97557b111f28d6ad9",
+      "locations": [
+        {
+          "id": "60aa2b78-2e4c-4fd3-8c77-923fb1a0cf9e",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/email-drafter"
+        },
+        {
+          "id": "1628d062-c402-47e0-aeb3-2b57e21780ae",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/email-drafter"
+        },
+        {
+          "id": "d1bb7cb6-7d9e-4d38-90c0-71536aa190fd",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/email-drafter"
+        },
+        {
+          "id": "82e7564b-360c-4f3b-9ffb-35b56e97d2f2",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/email-drafter"
+        },
+        {
+          "id": "5408d01a-b0a9-4cab-b11b-bc49fb4a0d35",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/email-drafter"
+        },
+        {
+          "id": "577788ab-7adb-434b-920b-96e38c1931a7",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/email-drafter"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301067
+    },
+    {
+      "name": "excel-processor",
+      "fingerprint": "5194304be2d4a40ce091da3573518be5507293d50e3ea38cd12859989e25d97c",
+      "locations": [
+        {
+          "id": "b1a6ca37-ab9e-4a7e-8984-3fd8ef93a456",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/excel-processor"
+        },
+        {
+          "id": "863b0d51-c98a-4bd5-8b76-a02382b3370b",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/excel-processor"
+        },
+        {
+          "id": "703a34a1-fcbe-4e56-a009-76e47809419b",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/excel-processor"
+        },
+        {
+          "id": "ddba520b-3a47-422b-a05b-6ac751c421a0",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/excel-processor"
+        },
+        {
+          "id": "e5d239e9-9e3f-40a6-8bce-13ce813b029c",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/excel-processor"
+        },
+        {
+          "id": "ac0c8599-191f-4ecb-8599-9c58dcdeace1",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/excel-processor"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301090
+    },
+    {
+      "name": "find-docs",
+      "fingerprint": "413d191f85f90ea69af64afeb2d18f267907377cae3d87f2e81f82f78defede7",
+      "locations": [
+        {
+          "id": "7c8822b2-a506-4554-8450-dabd7dba4565",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/find-docs"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888656954
+    },
+    {
+      "name": "find-skills",
+      "fingerprint": "bb41ed141106709b977ba96a089fdd87e4e7a90ae4820beb46db98fc30f96e19",
+      "locations": [
+        {
+          "id": "1b0a2310-8407-4d34-96a4-82bc1512250e",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/find-skills"
+        },
+        {
+          "id": "f45e2a3e-8651-4548-8ccc-ab02c5635123",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/find-skills"
+        },
+        {
+          "id": "dee38ccf-381f-4865-9cc6-5991ef8b2877",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/find-skills"
+        },
+        {
+          "id": "3de12920-e4ef-4d14-a1e1-c2358f2c549d",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/find-skills"
+        },
+        {
+          "id": "6876ae84-3a81-4e05-8162-be952e7f3aa9",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/find-skills"
+        },
+        {
+          "id": "aedd97ab-939d-4d75-bae7-4a248155dd90",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/find-skills"
+        },
+        {
+          "id": "f2ae9dd5-1799-4d7b-a9eb-357d75004346",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/find-skills"
+        }
+      ],
+      "imported": false,
+      "found_at": 1782549741557
+    },
+    {
+      "name": "firecrawl",
+      "fingerprint": "4a88e7e4947706193e0e92b99009094876dd1d97b7c854bb9aba3f13f96651e2",
+      "locations": [
+        {
+          "id": "998d42d6-c185-4cae-a974-37df82f17360",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl"
+        },
+        {
+          "id": "65c0fd34-fba9-497d-8072-e37cbc33b2c8",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl"
+        },
+        {
+          "id": "76c9e6c5-2464-4e16-b5c5-4ba2fc989a33",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl"
+        },
+        {
+          "id": "00e7f904-5ca3-4456-9d89-87a14ae5db87",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl"
+        },
+        {
+          "id": "06fc6bf1-2799-49fa-bde1-a0a00be484a0",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl"
+        },
+        {
+          "id": "1c96ee3b-3c06-43ec-b68a-ea717f730bdb",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl"
+        },
+        {
+          "id": "c916f733-9d8f-4eda-a870-09d814716c64",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl"
+        },
+        {
+          "id": "4949a0f4-e0a3-4175-8d02-443515d373b0",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl"
+        },
+        {
+          "id": "7c249dbb-c11f-4c58-803c-e3db1abf5538",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl"
+        },
+        {
+          "id": "ebfe9ae1-e8e7-4547-9d40-bb1ca909a540",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl"
+        },
+        {
+          "id": "60e883c9-8d6f-48fe-b932-8e1afd46bc34",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl"
+        },
+        {
+          "id": "6b0740eb-50a5-4a88-87e2-005ad1c7c6bb",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl"
+        },
+        {
+          "id": "e78842f1-5fcc-4399-a57d-ded87eef8b98",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl"
+        },
+        {
+          "id": "53db517e-101a-4370-88c7-ab99d482c6fa",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl"
+        },
+        {
+          "id": "16f38754-cc82-489f-a2b8-b82c9f9d1578",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl"
+        },
+        {
+          "id": "a0e3e229-276e-440c-906b-5a298b38d6fc",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl"
+        },
+        {
+          "id": "c5b9f596-7ff3-4bfe-adf4-0a681b05729c",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl"
+        },
+        {
+          "id": "9dab4425-33e5-43e9-9da4-4716368c062d",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl"
+        },
+        {
+          "id": "9589aeb6-a79d-46d6-9249-cbd3696ac01c",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl"
+        },
+        {
+          "id": "d3572f2d-b0ee-4582-8e5c-12416fb87675",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl"
+        },
+        {
+          "id": "054f7cd5-ee7b-4422-aa13-179db0ca5b92",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl"
+        },
+        {
+          "id": "bd9339bc-f1d4-4800-8edd-2aeb2fb6e914",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl"
+        },
+        {
+          "id": "c1cc1cbb-ff39-4ae1-a6c5-80c44d8743cc",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl"
+        },
+        {
+          "id": "41ec6694-06c0-487d-a6de-05a769bfc0f9",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl"
+        },
+        {
+          "id": "3331b53c-72bf-46e9-990f-a86213d5f785",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl"
+        },
+        {
+          "id": "3b6b23db-8a61-4552-bc15-efbb9b4ad41b",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl"
+        },
+        {
+          "id": "d57badde-8801-4344-9495-01b152e662c3",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl"
+        },
+        {
+          "id": "14a80efa-b327-4444-8eba-0af27ea33a56",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl"
+        },
+        {
+          "id": "888c75fc-f46f-49a3-92ec-7c9c20013bcb",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl"
+        },
+        {
+          "id": "f85f83be-4f15-4c59-8cec-d020a0fd799b",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl"
+        },
+        {
+          "id": "e5510cd2-b9f7-4133-bd9b-653f629b16fb",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl"
+        },
+        {
+          "id": "4228e79b-9221-4765-b406-56b63686efc0",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl"
+        },
+        {
+          "id": "ccb8869e-8f30-48d7-af5c-78fd375594b1",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl"
+        },
+        {
+          "id": "d76e4a08-9eed-4273-b0ce-5fea18474192",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888507866
+    },
+    {
+      "name": "firecrawl-agent",
+      "fingerprint": "e638ba5b941282aea7689b80d24c26804a75129711bdbbe0fe5cd6c759807db7",
+      "locations": [
+        {
+          "id": "3286970a-8ed6-4bf4-9854-c9289d799f52",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-agent"
+        },
+        {
+          "id": "466cda0c-7ab3-4e67-a980-9850ce0806be",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-agent"
+        },
+        {
+          "id": "37f54a94-72a0-474d-8e1f-58769d07ea9a",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-agent"
+        },
+        {
+          "id": "850f5034-88db-449a-9a91-2f00c6195570",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-agent"
+        },
+        {
+          "id": "321b9ee6-68c4-4e21-821d-aed80abb10fb",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-agent"
+        },
+        {
+          "id": "273a1261-ab19-48ef-b373-052dcbb65e95",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-agent"
+        },
+        {
+          "id": "5e40351d-c520-4013-bed9-6d34ba3395a2",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-agent"
+        },
+        {
+          "id": "8af11b04-0dfd-44bc-abe9-ca62e8332bcb",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-agent"
+        },
+        {
+          "id": "68e0cb68-3902-4514-9e00-964242868113",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-agent"
+        },
+        {
+          "id": "82e20a93-4171-4dc5-9456-4b9d89fff752",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-agent"
+        },
+        {
+          "id": "e5fd9f1c-592a-40b5-96bd-f5f69b7a12c2",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-agent"
+        },
+        {
+          "id": "fde17541-9402-4f8f-9c41-1e5775b067ee",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-agent"
+        },
+        {
+          "id": "c7ece099-d1da-4a58-bf15-b66023e2591e",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-agent"
+        },
+        {
+          "id": "90037f8e-3fec-4d1a-98e0-26be49f6e1be",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-agent"
+        },
+        {
+          "id": "0502da59-f316-4bc5-9ea5-15e6ece90568",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-agent"
+        },
+        {
+          "id": "6a91df28-9838-4714-90b0-021969ed24ba",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-agent"
+        },
+        {
+          "id": "b07db6cb-e134-4f7e-a810-287adbbe60ea",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-agent"
+        },
+        {
+          "id": "957827ec-1dd2-41e4-8dc0-20908e4711a6",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-agent"
+        },
+        {
+          "id": "eca079d5-ea44-4f54-83d0-5eed05fa45ae",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-agent"
+        },
+        {
+          "id": "9c6ae45b-46fa-4335-aea6-b17f3fde57a8",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-agent"
+        },
+        {
+          "id": "4050fd76-86eb-44c6-9935-ea1b396de4ff",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-agent"
+        },
+        {
+          "id": "eefff7d8-7da7-489a-9641-ce27bf49c746",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-agent"
+        },
+        {
+          "id": "07388e0f-bc10-44d8-b8f9-b72b8279efef",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-agent"
+        },
+        {
+          "id": "b3fbb97d-a264-4cfd-b3cc-57d45b319d6d",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-agent"
+        },
+        {
+          "id": "e3b30840-e34a-4b99-a0df-b28fdebfca13",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-agent"
+        },
+        {
+          "id": "3bff1c0b-1210-43ca-9bb9-9617225eb2cc",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-agent"
+        },
+        {
+          "id": "7b3ea5ad-7c6e-46cb-ae90-be3a193a4604",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-agent"
+        },
+        {
+          "id": "72f96308-a852-4783-aa84-0eec84a6a90c",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-agent"
+        },
+        {
+          "id": "7fdcde1f-48f4-466e-872a-20681ba7a60c",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-agent"
+        },
+        {
+          "id": "ad74e8bc-69ef-41f6-a978-19828d1bf55e",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-agent"
+        },
+        {
+          "id": "4750da62-47c0-452e-9b65-8c90fd96f8f4",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-agent"
+        },
+        {
+          "id": "056457bc-4b5c-4ee7-b7f1-342795a38186",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-agent"
+        },
+        {
+          "id": "0f9a23fc-1708-4c13-9f26-94bace8084ca",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-agent"
+        },
+        {
+          "id": "1e4e506b-b149-422c-9a0a-dc197582e538",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-agent"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888507814
+    },
+    {
+      "name": "firecrawl-build-interact",
+      "fingerprint": "81212fa0e9060e3a4c8bd60c07377a3eb6e502a55e7feb2481eb49a92336f15f",
+      "locations": [
+        {
+          "id": "f6051678-630b-4e6b-8a82-c2220041d462",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "429ba713-05a9-4386-9396-3e1f0bb256d2",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "b0e60fb3-b126-42be-9e75-ea105789e379",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "bcd0f803-9f06-446d-999a-608d51f2fcfc",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "fd004b2f-c60c-4610-8151-66ab96759181",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "b9d4cfe8-7129-4332-9601-a0d90cd6b93d",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "eaafc43e-0aa6-4783-8e3d-93c309070266",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "02aba336-2484-4db1-9453-e3cf9db55da5",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "f28e707c-a319-468e-9473-7dbe3869f954",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "7f0512df-4275-49bf-ab94-0787151fdbe5",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "5383deca-f1c5-46f1-a399-583733295e91",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "4f37fa87-9907-4a6a-be1a-61990e527c1d",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "6e76a6fe-9676-441d-99eb-0c2077c7a777",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "32900d4b-1ca8-4c15-9e11-a124b54d7488",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "d7a097c1-a911-4240-99fb-90c6eec5c543",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "14a4dc5f-086a-4d35-8a5d-2e4b630a5526",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "bb0d007b-0640-4512-9c5c-231640c9ac90",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "8d68534d-e64f-4969-8cd7-a9cf02a9f1cb",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "061af795-e091-4ed2-8446-f85b776093a2",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "333d9d3f-8c76-4732-b3d8-eedc7dedf9f7",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "057327b1-6f71-439e-8d0c-64b587cf52b5",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "dea5eb9f-a25a-4f80-83ff-25141d4bcc71",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "2fe8e99e-500d-4074-9eb9-ffbff0182055",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "61ca6a22-aa87-46cc-a46d-95099c5f8100",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "7b87a519-ebb6-48e2-9a6f-3b0b99e27d6d",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "4262a932-085d-46ed-88bc-98aa46d72d4f",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "dd9e8689-d821-4200-aec2-f7840b7c773d",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "fbbb36f2-fbf5-4ea4-b416-f7b39436976a",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "3797e7ce-13f8-446e-ad78-b5540a273e1a",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "377a4130-feb1-42f0-83ea-ae74b97cbf01",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "46d925d8-a341-4b52-9a8a-2422c4ac1f6e",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "4f2d1361-bb04-4eb8-b687-220ea64ca978",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "2448fbe2-9205-48f3-802a-e2f261f447cd",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-interact"
+        },
+        {
+          "id": "778bdbe2-9fd8-4a1b-8099-5d2fac9bd7ac",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-interact"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888510542
+    },
+    {
+      "name": "firecrawl-build-onboarding",
+      "fingerprint": "d5219f88092ae68a98dd181511a611e1256b8cf471f045cccb9c2618e67c8495",
+      "locations": [
+        {
+          "id": "a06d5a05-60d2-4875-8501-c55c3faa1eaa",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "43966a0e-8127-4849-ae31-3956f1278ea8",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "bc677354-c9ea-472c-afc9-288cb78feea8",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "3d80546d-cf0b-41d5-9aee-f7dc12b382e1",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "9779492b-7f11-43ba-ba42-440891b92f25",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "dc6e1dd9-7210-476f-8789-e5bfd3e1f198",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "68813c6d-ef09-4fbd-a9e8-2d64bbffe307",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "2cf8ec63-6764-4201-8d90-09b3e8f05948",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "32964cd3-3d95-472d-96b2-9f3215c75fe7",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "43962b62-d847-4e9d-bbfa-b0a64d064cb9",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "9d552183-a5ad-4d4d-8822-c25571670f05",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "62bf0e4e-df94-4e0f-af5c-a929fed6a3e7",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "afc9b0ff-144c-4cd8-ae5d-d92bbf1f1d1a",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "9df9a29e-65bc-4bfb-8c6d-15f654401d71",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "58f65950-1b2e-4009-9217-e697755ea2ab",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "93f34a41-43df-4c13-a3d1-48151989aa97",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "6c56eb9b-dc76-4824-a335-317189db234b",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "072fd409-0f45-46ba-864f-234d896f066e",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "15367816-8bdb-4f2d-b8a0-85d6d53de7d1",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "ceae3b13-14a9-4de1-a603-8042bb9cea96",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "b6a1de04-0fa0-4f95-b8c3-da6cc08f56c5",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "b8ea00ac-60cd-47a0-98ce-7c95f0e2eccb",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "26b35e33-928c-472b-bf71-d872d88f6141",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "5721eda6-c3df-4d9c-9fd2-0bf34aaf9117",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "09fe8310-a382-4c02-b098-37f7e0847a87",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "cdb0811f-c891-43f5-a55d-5c3df8ba0da6",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "f34efdef-89ab-4d4f-a872-7461d67e6fee",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "92fee2f3-6de2-40b0-aa7f-54f9a4d48837",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "a1c0b170-1539-4103-bc77-f41ab3c5e486",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "12021278-daba-4f34-925a-75b2ead03a79",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "19915dd6-eb00-4b18-bb9f-d8b08b858d37",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "92acf162-6dfa-452e-900b-74b374c061a3",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "d87ebb28-70a3-4c8e-972e-50493d5d84b7",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-onboarding"
+        },
+        {
+          "id": "4ffa0be2-354f-4aaf-baee-d936ea56f46d",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-onboarding"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888510625
+    },
+    {
+      "name": "firecrawl-build-scrape",
+      "fingerprint": "adf554e20666aa594063f25c14e934181de9e6d238c79fbf5c7cfe4a19b7d12e",
+      "locations": [
+        {
+          "id": "3e6eeadf-18f3-4015-9d70-79a1200ea25a",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "450c499f-da5d-4f93-bd05-f3fefc89b5e3",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "e97ca887-895d-4a76-8a11-628fc8fbad8d",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "169d8683-623e-4b55-88a0-84e12912c4c3",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "21023a59-5ab7-4120-b22f-adb793517c6d",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "513b1d0d-73fd-429e-a376-d3d0e8d6db8e",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "5f025916-2858-4488-94d5-f896c00a7ca3",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "0edf17ad-770f-4f96-a9ec-252d8a3a4c19",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "e16b39b4-5f00-40f4-9ce7-2d6ed91990ae",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "89d8a1ba-8401-4d1f-ab64-13e7645507e8",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "0eccecd9-5efe-4246-95e4-94c4929fa6b7",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "3337a2c1-53dc-49d3-82b3-950b5c88a814",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "e28730eb-d594-4d5e-afa3-0555a034a3bc",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "f48c2ef6-41dc-40bd-8101-f5d46a1772a7",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "f51129b6-701f-4b32-afcf-fb41013684d3",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "2a1974a1-c3e1-4c25-bba8-71360d29d15b",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "586c4f25-19e4-45b3-b5f9-0ceea19762ef",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "cf174c14-0d20-4f3b-8530-32840800a456",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "a3288610-310a-46a7-92d1-395a998e2be2",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "acf3ee30-3544-425b-8fed-e7157c9dae98",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "dc1f6fcc-1eae-40da-a83a-7efe5c7b13f8",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "62764435-3910-4509-93d9-18cf719fedf9",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "39eb0d67-9e3c-401e-8e1f-dd8cfa277031",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "ce2e0acf-7006-47d9-86a5-1c7616f3fafa",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "219338b9-8350-4847-a5a5-0fd63b42cc54",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "460baa4e-0ef6-44d9-af76-1911eb3ae6de",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "82113b52-3459-4993-9ca9-331120db5478",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "5a10deb2-6211-4599-a28f-e0ceaa6879ed",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "f4510c76-a1c3-44de-af70-4eadb8bccd75",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "2290cd1e-e07a-4766-806e-039edbb98cc9",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "432b4294-4284-4929-898d-825c12387393",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "b829ae08-70aa-4a6c-a40f-6c1c968da625",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "236a2d9c-1d3e-4a1b-a51c-087708731c74",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-scrape"
+        },
+        {
+          "id": "dc987dc8-bd95-42af-b4d6-daf8e8d68aec",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-scrape"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888510669
+    },
+    {
+      "name": "firecrawl-build-search",
+      "fingerprint": "2c615f52c208b3c70528a48c29a30e9b704888516bc6b8cc4de4203d0f573421",
+      "locations": [
+        {
+          "id": "95176da0-8691-40ae-914c-ed561c5936ed",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-build-search"
+        },
+        {
+          "id": "98d06bd8-09b1-4ce6-8f0e-d53d92394144",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-search"
+        },
+        {
+          "id": "b77ad61b-f447-41a1-9c51-cc275cba96a5",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-build-search"
+        },
+        {
+          "id": "82badf2f-c917-474b-ae8b-9ca37e0d63dc",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-build-search"
+        },
+        {
+          "id": "910ae3ae-1c76-4eb1-82b7-ca17b4d07554",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-build-search"
+        },
+        {
+          "id": "6a3d7285-6c3c-497e-a649-66a0334f25ff",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-search"
+        },
+        {
+          "id": "cdd4d4a6-0b76-4ee4-bd52-23363ff73780",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-build-search"
+        },
+        {
+          "id": "d99eb0a3-8ed5-4577-b00e-c41633446433",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-build-search"
+        },
+        {
+          "id": "da4e1d49-9a24-4c02-ac12-578eba36a033",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-build-search"
+        },
+        {
+          "id": "068aaf21-c8a7-4708-9730-b96342780795",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-build-search"
+        },
+        {
+          "id": "73387b35-6b76-4392-b45a-6db356199860",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-build-search"
+        },
+        {
+          "id": "42bd61a5-58d1-4beb-8ec3-1b02b41e019a",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-build-search"
+        },
+        {
+          "id": "63c46ce7-02dc-44cd-a60b-9422f84581b7",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-build-search"
+        },
+        {
+          "id": "748c2679-ef4c-4b3d-85a7-d843044cb13b",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-build-search"
+        },
+        {
+          "id": "dfc0e4d3-bfea-4693-81e5-b81334a87304",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-build-search"
+        },
+        {
+          "id": "97af2632-d295-4806-9576-7a4178376026",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-build-search"
+        },
+        {
+          "id": "1cd03cce-3111-4d35-8fca-a84bd7ffbdef",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-build-search"
+        },
+        {
+          "id": "62a1a6e5-4f15-45f3-ad35-3d5f129ffe0b",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-build-search"
+        },
+        {
+          "id": "bc3385c1-9698-40e9-9e58-c30fb7e9502a",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-build-search"
+        },
+        {
+          "id": "fc8354e9-a91e-4388-8bad-8ffcb94366de",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-build-search"
+        },
+        {
+          "id": "88b44479-e76a-4bc3-8a84-829d2ea43db7",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-build-search"
+        },
+        {
+          "id": "4cd028fa-ce29-435b-88ef-8e6655a70875",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-build-search"
+        },
+        {
+          "id": "74533e76-988c-4302-97fa-74dddc71c1a1",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-build-search"
+        },
+        {
+          "id": "284aec4f-3e83-463b-8e0c-915358c2c5a0",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-build-search"
+        },
+        {
+          "id": "c63e8bd1-3d65-483f-8ae3-d0ae5889953f",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-search"
+        },
+        {
+          "id": "5c9142ec-403c-4057-9956-f819951258b0",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-build-search"
+        },
+        {
+          "id": "9edf1dff-710e-44e7-b15e-941809387fb6",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-build-search"
+        },
+        {
+          "id": "ad8212f8-e89c-4771-8534-d3cbfbbb26df",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-build-search"
+        },
+        {
+          "id": "6e61be16-d8dd-4602-ba12-5b331bd0a9e2",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-build-search"
+        },
+        {
+          "id": "8a069a2e-e5a2-4b08-8014-b874e7995204",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-build-search"
+        },
+        {
+          "id": "7c7531ce-704d-47b8-92af-410fcbf43555",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-build-search"
+        },
+        {
+          "id": "b0de785e-5d7b-4322-815b-8d8252ea6488",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-search"
+        },
+        {
+          "id": "c8796c70-c74b-4a38-b031-1642e3eb6759",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-search"
+        },
+        {
+          "id": "b948e266-6d65-423a-9a36-4374b866f1f9",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-build-search"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888510701
+    },
+    {
+      "name": "firecrawl-crawl",
+      "fingerprint": "0a520c8c15e63614482150b8e68e787201a4c362aa19aae9c0efba5206527097",
+      "locations": [
+        {
+          "id": "8a8cffdf-2b86-40dd-b917-1e4c445bfdc6",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-crawl"
+        },
+        {
+          "id": "7a7c4b08-928b-40e7-a13c-41661f09e84d",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-crawl"
+        },
+        {
+          "id": "7e675123-513f-47b6-9db6-e52881009296",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-crawl"
+        },
+        {
+          "id": "19e7aab5-776c-45ad-b8d9-320472ece8cf",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-crawl"
+        },
+        {
+          "id": "472edbec-d5e7-46ad-8c90-37adf6227436",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-crawl"
+        },
+        {
+          "id": "aa149671-134d-4ff5-92ce-94e34492ad96",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-crawl"
+        },
+        {
+          "id": "8f826086-c651-41c1-a530-3de6613dcdea",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-crawl"
+        },
+        {
+          "id": "eaede62b-fcfb-4876-8213-4b45d7110398",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-crawl"
+        },
+        {
+          "id": "a2b1522c-d6e7-4429-b3b7-5953a7dde88e",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-crawl"
+        },
+        {
+          "id": "9ae758a2-97c1-4fa5-9310-4f76b8cd85f9",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-crawl"
+        },
+        {
+          "id": "679b53a6-bd1e-4193-ae75-302ed650df6f",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-crawl"
+        },
+        {
+          "id": "5309a717-90e0-4130-aa8b-9a1c86cde545",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-crawl"
+        },
+        {
+          "id": "ab29a4a5-ff3e-4a92-b78e-3777a9fc85ca",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-crawl"
+        },
+        {
+          "id": "938efbc5-755b-4af5-96d9-5ec2aa11c20a",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-crawl"
+        },
+        {
+          "id": "3530a8f9-0af9-48d6-b8a6-af8bb2485267",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-crawl"
+        },
+        {
+          "id": "9ab68832-5d9f-4c22-9e1b-0c91e79f1488",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-crawl"
+        },
+        {
+          "id": "8dbdd0e3-044b-46f7-acdf-d1710a27c996",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-crawl"
+        },
+        {
+          "id": "afe9419a-468e-4381-9732-3a40408950f7",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-crawl"
+        },
+        {
+          "id": "d281c2fa-6b7c-430c-aca2-78859336377e",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-crawl"
+        },
+        {
+          "id": "359cb2a4-2826-4ead-85b8-aedd0b860e6f",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-crawl"
+        },
+        {
+          "id": "510a942d-c0dc-4325-84c1-adc0032fff64",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-crawl"
+        },
+        {
+          "id": "c62a0313-353a-44e3-8f8b-febdb013b2f6",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-crawl"
+        },
+        {
+          "id": "e4ff6da7-4e1f-4083-a752-5c96d396cdb9",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-crawl"
+        },
+        {
+          "id": "c060dd00-9120-4cf6-9546-b2ceca8d2cf5",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-crawl"
+        },
+        {
+          "id": "ae7cfa42-eeaa-4f9f-8fc3-277020f75b14",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-crawl"
+        },
+        {
+          "id": "d4c5f8de-e6f8-45d4-a4bc-f498c08ef975",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-crawl"
+        },
+        {
+          "id": "7ba1aecb-d3b0-4836-adb7-d86e57c89267",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-crawl"
+        },
+        {
+          "id": "55b5ffbf-d6fc-4acf-bf34-156249ca55cb",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-crawl"
+        },
+        {
+          "id": "e7840a4f-3066-4a60-81ac-c3b3afdeed26",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-crawl"
+        },
+        {
+          "id": "59fcf02f-329d-4331-8367-ba387dfc8d50",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-crawl"
+        },
+        {
+          "id": "0d5bfe39-c03f-4e3c-9ce3-65bd382ab776",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-crawl"
+        },
+        {
+          "id": "a9b22902-ab39-4d51-a2c6-7b8588bc51c6",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-crawl"
+        },
+        {
+          "id": "877daa6a-c5d9-410b-b199-6ebfbaa12a40",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-crawl"
+        },
+        {
+          "id": "472834fa-edf0-43fc-bc10-35c0fa438783",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-crawl"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888507906
+    },
+    {
+      "name": "firecrawl-download",
+      "fingerprint": "8913e2a96e6c12870207019ce1b975e7db4c35d24c1c02d25b9bd77e4510fb32",
+      "locations": [
+        {
+          "id": "71cf601e-1de2-4667-b214-05e6ce490fa9",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-download"
+        },
+        {
+          "id": "1024f0c3-5561-49ac-9e5c-0d4bee2ee8e1",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-download"
+        },
+        {
+          "id": "b2f973d6-3734-4335-9d17-a1499b961370",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-download"
+        },
+        {
+          "id": "1bc7216f-13bd-4e43-b4ae-48f78d6ff0a8",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-download"
+        },
+        {
+          "id": "cca8f3e4-b799-4cdb-95d9-3c389a7eddd7",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-download"
+        },
+        {
+          "id": "7db8a17b-2c1b-4700-bb45-df88a543c522",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-download"
+        },
+        {
+          "id": "9fe55ed3-45ae-4b3b-89ae-fd10ce3df80e",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-download"
+        },
+        {
+          "id": "81ea6114-2510-4e90-82ae-b0b27a15e472",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-download"
+        },
+        {
+          "id": "2e7745b9-a4c0-4cde-afc6-5d279d33df31",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-download"
+        },
+        {
+          "id": "07d1de1c-3b42-44a8-80dc-aacf5b9777cd",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-download"
+        },
+        {
+          "id": "9ac3918c-b971-42ae-ac57-66d71478c5d7",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-download"
+        },
+        {
+          "id": "c0e7c7ec-d698-4001-99a2-ba4840659149",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-download"
+        },
+        {
+          "id": "18dcb529-f597-4274-9816-0ff2e549a9da",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-download"
+        },
+        {
+          "id": "ac418b87-d3c3-4b0d-ac38-f80204cf2385",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-download"
+        },
+        {
+          "id": "159d2de4-30a3-484e-9abb-89bf4d1b791f",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-download"
+        },
+        {
+          "id": "970f804f-79c8-4fd0-986b-744182dbd0be",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-download"
+        },
+        {
+          "id": "b412bf6b-2494-4af8-bc4c-bf454982ed2a",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-download"
+        },
+        {
+          "id": "28dccac5-37d1-4fe6-8961-ab7dabe8855f",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-download"
+        },
+        {
+          "id": "509d2bcf-bca6-4f87-a0a0-0a8bf93be074",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-download"
+        },
+        {
+          "id": "d4e9550f-d5e4-4ff6-81a6-50c55b8a1c34",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-download"
+        },
+        {
+          "id": "bcb98c46-e8c6-42c0-8140-6df3e3286c89",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-download"
+        },
+        {
+          "id": "3cceb3c2-632e-4e96-8c86-c79c5ee5b010",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-download"
+        },
+        {
+          "id": "236841e8-6bbc-490e-9da3-f6a4bb1b1527",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-download"
+        },
+        {
+          "id": "912b7f7c-ca9c-4502-a0a2-f22529f63a11",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-download"
+        },
+        {
+          "id": "f0a6f6d4-51a3-4f1f-9d12-238131c25085",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-download"
+        },
+        {
+          "id": "14f5ee7f-3973-4b6f-b6f5-15dcab48f694",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-download"
+        },
+        {
+          "id": "7aa6e335-1f3f-43d8-aa1f-c673202c7118",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-download"
+        },
+        {
+          "id": "580d2445-98cd-4274-820c-b752e2296444",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-download"
+        },
+        {
+          "id": "726dde30-fa4a-466d-bca4-26ddede62cc6",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-download"
+        },
+        {
+          "id": "e210a8c5-dff8-47c5-bf56-38110d2c07e0",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-download"
+        },
+        {
+          "id": "65082349-979a-45f8-b323-936652207ec3",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-download"
+        },
+        {
+          "id": "280133e1-6a74-4b36-b4e2-d8ecb71694ed",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-download"
+        },
+        {
+          "id": "2129953c-c51f-44e2-97d5-aef4eb64a984",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-download"
+        },
+        {
+          "id": "cb7d58ad-1dbb-434a-a9c8-d155ba6898fe",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-download"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888507943
+    },
+    {
+      "name": "firecrawl-interact",
+      "fingerprint": "b0bfa072424bcd1254db7603f9f0a03f6131f41934d876fc26b56ffd9e611b31",
+      "locations": [
+        {
+          "id": "434c6e71-4b37-412d-a587-460df8ae34c1",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-interact"
+        },
+        {
+          "id": "4ce70d52-c4f2-4ddb-8547-66ef0cbcfa4b",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-interact"
+        },
+        {
+          "id": "822f69dd-0636-4d24-ba7d-4957908d2b45",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-interact"
+        },
+        {
+          "id": "5f3715a6-a171-4f6d-b436-8b7c3aaf2a93",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-interact"
+        },
+        {
+          "id": "eb237772-3dc5-4d6f-9927-8a8075f80106",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-interact"
+        },
+        {
+          "id": "55e153db-3099-4399-abd6-1d83a67634cd",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-interact"
+        },
+        {
+          "id": "8bd36d8d-606e-4ddd-8909-a589bd87779b",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-interact"
+        },
+        {
+          "id": "424279b0-639c-4768-ba26-c629f382555c",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-interact"
+        },
+        {
+          "id": "19389c16-7319-4838-a33e-37a2ea584a72",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-interact"
+        },
+        {
+          "id": "caee0d4d-7fcc-41bd-aa22-88b529df891c",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-interact"
+        },
+        {
+          "id": "5fb1dd33-9946-411f-8af1-ff6e9c0dc4ce",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-interact"
+        },
+        {
+          "id": "0efee5c4-c7a6-4609-8d01-2794021dd463",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-interact"
+        },
+        {
+          "id": "9f3efde2-e6fc-4bd0-a877-0a2fc8c1e285",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-interact"
+        },
+        {
+          "id": "d296e157-f292-48d6-8f9b-5e8365809081",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-interact"
+        },
+        {
+          "id": "9e65deb2-eeb8-4175-a7ca-0d8175f9f2b2",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-interact"
+        },
+        {
+          "id": "3d32afa4-695a-4019-9bc5-82447f6e3208",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-interact"
+        },
+        {
+          "id": "29d14b46-bde8-4f5a-83c1-5dcbe6165edf",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-interact"
+        },
+        {
+          "id": "8c4a17cb-6469-4cee-9e6f-d8353ca44e94",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-interact"
+        },
+        {
+          "id": "da31c0fb-57e8-4cb8-a6a8-8d5801d3e3b0",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-interact"
+        },
+        {
+          "id": "dfabfb18-f9b4-4bea-9476-853ee124223b",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-interact"
+        },
+        {
+          "id": "db1c4329-4ac0-46e3-b396-9f38bc24d625",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-interact"
+        },
+        {
+          "id": "09e70a7b-348d-4124-af30-4ec4552f8266",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-interact"
+        },
+        {
+          "id": "a249a391-37b6-472d-85e7-1902ff3ff860",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-interact"
+        },
+        {
+          "id": "3db6a3a9-e342-44ce-b8ec-c07191518772",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-interact"
+        },
+        {
+          "id": "27d66851-0923-44ee-b992-ca9f2e78ad43",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-interact"
+        },
+        {
+          "id": "68c7309e-c929-42db-bc64-85410580fb47",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-interact"
+        },
+        {
+          "id": "a2ef7383-358c-480b-90ad-bc474e606524",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-interact"
+        },
+        {
+          "id": "da0555c0-f16b-4e88-bafa-33f8354d7def",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-interact"
+        },
+        {
+          "id": "652ebd1b-2b94-47cc-9bd9-9795f9dbbe1a",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-interact"
+        },
+        {
+          "id": "0cdddce1-3b7e-4cd1-90f1-0159afc5e060",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-interact"
+        },
+        {
+          "id": "aea0e11c-2e59-4258-acde-6153fefee38a",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-interact"
+        },
+        {
+          "id": "f8dce046-b486-4ca8-88c6-a23b087abc7a",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-interact"
+        },
+        {
+          "id": "33cdae20-3232-4dfb-9d95-2f54dd7854a2",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-interact"
+        },
+        {
+          "id": "bbc8a27c-c9dd-4f91-8c6c-b0a9b2b50e0e",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-interact"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888507975
+    },
+    {
+      "name": "firecrawl-map",
+      "fingerprint": "9c50b8e3f8b63f8b0301fb52dae434ddf48015036a5945b463e0c2323614585e",
+      "locations": [
+        {
+          "id": "792d3dc8-f859-4c3e-82b5-1a6215cc8afb",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-map"
+        },
+        {
+          "id": "c6ea95c5-0f0f-40e5-bff6-e98885fc4899",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-map"
+        },
+        {
+          "id": "d1740a4e-ed07-4036-823e-be0b73a5f716",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-map"
+        },
+        {
+          "id": "d31bf2d9-4c6c-4d6a-8554-50b703fda5e4",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-map"
+        },
+        {
+          "id": "310ebc17-7bce-449a-9daf-01c5c12abe44",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-map"
+        },
+        {
+          "id": "7e680459-b95e-45df-bdb3-5880ff44c276",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-map"
+        },
+        {
+          "id": "3708360c-e136-444d-875d-09583a5440c7",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-map"
+        },
+        {
+          "id": "cad1eb45-9552-4338-9d0f-048cce150fe9",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-map"
+        },
+        {
+          "id": "d87f9f1a-4c15-4ab9-8456-5647db88427c",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-map"
+        },
+        {
+          "id": "6f07c206-7941-4405-970d-7f3376e8b8dc",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-map"
+        },
+        {
+          "id": "cb98807c-f7d3-44ac-893f-268ff90633de",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-map"
+        },
+        {
+          "id": "9ea1a2c5-94dc-495c-a4f3-2fa3a059e4cf",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-map"
+        },
+        {
+          "id": "2ced5600-9c9d-4445-a8c3-7898d0671059",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-map"
+        },
+        {
+          "id": "ae03f128-53ce-444d-9a3c-6644114ba9d0",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-map"
+        },
+        {
+          "id": "20e29498-a5a2-438e-a96a-01c5f3cb5f72",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-map"
+        },
+        {
+          "id": "3a2931cc-050e-4f78-9009-7978573b1300",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-map"
+        },
+        {
+          "id": "994ce3a0-d4d5-43f0-96d7-15f051f4975e",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-map"
+        },
+        {
+          "id": "73bf55bc-fe14-48e5-9fe2-d1eb2ddd56cc",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-map"
+        },
+        {
+          "id": "8f7abfad-35b3-403a-8184-1268118fc832",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-map"
+        },
+        {
+          "id": "7e15fef5-2635-4c67-b386-1754902c1e01",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-map"
+        },
+        {
+          "id": "c3fbe0d9-db04-4002-8a16-799bc97c5ec9",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-map"
+        },
+        {
+          "id": "75e8bda0-9895-47bc-9329-9fefe6a163c4",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-map"
+        },
+        {
+          "id": "315dd3ff-d28c-4779-9552-febb57eb2a28",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-map"
+        },
+        {
+          "id": "da2e3add-cabe-49fc-8f00-77e93a9bbe68",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-map"
+        },
+        {
+          "id": "e1782b2e-2e4e-4c12-87aa-7b7b1e0a1302",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-map"
+        },
+        {
+          "id": "c3ffae38-61b3-4837-8ef8-cb87235f3bf8",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-map"
+        },
+        {
+          "id": "0471669a-442c-4dd8-9a89-5278ae7fe14a",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-map"
+        },
+        {
+          "id": "10d2e551-083e-4118-b007-0af0aefd1dd4",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-map"
+        },
+        {
+          "id": "5f7cf210-1c37-4c74-b0d5-b21bb83cc09f",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-map"
+        },
+        {
+          "id": "26a5d730-7904-4bc4-8030-4975c688cce2",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-map"
+        },
+        {
+          "id": "a7ae5bd7-0366-4d2b-938d-2f7a3edd6f9b",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-map"
+        },
+        {
+          "id": "7dce1bca-a1f4-4718-baad-4896d5f3daaa",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-map"
+        },
+        {
+          "id": "c8b6b127-6c4c-4053-a341-83f0ccd996c6",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-map"
+        },
+        {
+          "id": "90ede617-3dc8-471e-81d2-43bf978b02e5",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-map"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888508009
+    },
+    {
+      "name": "firecrawl-parse",
+      "fingerprint": "921b50852c3bba6edf01a44ef2f40631c7d69e3a0781b9dfd122b7c9878156cf",
+      "locations": [
+        {
+          "id": "8ee5a0cd-3c5a-40c8-ab31-5391dd2eecb9",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-parse"
+        },
+        {
+          "id": "f37d946a-afe0-4163-b149-09e030f3049f",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-parse"
+        },
+        {
+          "id": "81833d8e-f8ca-4f49-8936-fff7d1a36259",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-parse"
+        },
+        {
+          "id": "e0ff5bcc-648e-4f0b-aeb2-5407372d5f7e",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-parse"
+        },
+        {
+          "id": "71ed4daf-eccb-41ad-8ba0-c39eca0214d7",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-parse"
+        },
+        {
+          "id": "cb7d1782-9e23-48b0-bc25-773e539f5e16",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-parse"
+        },
+        {
+          "id": "eeebdd83-56a8-4d86-94f1-5661179de4e0",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-parse"
+        },
+        {
+          "id": "15e1803d-da4b-4917-a2c7-bed99c197c0a",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-parse"
+        },
+        {
+          "id": "b2cbfa02-dce9-4875-bbf8-a7abecc14787",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-parse"
+        },
+        {
+          "id": "0b8d6d49-6299-4df8-bdba-6c65214cb9d9",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-parse"
+        },
+        {
+          "id": "83200b50-9364-48e5-ac7b-68be55fdcea3",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-parse"
+        },
+        {
+          "id": "e112d194-7950-4131-8254-c1d8909c02dd",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-parse"
+        },
+        {
+          "id": "28142834-982a-427e-b58a-17014b466032",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-parse"
+        },
+        {
+          "id": "91ca46fa-1de1-409b-b547-e2d3e69d8504",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-parse"
+        },
+        {
+          "id": "63408017-75ae-4cb9-97f9-5b295bedf3c7",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-parse"
+        },
+        {
+          "id": "acebfe5b-22a6-497b-8db1-1dc4132c6ff3",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-parse"
+        },
+        {
+          "id": "e84790e2-4b45-4939-9c21-b055c7a181cc",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-parse"
+        },
+        {
+          "id": "4904620f-c889-4840-8c01-d010cf31f861",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-parse"
+        },
+        {
+          "id": "fa60abba-9ed2-4110-8df2-2e47a7cc800c",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-parse"
+        },
+        {
+          "id": "c8148fda-7f2a-40b0-b49f-8effd967b151",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-parse"
+        },
+        {
+          "id": "0b42596f-2eac-418b-9395-7ab9ecb851d5",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-parse"
+        },
+        {
+          "id": "98635241-e5ec-48ed-8ac7-95dcdc11f1fd",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-parse"
+        },
+        {
+          "id": "ed4aba1c-fae0-4dca-8e39-3115b7cbb244",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-parse"
+        },
+        {
+          "id": "55943fb8-dd79-4161-8a07-2854d4ba2e56",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-parse"
+        },
+        {
+          "id": "7cee401c-8aa8-45de-827d-9399429d6190",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-parse"
+        },
+        {
+          "id": "f171bbc5-d99f-4391-aa5b-818c4a1f81b0",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-parse"
+        },
+        {
+          "id": "0b76cd57-fb70-40bf-b224-eddf5f7747b7",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-parse"
+        },
+        {
+          "id": "f50b3903-6a0d-493c-846b-8b006a13a902",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-parse"
+        },
+        {
+          "id": "830511c6-9fc7-42fa-9060-58d99b2e122e",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-parse"
+        },
+        {
+          "id": "471f620d-1b2c-4b6c-a9db-5d3b32dce656",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-parse"
+        },
+        {
+          "id": "9edc9900-f72f-48ce-a9ac-224f63764036",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-parse"
+        },
+        {
+          "id": "38b2d305-f2bf-46e8-8821-4bf7289119a9",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-parse"
+        },
+        {
+          "id": "c00bba94-9ad2-41a5-85d4-86eaedb4b497",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-parse"
+        },
+        {
+          "id": "9fc148af-7d64-4ce9-b29a-a9037049eb34",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-parse"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888508043
+    },
+    {
+      "name": "firecrawl-scrape",
+      "fingerprint": "de4bc9ff4f18f8be66c1130826bdb4d53ba09d8b490fbaa0b9a0232bfbce60c8",
+      "locations": [
+        {
+          "id": "41837b48-fd4e-4d5d-9a7d-26456e62b704",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-scrape"
+        },
+        {
+          "id": "27c4fec0-d837-401f-a8f6-c0c81b7ba9fb",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-scrape"
+        },
+        {
+          "id": "f063410b-9e2b-4b98-8f9f-67a9ef89cde6",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-scrape"
+        },
+        {
+          "id": "4c07a0a0-1130-404a-9fdc-daf3fb20f669",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-scrape"
+        },
+        {
+          "id": "05189c1f-4ac7-4cc5-b6c8-bdebe5bcae79",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-scrape"
+        },
+        {
+          "id": "8f8bf4a7-2895-4360-b5dd-bee0c4b93ec6",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-scrape"
+        },
+        {
+          "id": "fe50ab79-688a-47f8-8296-f3b58eda84c1",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-scrape"
+        },
+        {
+          "id": "b7e43cd4-75f3-4e15-89f0-2b6cfd4556c8",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-scrape"
+        },
+        {
+          "id": "658d2080-1570-4a36-b249-cee8ea0b4b05",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-scrape"
+        },
+        {
+          "id": "2f21b47f-a7c9-46bc-b037-4e0209504311",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-scrape"
+        },
+        {
+          "id": "191c717b-15c6-47d2-908f-84f80151b689",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-scrape"
+        },
+        {
+          "id": "ecf86205-3cb0-47cc-ade2-9da1b314b9c7",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-scrape"
+        },
+        {
+          "id": "c6721a5f-0077-42b9-9961-18ffdda4010b",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-scrape"
+        },
+        {
+          "id": "dce83eec-e147-4d09-9028-8db374a68c81",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-scrape"
+        },
+        {
+          "id": "60b1ab18-ed45-451a-aae3-1a526799da29",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-scrape"
+        },
+        {
+          "id": "cb43d5c0-0421-4d85-b73b-d8e690f885bc",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-scrape"
+        },
+        {
+          "id": "48dd217b-acef-4878-b86f-ba83ff15b1db",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-scrape"
+        },
+        {
+          "id": "e79b9352-78fb-4de9-97ef-26e750559296",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-scrape"
+        },
+        {
+          "id": "f3d5ae12-028e-4876-b780-c8a061bc5def",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-scrape"
+        },
+        {
+          "id": "115a2813-067f-475b-a736-18885c92215a",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-scrape"
+        },
+        {
+          "id": "5540a1b5-3c51-45e4-970a-bab928324cce",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-scrape"
+        },
+        {
+          "id": "39a82892-fd6c-4f33-9a66-6f6bc8a7dede",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-scrape"
+        },
+        {
+          "id": "ac9a03e8-9da4-4f7a-b39d-f1fcc3034319",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-scrape"
+        },
+        {
+          "id": "2d01d448-930e-47a3-a215-942e34282da1",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-scrape"
+        },
+        {
+          "id": "787b2d78-9c52-4349-8303-8276c8d0c59f",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-scrape"
+        },
+        {
+          "id": "7b9ebd06-fe55-41ae-860f-e5e0510ba4de",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-scrape"
+        },
+        {
+          "id": "205af2dd-8984-4126-8c30-9af20ae689b1",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-scrape"
+        },
+        {
+          "id": "039af090-a2a9-42bd-be40-ac64b72d4adb",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-scrape"
+        },
+        {
+          "id": "e689f1f9-b69d-4b23-ad41-3324452b2656",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-scrape"
+        },
+        {
+          "id": "564e4fc8-a4f8-4688-ae9c-01ca2353615e",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-scrape"
+        },
+        {
+          "id": "7ccc24fc-9c20-41e2-b6db-101829831bfb",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-scrape"
+        },
+        {
+          "id": "f348e5e4-71cb-490e-8086-4a422512ca49",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-scrape"
+        },
+        {
+          "id": "47860c6a-0f7d-4397-be78-4762908b814f",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-scrape"
+        },
+        {
+          "id": "10c697d7-49e4-46fa-940f-2583c1254014",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-scrape"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888508073
+    },
+    {
+      "name": "firecrawl-search",
+      "fingerprint": "99e71bafc6353b0f4e954ef184253359b34d910a0aa9d5c7e5c5643c6a1d572a",
+      "locations": [
+        {
+          "id": "f5cd5941-7e08-43d8-86ba-bbca71773fb2",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/firecrawl-search"
+        },
+        {
+          "id": "ee799cb0-7b46-44af-bac3-94779de18244",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-search"
+        },
+        {
+          "id": "1cbc426b-a7af-4d49-8406-49bf2cec1830",
+          "tool": "kilo_code",
+          "found_path": "/home/web3claw/.kilocode/skills/firecrawl-search"
+        },
+        {
+          "id": "c68a1890-8b32-4042-85cb-a7dbbcbb5250",
+          "tool": "roo_code",
+          "found_path": "/home/web3claw/.roo/skills/firecrawl-search"
+        },
+        {
+          "id": "fec8155d-5fc6-43b5-935a-2f2536dd7b6d",
+          "tool": "goose",
+          "found_path": "/home/web3claw/.config/goose/skills/firecrawl-search"
+        },
+        {
+          "id": "8aa7dae2-465e-4ecf-8e7d-4527cfd40805",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-search"
+        },
+        {
+          "id": "1d7a554b-7af9-4355-b7fe-441f1e6c4e8a",
+          "tool": "openclaw",
+          "found_path": "/home/web3claw/.openclaw/skills/firecrawl-search"
+        },
+        {
+          "id": "6864c29d-4105-4bc3-9500-3b799248ae03",
+          "tool": "droid",
+          "found_path": "/home/web3claw/.factory/skills/firecrawl-search"
+        },
+        {
+          "id": "b2528715-8605-46e0-8f96-6aaad2aebbb1",
+          "tool": "windsurf",
+          "found_path": "/home/web3claw/.codeium/windsurf/skills/firecrawl-search"
+        },
+        {
+          "id": "f4c9ad36-d0ba-40a2-9bf5-bfa91b1ca2f6",
+          "tool": "trae",
+          "found_path": "/home/web3claw/.trae/skills/firecrawl-search"
+        },
+        {
+          "id": "c2504937-5785-4314-a4cd-c4ec964a8c4f",
+          "tool": "augment",
+          "found_path": "/home/web3claw/.augment/skills/firecrawl-search"
+        },
+        {
+          "id": "26cf6f79-904b-4c8c-b06b-08b40861906f",
+          "tool": "bob",
+          "found_path": "/home/web3claw/.bob/skills/firecrawl-search"
+        },
+        {
+          "id": "dda06305-10b5-49d0-90a0-0247d332f26d",
+          "tool": "command_code",
+          "found_path": "/home/web3claw/.commandcode/skills/firecrawl-search"
+        },
+        {
+          "id": "fd29d26b-d714-414c-bb8e-1e6509a44d54",
+          "tool": "continue",
+          "found_path": "/home/web3claw/.continue/skills/firecrawl-search"
+        },
+        {
+          "id": "20e01293-cd9c-4ea0-b62b-063e85e5087a",
+          "tool": "cortex",
+          "found_path": "/home/web3claw/.snowflake/cortex/skills/firecrawl-search"
+        },
+        {
+          "id": "5ef54993-7c6a-4744-8e34-3c1a1d1af68c",
+          "tool": "crush",
+          "found_path": "/home/web3claw/.config/crush/skills/firecrawl-search"
+        },
+        {
+          "id": "a29b00d5-cfd2-4ac5-a352-5f0df7638b63",
+          "tool": "iflow",
+          "found_path": "/home/web3claw/.iflow/skills/firecrawl-search"
+        },
+        {
+          "id": "fb1f628a-8777-45e8-b159-f9c31bbbec56",
+          "tool": "junie",
+          "found_path": "/home/web3claw/.junie/skills/firecrawl-search"
+        },
+        {
+          "id": "0ad064d4-60bf-458d-9d74-05a21c641a78",
+          "tool": "kode",
+          "found_path": "/home/web3claw/.kode/skills/firecrawl-search"
+        },
+        {
+          "id": "5ff6031d-f119-49af-ab6e-36f466b4ddf6",
+          "tool": "mcpjam",
+          "found_path": "/home/web3claw/.mcpjam/skills/firecrawl-search"
+        },
+        {
+          "id": "e76887f7-3a6f-4b94-ac98-1476d45e9070",
+          "tool": "mistral_vibe",
+          "found_path": "/home/web3claw/.vibe/skills/firecrawl-search"
+        },
+        {
+          "id": "a200ca3b-8fc9-4a06-8f82-275de4eb5ae3",
+          "tool": "mux",
+          "found_path": "/home/web3claw/.mux/skills/firecrawl-search"
+        },
+        {
+          "id": "a7479d5a-380e-4f49-920e-d1939f74a91f",
+          "tool": "neovate",
+          "found_path": "/home/web3claw/.neovate/skills/firecrawl-search"
+        },
+        {
+          "id": "4f08a50f-9f45-4234-804c-8d249901cfae",
+          "tool": "openhands",
+          "found_path": "/home/web3claw/.openhands/skills/firecrawl-search"
+        },
+        {
+          "id": "e6ca08e3-5f35-453f-ad6c-1cd079559db9",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-search"
+        },
+        {
+          "id": "9fd6535d-f1d9-42da-8af6-ad922906a4c4",
+          "tool": "pochi",
+          "found_path": "/home/web3claw/.pochi/skills/firecrawl-search"
+        },
+        {
+          "id": "fb2644cf-cdea-4c28-b531-50073aef03c8",
+          "tool": "qoder",
+          "found_path": "/home/web3claw/.qoder/skills/firecrawl-search"
+        },
+        {
+          "id": "28e51aa2-da18-4f80-b20c-41a7833c17e8",
+          "tool": "qwen_code",
+          "found_path": "/home/web3claw/.qwen/skills/firecrawl-search"
+        },
+        {
+          "id": "9f9e516f-5e6a-41f6-b1d8-1462ea5d85b8",
+          "tool": "trae_cn",
+          "found_path": "/home/web3claw/.trae-cn/skills/firecrawl-search"
+        },
+        {
+          "id": "dca94f79-1bed-4111-84e1-68f2ad5071fc",
+          "tool": "zencoder",
+          "found_path": "/home/web3claw/.zencoder/skills/firecrawl-search"
+        },
+        {
+          "id": "88ff53de-3718-4ade-af8a-249bca152df8",
+          "tool": "adal",
+          "found_path": "/home/web3claw/.adal/skills/firecrawl-search"
+        },
+        {
+          "id": "89b7b12f-779a-430b-8646-34a873707940",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-search"
+        },
+        {
+          "id": "8abeee9e-cf86-4037-a8e2-52a266d5d832",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-search"
+        },
+        {
+          "id": "d1e9e9cd-42ad-4158-88ea-42160bd2b145",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/firecrawl-search"
+        }
+      ],
+      "imported": false,
+      "found_at": 1777888508105
+    },
+    {
+      "name": "frontend-skill",
+      "fingerprint": "42ca604300edcdfa1780d2097dd698f67d0e84b722b6f7c9cd5d199f15cfcdbb",
+      "locations": [
+        {
+          "id": "a72f5888-4dca-46e7-96a3-cbaa25b29a07",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/frontend-skill"
+        },
+        {
+          "id": "4a34556b-857b-408f-a642-e8130e130763",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/frontend-skill"
+        },
+        {
+          "id": "79e00fa2-484c-4154-b6a9-3260cb0b11e2",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/frontend-skill"
+        },
+        {
+          "id": "4fba7ade-2f6d-4e3a-b4d4-a2c584423aba",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/frontend-skill"
+        },
+        {
+          "id": "b6b2b90d-9b5b-4c2b-a423-af29e8a8e0d6",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/frontend-skill"
+        },
+        {
+          "id": "ded17ab7-16a0-42e6-b509-581befaef922",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/frontend-skill"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301059
+    },
+    {
+      "name": "grill-me",
+      "fingerprint": "854b121db3d5116d023d654a4c9f35437ba7ada537050b77a8cc93d292bc92c9",
+      "locations": [
+        {
+          "id": "aea30a53-f972-4aa1-902c-faa32a655925",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/grill-me"
+        },
+        {
+          "id": "b6462804-ca29-4947-8c05-81f09e183c80",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/grill-me"
+        },
+        {
+          "id": "a0f54082-3c30-422b-8222-57ea9edf1cd6",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/grill-me"
+        },
+        {
+          "id": "379a05cd-5689-42f9-a339-eb27de3c5b8a",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/grill-me"
+        },
+        {
+          "id": "2eae1302-6ea5-4d73-b990-82ee9c842650",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/grill-me"
+        },
+        {
+          "id": "bd9ec8d2-a7ea-4cbb-ae41-e566dfef60b2",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/grill-me"
+        },
+        {
+          "id": "548c2865-5b8c-438b-b266-c7b09d4be9b6",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/grill-me"
+        }
+      ],
+      "imported": false,
+      "found_at": 1791600540109
+    },
+    {
+      "name": "hyperframes",
+      "fingerprint": "842a1f6babd4f6c534693ff063932d169cc7446bdd99b402865f5ae3d6a7ad62",
+      "locations": [
+        {
+          "id": "b0b5320c-6d8a-4d23-81f9-935cb20391f4",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes"
+        },
+        {
+          "id": "620beaab-2ea1-4f91-8af1-e660286483c9",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes"
+        },
+        {
+          "id": "a8fd07b7-8cdb-40c5-8fe3-1fe856b8df67",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes"
+        },
+        {
+          "id": "2245bf72-9212-4914-b633-8b57fa9b995e",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes"
+        },
+        {
+          "id": "09987bb1-5732-4137-a6ad-757ef81afbba",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes"
+        },
+        {
+          "id": "de479e7d-9288-4705-a5b4-728869db88c9",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301868
+    },
+    {
+      "name": "hyperframes-cli",
+      "fingerprint": "4a8afc04396ad4ed7e3db60ff4d64bec9f74d200d7b4515ffc59554defbf7fe3",
+      "locations": [
+        {
+          "id": "f6371984-74bc-4e39-94ee-70139f810bf5",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-cli"
+        },
+        {
+          "id": "8e265f6f-dd6a-45e8-b4c8-d7dac33fe79b",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-cli"
+        },
+        {
+          "id": "6d61494e-5686-4bae-b392-497dd9794736",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-cli"
+        },
+        {
+          "id": "bcbd468d-6d07-4c4c-9be9-82f75df616b7",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-cli"
+        },
+        {
+          "id": "2653a1e7-3af6-45e1-a45f-c63229b849b3",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-cli"
+        },
+        {
+          "id": "079c89ae-51d8-4528-923e-8721e493c9ba",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-cli"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301876
+    },
+    {
+      "name": "hyperframes-gsap",
+      "fingerprint": "fb139bf57bc1743b861663f15729ad465e447e4367f4ee1514a4974dcf103bdf",
+      "locations": [
+        {
+          "id": "df121668-009e-4155-afe9-d2de2026f1ab",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-gsap"
+        },
+        {
+          "id": "c70ba436-0055-4a6a-95e7-b4947e1e5c1a",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-gsap"
+        },
+        {
+          "id": "d032c772-513e-432a-b3bb-95d096f8bf20",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-gsap"
+        },
+        {
+          "id": "3b6bf1c8-78f5-4c64-9d22-72f4a6cf8211",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-gsap"
+        },
+        {
+          "id": "fd0f6a29-ab17-4700-b60f-331054d2f29d",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-gsap"
+        },
+        {
+          "id": "d81a32c8-13c4-465a-9310-cba66d82068a",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-gsap"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301881
+    },
+    {
+      "name": "hyperframes-registry",
+      "fingerprint": "832032a82486bfecd1ba720925aa3a152a6fd24e42e90e0edf17696d68b13ba6",
+      "locations": [
+        {
+          "id": "69e3d37a-884a-40e5-a745-59ec90d2537f",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-registry"
+        },
+        {
+          "id": "a858d1a7-4624-476a-a20a-092ba4857c56",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-registry"
+        },
+        {
+          "id": "cac37e2a-080d-4d4e-ad8f-6a6c58b7cf82",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-registry"
+        },
+        {
+          "id": "f92cf443-ca1f-4634-930d-7d2eaa6855e4",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-registry"
+        },
+        {
+          "id": "e22da62c-97e5-4f0f-959a-c28000c3c20c",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-registry"
+        },
+        {
+          "id": "a23a0a35-7cca-4a26-8f7a-5cc0b39be158",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-registry"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301888
+    },
+    {
+      "name": "hyperframes-website-to-hyperframes",
+      "fingerprint": "f682da37d6bd424cdcaae01bff91c8f366b74b7af3bc9d850b9ef285cde9cb8a",
+      "locations": [
+        {
+          "id": "67de0a23-62d0-4523-bb8e-317474704b0b",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-website-to-hyperframes"
+        },
+        {
+          "id": "8208e050-b070-445b-a906-ce4cf1a72b5f",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-website-to-hyperframes"
+        },
+        {
+          "id": "8e74ee5f-1525-4a91-a406-a43d77f11895",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-website-to-hyperframes"
+        },
+        {
+          "id": "76dce291-2307-41f1-8074-de3118eebbd1",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-website-to-hyperframes"
+        },
+        {
+          "id": "a37b310d-5cd4-47fe-aeee-15f5fe6c3c43",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-website-to-hyperframes"
+        },
+        {
+          "id": "00f8eeb4-7acd-4e91-96f8-4d9c95dd21f0",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/hyperframes-website-to-hyperframes"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301895
+    },
+    {
+      "name": "image-ocr",
+      "fingerprint": "080a5c06bd458dc8ea442a8a0583e8c0e30ec3755e83b908c6903edc1044d90c",
+      "locations": [
+        {
+          "id": "5b8c7740-3f27-4f1d-b840-2a120543ef29",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/image-ocr"
+        },
+        {
+          "id": "21d2e68d-f40c-4f5f-8d99-5334e281023e",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/image-ocr"
+        },
+        {
+          "id": "8371a3ae-7c3c-4ba0-a134-e5c68627604a",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/image-ocr"
+        },
+        {
+          "id": "b3a2e0c7-6f6a-426a-a4ed-e09ab8516404",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/image-ocr"
+        },
+        {
+          "id": "d1ca24a8-59ab-4eb5-9465-d7f9445ab164",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/image-ocr"
+        },
+        {
+          "id": "8da2bc3e-4af7-4e6f-aa41-786e25d7596a",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/image-ocr"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301060
+    },
+    {
+      "name": "luckin-ordering",
+      "fingerprint": "464fe736aa0dc2b4dd2879c3c221dbdd8d56ab6ba8370f2f9c50d8aba638a284",
+      "locations": [
+        {
+          "id": "05f3f1a0-ff3b-44ef-8e3a-1c3e3d5f7dd2",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/luckin-ordering"
+        },
+        {
+          "id": "2203595a-855e-47fe-8a7f-dd7000250cb9",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/luckin-ordering"
+        },
+        {
+          "id": "02b4f9a4-e90f-473b-a09d-c22a0f563593",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/luckin-ordering"
+        },
+        {
+          "id": "2ea753fc-44be-440a-884f-d9b344075339",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/luckin-ordering"
+        },
+        {
+          "id": "cc3cd87c-6158-4d0e-bc4d-27f99a3cafac",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/luckin-ordering"
+        },
+        {
+          "id": "27a22103-4125-435e-8d2f-6719f2c791a2",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/luckin-ordering"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301818
+    },
+    {
+      "name": "orca-cli",
+      "fingerprint": "f626cc8e360951ad9d178d01e06fef10c6f3a586b388131332924d8a1cc9d589",
+      "locations": [
+        {
+          "id": "e70a1d6e-36a4-4573-90f8-5c8b6ce3b05c",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/orca-cli"
+        },
+        {
+          "id": "1bb9019a-2b71-479c-91ef-5810434fb51b",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/orca-cli"
+        },
+        {
+          "id": "71a3a56c-b11a-475e-85ce-0b8c144ad885",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/orca-cli"
+        },
+        {
+          "id": "4f520a0c-1fcd-4cf0-8b6c-a75dbae5426c",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/orca-cli"
+        },
+        {
+          "id": "7a7e6085-aa11-43bb-b099-1c8894133dc4",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/orca-cli"
+        },
+        {
+          "id": "6e6ea687-4e9d-49ed-8538-6ad472b1f84f",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/orca-cli"
+        },
+        {
+          "id": "69792664-34ac-4749-8b7b-37b7b30cbebb",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/orca-cli"
+        }
+      ],
+      "imported": false,
+      "found_at": 1784622666371
+    },
+    {
+      "name": "orchestration",
+      "fingerprint": "cb47d21c9ef1affa484b445cf0bc8faf232ba54f9f3d31be98e464e9cc0dd1b2",
+      "locations": [
+        {
+          "id": "8788bfeb-c720-4b42-9f05-9f6979be7609",
+          "tool": "claude_code",
+          "found_path": "/home/web3claw/.claude/skills/orchestration"
+        },
+        {
+          "id": "8d0622f9-181b-4d2b-b3fa-ab036bf78387",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/orchestration"
+        },
+        {
+          "id": "8254842e-c403-491f-ae12-56055fa006db",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/orchestration"
+        },
+        {
+          "id": "146d4d73-18c6-477e-95c3-6f1601c26530",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/orchestration"
+        },
+        {
+          "id": "8af185b4-d0a9-4ce3-9031-5f9989158d26",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/orchestration"
+        },
+        {
+          "id": "a4a20e77-3a55-46d6-9d1e-9e2b1a33ef2b",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/orchestration"
+        },
+        {
+          "id": "417ebe83-774d-4440-bb03-6e65dd427e73",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/orchestration"
+        }
+      ],
+      "imported": false,
+      "found_at": 1784622666387
+    },
+    {
+      "name": "pdf",
+      "fingerprint": "fb6d2c02a2c206d6935df822e003c93bef6dc7a0f885ca7ffa9ea9f6cd7ea9be",
+      "locations": [
+        {
+          "id": "c82821d2-2b0e-4672-a087-4273017f0436",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/pdf"
+        },
+        {
+          "id": "e462d2ef-92dd-4a1e-b86f-6c363e361826",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/pdf"
+        },
+        {
+          "id": "f4e3875d-598d-4d71-916c-c45c89fb9673",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/pdf"
+        },
+        {
+          "id": "15c906a8-3c50-466e-9fb1-67a16e1af2aa",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/pdf"
+        },
+        {
+          "id": "e329630e-5f83-47e3-8b71-e7772ae7eedc",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/pdf"
+        },
+        {
+          "id": "a097540f-4cdc-46db-a3fc-db4d456cea51",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/pdf"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301053
+    },
+    {
+      "name": "post-to-x",
+      "fingerprint": "8c15e46513a7149c11408d2cafcf30df48aa3d3c4551a8a0a5169d3177370cae",
+      "locations": [
+        {
+          "id": "9d43e0e8-588d-4f09-85fe-f558c30cf340",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/post-to-x"
+        },
+        {
+          "id": "3e49dc7f-53ce-4b2d-a315-e1d8eede1b58",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/post-to-x"
+        },
+        {
+          "id": "6cc1a791-d284-44a8-a4a2-5fdba1c238c9",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/post-to-x"
+        },
+        {
+          "id": "8a8f1c47-446d-4495-9bb6-7605d5a951f9",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/post-to-x"
+        },
+        {
+          "id": "457135b4-3a28-4c19-8121-3f134d245475",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/post-to-x"
+        },
+        {
+          "id": "2d9a718c-fa86-406d-989e-14661aecee96",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/post-to-x"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301058
+    },
+    {
+      "name": "product-design-audit",
+      "fingerprint": "5c24c8fb241fd646f37df80ed0d1fb56bc4f74a3a753bb40923924ddf2f24376",
+      "locations": [
+        {
+          "id": "45f02dc1-f341-4445-a334-f24d58a71607",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-audit"
+        },
+        {
+          "id": "95f4e9b1-318e-47dc-9b95-2be995981db7",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-audit"
+        },
+        {
+          "id": "09bb26d4-c1c3-4b7f-b46a-4fff27bb7bf8",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-audit"
+        },
+        {
+          "id": "8214a6e3-98d9-4887-ba51-6cb33506a863",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-audit"
+        },
+        {
+          "id": "92eb3eac-0d76-498d-93d6-b21fa21a3e6e",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-audit"
+        },
+        {
+          "id": "c2ec0f1a-12c2-41ac-a427-2353e20c0f84",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-audit"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301632
+    },
+    {
+      "name": "product-design-design-qa",
+      "fingerprint": "4127582c81b34c83fa136189809346522fd01d71e5541693f17419e612fb40cc",
+      "locations": [
+        {
+          "id": "9e7f98d3-8843-4485-a9bd-e36223bf9d07",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-design-qa"
+        },
+        {
+          "id": "f8a91ce0-29fe-4061-b6c8-6e86dbab6769",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-design-qa"
+        },
+        {
+          "id": "402ad11e-bdad-48a9-9bb3-e1c7a9577e24",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-design-qa"
+        },
+        {
+          "id": "be436a54-bfdd-4701-9ebe-892d1b17218e",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-design-qa"
+        },
+        {
+          "id": "73872aa4-1a7e-48ac-a76a-25cb8d972f3b",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-design-qa"
+        },
+        {
+          "id": "be5a4d45-7d1b-458a-8de2-ab612a27056b",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-design-qa"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301642
+    },
+    {
+      "name": "product-design-get-context",
+      "fingerprint": "d396b5bff276bac47d321bc855a3d6129e87c6e6c03367820ebc2bf253077590",
+      "locations": [
+        {
+          "id": "056cc518-e067-4d9d-91b1-2afe17b7c3d1",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-get-context"
+        },
+        {
+          "id": "c0af39db-e2ad-4d84-86aa-2730650ff5a6",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-get-context"
+        },
+        {
+          "id": "61c1da97-9165-43e9-b965-04494bdbec41",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-get-context"
+        },
+        {
+          "id": "4da8a20b-c3a0-4f1f-a735-f43bfffe9c8e",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-get-context"
+        },
+        {
+          "id": "1c5a5b0b-080b-4a63-9eb6-e049edf7c78f",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-get-context"
+        },
+        {
+          "id": "dd77131e-2d67-4d15-a199-84583761804a",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-get-context"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301651
+    },
+    {
+      "name": "product-design-ideate",
+      "fingerprint": "5058b448a5f6cea4f08a566744cf0d35367155c214e9ce4cb443f5896ddd57de",
+      "locations": [
+        {
+          "id": "b699e3cf-0d84-47d4-bbda-59a7ed0c9ba5",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-ideate"
+        },
+        {
+          "id": "5463b6c5-a5de-4fb8-8f58-b134e61b72ad",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-ideate"
+        },
+        {
+          "id": "87e94774-679b-4605-b864-c2ca5c0bbda5",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-ideate"
+        },
+        {
+          "id": "0455b110-1b28-45d0-b4ea-1ea1a8c7c79e",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-ideate"
+        },
+        {
+          "id": "05440cb1-6f57-4a2e-9307-668e2d9c6535",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-ideate"
+        },
+        {
+          "id": "2d200620-d1ef-4aa6-bc31-3749c0844435",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-ideate"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301657
+    },
+    {
+      "name": "product-design-image-to-code",
+      "fingerprint": "b14b526b82993f3477c1a08c3517a69576fdac380a26f7da9f4c332c2f1ca21a",
+      "locations": [
+        {
+          "id": "07611ee0-90f2-46bc-a380-84adbe96af4a",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-image-to-code"
+        },
+        {
+          "id": "334f12e1-be4b-43b2-b4f0-5d30d0e513bb",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-image-to-code"
+        },
+        {
+          "id": "4df4d13b-c1cd-42e9-b246-947b5a6bce18",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-image-to-code"
+        },
+        {
+          "id": "5fae1f2f-f307-4b8b-99a1-35779440de42",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-image-to-code"
+        },
+        {
+          "id": "622b6d97-2eb4-438f-9ef6-191762f4c726",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-image-to-code"
+        },
+        {
+          "id": "d7329ce5-9d7b-4639-97c7-8e4f185d6aac",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-image-to-code"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301674
+    },
+    {
+      "name": "product-design-index",
+      "fingerprint": "65e1d0e627d18491a3a4f041e286d6faabf8ebcd8a8d2882daec04b1fe31648d",
+      "locations": [
+        {
+          "id": "d79a8b44-8296-4444-bac9-94a62510442b",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-index"
+        },
+        {
+          "id": "bb8490b8-1f34-4a52-84ce-70b9fe466093",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-index"
+        },
+        {
+          "id": "f05d3e35-674d-4076-8d23-eed5e76837f2",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-index"
+        },
+        {
+          "id": "1c484e64-6cce-446a-ac7d-14cf422a244b",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-index"
+        },
+        {
+          "id": "cc2c8ea5-56eb-419d-a369-d679ed276a9a",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-index"
+        },
+        {
+          "id": "817fe9ed-730c-41dd-987d-225a6b47afe1",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-index"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301678
+    },
+    {
+      "name": "product-design-prototype",
+      "fingerprint": "1b75316233dc2f755d82d99ba27d7f2c3930b96baf1bd266c877246ce74310d9",
+      "locations": [
+        {
+          "id": "b939d1cf-9d06-41a9-b466-4c7d5d6e4a93",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-prototype"
+        },
+        {
+          "id": "d2abecf0-e937-4786-86a8-5cadc0334fbe",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-prototype"
+        },
+        {
+          "id": "98e5a0af-5bfb-43d4-9dcb-0a0a1dd8fb31",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-prototype"
+        },
+        {
+          "id": "24f6606c-ab65-4ac8-910c-bdac951b42d4",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-prototype"
+        },
+        {
+          "id": "7af495e3-e607-424d-af64-832c432486dc",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-prototype"
+        },
+        {
+          "id": "058f97f4-9564-46f5-a08c-1a44a4473797",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-prototype"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301703
+    },
+    {
+      "name": "product-design-research",
+      "fingerprint": "e1044076ba6f4dbad8efe6048048713ac3f63e58540efebafbd11353d58de568",
+      "locations": [
+        {
+          "id": "413cfeb8-ca0d-47b1-b88d-435fb54dd988",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-research"
+        },
+        {
+          "id": "dbc6ec52-d718-4b51-a41f-63488443a4cf",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-research"
+        },
+        {
+          "id": "5f63626b-3c40-4ae1-885f-cc7a4c2dbf87",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-research"
+        },
+        {
+          "id": "80b4470a-f43c-4d4f-81a7-04b8c47c0cbd",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-research"
+        },
+        {
+          "id": "7cd4bef5-dd27-4a8a-b649-ac7a2887802f",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-research"
+        },
+        {
+          "id": "34f59358-e042-4f3e-96af-00c8318cb228",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-research"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301712
+    },
+    {
+      "name": "product-design-share",
+      "fingerprint": "7e2d1c5a04c1d8b462cb080cd37d91dd503515a7d9ac5d2cbb0939ae7ec6eda5",
+      "locations": [
+        {
+          "id": "f48923e5-fa20-46bf-9844-dec08965d367",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-share"
+        },
+        {
+          "id": "81c39fd5-28dd-4aa7-bca5-2bcecba21056",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-share"
+        },
+        {
+          "id": "0dbccfc9-a053-49c4-a406-4c7532f7545f",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-share"
+        },
+        {
+          "id": "db9146ea-554d-425a-b00d-00d64a4b9fc7",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-share"
+        },
+        {
+          "id": "4374eaaf-19d4-4b54-b871-3982746262ad",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-share"
+        },
+        {
+          "id": "702a1702-a6c7-4506-aa90-4170381aa46b",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-share"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301717
+    },
+    {
+      "name": "product-design-url-to-code",
+      "fingerprint": "4f656437e0582e8052245fed9a784824eb5dae8d6537caed410edde3a6c683f7",
+      "locations": [
+        {
+          "id": "b1539eb3-7fb5-451b-9b16-ad4feec67b85",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-url-to-code"
+        },
+        {
+          "id": "aea8622e-cc02-497c-96a5-9b8b8abe938c",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-url-to-code"
+        },
+        {
+          "id": "11049d46-5ea6-4207-9222-72d4959266de",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-url-to-code"
+        },
+        {
+          "id": "85fda5b8-a23f-4d84-888d-618300071663",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-url-to-code"
+        },
+        {
+          "id": "2682601c-c6e9-4978-8921-016d81769760",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-url-to-code"
+        },
+        {
+          "id": "8933d5c9-0a89-4bcb-a510-f3d531844112",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-url-to-code"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301735
+    },
+    {
+      "name": "product-design-user-context",
+      "fingerprint": "3757d8f6b2a7f32b94bf1fa1c3196c4bc39996439a14e8f5991a3a47239b76ec",
+      "locations": [
+        {
+          "id": "7a738405-f716-49b7-972c-917b0f12cd4f",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/product-design-user-context"
+        },
+        {
+          "id": "e0fa0794-76dc-45f6-919a-5732391dc58c",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/product-design-user-context"
+        },
+        {
+          "id": "f4374773-bb72-4126-abd4-4b3765e5af27",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/product-design-user-context"
+        },
+        {
+          "id": "4530a46d-b3a8-4606-a4a3-2070e0e57b5f",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/product-design-user-context"
+        },
+        {
+          "id": "2c9a5423-8470-4b01-8f84-c12ae678109e",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/product-design-user-context"
+        },
+        {
+          "id": "587cd7ba-300d-4fec-826c-958df8b752dd",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/product-design-user-context"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301747
+    },
+    {
+      "name": "story-studio",
+      "fingerprint": "43027fb6e092ff2391315b3c041255bb24c4a5bb4f6bb253679ba5ef23136946",
+      "locations": [
+        {
+          "id": "8c5d1203-c3af-46b2-aec6-ab1a7f53d699",
+          "tool": "zcode",
+          "found_path": "/home/web3claw/.zcode/skills/story-studio"
+        }
+      ],
+      "imported": false,
+      "found_at": 1793143789153
+    },
+    {
+      "name": "template-creator",
+      "fingerprint": "e35cd8c2a699d53e096d882fb5283c672668dda1cf1876a9726ba51cd00a183c",
+      "locations": [
+        {
+          "id": "9f50078f-5d6f-4aa8-82f1-c458260ea6c7",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/template-creator"
+        },
+        {
+          "id": "2e2e3a57-60c8-40fb-9f21-c5bb81ece1bc",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/template-creator"
+        },
+        {
+          "id": "117bfee0-fac9-4dcb-b519-8adf78fc8fd5",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/template-creator"
+        },
+        {
+          "id": "40c34189-2b3f-4681-868e-d4e40f36a192",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/template-creator"
+        },
+        {
+          "id": "430a7939-337a-48cc-bc55-38e9bf2096c6",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/template-creator"
+        },
+        {
+          "id": "dd2e2931-5db5-4f3f-9f25-1199a516a594",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/template-creator"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301777
+    },
+    {
+      "name": "web-scraper",
+      "fingerprint": "05d0dfff66ca7cbad08605d9688b0a771d0e9884016bac9343ef43fbba16ca02",
+      "locations": [
+        {
+          "id": "e2c09853-e224-4ba4-9381-184ee352c5be",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/web-scraper"
+        },
+        {
+          "id": "6263eabb-fee9-4d99-99b6-1a2f14948d2e",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/web-scraper"
+        },
+        {
+          "id": "66f8eefa-9672-401b-a93b-78228e6a9d45",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/web-scraper"
+        },
+        {
+          "id": "bd2550b4-57f6-4714-a1e6-c51885afb9c1",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/web-scraper"
+        },
+        {
+          "id": "15419257-eacb-4e97-88d5-31b19825bc81",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/web-scraper"
+        },
+        {
+          "id": "4cafeb73-9422-411e-8063-b777fe8ce421",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/web-scraper"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301089
+    },
+    {
+      "name": "xlsx",
+      "fingerprint": "a0b0e3542fb61c3ef383ef97c1d62e19125bd9f231370415439e612a899a7dd3",
+      "locations": [
+        {
+          "id": "e36119c3-f777-4be7-b997-f17b679aa4fb",
+          "tool": "codex",
+          "found_path": "/home/web3claw/.agents/skills/xlsx"
+        },
+        {
+          "id": "210c6237-3293-42f0-8119-9addbea8f7d5",
+          "tool": "github_copilot",
+          "found_path": "/home/web3claw/.agents/skills/xlsx"
+        },
+        {
+          "id": "f866ea5b-8e29-4937-86d5-e562fd378a1c",
+          "tool": "pi",
+          "found_path": "/home/web3claw/.agents/skills/xlsx"
+        },
+        {
+          "id": "422cac6a-2a3f-435b-9ad9-2d995f64a968",
+          "tool": "deepseek_harness",
+          "found_path": "/home/web3claw/.agents/skills/xlsx"
+        },
+        {
+          "id": "897c0f31-36cd-4108-9a52-1fc77251db44",
+          "tool": "gitlab_duo",
+          "found_path": "/home/web3claw/.agents/skills/xlsx"
+        },
+        {
+          "id": "415bde8b-78e5-45bd-8a9c-c2e63cfd4be0",
+          "tool": "minimax_code",
+          "found_path": "/home/web3claw/.agents/skills/xlsx"
+        }
+      ],
+      "imported": false,
+      "found_at": 1783929301061
+    }
+  ]
+}

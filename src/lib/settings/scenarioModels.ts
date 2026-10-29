@@ -147,6 +147,7 @@ export function scenarioBindingToProviderConfig(
   binding: ScenarioBinding | null | undefined,
   providers: (ProviderModelLookup & { apiKey?: string; baseUrl?: string; apiFormat?: string })[],
   fallback: { provider?: string; modelId?: string; apiKey?: string; baseUrl?: string },
+  activeTask?: { providerId?: string; modelId?: string } | null,
 ): { config: { provider: string; apiKey: string; modelId: string; baseUrl: string; apiFormat?: string } | null; fallbackUsed: boolean } {
   const resolve = (providerId: string, modelId: string) => {
     const p = providers.find((x) => x.id === providerId);
@@ -163,6 +164,11 @@ export function scenarioBindingToProviderConfig(
     const cfg = resolve(binding.providerId, binding.modelId);
     if (cfg) return { config: cfg, fallbackUsed: false };
   }
+  // 优先回退当前活动对话选择的模型
+  if (activeTask?.providerId?.trim() && activeTask?.modelId?.trim()) {
+    const cfg = resolve(activeTask.providerId.trim(), activeTask.modelId.trim());
+    if (cfg) return { config: cfg, fallbackUsed: true };
+  }
   const chat = chatDefaultOf(fallback, providers);
   if (!chat) return { config: null, fallbackUsed: true };
   const cfg = resolve(chat.providerId, chat.modelId) ?? {
@@ -173,3 +179,23 @@ export function scenarioBindingToProviderConfig(
   };
   return { config: cfg, fallbackUsed: true };
 }
+
+/**
+ * 统一获取模型配置：优先使用当前活动会话选择的模型；若未指定则回退到全局默认模型。
+ * 遵循“这些设置都不用，都用默认模型或者当前对话选择的模型”。
+ */
+export function getActiveOrChatModelConfig(
+  activeTask: { providerId?: string; modelId?: string } | null | undefined,
+  settings: { provider?: string; modelId?: string; apiKey?: string; baseUrl?: string },
+  providers: (ProviderModelLookup & { apiKey?: string; baseUrl?: string; apiFormat?: string })[],
+): { config: { provider: string; apiKey: string; modelId: string; baseUrl: string; apiFormat?: string } | null; fromActiveTask: boolean } {
+  const res = scenarioBindingToProviderConfig(null, providers, settings, activeTask);
+  const fromActive = Boolean(
+    activeTask?.providerId?.trim() &&
+      activeTask?.modelId?.trim() &&
+      res.config?.provider === activeTask.providerId.trim() &&
+      res.config?.modelId === activeTask.modelId.trim(),
+  );
+  return { config: res.config, fromActiveTask: fromActive };
+}
+

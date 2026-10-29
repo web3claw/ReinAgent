@@ -142,6 +142,8 @@ function formatInstalledSkillMetadata(skill: SkillSummary, t: (key: string) => s
   return `${sourceLabel} · ${date}`;
 }
 
+import type { SkillUpdateInfo } from "../../lib/skills/skillUpdateTracker";
+
 type InstalledSkillCardProps = {
   skill: SkillSummary;
   primaryCategory: ClawHubCategorySlug;
@@ -153,6 +155,9 @@ type InstalledSkillCardProps = {
   deleting: boolean;
   deleteDisabled: boolean;
   searchQuery: string;
+  updateInfo?: SkillUpdateInfo | null;
+  updating?: boolean;
+  onApplyUpdate?: (skill: SkillSummary) => void;
   onToggle: (name: string, on: boolean) => void;
   onEnterBulkMode: (name: string) => void;
   onToggleBulkSelection: (name: string) => void;
@@ -178,6 +183,9 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
     deleting,
     deleteDisabled,
     searchQuery,
+    updateInfo,
+    updating,
+    onApplyUpdate,
     onToggle,
     onEnterBulkMode,
     onToggleBulkSelection,
@@ -227,6 +235,15 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
               {t("settings.skillsHubEnabledBadge")}
             </Badge>
           ) : null}
+          {updateInfo?.status === "update_available" ? (
+            <span
+              className="inline-flex items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-tiny font-medium text-amber-400"
+              title={updateInfo.message || "发现可用更新"}
+            >
+              <span className="size-1.5 rounded-full bg-amber-400 animate-pulse" />
+              可更新
+            </span>
+          ) : null}
         </div>
         {skill.description ? (
           <p className="mt-1 line-clamp-1 text-xs leading-5 text-muted-foreground">
@@ -260,6 +277,23 @@ export const InstalledSkillCard = memo(function InstalledSkillCard(props: Instal
           />
         ) : (
           <>
+            {updateInfo?.status === "update_available" && onApplyUpdate ? (
+              <Button
+                variant="ghost"
+                size="icon-xs"
+                className="text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+                aria-label={`更新技能: ${skill.name}`}
+                title={`更新到最新版 (${updateInfo.latestRevision || updateInfo.latestVersion || "最新"})`}
+                disabled={updating}
+                onClick={() => onApplyUpdate(skill)}
+              >
+                {updating ? (
+                  <Loader2 className="size-3.5 animate-spin text-amber-400" />
+                ) : (
+                  <RefreshCw className="size-3.5 text-amber-400" />
+                )}
+              </Button>
+            ) : null}
             <Button
               variant="ghost"
               size="icon-xs"
