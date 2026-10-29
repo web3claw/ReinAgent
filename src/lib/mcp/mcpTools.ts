@@ -30,12 +30,19 @@ function textResult(text: string, isError: boolean) {
   };
 }
 
+import { resolveAssistantMcpServers } from "../assistants/assistantToolFilter";
+
 /**
- * 枚举全部启用服务器上的 MCP 工具，转成 pi-agent-core 工具体。
+ * 枚举助手勾选且全局启用的 MCP 服务器工具，转成 pi-agent-core 工具体。
  * 每个工具有独立的 execute：调用时按 serverId+toolName 透传 `mcp_call_tool`。
  * 运行期单次枚举（发送时冻结），服务器增删在下一轮发送生效。
+ *
+ * @param allowedServerIds 当前助手勾选的 MCP 服务 ID 清单。若未传或为空，直接返回 []（0 个工具）。
  */
-export async function createMcpTools(): Promise<unknown[]> {
+export async function createMcpTools(allowedServerIds?: string[]): Promise<unknown[]> {
+  if (!Array.isArray(allowedServerIds) || allowedServerIds.length === 0) {
+    return [];
+  }
   let servers: McpServerConfig[] = [];
   try {
     servers = await invoke<McpServerConfig[]>("mcp_list_servers");
@@ -43,7 +50,7 @@ export async function createMcpTools(): Promise<unknown[]> {
     console.warn("[mcp] list servers failed (web mode?):", err);
     return [];
   }
-  const enabled = servers.filter((s) => s.enabled);
+  const enabled = resolveAssistantMcpServers(servers, allowedServerIds);
   if (enabled.length === 0) return [];
 
   let entries: McpToolEntry[];

@@ -250,6 +250,7 @@ pub fn run() {
             hide_to_tray::set_hide_to_tray,
             fs_cmd::shell_detect,
             fs_cmd::fs_write_file,
+            fs_cmd::fs_append_file,
             fs_cmd::fs_list_dir,
             import_sqlite::import_sqlite_query,
             import_sqlite::import_read_text_auto,

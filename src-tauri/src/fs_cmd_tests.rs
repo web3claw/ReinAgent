@@ -68,3 +68,25 @@ fn sanitize_explorer_path_windows_drive_variations() {
         "C:\\Users\\Admin\\.ReinAgent\\DefaultProject"
     );
 }
+
+#[tokio::test]
+async fn fs_append_file_creates_and_appends() {
+    let test_dir = std::env::temp_dir().join(format!("reinagent-append-test-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&test_dir);
+    let target_file = test_dir.join("history/prompts.md");
+    let target_str = target_file.to_string_lossy().to_string();
+
+    // 第一次追加（自动创建目录与文件）
+    crate::fs_cmd::fs_append_file(target_str.clone(), "First line\n".to_string())
+        .await
+        .expect("首次追加应当成功创建并写入");
+    assert_eq!(fs::read_to_string(&target_file).unwrap(), "First line\n");
+
+    // 第二次追加（内容追加到末尾）
+    crate::fs_cmd::fs_append_file(target_str, "Second line\n".to_string())
+        .await
+        .expect("二次追加应当成功");
+    assert_eq!(fs::read_to_string(&target_file).unwrap(), "First line\nSecond line\n");
+
+    let _ = fs::remove_dir_all(&test_dir);
+}

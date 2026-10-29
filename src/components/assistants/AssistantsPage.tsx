@@ -13,6 +13,7 @@ import { Bot, Globe, Pencil, Plus, RotateCcw, Trash2 } from "lucide-react";
 import { useHubSettings } from "../../store/hubSettingsStore";
 import * as skillsLib from "../../lib/skills/index";
 import { buildAssistantBindingsPlan } from "../../lib/assistants/assistantBindings";
+import { getAssistantMcpOptions, getAssistantSkillOptions } from "../../lib/assistants/assistantToolFilter";
 import { markBackupDirty } from "../../lib/backup/backupSync";
 import { useTranslation } from "../../i18n";
 import { toast } from "../lw/ui/toast";
@@ -79,6 +80,7 @@ export function AssistantsPage() {
   const globalDefaultAssistantId = useAppStore((s) => s.globalDefaultAssistantId);
   const setGlobalDefaultAssistant = useAppStore((s) => s.setGlobalDefaultAssistant);
   const hubMcpServers = useHubSettings((s) => s.settings.mcp.servers);
+  const hubSkills = useHubSettings((s) => s.settings.skills);
   const hubSetSettings = useHubSettings((s) => s.setSettings);
   // 编辑器模型选项数据源（loadProvidersConfigFromDisk 与 ModelPicker 同源）；挂载时拉一次
   const providersRef = useRef<{ id: string; name: string; enabled: boolean; models: { id: string; name: string; enabled: boolean }[] }[]>([]);
@@ -117,13 +119,13 @@ export function AssistantsPage() {
   const builtins = visible.filter((d) => d.builtin);
   const customs = visible.filter((d) => !d.builtin);
 
-  // 编辑器选项：技能 = 发现清单（与发送注入同源 discoverSkills）；模型/MCP 见下方 memo。
-  const [skillOptions, setSkillOptions] = useState<{ id: string; name: string; description?: string }[]>([]);
+  // 发现的所有技能元数据；供结合全局启用状态计算助手可选选项
+  const [allDiscoveredSkills, setAllDiscoveredSkills] = useState<{ id: string; name: string; description?: string }[]>([]);
   useEffect(() => {
     void (async () => {
       try {
         const discovery = await skillsLib.discoverSkills();
-        setSkillOptions(
+        setAllDiscoveredSkills(
           discovery.skills.map((sk: { name: string; description?: string }) => ({
             id: sk.name,
             name: sk.name,
@@ -135,6 +137,12 @@ export function AssistantsPage() {
       }
     })();
   }, []);
+
+  // 编辑器选项：技能 = 仅展示全局开启且选中的技能
+  const skillOptions = useMemo(
+    () => getAssistantSkillOptions(allDiscoveredSkills, hubSkills),
+    [allDiscoveredSkills, hubSkills],
+  );
 
   // eslint-disable-next-line react-hooks/exhaustive-deps -- providersRef 变化经 providersVersion 显式触发
   const modelOptions = useMemo(() => {
@@ -149,13 +157,9 @@ export function AssistantsPage() {
     // providersVersion 参与以触发重算
   }, [providersVersion]);
 
+  // 编辑器选项：MCP = 仅展示全局启用的 MCP 服务
   const mcpOptions = useMemo(
-    () =>
-      hubMcpServers.map((srv: { id: string; description?: string }) => ({
-        id: srv.id,
-        label: srv.id,
-        description: srv.description,
-      })),
+    () => getAssistantMcpOptions(hubMcpServers),
     [hubMcpServers],
   );
 
@@ -541,7 +545,7 @@ function AssistantEditor({
                 <label className="text-xs text-[var(--text-dim)]">{tf("assistantBindingsSkills")}</label>
                 <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-[var(--border)] p-2">
                   {skillOptions.length === 0 ? (
-                    <p className="text-xs text-[var(--text-dim)]">（无可用技能）</p>
+                    <p className="text-xs text-[var(--text-dim)]">（无已启用的技能，请先在「设置 → 技能」中启用）</p>
                   ) : (
                     skillOptions.map((skill) => (
                       <label key={skill.id} className="flex cursor-pointer items-center gap-2 text-sm">
@@ -570,7 +574,7 @@ function AssistantEditor({
                 <label className="text-xs text-[var(--text-dim)]">{tf("assistantBindingsMcp")}</label>
                 <div className="max-h-32 space-y-1 overflow-y-auto rounded-md border border-[var(--border)] p-2">
                   {mcpOptions.length === 0 ? (
-                    <p className="text-xs text-[var(--text-dim)]">（无已配置 MCP 服务器）</p>
+                    <p className="text-xs text-[var(--text-dim)]">（无已启用的 MCP 服务，请先在「设置 → MCP」中启用）</p>
                   ) : (
                     mcpOptions.map((srv) => (
                       <label key={srv.id} className="flex cursor-pointer items-center gap-2 text-sm">

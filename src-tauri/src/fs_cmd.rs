@@ -167,6 +167,34 @@ pub async fn fs_write_file(
     .map_err(|e| e.to_string())?
 }
 
+/// 追加写入文件（用于日志、提示词账本等时序场景，如果父目录不存在自动创建，如果文件不存在自动新建）。
+#[tauri::command]
+pub async fn fs_append_file(
+    path: String,
+    content: String,
+) -> Result<(), String> {
+    if crate::ssh_remote::is_ssh_workspace(&path) {
+        return Err("SSH 工作区暂不支持 fs_append_file".to_string());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let resolved = resolve_path(&path);
+        if let Some(parent) = resolved.parent() {
+            fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+        }
+        ensure_gitignore_for_reinagent_path(&resolved);
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&resolved)
+            .map_err(|e| format!("Failed to open for append {}: {}", resolved.display(), e))?;
+        file.write_all(content.as_bytes())
+            .map_err(|e| format!("Failed to append {}: {}", resolved.display(), e))
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
 /// `<x>/.ReinAgent/.gitignore` 内容：忽略 agent 一次性产物目录 + 忽略自身
 /// （git 允许 .gitignore 忽略自身，读取不受影响），使 `.ReinAgent/.temp` 对用户仓库完全隐形。
 pub const REINAGENT_GITIGNORE: &str = ".temp/\n.gitignore\n";

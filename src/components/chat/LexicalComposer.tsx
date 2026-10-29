@@ -68,7 +68,10 @@ import {
   Undo2,
   Library,
   GitBranch,
+  History,
 } from "lucide-react";
+import { PromptHistoryDrawer } from "./PromptHistoryDrawer";
+import { recordGlobalUserPrompt } from "../../lib/chat/userPromptHistory";
 import { MOCK_PROJECTS } from "../sidebar/WorkspaceSidebar";
 import {
   buildOutgoingPayload,
@@ -257,6 +260,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   };
 
   const [text, setText] = useState("");
+  const [showPromptHistoryDrawer, setShowPromptHistoryDrawer] = useState(false);
   // ---- 草稿持久化（P2-A3）：任务态按任务隔离、新任务页走全局键，kv 落库 ----
   const draftKey = taskId ? `reinagent-draft:${taskId}` : "reinagent-draft:__new__";
   const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -573,8 +577,9 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     }
   }, [hasMessages]);
 
-  const submit = async () => {
-    const trimmed = text.trim();
+  const submitWithText = async (customText?: string) => {
+    const rawText = typeof customText === "string" ? customText : text;
+    const trimmed = rawText.trim();
     // 斜杠内置命令：回车提交时执行（`/` 菜单选中只负责把 `/name ` 填进输入框，不直接执行）。
     // 精确匹配 `/clear|/compact|/init|/help`；`/foo`、路径等一律不命中，走下面的普通发送。
     const builtin = matchBuiltinCommand(trimmed);
@@ -644,11 +649,28 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       setAttachments([]);
       setShowMentionMenu(false);
       setShowSlashMenu(false);
+
+      // 全局用户发言总账本（方案 C：界面抽屉 + 自动落盘本地总账本文件）
+      recordGlobalUserPrompt({
+        content: trimmed,
+        taskId: taskId || "draft-task",
+        taskTitle: activeTask?.title || undefined,
+        workspaceRoot: workspaceRoot || undefined,
+        providerId: providerId || undefined,
+        modelId: currentModel?.name || modelId || undefined,
+      }).catch((err) => {
+        console.warn("[userPromptHistory] 记录全局发言失败:", err);
+      });
+
       // Keep input focused after sending
       setTimeout(() => {
         textareaRef.current?.focus();
       }, 0);
     }
+  };
+
+  const submit = () => {
+    void submitWithText();
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -716,6 +738,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       setShowThinkingMenu(false);
       setShowProjectMenu(false);
       setShowRemoteDialog(false);
+      setShowPromptHistoryDrawer(false);
     }
   };
 
@@ -1477,6 +1500,19 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
 
           {/* 运行中后台工作徽标（终端/子代理图标+计数，点击展开管理浮层） */}
           <BackgroundWorkTrigger conversationId={hasMessages ? taskId : undefined} />
+
+          {/* 发言历史总账本（方案 C：界面抽屉 + 自动落盘本地总账本文件） */}
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowPromptHistoryDrawer(true);
+            }}
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
+            title="发言历史总账本 (Prompt History)"
+          >
+            <History className="w-4 h-4" />
+          </button>
         </div>
 
         {/* 右侧：上下文容量、模型选择、思考深度、发送按钮、语音输入 */}
@@ -1803,6 +1839,23 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </span>
         </div>
       )}
+
+      {/* 发言历史总账本抽屉（方案 C：全状态通用，使用 React Portal 挂载到 body 顶层） */}
+      <PromptHistoryDrawer
+        isOpen={showPromptHistoryDrawer}
+        onClose={() => setShowPromptHistoryDrawer(false)}
+        isStreaming={isStreaming}
+        onDirectSend={(selectedText) => {
+          void submitWithText(selectedText);
+        }}
+        onSelectPrompt={(selectedText) => {
+          setText(selectedText);
+          if (draftKey) kvSet(draftKey, selectedText);
+          setTimeout(() => {
+            textareaRef.current?.focus();
+          }, 0);
+        }}
+      />
     </div>
   );
 
@@ -2011,7 +2064,6 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </div>
         </div>
       )}
-
     </div>
   );
 };

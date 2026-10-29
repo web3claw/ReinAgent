@@ -62,6 +62,7 @@ ReinAgent 架构全景
 │   │   │   ├── ContextUsageIndicator.tsx # 上下文容量圆环触发器 + HoverCard 面板
 │   │   │   ├── ImageLightbox.tsx       # 图片放大浮层（附件缩略图与气泡共用）
 │   │   │   ├── MarkdownText.tsx / MarkdownBlockRenderer.tsx / CodeBlock.tsx # Markdown 渲染链
+│   │   │   ├── PromptHistoryDrawer.tsx # 发言历史总账本抽屉（关键词检索/一键填入/复制/导出）
 │   │   │   └── EmptyState.tsx          # 欢迎页、快捷动作卡片
 │   │   ├── terminal/
 │   │   │   └── TerminalPane.tsx        # XTerm 终端集成与底栏展示
@@ -71,8 +72,8 @@ ReinAgent 架构全景
 │   │       └── Tooltip.tsx             # 基于 @radix-ui/react-tooltip 的通用精致提示浮层
 │   └── src/lib/
 │       ├── chat/                       # conversationPool（会话池）、conversationController（调度+重试裁决）、
-│       │                               # conversationModel（纯状态机）、stateBridge、errors（错误链展开/诊断）、
-│       │                               # turnActivity（回合分组）、useConversation、titleGenerator、contextUsage
+│       │                               # conversationModel（纯状态机）、userPromptHistory（全局发言总账本双写与维护）、
+│       │                               # stateBridge、errors（错误链展开/诊断）、turnActivity（回合分组）、useConversation
 │       ├── remote/                     # remoteBridge.ts 手机与 MCP 远程双向桥接（need-state 瞬时应答 / 事件派发）
 │       ├── providers/                  # runAgentTurn（系统提示词+审批门）、modelFactory、catalog、fauxSource
 │       └── agent/                      # agentRuntime（Agent 循环）、tools（五工具）、workspace（路径决议）
@@ -3000,5 +3001,61 @@ UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在�
      - **豆包**：图标更换为浅蓝色底 3D 卡通女生头像高清图标（720×720 无损处理）；
      - **新增 Muse**：引入官网官方渐变蓝 M 矢量标（`app-squiggle.svg`），官网 `https://muse.ai/`，排列于 Grok 之后。
 
+---
 
+## 全局用户发言总账本（方案 C：界面抽屉 + 自动落盘双写，2026-10-29）
 
+- **设计目标与定位**：
+  - 用户在任意会话、任意项目中发送的 Prompt / 需求话术，集中沉淀到统一的全局总账本中；
+  - 采用**混合架构（方案 C）**：
+    1. **前端界面抽屉 (Prompt History Drawer)**：在输入胶囊工具栏新增 `History` 历史时钟图标，点击从右侧滑出抽屉浮层，支持实时关键词检索、一键填入输入框（Reuse）、复制、删除与导出 Markdown；
+    2. **宿主文件自动落盘 (Markdown Ledger File)**：每次用户发言被成功受理后，异步追加写入宿主目录下的 `~/.ReinAgent/history/user_prompts.md`（无 HOME 时为相对路径），带时间戳、任务标题、工作区、调用模型与引用块。
+- **架构与模块划分**：
+  1. **核心模型与存储 (`src/lib/chat/userPromptHistory.ts`)**：
+     - `UserPromptEntry`：`id`, `timestamp`, `content`, `taskId`, `taskTitle`, `workspaceRoot`, `providerId`, `modelId`；
+     - `readGlobalUserPrompts` / `recordGlobalUserPrompt` / `deleteGlobalUserPrompt` / `clearGlobalUserPrompts`；
+     - 限制最大容量 `MAX_GLOBAL_USER_PROMPTS = 1000`（FIFO 保留最新）；
+     - 格式化函数 `formatPromptAsMarkdown`：输出标准 Markdown 片段；
+     - 统一事件订阅 `subscribeGlobalUserPrompts`：驱动抽屉与列表响应式实时重绘。
+  2. **Tauri 异步底层追加命令 (`src-tauri/src/fs_cmd.rs` & `lib.rs`)**：
+     - 新增 `fs_append_file(path: String, content: String) -> Result<(), String>` 命令；
+     - 自动检测并创建父目录（`fs::create_dir_all`），`OpenOptions::new().create(true).append(true)` 追加写入，支持高频安全落盘；
+     - 配套 Rust 异步单测 `fs_append_file_creates_and_appends`（`src-tauri/src/fs_cmd_tests.rs`）100% 跑通。
+  3. **交互界面 (`src/components/chat/PromptHistoryDrawer.tsx` & `LexicalComposer.tsx`)**：
+     - 完全遵循 Tailwind CSS v4 语义化 CSS 变量（`bg-[var(--sidebar-bg)]`、`text-[var(--text)]` 等）；
+     - 点击抽屉工具栏的 `FolderOpen` 图标可通过 `open_in_file_manager` 直接在操作系统原生文件管理器中打开存放目录；
+     - 在 `LexicalComposer.tsx` 的 `submit()` 发送流水线中接入，仅在 `onSend` 确认受理时触发非阻塞双写。
+  4. **高频复用与极简卡片升级（2026-10-29 迭代）**：
+     - **极简两层卡片**：彻底移除冗余的项目路径和模型名称显示，移除底部分割线与底部栏；将「发送」、「填入」、「复制」、「删除」按钮组整体移至卡片右上角，实现极致轻薄紧凑；
+     - **支持一键直发 (`onDirectSend`)**：在「填入」前增加高对比度「发送」按钮，点击直接将历史话术提交至当前对话（且在流式输出时智能防重禁用），自动收起抽屉并使该 Prompt 的 `usageCount + 1`；
+     - **使用频次自动统计 (`usageCount`)**：每次用户发送时，若内容经 `trim()` 后与已有记录一致，不重复建卡，而是自动使 `usageCount + 1` 并更新最新时间戳；
+     - **高频优先排序**：默认按 `usageCount` 从大到小降序排列（高频常用 Prompt 置顶），次数相同时按最新时间倒序，打造个人快捷常用指令库；
+     - **React Portal 根节点挂载与 Stacking Context 治理（2026-10-29 修复）**：
+       - **现象**：发送首条消息进入消息流页面后，输入框外壳切换为 `sticky bottom-0 ... z-10` 容器且被三层 `overflow-hidden` 嵌套，局部层叠上下文导致内联抽屉无法穿透全屏甚至被尺寸裁剪；
+       - **治理方案**：`PromptHistoryDrawer` 使用 `createPortal(drawerNode, document.body)` 挂载到 body 顶层，z-index 提升至 `z-[9999]`，并加入 `e.stopPropagation()` 与背景遮罩点击精准判定，彻底消除 Stacking Context 压制与点击穿透。
+
+---
+
+## 助手 MCP 工具与 Skill 技能隔离及按需注入架构（2026-10-29 用户拍板）
+
+- **背景与根因修复**：
+  - **历史缺陷**：过去 MCP 与 Skill 工具采用全局无差别加载模式。只要在设置中开启了某个 MCP 服务或技能，任何对话（包括未勾选任何 MCP 的通用助手）在回合开始时都会无条件枚举全局 MCP 并注入全局 Skill；导致全局某个 MCP 连接异常（如 JADX 缺少依赖）时，普通日常对话也会受到故障误报干扰，且 Skill 技能提示词冗余消耗上下文。
+  - **新架构原则（对称白名单隔离）**：**全局启用才在助手页可见，助手勾选才在对话中自带，助手未勾选则彻底不带**。
+- **架构实现细则**：
+  1. **纯逻辑解析器与测试守护 (`src/lib/assistants/assistantToolFilter.ts` & `assistantToolFilter.test.mjs`)**：
+     - `resolveAssistantMcpServers(allServers, assistantMcpIds)`：依据当前助手绑定的 `mcpServers` 解析应启用的服务列表。若 `assistantMcpIds` 为空或未指定，**严格返回空数组 `[]`（0 个工具）**；若已指定，仅保留既在白名单内又在全局处于 `enabled: true` 的服务；
+     - `resolveAssistantSkills(discovered, globalSettings, assistantSkills)`：依据当前助手绑定的 `skills` 解析应注入的技能列表。若 `assistantSkills` 为空或未指定，**严格返回空数组 `[]`（0 个技能）**；若已指定，仅保留既在白名单内又在全局处于 `enabled && selected` 的有效技能；
+     - `getAssistantMcpOptions(allServers)`：助手管理页的 MCP 候选列表，严格过滤为全局 `enabled === true` 的服务器；
+     - `getAssistantSkillOptions(discovered, globalSettings)`：助手管理页的 Skill 候选列表，严格过滤为全局 `enabled && selected` 的技能。
+  2. **助手编辑与管理视图联动 (`src/components/assistants/AssistantsPage.tsx`)**：
+     - `skillOptions` 与 `mcpOptions` 动态响应 `useHubSettings`；当全局启用或关闭某个 MCP/Skill 时，助手配置页的可选项实时联动刷新；
+     - 优化无选项时的空态引导文案，分别清晰提示「（无已启用的技能，请先在「设置 → 技能」中启用）」与「（无已启用的 MCP 服务，请先在「设置 → MCP」中启用）」。
+  3. **对话调度与运行时装配 (`src/lib/providers/runAgentTurn.ts` & `src/lib/mcp/mcpTools.ts`)**：
+     - 提前解析当前任务绑定的助手定义 `currentAssistantDef`；
+     - `createMcpTools(assistantMcpIds)`：必须传入助手绑定的 MCP 白名单；若未传或为空直接返回 `[]`，不发起任何后端 MCP 枚举命令；
+     - `skillsSection`：仅对助手绑定的技能进行提示词注入；若助手未勾选技能，直接置空，零消耗上下文；
+     - 人设注入复用预载入的 `currentAssistantDef`，避免重复 I/O。
+  4. **交付验证**：
+     - Red Check 变异测试 100% 验证通过；
+     - 16 项助手与 MCP 相关单元测试全绿；
+     - `bun x tsc --noEmit` 0 报错。

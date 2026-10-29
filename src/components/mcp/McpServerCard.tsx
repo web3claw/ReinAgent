@@ -78,7 +78,7 @@ export const McpServerCard = memo(function McpServerCard(props: {
         toolsCount?: number;
         durationMs?: number;
         error?: string;
-      }>("mcp_test_server", { server, persist: true });
+      }>("mcp_restart_server", { server, persist: true });
       setTestState({
         loading: false,
         ok: result.ok === true,

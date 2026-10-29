@@ -527,18 +527,34 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
   } = params;
 
     const resolvedConversationId = conversationId || checkpoint?.conversationId;
+
+    // 解析当前任务绑定的助手定义（用于按需挂载绑定的 MCP 工具、技能及人设正文）
+    let currentAssistantDef: import("../assistants/assistantDefs").AssistantDef | null = null;
+    if (assistantId) {
+      try {
+        const { loadAssistantCatalog } = await import("../assistants/assistantDefs");
+        const catalog = await loadAssistantCatalog();
+        currentAssistantDef = catalog.assistants.find((d) => d.id === assistantId) ?? null;
+      } catch (err) {
+        console.warn("[assistant] catalog load failed:", err);
+      }
+    }
+
     const tools = getTools({
       ...(workspaceRoot ? { workspaceRoot } : {}),
       ...(checkpoint ? { checkpoint } : {}),
       ...(resolvedConversationId ? { conversationId: resolvedConversationId } : {}),
     });
-    // MCP 工具接入（对齐 LiveAgent：发送时枚举启用服务器的工具并注入工具循环；
-    // 枚举失败的服务器如实跳过。整轮发送增加一次串行枚举，与 ZCode/LiveAgent 同语义）。
+    // MCP 工具接入（按助手白名单隔离）：仅枚举当前助手勾选且全局启用的 MCP 工具。
+    // 若当前助手未勾选任何 MCP 工具（如通用助手），则彻底不带 MCP（0 个工具），绝不无差别加载全局 MCP。
     let mcpTools: unknown[] = [];
-    try {
-      mcpTools = (await createMcpTools()) as unknown[];
-    } catch (err) {
-      console.warn("[mcp] tool enumeration failed (continuing without MCP):", err);
+    const assistantMcpIds = currentAssistantDef?.mcpServers;
+    if (Array.isArray(assistantMcpIds) && assistantMcpIds.length > 0) {
+      try {
+        mcpTools = (await createMcpTools(assistantMcpIds)) as unknown[];
+      } catch (err) {
+        console.warn("[mcp] tool enumeration failed (continuing without MCP):", err);
+      }
     }
     const allTools: unknown[] = [...tools, ...mcpTools];
     // AskUserQuestion 工具（P1-3）：模型向用户提问，挂起等待提问卡作答。
@@ -598,25 +614,30 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
       console.warn("[memory] index overview unavailable (continuing without memory):", err);
     }
 
-    // 技能注入（对齐 LiveAgent）：`skill://` 路径协议 + 用户启用列表的渐进披露清单；
-    // 总开关关闭或未选技能时为空段（与 LA skillsEnabled=false 清空同语义）。
+    // 技能注入（按助手白名单隔离）：仅注入当前助手勾选且全局启用的技能。
+    // 若当前助手未勾选任何技能（如通用助手），则彻底不注入技能（0 个技能），绝不消耗额外上下文。
     let skillsSection = "";
-    try {
-      const { useHubSettings } = await import("../../store/hubSettingsStore");
-      const { enabled, selected } = useHubSettings.getState().settings.skills;
-      if (enabled && selected.length > 0) {
-        const skillsLib = await import("../skills/index");
-        const discovery = await skillsLib.discoverSkills();
-        // buildSkillsSystemPrompt 需要 SkillSummary 元数据（对齐 LA useSendChatTurn）：
-        // 由选中名称解析为已发现技能对象，未命中的名称忽略。
-        const selectedSkills = discovery.skills.filter((skill) => selected.includes(skill.name));
-        skillsSection = skillsLib.buildSkillsSystemPrompt({
-          rootDir: discovery.rootDir,
-          selected: selectedSkills,
-        });
+    const assistantSkillIds = currentAssistantDef?.skills;
+    if (Array.isArray(assistantSkillIds) && assistantSkillIds.length > 0) {
+      try {
+        const { useHubSettings } = await import("../../store/hubSettingsStore");
+        const { enabled, selected } = useHubSettings.getState().settings.skills;
+        if (enabled && Array.isArray(selected) && selected.length > 0) {
+          const skillsLib = await import("../skills/index");
+          const discovery = await skillsLib.discoverSkills();
+          const { resolveAssistantSkills } = await import("../assistants/assistantToolFilter");
+          const activeSkillNames = resolveAssistantSkills(discovery.skills, { enabled, selected }, assistantSkillIds);
+          if (activeSkillNames.length > 0) {
+            const selectedSkills = discovery.skills.filter((skill) => activeSkillNames.includes(skill.name));
+            skillsSection = skillsLib.buildSkillsSystemPrompt({
+              rootDir: discovery.rootDir,
+              selected: selectedSkills,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn("[skills] discovery unavailable (continuing without skills):", err);
       }
-    } catch (err) {
-      console.warn("[skills] discovery unavailable (continuing without skills):", err);
     }
 
     // 知识库注入（RAG v1，docs/ROADMAP.md ①）：composer「知识库」开关打开时，
@@ -660,18 +681,9 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
     let effectiveSystemPrompt = prompt;
     // 助手人设注入（用户定稿：只注入人设正文，名称/描述不进提示词）：
     // 未设置/查不到/正文为空 = 无注入（不中断回合）。
-    if (assistantId) {
-      try {
-        const { loadAssistantCatalog } = await import("../assistants/assistantDefs");
-        const catalog = await loadAssistantCatalog();
-        const def = catalog.assistants.find((d) => d.id === assistantId);
-        if (def && def.prompt.trim()) {
-          personaText = def.prompt.trim();
-          effectiveSystemPrompt = `${def.prompt.trim()}\n\n---\n\n` + effectiveSystemPrompt;
-        }
-      } catch (err) {
-        console.warn("[assistant] persona load failed (continuing without):", err);
-      }
+    if (currentAssistantDef && currentAssistantDef.prompt.trim()) {
+      personaText = currentAssistantDef.prompt.trim();
+      effectiveSystemPrompt = `${currentAssistantDef.prompt.trim()}\n\n---\n\n` + effectiveSystemPrompt;
     }
     const modelLabel =
       config && typeof config === "object" && config.provider && config.modelId
