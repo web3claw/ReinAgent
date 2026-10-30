@@ -2504,7 +2504,7 @@ export default function App() {
             <SkillsHubPage />
           ) : !hasMessages ? (
             <div className="flex-1 flex flex-col items-center justify-start pt-28 md:pt-36 px-4 pb-8 overflow-y-auto">
-              <div className="w-full px-[120px]">
+              <div className="w-full px-4 sm:px-8 md:px-14 lg:px-[120px]">
                 <EmptyState
                   demo={isDemo}
                   onQuickPrompt={handleQuickPrompt}

@@ -69,6 +69,8 @@ import {
   Library,
   GitBranch,
   History,
+  MoreHorizontal,
+  Box,
 } from "lucide-react";
 import { PromptHistoryDrawer } from "./PromptHistoryDrawer";
 import { recordGlobalUserPrompt } from "../../lib/chat/userPromptHistory";
@@ -531,6 +533,27 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const containerRef = useRef<HTMLDivElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
 
+  // 容器宽度响应式监听（对标 ZCode useComposerToolbarFit / 移动端 Composer 形态）：
+  // 宽度不足时自动收缩文字标签、折叠次要工具，彻底避免溢出出圈
+  const [containerWidth, setContainerWidth] = useState<number>(800);
+  const [showMoreToolsMenu, setShowMoreToolsMenu] = useState(false);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = entry.contentRect.width;
+        if (w > 0) setContainerWidth(w);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const isCompact = containerWidth < 680;
+  const isUltraCompact = containerWidth < 520;
+
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -540,6 +563,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
         setShowThinkingMenu(false);
         setShowModelMenu(false);
         setShowProjectMenu(false);
+        setShowMoreToolsMenu(false);
       }
     };
     document.addEventListener("mousedown", handleClickOutside);
@@ -1368,22 +1392,22 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       />
 
       {/* Toolbar: 无分割线，左右分布 */}
-      <div className="flex items-center justify-between px-3 pb-2.5 pt-1 relative">
+      <div className="flex items-center justify-between gap-2 px-3 pb-2.5 pt-1 relative min-w-0">
         {/* 左侧：+ 号添加附件 & 审批模式（如 ✋ 变更前确认 ∨） */}
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 shrink-0 min-w-0">
           {/* Add / Attach Button */}
           <button
             type="button"
             onClick={addPickedFiles}
             disabled={stt.active}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
+            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer shrink-0"
             title={t("attachFile")}
           >
             <Plus className="w-4 h-4" />
           </button>
 
           {/* Approval Mode Dropdown（对齐 ZCode V4ComposerModeSwitch：图标+标题+描述，full 态 warning 色） */}
-          <div className="relative">
+          <div className="relative shrink-0">
             {(() => {
               const currentOption =
                 APPROVAL_MODE_OPTIONS.find((opt) => opt.mode === approvalMode) ?? APPROVAL_MODE_OPTIONS[3];
@@ -1396,16 +1420,19 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
                     onClick={() => {
                       setShowApprovalMenu(!showApprovalMenu);
                       setShowThinkingMenu(false);
+                      setShowModelMenu(false);
+                      setShowMoreToolsMenu(false);
                     }}
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--surface-hover)] text-xs transition-colors cursor-pointer ${
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--surface-hover)] text-xs whitespace-nowrap shrink-0 transition-colors cursor-pointer ${
                       isFullAccess
                         ? "text-[var(--status-warn)]"
                         : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                     }`}
+                    title={t(currentOption.labelKey)}
                   >
-                    <CurrentIcon className="w-3.5 h-3.5" />
-                    <span>{t(currentOption.labelKey)}</span>
-                    <ChevronDown className="w-3 h-3 opacity-70" />
+                    <CurrentIcon className="w-3.5 h-3.5 shrink-0" />
+                    {!isCompact && <span className="whitespace-nowrap">{t(currentOption.labelKey)}</span>}
+                    <ChevronDown className="w-3 h-3 opacity-70 shrink-0" />
                   </button>
                   {showApprovalMenu && (
                     <div className="absolute bottom-full left-0 mb-2 w-64 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-1.5 text-xs z-50 flex flex-col gap-0.5">
@@ -1460,84 +1487,181 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             })()}
           </div>
 
-          {/* 知识库注入开关（RAG v1）：开着时每轮自动检索注入 + search_knowledge 工具恒可用 */}
-          <button
-            type="button"
-            onClick={handleToggleKnowledge}
-            disabled={stt.active}
-            className={`p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center cursor-pointer ${
-              knowledgeEnabled
-                ? "text-[var(--accent)]"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            }`}
-            title={
-              knowledgeEnabled
-                ? t("knowledgeToggleOn", "知识库：开（每轮自动检索注入）")
-                : t("knowledgeToggleOff", "知识库：关（模型仍可用 search_knowledge 主动检索）")
-            }
-          >
-            <Library className="w-4 h-4" />
-          </button>
+          {/* 紧凑模式下折叠为更多菜单 (···)；宽屏模式下原样平铺 */}
+          {isCompact ? (
+            <div className="relative shrink-0">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowMoreToolsMenu(!showMoreToolsMenu);
+                  setShowApprovalMenu(false);
+                  setShowThinkingMenu(false);
+                  setShowModelMenu(false);
+                }}
+                className={`p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-xs transition-colors flex items-center justify-center cursor-pointer shrink-0 ${
+                  knowledgeEnabled || worktreeEnabled
+                    ? "text-[var(--accent)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+                title="更多工具设置"
+              >
+                <MoreHorizontal className="w-4 h-4" />
+              </button>
 
-          {/* worktree 隔离开关（ROADMAP ②）：开启后任务的文件改动进独立工作树与分支 */}
-          <button
-            type="button"
-            onClick={handleToggleWorktree}
-            disabled={stt.active}
-            className={`p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center cursor-pointer ${
-              worktreeEnabled
-                ? "text-[var(--accent)]"
-                : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            }`}
-            title={
-              worktreeEnabled
-                ? "Worktree 隔离：开（任务改动进独立工作树与分支；仅 git 仓库可用）"
-                : "Worktree 隔离：关（任务直接在主工作区改动）"
-            }
-          >
-            <GitBranch className="w-4 h-4" />
-          </button>
+              {showMoreToolsMenu && (
+                <div className="absolute bottom-full left-0 mb-2 w-56 rounded-xl border border-[var(--border)] bg-[var(--surface)] shadow-2xl p-1.5 text-xs z-50 flex flex-col gap-1 backdrop-blur-md">
+                  {/* 知识库注入 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleToggleKnowledge();
+                      setShowMoreToolsMenu(false);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-primary)] transition-colors flex items-center justify-between cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Library className={`w-4 h-4 ${knowledgeEnabled ? "text-[var(--accent)]" : "text-[var(--text-secondary)]"}`} />
+                      <span>{t("knowledgeTitle", "知识库增强")}</span>
+                    </div>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${knowledgeEnabled ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "text-[var(--text-secondary)]"}`}>
+                      {knowledgeEnabled ? "开" : "关"}
+                    </span>
+                  </button>
+
+                  {/* Worktree 隔离 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      handleToggleWorktree();
+                      setShowMoreToolsMenu(false);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-primary)] transition-colors flex items-center justify-between cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <GitBranch className={`w-4 h-4 ${worktreeEnabled ? "text-[var(--accent)]" : "text-[var(--text-secondary)]"}`} />
+                      <span>Worktree 隔离</span>
+                    </div>
+                    <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${worktreeEnabled ? "bg-emerald-500/15 text-emerald-600 dark:text-emerald-400" : "text-[var(--text-secondary)]"}`}>
+                      {worktreeEnabled ? "开" : "关"}
+                    </span>
+                  </button>
+
+                  {/* 发言历史总账本 */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreToolsMenu(false);
+                      setShowPromptHistoryDrawer(true);
+                    }}
+                    className="w-full text-left px-2.5 py-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-primary)] transition-colors flex items-center justify-between cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2">
+                      <History className="w-4 h-4 text-[var(--text-secondary)]" />
+                      <span>发言历史总账本</span>
+                    </div>
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <>
+              {/* 知识库注入开关（RAG v1）：开着时每轮自动检索注入 + search_knowledge 工具恒可用 */}
+              <button
+                type="button"
+                onClick={handleToggleKnowledge}
+                disabled={stt.active}
+                className={`p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center cursor-pointer shrink-0 ${
+                  knowledgeEnabled
+                    ? "text-[var(--accent)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+                title={
+                  knowledgeEnabled
+                    ? t("knowledgeToggleOn", "知识库：开（每轮自动检索注入）")
+                    : t("knowledgeToggleOff", "知识库：关（模型仍可用 search_knowledge 主动检索）")
+                }
+              >
+                <Library className="w-4 h-4" />
+              </button>
+
+              {/* worktree 隔离开关（ROADMAP ②）：开启后任务的文件改动进独立工作树与分支 */}
+              <button
+                type="button"
+                onClick={handleToggleWorktree}
+                disabled={stt.active}
+                className={`p-1.5 rounded-lg hover:bg-[var(--surface-hover)] disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex items-center justify-center cursor-pointer shrink-0 ${
+                  worktreeEnabled
+                    ? "text-[var(--accent)]"
+                    : "text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                }`}
+                title={
+                  worktreeEnabled
+                    ? "Worktree 隔离：开（任务改动进独立工作树与分支；仅 git 仓库可用）"
+                    : "Worktree 隔离：关（任务直接在主工作区改动）"
+                }
+              >
+                <GitBranch className="w-4 h-4" />
+              </button>
+
+              {/* 发言历史总账本（方案 C：界面抽屉 + 自动落盘本地总账本文件） */}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowPromptHistoryDrawer(true);
+                }}
+                className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer shrink-0"
+                title="发言历史总账本 (Prompt History)"
+              >
+                <History className="w-4 h-4" />
+              </button>
+            </>
+          )}
 
           {/* 运行中后台工作徽标（终端/子代理图标+计数，点击展开管理浮层） */}
-          <BackgroundWorkTrigger conversationId={hasMessages ? taskId : undefined} />
-
-          {/* 发言历史总账本（方案 C：界面抽屉 + 自动落盘本地总账本文件） */}
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setShowPromptHistoryDrawer(true);
-            }}
-            className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
-            title="发言历史总账本 (Prompt History)"
-          >
-            <History className="w-4 h-4" />
-          </button>
+          <div className="shrink-0 flex items-center">
+            <BackgroundWorkTrigger conversationId={hasMessages ? taskId : undefined} />
+          </div>
         </div>
 
         {/* 右侧：上下文容量、模型选择、思考深度、发送按钮、语音输入 */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 min-w-0">
           {contextUsage && (
-            <ContextUsageIndicator
-              data={contextUsage}
-              onCompact={onCompactRequest}
-              isCompacting={isCompacting}
-              disabled={isStreaming}
-            />
+            <div className="shrink-0 flex items-center">
+              <ContextUsageIndicator
+                data={contextUsage}
+                onCompact={onCompactRequest}
+                isCompacting={isCompacting}
+                disabled={isStreaming}
+              />
+            </div>
           )}
           {/* Model Selector Dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0">
             <button
               type="button"
               onClick={() => {
                 setShowModelMenu(!showModelMenu);
                 setShowThinkingMenu(false);
                 setShowApprovalMenu(false);
+                setShowMoreToolsMenu(false);
               }}
-              className="flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--surface-hover)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer"
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-lg hover:bg-[var(--surface-hover)] text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors cursor-pointer whitespace-nowrap shrink-0 ${
+                isUltraCompact
+                  ? ""
+                  : isCompact
+                    ? "max-w-[110px]"
+                    : "max-w-[160px] sm:max-w-[220px] md:max-w-[280px]"
+              }`}
+              title={`${providerName}/${currentModel?.name || modelId}`}
             >
-              <span>{providerName}/{currentModel?.name || modelId}</span>
-              <ChevronDown className="w-3 h-3 opacity-70" />
+              {isUltraCompact ? (
+                <Box className="w-3.5 h-3.5 opacity-80 shrink-0" />
+              ) : (
+                <span className="truncate">{currentModel?.name || modelId}</span>
+              )}
+              <ChevronDown className="w-3 h-3 opacity-70 shrink-0" />
             </button>
 
             {showModelMenu && (
@@ -1641,7 +1765,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
           </div>
 
           {/* Thinking Level Dropdown */}
-          <div className="relative">
+          <div className="relative shrink-0">
             {(() => {
               // 推理等级兜底（对齐 LiveAgent）：未声明 effort 的模型乐观视为支持思考，
               // 提供通用档位（不含 xhigh / max —— 这两档需要模型显式映射，未知模型不发）。
@@ -1675,23 +1799,27 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
                       if (!isEffortSupported) return;
                       setShowThinkingMenu(!showThinkingMenu);
                       setShowApprovalMenu(false);
+                      setShowModelMenu(false);
+                      setShowMoreToolsMenu(false);
                     }}
                     title={
                       !isEffortSupported
                         ? "Model does not support reasoning effort"
-                        : undefined
+                        : `推理等级: ${currentOpt.label}`
                     }
-                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs transition-colors ${
+                    className={`flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs whitespace-nowrap shrink-0 transition-colors ${
                       isEffortSupported
                         ? "hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] cursor-pointer"
                         : "opacity-40 text-[var(--text-dim)] cursor-not-allowed border border-transparent select-none"
                     }`}
                   >
-                    <Brain className="w-3.5 h-3.5 opacity-80" />
-                    <span className="font-mono">
-                      {!isEffortSupported ? "Reasoning: Disabled" : currentOpt.label}
-                    </span>
-                    <ChevronDown className={`w-3 h-3 ${isEffortSupported ? "opacity-70" : "opacity-30"}`} />
+                    <Brain className="w-3.5 h-3.5 opacity-80 shrink-0" />
+                    {!isCompact && (
+                      <span className="font-mono whitespace-nowrap">
+                        {!isEffortSupported ? "Reasoning: Disabled" : currentOpt.label}
+                      </span>
+                    )}
+                    <ChevronDown className={`w-3 h-3 shrink-0 ${isEffortSupported ? "opacity-70" : "opacity-30"}`} />
                   </button>
 
                   {showThinkingMenu && isEffortSupported && (
@@ -1745,7 +1873,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             onClick={() => void enhancePrompt()}
             disabled={!text.trim() || text.trim().startsWith("/") || enhancing || stt.active}
             title={t("enhancePromptTitle")}
-            className={`p-1.5 rounded-lg transition-colors flex items-center justify-center cursor-pointer disabled:opacity-35 disabled:cursor-not-allowed ${
+            className={`p-1.5 rounded-lg transition-colors flex items-center justify-center cursor-pointer shrink-0 disabled:opacity-35 disabled:cursor-not-allowed ${
               enhancing
                 ? "text-[var(--status-warn)]"
                 : "hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
@@ -1758,7 +1886,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
               type="button"
               onClick={undoPromptEnhancement}
               title={t("enhanceUndoTitle")}
-              className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer"
+              className="p-1.5 rounded-lg hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center cursor-pointer shrink-0"
             >
               <Undo2 className="w-4 h-4" />
             </button>
@@ -1776,7 +1904,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
               void stt.toggle();
             }}
             title={t("sttMicTitle")}
-            className={`p-1.5 rounded-lg transition-colors flex items-center justify-center cursor-pointer ${
+            className={`p-1.5 rounded-lg transition-colors flex items-center justify-center cursor-pointer shrink-0 ${
               stt.active
                 ? "bg-[var(--status-warn)]/15 text-[var(--status-warn)] animate-pulse"
                 : "hover:bg-[var(--surface-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
@@ -1785,12 +1913,12 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
             {stt.state === "buffering" || stt.state === "stopping" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mic className="w-4 h-4" />}
           </button>
           {/* Send/Stop Button */}
-          <div className="flex items-center ml-1">
+          <div className="flex items-center shrink-0 ml-1">
             {isStreaming ? (
               <button
                 type="button"
                 onClick={onStop}
-                className="w-7 h-7 rounded-lg bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors shadow-xs cursor-pointer"
+                className="w-7 h-7 rounded-lg bg-red-500 text-white flex items-center justify-center hover:bg-red-600 transition-colors shadow-xs cursor-pointer shrink-0"
                 title={t("stop")}
               >
                 <Square className="w-3 h-3 fill-current" />
@@ -1800,7 +1928,7 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
                 type="button"
                 onClick={submit}
                 disabled={text.trim().length === 0 && attachments.length === 0}
-                className="w-7 h-7 rounded-lg bg-[#5c5c60] hover:bg-[#6e6e73] dark:bg-[#5c5c60] dark:hover:bg-[#6e6e73] text-white flex items-center justify-center disabled:opacity-35 disabled:hover:bg-[#5c5c60] transition-all cursor-pointer shadow-xs"
+                className="w-7 h-7 rounded-lg bg-[#5c5c60] hover:bg-[#6e6e73] dark:bg-[#5c5c60] dark:hover:bg-[#6e6e73] text-white flex items-center justify-center disabled:opacity-35 disabled:hover:bg-[#5c5c60] transition-all cursor-pointer shadow-xs shrink-0"
                 title={t("send")}
               >
                 <ArrowUp className="w-3.5 h-3.5" />
