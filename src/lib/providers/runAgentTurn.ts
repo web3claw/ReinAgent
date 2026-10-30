@@ -614,30 +614,62 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
       console.warn("[memory] index overview unavailable (continuing without memory):", err);
     }
 
-    // 技能注入（按助手白名单隔离）：仅注入当前助手勾选且全局启用的技能。
-    // 若当前助手未勾选任何技能（如通用助手），则彻底不注入技能（0 个技能），绝不消耗额外上下文。
+    // 技能注入（按助手白名单隔离 + 显式斜杠触发保底）：
+    // 1. 助手白名单：仅注入当前助手勾选且全局启用的技能；
+    // 2. 显式提及破格激活：若用户在输入中以 /skill-name 显式提及了全局启用的技能，即使助手未勾选也激活，遵循用户明确意图。
     let skillsSection = "";
-    const assistantSkillIds = currentAssistantDef?.skills;
-    if (Array.isArray(assistantSkillIds) && assistantSkillIds.length > 0) {
-      try {
-        const { useHubSettings } = await import("../../store/hubSettingsStore");
-        const { enabled, selected } = useHubSettings.getState().settings.skills;
-        if (enabled && Array.isArray(selected) && selected.length > 0) {
-          const skillsLib = await import("../skills/index");
-          const discovery = await skillsLib.discoverSkills();
-          const { resolveAssistantSkills } = await import("../assistants/assistantToolFilter");
-          const activeSkillNames = resolveAssistantSkills(discovery.skills, { enabled, selected }, assistantSkillIds);
-          if (activeSkillNames.length > 0) {
-            const selectedSkills = discovery.skills.filter((skill) => activeSkillNames.includes(skill.name));
-            skillsSection = skillsLib.buildSkillsSystemPrompt({
-              rootDir: discovery.rootDir,
-              selected: selectedSkills,
-            });
+    try {
+      const { useHubSettings } = await import("../../store/hubSettingsStore");
+      const { enabled, selected } = useHubSettings.getState().settings.skills;
+      if (enabled && Array.isArray(selected) && selected.length > 0) {
+        const skillsLib = await import("../skills/index");
+        const discovery = await skillsLib.discoverSkills();
+        const { resolveAssistantSkills } = await import("../assistants/assistantToolFilter");
+
+        const assistantSkillIds = currentAssistantDef?.skills;
+        let activeSkillNames: string[] = [];
+        if (Array.isArray(assistantSkillIds) && assistantSkillIds.length > 0) {
+          activeSkillNames = resolveAssistantSkills(discovery.skills, { enabled, selected }, assistantSkillIds);
+        }
+
+        // 检查当轮用户消息中是否有以 /skill-name 显式提及的全局已启用技能
+        const lastUser = [...(messages ?? [])].reverse().find((m) => m && m.role === "user");
+        const rawContent = lastUser?.content;
+        const lastUserText =
+          typeof rawContent === "string"
+            ? rawContent
+            : Array.isArray(rawContent)
+              ? rawContent
+                  .filter((b) => b && (b as { type?: string }).type === "text")
+                  .map((b) => (b as { text?: string }).text ?? "")
+                  .join("\n")
+              : "";
+        const explicitNames = skillsLib.extractSkillMentionNamesFromText(lastUserText);
+        const mentionedEnabledSkills = discovery.skills.filter(
+          (s) => explicitNames.includes(s.name) && selected.includes(s.name),
+        );
+        for (const s of mentionedEnabledSkills) {
+          if (!activeSkillNames.includes(s.name)) {
+            activeSkillNames.push(s.name);
           }
         }
-      } catch (err) {
-        console.warn("[skills] discovery unavailable (continuing without skills):", err);
+
+        if (activeSkillNames.length > 0) {
+          const selectedSkills = discovery.skills.filter((skill) => activeSkillNames.includes(skill.name));
+          skillsSection = skillsLib.buildSkillsSystemPrompt({
+            rootDir: discovery.rootDir,
+            selected: selectedSkills,
+          });
+          if (mentionedEnabledSkills.length > 0) {
+            const explicitSection = skillsLib.formatExplicitSkillMentions(mentionedEnabledSkills);
+            if (explicitSection) {
+              skillsSection += `\n\n${explicitSection}`;
+            }
+          }
+        }
       }
+    } catch (err) {
+      console.warn("[skills] discovery unavailable (continuing without skills):", err);
     }
 
     // 知识库注入（RAG v1，docs/ROADMAP.md ①）：composer「知识库」开关打开时，

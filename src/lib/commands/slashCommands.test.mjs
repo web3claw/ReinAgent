@@ -30,6 +30,9 @@ const {
   filterCommands,
   expandCommandTemplate,
   toCustomCommands,
+  toSkillCommands,
+  toMcpCommands,
+  toMcpFallbackCommands,
   matchBuiltinCommand,
 } = await import("./slashCommands.ts");
 
@@ -128,3 +131,77 @@ test("matchBuiltinCommand：整串精确命中内置命令才执行；路径/未
   assert.equal(matchBuiltinCommand("请执行 /compact"), null, "非整串不触发");
   assert.equal(matchBuiltinCommand("普通文本"), null);
 });
+
+test("toSkillCommands：防御性解析技能、去重、剥除前导斜杠、生成 kind=skill", () => {
+  const out = toSkillCommands([
+    { name: "find-skills", description: "在 ClawHub 搜索技能" },
+    { name: "/grill-me", description: "需求访谈与对齐" },
+    { name: "find-skills", description: "重复技能应被去重" },
+    { name: "has space", description: "含空格非法" },
+    null,
+    { name: "no-desc" },
+  ]);
+  assert.equal(out.length, 3);
+  assert.deepEqual(out.map((c) => c.name), ["find-skills", "grill-me", "no-desc"]);
+  assert.ok(out.every((c) => c.kind === "skill"));
+  assert.equal(out[0].description, "在 ClawHub 搜索技能");
+  assert.equal(out[1].description, "需求访谈与对齐");
+  assert.equal(out[2].description, "已启用的技能", "无描述时回退兜底");
+});
+
+test("toMcpCommands：防御性解析 MCP 工具、去重、提取服务标签、生成 kind=mcp", () => {
+  const out = toMcpCommands([
+    { serverId: "fs", serverLabel: "Filesystem", name: "read_file", description: "读取指定文件内容" },
+    { serverId: "db", name: "query_database", description: "执行 SQL 查询" },
+    { serverId: "fs", serverLabel: "Filesystem", name: "read_file", description: "重复工具去重" },
+    { serverId: "invalid", name: "has space" },
+    null,
+    { serverId: "tools", name: "do_something" },
+  ]);
+  assert.equal(out.length, 3);
+  assert.deepEqual(out.map((c) => c.name), ["read_file", "query_database", "do_something"]);
+  assert.ok(out.every((c) => c.kind === "mcp"));
+  assert.equal(out[0].sourceLabel, "Filesystem");
+  assert.equal(out[1].sourceLabel, "db");
+  assert.equal(out[0].description, "读取指定文件内容");
+  assert.equal(out[2].description, "MCP 工具 (tools)");
+});
+
+test("toMcpFallbackCommands：为离线/失败服务生成保底项，提取错误原因并标记 offline", () => {
+  const rustErr =
+    "所有已启用的 MCP server 都不可用：\njadx-mcp-server: MCP server exited unexpectedly: status=exit status: 2\nother-server: connection refused";
+
+  const out = toMcpFallbackCommands(
+    [
+      { id: "jadx-mcp-server", description: "JADX 反编译工具" },
+      { id: "offline-server", description: "本地离线服务" },
+      { id: "jadx-mcp-server", description: "重复服务去重" },
+      { id: "/leading-slash-server" },
+      { id: "has space" },
+      null,
+    ],
+    rustErr,
+  );
+
+  assert.equal(out.length, 3);
+  assert.deepEqual(out.map((c) => c.name), [
+    "jadx-mcp-server",
+    "offline-server",
+    "leading-slash-server",
+  ]);
+  assert.ok(out.every((c) => c.kind === "mcp"));
+  assert.ok(out.every((c) => c.offline === true));
+
+  // 精准提取单项错误原因
+  assert.ok(
+    out[0].description.includes("status=exit status: 2"),
+    "应提取包含 jadx-mcp-server 的具体失败行",
+  );
+  // 未在错误串命中时回退首行或服务自身的描述
+  assert.ok(
+    out[1].description.includes("所有已启用的 MCP server 都不可用") ||
+      out[1].description.includes("本地离线服务"),
+  );
+  assert.equal(out[0].sourceLabel, "jadx-mcp-server");
+});
+

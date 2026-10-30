@@ -3165,3 +3165,144 @@ UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在�
   - `bun test`：全工程 705 项单元测试 100% 全部通过（0 fail）；
   - Headless Chrome 1280×800、900×700、780×600 多分辨率实测截屏验证：
     - 侧边栏展开且屏幕缩窄时，自动平滑收缩为类似远程页面的精简图标（`[+] [🛡️] [···]` 与 `[📦] [🧠] [✨] [🎙️] [↑]`），所有按钮 100% 完整收纳在输入框内部，视觉清爽优雅（存证：`/tmp/composer_adaptive_compact.png`、`/tmp/composer_adaptive_ultra_compact.png`）。
+
+#### 4.4 Antigravity 交互对齐：斜杠动作浮层整合「启用的技能」与「启用的 MCP 工具」 (2026-10-30)
+
+- **背景与用户痛点**：
+  - 用户反馈在设置和助手配置中勾选启用了技能（如 `find-skills`）以及 MCP 工具后，在聊天输入框键入斜杠 `/` 时，弹出的斜杠命令浮层仅包含内置命令（`/plan`、`/goal` 等），未显示当前已启用的技能与 MCP 工具，无法快速发现和调用。用户参考 Antigravity 的动作菜单与占位符引导，提出对齐其统一动作/命令体系的需求。
+- **架构实现细则 (`src/lib/commands/slashCommands.ts`, `src/components/chat/LexicalComposer.tsx`, `src/lib/providers/runAgentTurn.ts`, `src/i18n/index.ts`)**：
+  1. **斜杠命令纯逻辑模型扩展 (`src/lib/commands/slashCommands.ts`)**：
+     - `SlashCommand` 接口扩展 `kind: "builtin" | "custom" | "skill" | "mcp"`；
+     - 增加 `toSkillCommands(skills)` 与 `toMcpCommands(tools)` 转换与防御性解析函数：
+       - 自动去除前导斜杠，过滤脏数据与空白非法命名，同名条目自动去重；
+       - `sourceLabel` 挂载 MCP 对应服务器名称（如 `Filesystem`、`db`）；
+     - `BUILTIN_COMMANDS` 排序与图标标识对齐 Antigravity（`plan`、`goal`、`compact` 置顶，匹配专属图标）。
+  2. **已启用技能与 MCP 工具的动态感知与助手白名单穿透 (`LexicalComposer.tsx`)**：
+     - **已启用的技能联动**：根据当前任务绑定的助手白名单（`assistant.skills`）与全局技能配置（`settings.skills`）双向交叉过滤；若未指定特定助手技能，则展示全局已启用的技能；
+     - **已启用的 MCP 工具联动**：根据助手白名单（`assistant.mcpServers`）与全局启用服务器（`settings.mcp.servers`）过滤后，调用 `mcp_list_tools` 异步枚举真实可用工具；
+     - 整合至 `slashFiltered` 候选计算：统一支持按名称与描述即时模糊过滤搜索。
+  3. **Antigravity 风格的 Actions 菜单 UI 渲染 (`LexicalComposer.tsx`)**：
+     - **统一前置图标**：内置命令使用 `ListChecks`、`Target`、`Minimize2`、`Trash2`、`FileCode`、`HelpCircle`，技能匹配 `Sparkles`（琥珀金），MCP 工具匹配 `Blocks`（天青蓝），自定义命令匹配 `FileText`（紫罗兰）；
+     - **水平横向单行响应式排版**：`[图标框] /name [徽标] 描述`，悬浮/选中时高亮 `bg-[var(--surface-hover)]`；
+     - **选中即填入**：点击或键盘回车/Tab 选中技能或 MCP 工具后，自动填入 `/{name} `（带空格）并将光标聚焦末尾，便于用户追加参数或直接回车发送。
+  4. **执行链路与提示词显式提及保障 (`src/lib/providers/runAgentTurn.ts`)**：
+     - 在系统提示词组装时，除了助手预设白名单外，增加对当轮用户消息以 `/skill-name` 显式提及已启用技能的自动提取；
+     - 只要用户通过斜杠菜单显式调用了某已安装且启用的技能，系统自动在当轮提示词中破格挂载该技能的 `buildSkillsSystemPrompt`，并在末尾附加 `formatExplicitSkillMentions`，强指示模型优先且精准执行该技能。
+  5. **输入框占位引导更新 (`src/i18n/index.ts`)**：
+     - 中文占位符对齐 Antigravity：`随时提问，输入 @ 引用上下文，输入 / 调起动作与技能`；
+     - 英文占位符对齐 Antigravity：`Ask anything, @ to mention, / for actions & skills`。
+- **交付验证**：
+  - `bun test src/lib/commands/slashCommands.test.mjs`：8 项测试全部通过（新增 `toSkillCommands` 与 `toMcpCommands` 单元测试，经变异破坏性 Red Check 验证可精准捕捉缺陷）；
+  - `bun x tsc --noEmit`：0 报错通过；
+  - `bun test`：全工程 707 项单元测试 100% 全部通过（0 fail）。
+
+#### 4.5 修复助手绑定反向篡改全局技能与 MCP 设置的遗留缺陷 (2026-10-30)
+
+- **缺陷根因定位**：
+  - 用户反馈在助手页面勾选技能和 MCP 工具保存或切换助手时，设置页面的全局技能（`skills.selected`）和全局 MCP 服务（`mcp.servers` enabled 状态）被强制同步修改。
+  - 经排查系 2026-10-11 早期“一键预设包”方案的遗留逻辑：在 `AssistantsPage.tsx` 的 `applyBindings` 与 `App.tsx` 的 `AssistantChip` 中残留了 `hubSetSettings` 逻辑，强行将助手的 `skillSelection` 与 `mcpEnabledIds` 覆写回全局 `useHubSettings`，将未勾选的全局服务批量置为 `false`。与 2026-10-29 定稿的“全局设置是底座，助手是独立白名单过滤”架构冲突。
+- **修复方案 (`AssistantsPage.tsx`, `App.tsx`)**：
+  1. 彻底移除 `AssistantsPage.tsx` 中 `applyBindings` 对 `hubSetSettings` 的调用；
+  2. 彻底移除 `App.tsx` 中 `AssistantChip.onPick` 对 `hubSetSettings` 的反向覆写；
+  3. 助手配置中的 `skills` 与 `mcpServers` 仅作为该助手的私有白名单存储于 `~/.ReinAgent/assistants/<id>.md`；
+  4. 对话执行时继续由 `resolveAssistantSkills` 与 `resolveAssistantMcpServers` 在内存中精准取交集注入，彻底实现“助手按需隔离，绝不污染全局设置”。
+- **交付验证**：
+  - `bun tsc --noEmit`：0 报错；
+  - `bun test`：全工程 707 项测试全部通过（0 fail）；
+  - 实测验证：保存助手与切换助手均不再触发任何全局设置修改，全局技能与 MCP 勾选状态持久稳定。
+
+#### 4.6 斜杠菜单严格对齐当前生效助手（含通用助手默认回退）白名单 (2026-10-30)
+
+- **缺陷根因定位**：
+  - 用户反馈通用助手仅配置了 1 个技能（`find-skills`）和 1 个 MCP（`jadx-mcp-server`），但在对话页面选择通用助手时，斜杠菜单仍回退显示了全部全局启用的技能与 MCP。
+  - 排查系 `LexicalComposer.tsx` 计算有效助手时仅读取了 `activeTask?.assistantId`（任务私有绑定），当任务未绑定助手（或处于草稿态）时为 `undefined`，漏读了 `globalDefaultAssistantId`（默认的「通用助手」`general`），导致助手白名单未命中并回退至全局全量。
+- **修复细则 (`src/components/chat/LexicalComposer.tsx`)**：
+  1. 订阅并引入 `globalDefaultAssistantId`，统一计算当前实际生效助手：
+     `const effectiveAssistantId = activeTask?.assistantId ?? globalDefaultAssistantId;`
+  2. 技能与 MCP 工具的枚举与白名单解析统一以 `effectiveAssistantId` 为准：
+     - 若生效助手配置了 `skills`，严格仅呈现该白名单与全局启用项的交集（例如只显示通用助手启用的 1 个技能）；
+     - 若生效助手配置了 `mcpServers`，严格仅枚举该白名单服务下的工具（例如只枚举通用助手启用的 1 个 MCP 服务工具）；
+  3. 将 `effectiveAssistantId` 纳入两项异步枚举的依赖数组，确保在侧边栏或顶部芯片切换助手时，斜杠菜单毫秒级响应同步收敛。
+- **交付验证**：
+  - `bun tsc --noEmit`：0 报错；
+  - `bun test`：全工程 707 项测试全部通过（0 fail）。
+
+#### 4.7 离线/启动失败 MCP 服务斜杠菜单 Fail-Fast 保底显式展示 (2026-10-30)
+
+- **缺陷根因定位**：
+  - 用户配置通用助手启用了 `jadx-mcp-server`，该服务在 `mcp_servers.json` 中配置的外部可移动盘路径当前未挂载，导致 Rust 侧启动子进程时报错 `No such file or directory (os error 2)`，`mcp_list_tools` 抛出 `所有已启用的 MCP server 都不可用` 错误；
+  - 前端 `LexicalComposer.tsx` 在 `catch (err)` 中静默将其吞掉并重置为空数组 `setMcpCommands([])`，使得离线/出错的 MCP 条目在斜杠菜单中彻底消失，违反“拒绝臆测兜底与真实提示铁律（No Fallback & Fail-Fast Rule）”。
+- **修复方案与实现**：
+  1. **纯逻辑层 (`src/lib/commands/slashCommands.ts`)**：
+     - `SlashCommand` 接口新增 `offline?: boolean` 字段；
+     - 新增 `toMcpFallbackCommands(servers, serverErrors)` 函数：
+       - 防御性解析服务 ID，去重且剥除多余前导斜杠；
+       - 若入参包含错误文本（例如 Rust 端返回的多行错误），自动提取当前服务对应的精准失败行（如 `MCP server exited unexpectedly: status=exit status: 2`）；
+       - 生成保底条目：`name: server.id`，`sourceLabel: server.id`，`offline: true`，`description` 真实显示 `[离线/连接失败: 原因]` 或 `[服务离线或未提供可用工具]`。
+  2. **UI 交互层 (`src/components/chat/LexicalComposer.tsx`, `src/i18n/index.ts`)**：
+     - 在 `mcp_list_tools` 成功返回 entries 时，不仅枚举返回的工具 `toMcpCommands(entries)`，还比对目标服务中是否有未返回工具的服务（部分离线），为未覆盖服务自动补齐 `toMcpFallbackCommands`；
+     - 在 `mcp_list_tools` 捕获到错误（全部离线/命令不存在）时，绝不静默置空，如实生成全部目标服务的离线保底项并透传真实错误文本；
+     - 斜杠命令列表渲染中，离线项的徽章呈现琥珀色警示样式（`bg-amber-500/10 text-amber-500 border-amber-500/30`），徽标文案显示 `MCP · <server_id> · 离线`，描述显示真实报错摘要。
+- **交付验证**：
+  - **Red Check 变异破坏性测试**：故意反转 `offline: false`，`slashCommands.test.mjs` 精准 Red 报错拦截（`AssertionError: false == true`），恢复后 9/9 绿；
+  - `bun tsc --noEmit`：0 类型报错；
+  - `bun test`：全工程 708 项测试全部通过（0 fail）；
+  - Vite HMR 热更即时生效，实测未挂载设备的 `jadx-mcp-server` 正常带琥珀色 `[MCP · jadx-mcp-server · 离线]` 徽标与错误原因常驻斜杠菜单。
+
+#### 4.8 会话中途停止/空用量中断不冲刷上一轮上下文容量 (2026-10-30)
+
+- **缺陷根因定位**：
+  - 用户在 `每日科技日报` 长对话（已积累 53,244 Tokens，占 200K 的 26.6%）中，由于点击了停止或在首个 Token 到达前中途终止，产生了一条 `status: stopped` 且 `usage: {input: 0, output: 0}` 的空助手消息（`m55`）；
+  - `App.tsx` 中的 `contextUsage` 原逻辑直接使用 `[...state.messages].reverse().find(m => m.role === 'assistant' && m.apiMessage)` 提取末尾消息，直接采纳了 `m55` 的 0 用量（`used = 0`）；
+  - 底层 `buildContextUsageData` 遵从 `used <= 0` 返回 `null` 的安全守卫，导致原本已达到 5.3 万 Token 的上下文容量圆圈在停止后被错误清零并隐藏。
+- **修复方案与实现**：
+  1. **纯逻辑层 (`src/lib/chat/contextUsage.ts`)**：
+     - 新增导出 [`findLastAssistantUsageMessage`](file:///home/web3claw/GitCode/ReinAgent/src/lib/chat/contextUsage.ts#L52-L71) 函数；
+     - 倒序优先查找最近一条实际产生非零用量（`input + cacheRead + output > 0`）的 assistant 消息；若全会话均无有效回复才安全回退最后一条消息。
+  2. **主界面接入 (`src/App.tsx`)**：
+     - 在 `contextUsage` useMemo 中引入 `findLastAssistantUsageMessage` 代替原有的盲目末项匹配，确保无论会话中途因何中断或终止，都能稳定锁定并展示最近一轮的真实上下文消耗（如 53K / 27%）。
+  3. **单测覆盖与 Red Check 变异验证 (`src/lib/chat/contextUsage.test.mjs`)**：
+     - 覆盖字符加权、非零用量过滤、全零回退与 No-Fallback 边界 6 项单元测试；
+     - 经过故意破坏判定（反转条件 `total < 0`）使单测精准 Red 报错拦截（`AssertionError`），恢复后 6/6 绿。
+- **交付验证**：
+  - `bun tsc --noEmit`：0 类型报错；
+  - `bun test`：全工程 714 项测试全部通过（0 fail）；
+  - Vite HMR 即时热更，当前会话立刻恢复显示 `27%` 上下文容量圆圈。
+
+#### 4.9 自动化定时任务会话复用模式与持久化字段 (2026-10-30)
+
+- **需求背景与痛点**：
+  - 定时自动化任务（例如每日 06:00 执行的「每日科技日报」）在以往每次到点派发时，都会在侧边栏硬编码新开一个同名任务（`createTask`），导致运行几天后左侧任务列表中堆叠大量同名会话卡片，且同一任务的上下文无法承接累积。
+  - 用户提出需求：“能不能让每次的自动化任务，都使用同一个对话，而不是新开对话”。
+- **全链路改造实现**：
+  1. **Rust 数据层与 SQLite 迁移 (`src-tauri/src/automation.rs`)**：
+     - `Automation`、`AutomationUpsert`、`AutomationDuePayload` 结构体均增加 `reuse_conversation: Option<bool>` 字段（默认 `true`，`#[serde(default)]` 兼容旧配置）；
+     - `open_db()` 中增加自动无损迁移：`ALTER TABLE automations ADD COLUMN reuse_conversation INTEGER NOT NULL DEFAULT 1;`；
+     - `row_to_automation`、`insert_automation`、`automation_update`、`claim_due` 及 `automation_run_now` 全链路落库与传递 `reuse_conversation`。
+  2. **前端类型与应用存储 (`src/lib/automations/types.ts`, `src/store/useAppStore.ts`)**：
+     - `Automation` / `AutomationUpsert` / `AutomationDuePayload` 类型定义增加 `reuseConversation?: boolean;`；
+     - `AppTask` 类型增加 `automationId?: string;`，用于记录任务所属的自动化 ID；
+     - `createTask` 入参拓展支持传递 `automationId` 并持久化到任务属性中。
+  3. **调度中心智能复用 (`src/App.tsx`)**：
+     - 在 `dispatchAutomationRun` 中实现复用逻辑：
+       - 当 `payload.reuseConversation !== false`（默认开启）：
+         - 优先按 `t.automationId === payload.automationId` 检索专属已存在会话；
+         - 优雅兼容存量历史任务：按 `(t.source === "automation" && t.title === payload.title)` 命中已有历史会话，并补齐挂载 `existingTask.automationId = payload.automationId`；
+         - 若配置的模型或服务商发生变更，自动调用 `store.updateTaskModel(taskId, providerId, modelId)` 同步会话模型；
+         - 直接复用该 `taskId` 并调用 `poolSend` 追加新一天的执行提示词；
+       - 仅在首次运行无历史会话或用户显式配置为新建会话（`reuseConversation === false`）时，才调用 `createTask` 创建新会话。
+  4. **UI 配置面板与国际化 (`src/components/automations/AutomationEditView.tsx`, `src/i18n/index.ts`)**：
+     - 在自动化编辑抽屉中增加「会话模式（Conversation Mode）」单选字段：
+       - **复用固定会话（推荐）**：每次定时触发在同一个会话中继续对话，避免列表重复刷屏；
+       - **每次新建独立会话**：每次触发创建新的独立任务标签。
+- **交付验证与测试**：
+  - **单测覆盖与 Red Check 变异测试 (`src/lib/automations/automationReuse.test.ts`)**：
+    - 覆盖精确 ID 命中、历史同名会话无缝接管与补绑 ID、复用时自动同步模型变更、显式关闭复用新建独立任务、首次运行新建任务 5 项全场景测试；
+    - 变异测试：反转判定条件 `shouldReuse = false`，单测精准 Red 报错，恢复后 5/5 全部通过；
+  - `bun tsc --noEmit`：0 类型报错；
+  - `cd src-tauri && cargo check`：0 错误编译通过；
+  - `bun test`：全工程 719 项测试全部通过（0 fail）。
+
+
+
+

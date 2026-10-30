@@ -12,60 +12,73 @@
  */
 
 export interface SlashCommand {
-  /** 触发名（不含前导斜杠），如 `compact`、`review` */
+  /** 触发名（不含前导斜杠），如 `compact`、`review`、`find-skills` */
   name: string;
   /** UI 展示名（自定义命令可用 frontmatter.name；内置为中文/英文短名） */
   label: string;
   description: string;
-  /** builtin = 宿主执行；custom = 填入提示词模板 */
-  kind: "builtin" | "custom";
+  /** builtin = 宿主执行；custom = 填入提示词模板；skill = 启用的技能；mcp = 启用的 MCP 工具 */
+  kind: "builtin" | "custom" | "skill" | "mcp";
   /** 自定义命令的模板正文（含 `$ARGUMENTS` 占位） */
   body?: string;
+  /** 图标标识符或类型 */
+  icon?: string;
+  /** 所属分组或来源（如 MCP 服务的展示名） */
+  sourceLabel?: string;
+  /** 离线状态（如 MCP 服务连接失败或未就绪时为 true） */
+  offline?: boolean;
 }
 
 /** 内置命令清单（宿主实现；不含 UI 文案以外的可执行细节）。 */
 export const BUILTIN_COMMANDS: SlashCommand[] = [
   {
-    name: "clear",
-    label: "clear",
-    description: "清空当前任务的对话时间线（不可撤销，需二次确认）",
-    kind: "builtin",
-  },
-  {
-    name: "compact",
-    label: "compact",
-    description: "压缩上下文：把较早的轮次交给摘要模型生成摘要",
-    kind: "builtin",
-  },
-  {
-    name: "compress",
-    label: "compress",
-    description: "压缩上下文：把较早的轮次交给摘要模型生成摘要（/compact 别名）",
-    kind: "builtin",
-  },
-  {
-    name: "init",
-    label: "init",
-    description: "创建或更新工作区的 AGENTS.md 项目说明（供后续会话注入，可选备注）",
-    kind: "builtin",
-  },
-  {
     name: "plan",
     label: "plan",
     description: "切换到计划模式：只读调研，提交计划获批后再执行（可附带首个任务）",
     kind: "builtin",
+    icon: "plan",
   },
   {
     name: "goal",
     label: "goal",
     description: "查看或管理会话目标：/goal <目标> 设定，pause/resume/clear 管理",
     kind: "builtin",
+    icon: "goal",
+  },
+  {
+    name: "compact",
+    label: "compact",
+    description: "压缩上下文：把较早的轮次交给摘要模型生成摘要",
+    kind: "builtin",
+    icon: "compact",
+  },
+  {
+    name: "compress",
+    label: "compress",
+    description: "压缩上下文：把较早的轮次交给摘要模型生成摘要（/compact 别名）",
+    kind: "builtin",
+    icon: "compact",
+  },
+  {
+    name: "init",
+    label: "init",
+    description: "创建或更新工作区的 AGENTS.md 项目说明（供后续会话注入，可选备注）",
+    kind: "builtin",
+    icon: "init",
+  },
+  {
+    name: "clear",
+    label: "clear",
+    description: "清空当前任务的对话时间线（不可撤销，需二次确认）",
+    kind: "builtin",
+    icon: "clear",
   },
   {
     name: "help",
     label: "help",
     description: "显示可用命令与用法",
     kind: "builtin",
+    icon: "help",
   },
 ];
 
@@ -147,8 +160,120 @@ export function toCustomCommands(
           ? entry.description.trim()
           : "自定义命令",
       kind: "custom",
+      icon: "custom",
       body: typeof entry.body === "string" ? entry.body : "",
     });
   }
   return out;
 }
+
+/**
+ * 把已启用的技能条目转换为斜杠命令（kind = "skill"）。
+ * 选中后填入 `/{skill.name} `。
+ */
+export function toSkillCommands(
+  skills: Array<{ name?: unknown; description?: unknown }>,
+): SlashCommand[] {
+  const out: SlashCommand[] = [];
+  const seen = new Set<string>();
+  for (const skill of skills ?? []) {
+    const name = typeof skill?.name === "string" ? skill.name.trim().replace(/^\/+/, "") : "";
+    if (!name || /\s/.test(name) || seen.has(name)) continue;
+    seen.add(name);
+    out.push({
+      name,
+      label: name,
+      description:
+        typeof skill.description === "string" && skill.description.trim().length > 0
+          ? skill.description.trim()
+          : "已启用的技能",
+      kind: "skill",
+      icon: "skill",
+    });
+  }
+  return out;
+}
+
+/**
+ * 把已启用的 MCP 工具条目转换为斜杠命令（kind = "mcp"）。
+ * 选中后填入 `/{tool.name} `。
+ */
+export function toMcpCommands(
+  tools: Array<{ serverId?: unknown; serverLabel?: unknown; name?: unknown; description?: unknown }>,
+): SlashCommand[] {
+  const out: SlashCommand[] = [];
+  const seen = new Set<string>();
+  for (const tool of tools ?? []) {
+    const name = typeof tool?.name === "string" ? tool.name.trim().replace(/^\/+/, "") : "";
+    if (!name || /\s/.test(name) || seen.has(name)) continue;
+    seen.add(name);
+    const serverLabel =
+      typeof tool.serverLabel === "string" && tool.serverLabel.trim()
+        ? tool.serverLabel.trim()
+        : typeof tool.serverId === "string" && tool.serverId.trim()
+          ? tool.serverId.trim()
+          : "MCP";
+    out.push({
+      name,
+      label: name,
+      description:
+        typeof tool.description === "string" && tool.description.trim().length > 0
+          ? tool.description.trim()
+          : `MCP 工具 (${serverLabel})`,
+      kind: "mcp",
+      icon: "mcp",
+      sourceLabel: serverLabel,
+    });
+  }
+  return out;
+}
+
+/**
+ * 为离线或启动失败的 MCP 服务生成保底命令条目（kind = "mcp"，offline = true）。
+ * 保证外部挂载路径不存在或服务异常时在斜杠菜单中明确可见，绝不静默吞掉（对齐 Fail-Fast 铁律）。
+ */
+export function toMcpFallbackCommands(
+  servers: Array<{ id?: unknown; description?: unknown }>,
+  serverErrors?: Record<string, string> | string,
+): SlashCommand[] {
+  const out: SlashCommand[] = [];
+  const seen = new Set<string>();
+  const defaultError = typeof serverErrors === "string" ? serverErrors.trim() : "";
+
+  for (const s of servers ?? []) {
+    const id = typeof s?.id === "string" ? s.id.trim().replace(/^\/+/, "") : "";
+    if (!id || /\s/.test(id) || seen.has(id)) continue;
+    seen.add(id);
+
+    let reason = "";
+    if (typeof serverErrors === "object" && serverErrors !== null && typeof serverErrors[id] === "string") {
+      reason = serverErrors[id].trim();
+    } else if (defaultError) {
+      const match = defaultError.split("\n").find((line) => line.includes(id));
+      if (match) {
+        reason = match.replace(new RegExp(`^${id}:\\s*`, "i"), "").trim();
+      } else {
+        const firstLine = defaultError.split("\n")[0] || defaultError;
+        reason = firstLine.trim();
+      }
+    }
+
+    const desc = reason
+      ? `[离线/连接失败: ${reason.slice(0, 100)}]`
+      : typeof s.description === "string" && s.description.trim()
+      ? `[离线] ${s.description.trim()}`
+      : "[服务离线或未提供可用工具]";
+
+    out.push({
+      name: id,
+      label: id,
+      description: desc,
+      kind: "mcp",
+      icon: "mcp",
+      sourceLabel: id,
+      offline: true,
+    });
+  }
+  return out;
+}
+

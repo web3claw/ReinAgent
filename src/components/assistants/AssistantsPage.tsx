@@ -81,7 +81,6 @@ export function AssistantsPage() {
   const setGlobalDefaultAssistant = useAppStore((s) => s.setGlobalDefaultAssistant);
   const hubMcpServers = useHubSettings((s) => s.settings.mcp.servers);
   const hubSkills = useHubSettings((s) => s.settings.skills);
-  const hubSetSettings = useHubSettings((s) => s.setSettings);
   // 编辑器模型选项数据源（loadProvidersConfigFromDisk 与 ModelPicker 同源）；挂载时拉一次
   const providersRef = useRef<{ id: string; name: string; enabled: boolean; models: { id: string; name: string; enabled: boolean }[] }[]>([]);
   useEffect(() => {
@@ -169,7 +168,7 @@ export function AssistantsPage() {
     applyBindings(def, null);
   };
 
-  /** 套用助手绑定（任务字段 + hubSettings 启用集）；taskId=null = 不写任务字段（全局默认路径）。 */
+  /** 套用助手绑定（仅任务级模型与思考等级）；绝不污染全局设置中的技能与 MCP。 */
   const applyBindings = (def: AssistantDef | null, taskId: string | null) => {
     const plan = buildAssistantBindingsPlan(
       def,
@@ -182,23 +181,7 @@ export function AssistantsPage() {
     if (plan.taskThinkingLevel && taskId) {
       store.updateTaskThinkingLevel(taskId, plan.taskThinkingLevel);
     }
-    if (plan.skillSelection) {
-      hubSetSettings((prev) => ({
-        ...prev,
-        skills: { ...prev.skills, selected: plan.skillSelection! },
-      }));
-    }
-    if (plan.mcpEnabledIds) {
-      const enabledSet = new Set(plan.mcpEnabledIds);
-      hubSetSettings((prev) => ({
-        ...prev,
-        mcp: {
-          ...prev.mcp,
-          servers: prev.mcp.servers.map((srv) => ({ ...srv, enabled: enabledSet.has(srv.id) })),
-        },
-      }));
-    }
-    if (plan.summary) {
+    if (plan.summary && taskId) {
       toast.success(`已应用助手绑定：${plan.summary}`);
     }
   };

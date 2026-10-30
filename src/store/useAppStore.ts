@@ -42,6 +42,8 @@ export interface AppTask {
   worktreeBranch?: string;
   worktreeBase?: string;
   worktreeCreatedAt?: number;
+  /** 关联的自动化任务 ID（若由定时任务创建/复用）。 */
+  automationId?: string;
 }
 
 interface AppState {
@@ -83,7 +85,8 @@ interface AppState {
     modelId?: string,
     thinkingLevel?: ThinkingLevel,
     approvalMode?: ApprovalMode,
-    source?: string
+    source?: string,
+    automationId?: string
   ) => string;
   setActiveTaskId: (id: string | null) => void;
   setGlobalDefaultAssistant: (id: string) => void;
@@ -371,7 +374,7 @@ export const useAppStore = create<AppState>((set) => ({
     });
   },
 
-  createTask: (title, project = null, providerId, modelId, thinkingLevel, approvalMode, source) => {
+  createTask: (title, project = null, providerId, modelId, thinkingLevel, approvalMode, source, automationId) => {
     const newId = `task-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const newTask: AppTask = {
       id: newId,
@@ -385,6 +388,7 @@ export const useAppStore = create<AppState>((set) => ({
       thinkingLevel: thinkingLevel,
       approvalMode: approvalMode,
       source: source,
+      automationId: automationId,
     };
     set((state) => {
       const nextTasks = [newTask, ...state.tasks];

@@ -45,6 +45,30 @@ export function weightedChars(text: string): number {
   return n;
 }
 
+/**
+ * 寻找最近一条包含有效非零用量（input + cacheRead + output > 0）的助手消息。
+ * 若没有非零用量消息，回退为最后一条带有 apiMessage 的助手消息（或 undefined）。
+ * 彻底防止中途 stopped / 异常中断产生的 0 用量消息冲刷掉上一轮真实上下文容量。
+ */
+export function findLastAssistantUsageMessage<T extends { role?: string; apiMessage?: unknown }>(
+  messages: readonly T[],
+): T | undefined {
+  if (!Array.isArray(messages) || messages.length === 0) return undefined;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m && m.role === "assistant" && m.apiMessage) {
+      const u = (m.apiMessage as { usage?: { input?: number; output?: number; cacheRead?: number } }).usage;
+      const total = Number(u?.input ?? 0) + Number(u?.cacheRead ?? 0) + Number(u?.output ?? 0);
+      if (total > 0) return m;
+    }
+  }
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m && m.role === "assistant" && m.apiMessage) return m;
+  }
+  return undefined;
+}
+
 export function buildContextUsageData(params: {
   /** 最后一条 assistant 的真实 usage：input + output */
   used?: number;

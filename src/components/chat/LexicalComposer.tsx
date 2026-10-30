@@ -7,6 +7,9 @@ import {
   matchBuiltinCommand,
   parseSlashQuery,
   toCustomCommands,
+  toSkillCommands,
+  toMcpCommands,
+  toMcpFallbackCommands,
   type SlashCommand,
 } from "../../lib/commands/slashCommands";
 import { buildInitAgentsPrompt } from "../../lib/commands/initPrompt";
@@ -71,6 +74,13 @@ import {
   History,
   MoreHorizontal,
   Box,
+  ListChecks,
+  Target,
+  Minimize2,
+  Trash2,
+  HelpCircle,
+  Blocks,
+  Terminal,
 } from "lucide-react";
 import { PromptHistoryDrawer } from "./PromptHistoryDrawer";
 import { recordGlobalUserPrompt } from "../../lib/chat/userPromptHistory";
@@ -207,11 +217,13 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     setSelectedProject,
     projects,
     addProject,
+    globalDefaultAssistantId,
   } = useAppStore();
 
   // 任务级隔离（对齐 ZCode task-local thoughtLevel/mode）：有活动任务读写任务字段，
   // 草稿态读写全局默认（首次发送时随 createTask 落到新任务上）。
   const activeTask = activeTaskId ? tasks.find((task) => task.id === activeTaskId) ?? null : null;
+  const effectiveAssistantId = activeTask?.assistantId ?? globalDefaultAssistantId;
   const thinkingLevel = activeTask?.thinkingLevel ?? globalThinkingLevel;
   const approvalMode = activeTask?.approvalMode ?? globalApprovalMode;
 
@@ -260,6 +272,10 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
       }));
     }
   };
+
+  // 全局技能与 MCP 服务设置（用于斜杠命令与动作菜单枚举）
+  const hubSkills = useHubSettings((s) => s.settings.skills);
+  const hubMcpServers = useHubSettings((s) => s.settings.mcp.servers);
 
   const [text, setText] = useState("");
   const [showPromptHistoryDrawer, setShowPromptHistoryDrawer] = useState(false);
@@ -320,6 +336,10 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
   const removeSelectionRef = (index: number) => removeSelectionReference(taskId ?? "", index);
   /** 工作区自定义命令（.ReinAgent/commands/*.md，扫描一次缓存） */
   const [customCommands, setCustomCommands] = useState<SlashCommand[]>([]);
+  /** 已启用的技能（依据当前任务助手与全局启用设置） */
+  const [skillCommands, setSkillCommands] = useState<SlashCommand[]>([]);
+  /** 已启用的 MCP 工具（依据当前任务助手与全局启用设置） */
+  const [mcpCommands, setMcpCommands] = useState<SlashCommand[]>([]);
   /** `@` 菜单的候选文件（glob 结果，随查询词刷新） */
   const [mentionCandidates, setMentionCandidates] = useState<string[]>([]);
   const [mentionQuery, setMentionQuery] = useState("");
@@ -797,6 +817,109 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     };
   }, [workspaceRoot]);
 
+  // ---- 已启用的技能：依据全局 skills 与当前生效助手（任务/全局默认）的白名单计算 ----
+  useEffect(() => {
+    let cancelled = false;
+    if (!hubSkills || !hubSkills.enabled || !Array.isArray(hubSkills.selected) || hubSkills.selected.length === 0) {
+      setSkillCommands([]);
+      return;
+    }
+    void (async () => {
+      try {
+        const skillsLib = await import("../../lib/skills/index");
+        const discovery = await skillsLib.discoverSkills();
+        if (cancelled) return;
+
+        let activeSkillNames = discovery.skills
+          .filter((s) => hubSkills.selected.includes(s.name))
+          .map((s) => s.name);
+
+        if (effectiveAssistantId) {
+          try {
+            const { loadAssistantCatalog } = await import("../../lib/assistants/assistantDefs");
+            const catalog = await loadAssistantCatalog();
+            const def = catalog.assistants.find((a) => a.id === effectiveAssistantId);
+            if (def && Array.isArray(def.skills)) {
+              const { resolveAssistantSkills } = await import("../../lib/assistants/assistantToolFilter");
+              activeSkillNames = resolveAssistantSkills(discovery.skills, hubSkills, def.skills);
+            }
+          } catch (err) {
+            console.warn("[commands] resolve assistant skills fallback:", err);
+          }
+        }
+
+        const activeSkills = discovery.skills.filter((s) => activeSkillNames.includes(s.name));
+        if (!cancelled) setSkillCommands(toSkillCommands(activeSkills));
+      } catch (err) {
+        console.warn("[commands] discover skills failed:", err);
+        if (!cancelled) setSkillCommands([]);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hubSkills?.enabled, hubSkills?.selected, effectiveAssistantId]);
+
+  // ---- 已启用的 MCP 工具：依据全局 MCP 与当前生效助手（任务/全局默认）的白名单枚举 ----
+  useEffect(() => {
+    let cancelled = false;
+    const enabledServers = (hubMcpServers || []).filter((s) => s && s.enabled);
+    if (enabledServers.length === 0) {
+      setMcpCommands([]);
+      return;
+    }
+    void (async () => {
+      let targetServers = enabledServers;
+      if (effectiveAssistantId) {
+        try {
+          const { loadAssistantCatalog } = await import("../../lib/assistants/assistantDefs");
+          const catalog = await loadAssistantCatalog();
+          const def = catalog.assistants.find((a) => a.id === effectiveAssistantId);
+          if (def && Array.isArray(def.mcpServers)) {
+            const { resolveAssistantMcpServers } = await import("../../lib/assistants/assistantToolFilter");
+            targetServers = resolveAssistantMcpServers(hubMcpServers, def.mcpServers);
+          }
+        } catch (err) {
+          console.warn("[commands] resolve assistant mcp servers fallback:", err);
+        }
+      }
+
+      if (targetServers.length === 0) {
+        if (!cancelled) setMcpCommands([]);
+        return;
+      }
+
+      try {
+        const { invoke } = await import("@tauri-apps/api/core");
+        const entries = await invoke<
+          { serverId: string; serverLabel: string; name: string; description: string }[]
+        >("mcp_list_tools", { servers: targetServers });
+
+        if (cancelled) return;
+
+        const toolCmds = toMcpCommands(entries);
+        const coveredServerIds = new Set(
+          (entries || []).map((e) => (typeof e?.serverId === "string" ? e.serverId : "")),
+        );
+        const missingServers = targetServers.filter((s) => !coveredServerIds.has(s.id));
+        const fallbackCmds = missingServers.length > 0 ? toMcpFallbackCommands(missingServers) : [];
+
+        setMcpCommands([...toolCmds, ...fallbackCmds]);
+      } catch (err) {
+        // 当后端枚举失败（例如外部路径未挂载、命令不存在、全部离线）时，
+        // 绝不静默置空，如实展示离线保底条目与原因（对齐 No-Fallback / Fail-Fast 铁律）
+        console.warn("[commands] mcp tool enumeration unavailable:", err);
+        if (!cancelled) {
+          const errMsg = String(err instanceof Error ? err.message : err);
+          setMcpCommands(toMcpFallbackCommands(targetServers, errMsg));
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [hubMcpServers, effectiveAssistantId]);
+
   // ---- @ 提及候选：glob 工作区文件（防抖 200ms；仅在提及态查询）----
   const mentionQueryRef = useRef<string | null>(null);
   useEffect(() => {
@@ -827,10 +950,14 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     return () => window.clearTimeout(timer);
   }, [showMentionMenu, mentionQuery, workspaceRoot]);
 
-  // 斜杠菜单过滤结果（组件层计算：keydown 导航与菜单渲染共用同一份列表）
+  // 斜杠菜单过滤结果（组件层计算：内置动作 + 启用的技能 + 启用的 MCP 工具 + 工作区自定义命令）
   const slashFiltered = useMemo(
-    () => filterCommands([...BUILTIN_COMMANDS, ...customCommands], slashQuery),
-    [customCommands, slashQuery],
+    () =>
+      filterCommands(
+        [...BUILTIN_COMMANDS, ...skillCommands, ...mcpCommands, ...customCommands],
+        slashQuery,
+      ),
+    [customCommands, skillCommands, mcpCommands, slashQuery],
   );
   // 高亮项变化时滚动进可视区
   useEffect(() => {
@@ -880,6 +1007,36 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     setText(expandCommandTemplate(cmd.body ?? "", args));
     setShowSlashMenu(false);
     textareaRef.current?.focus();
+  };
+
+  /** 渲染动作与斜杠命令对应的图标（对齐 Antigravity 统一图标体验） */
+  const renderSlashIcon = (cmd: SlashCommand) => {
+    if (cmd.kind === "skill") {
+      return <Sparkles className="w-3.5 h-3.5 shrink-0 text-amber-500/80" />;
+    }
+    if (cmd.kind === "mcp") {
+      return <Blocks className="w-3.5 h-3.5 shrink-0 text-sky-500/80" />;
+    }
+    if (cmd.kind === "custom") {
+      return <FileText className="w-3.5 h-3.5 shrink-0 text-violet-500/80" />;
+    }
+    switch (cmd.icon || cmd.name) {
+      case "plan":
+        return <ListChecks className="w-3.5 h-3.5 shrink-0 text-[var(--text-secondary)]" />;
+      case "goal":
+        return <Target className="w-3.5 h-3.5 shrink-0 text-[var(--text-secondary)]" />;
+      case "compact":
+      case "compress":
+        return <Minimize2 className="w-3.5 h-3.5 shrink-0 text-[var(--text-secondary)]" />;
+      case "clear":
+        return <Trash2 className="w-3.5 h-3.5 shrink-0 text-[var(--text-secondary)]" />;
+      case "init":
+        return <FileCode className="w-3.5 h-3.5 shrink-0 text-[var(--text-secondary)]" />;
+      case "help":
+        return <HelpCircle className="w-3.5 h-3.5 shrink-0 text-[var(--text-secondary)]" />;
+      default:
+        return <Terminal className="w-3.5 h-3.5 shrink-0 text-[var(--text-secondary)]" />;
+    }
   };
 
   /**
@@ -990,9 +1147,11 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
     }
     // help：把可用命令列表贴回输入框（不发送）
     const lines = [
-      "可用斜杠命令：",
+      "可用斜杠命令与动作：",
       ...BUILTIN_COMMANDS.map((c) => `/${c.name} — ${c.description}`),
-      ...customCommands.map((c) => `/${c.name} — ${c.description}`),
+      ...(skillCommands.length > 0 ? ["\n启用的技能：", ...skillCommands.map((c) => `/${c.name} — ${c.description}`)] : []),
+      ...(mcpCommands.length > 0 ? ["\n启用的 MCP 工具：", ...mcpCommands.map((c) => `/${c.name} — ${c.description}`)] : []),
+      ...(customCommands.length > 0 ? ["\n自定义命令：", ...customCommands.map((c) => `/${c.name} — ${c.description}`)] : []),
     ];
     setText(lines.join("\n"));
     textareaRef.current?.focus();
@@ -1317,37 +1476,81 @@ export const LexicalComposer: React.FC<LexicalComposerProps> = ({
         </div>
       )}
 
-      {/* Slash Command Menu（真实现）：内置命令（宿主执行）+ 工作区自定义命令
-          （.ReinAgent/commands/*.md，模板展开填入输入框） */}
+      {/* Slash Command Menu（动作与命令统一浮层，对齐 Antigravity 交互）：内置动作 + 启用技能 + 启用 MCP + 工作区自定义 */}
       {showSlashMenu && (() => {
         const filtered = slashFiltered;
         return (
-          <div ref={slashMenuRef} data-menu="slash" className="absolute bottom-full left-4 mb-2 w-80 max-h-64 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-lg py-1 text-xs z-50">
-            <div className="sticky top-0 px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)] bg-[var(--capsule-bg)]">
-              {t("slashTitle")}
+          <div
+            ref={slashMenuRef}
+            data-menu="slash"
+            className="absolute bottom-full left-4 mb-2 min-w-[340px] max-w-lg w-full max-h-72 overflow-y-auto rounded-xl border border-[var(--capsule-border)] bg-[var(--capsule-bg)] shadow-xl py-1 text-xs z-50 backdrop-blur-md"
+          >
+            <div className="sticky top-0 px-3 py-1.5 font-semibold text-[var(--text-secondary)] border-b border-[var(--capsule-border)] bg-[var(--capsule-bg)] flex items-center justify-between">
+              <span>{t("slashTitle")}</span>
+              <span className="text-[10px] text-[var(--text-dim)] font-normal">
+                {filtered.length}
+              </span>
             </div>
             {filtered.length === 0 ? (
-              <div className="px-3 py-2 text-[var(--text-secondary)]">{t("slashNoResults")}</div>
+              <div className="px-3 py-3 text-center text-[var(--text-secondary)]">
+                {t("slashNoResults")}
+              </div>
             ) : (
-              filtered.map((cmd, index) => (
-                <button
-                  key={`${cmd.kind}-${cmd.name}`}
-                  type="button"
-                  data-active={index === slashIndex ? "true" : undefined}
-                  onClick={() => selectSlashCommand(cmd)}
-                  className={`w-full text-left px-3 py-1.5 text-[var(--text-primary)] flex flex-col ${
-                    index === slashIndex ? "bg-[var(--surface-hover)]" : "hover:bg-[var(--surface)]"
-                  }`}
-                >
-                  <span className="font-medium flex items-center gap-1.5">
-                    <span className="font-mono">/{cmd.name}</span>
-                    <span className="text-[10px] rounded px-1 py-0.5 bg-[var(--surface)] text-[var(--text-secondary)]">
-                      {cmd.kind === "builtin" ? t("slashBuiltin") : t("slashCustom")}
-                    </span>
-                  </span>
-                  <span className="text-[10px] text-[var(--text-secondary)]">{cmd.description}</span>
-                </button>
-              ))
+              <div className="p-1 space-y-0.5">
+                {filtered.map((cmd, index) => {
+                  const isActive = index === slashIndex;
+                  const tagText =
+                    cmd.kind === "builtin"
+                      ? t("slashBuiltin")
+                      : cmd.kind === "skill"
+                      ? t("slashSkill")
+                      : cmd.kind === "mcp"
+                      ? cmd.offline
+                        ? cmd.sourceLabel
+                          ? `MCP · ${cmd.sourceLabel} · ${t("slashMcpOffline")}`
+                          : `MCP · ${t("slashMcpOffline")}`
+                        : cmd.sourceLabel
+                        ? `MCP · ${cmd.sourceLabel}`
+                        : t("slashMcp")
+                      : t("slashCustom");
+
+                  return (
+                    <button
+                      key={`${cmd.kind}-${cmd.name}-${index}`}
+                      type="button"
+                      data-active={isActive ? "true" : undefined}
+                      onClick={() => selectSlashCommand(cmd)}
+                      title={cmd.description}
+                      className={`w-full text-left px-2.5 py-1.5 rounded-lg text-[var(--text-primary)] flex items-center gap-2.5 transition-colors cursor-pointer ${
+                        isActive
+                          ? "bg-[var(--surface-hover)]"
+                          : "hover:bg-[var(--surface)]"
+                      }`}
+                    >
+                      <div className="shrink-0 flex items-center justify-center w-5 h-5 rounded-md bg-[var(--surface)]">
+                        {renderSlashIcon(cmd)}
+                      </div>
+                      <div className="min-w-0 flex-1 flex items-center gap-2">
+                        <span className="font-mono font-medium text-xs text-[var(--text-primary)] shrink-0">
+                          /{cmd.name}
+                        </span>
+                        <span
+                          className={`text-[9px] rounded px-1 py-0.2 shrink-0 border ${
+                            cmd.offline
+                              ? "bg-amber-500/10 text-amber-500 border-amber-500/30"
+                              : "bg-[var(--surface)] text-[var(--text-secondary)] border-[var(--border)]/40"
+                          }`}
+                        >
+                          {tagText}
+                        </span>
+                        <span className="text-[11px] text-[var(--text-secondary)] truncate min-w-0 flex-1">
+                          {cmd.description}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             )}
           </div>
         );

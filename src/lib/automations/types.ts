@@ -34,6 +34,7 @@ export interface Automation {
   lastError?: string | null;
   createdAt: number;
   updatedAt: number;
+  reuseConversation?: boolean;
 }
 
 export interface AutomationRun {
@@ -56,6 +57,7 @@ export interface AutomationUpsert {
   modelId?: string | null;
   workspacePath?: string | null;
   enabled: boolean;
+  reuseConversation?: boolean;
 }
 
 /** Rust `automation-due` 事件 payload（AutomationDuePayload） */
@@ -67,6 +69,7 @@ export interface AutomationDuePayload {
   workspacePath?: string | null;
   modelProvider?: string | null;
   modelId?: string | null;
+  reuseConversation?: boolean;
 }
 
 export type FrequencyPreset = "hourly" | "daily" | "weekdays" | "weekly" | "monthly" | "custom";

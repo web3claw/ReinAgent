@@ -54,6 +54,8 @@ pub struct Automation {
     pub last_error: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
+    #[serde(default)]
+    pub reuse_conversation: Option<bool>,
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -83,6 +85,8 @@ pub struct AutomationUpsert {
     pub model_id: Option<String>,
     pub workspace_path: Option<String>,
     pub enabled: bool,
+    #[serde(default)]
+    pub reuse_conversation: Option<bool>,
 }
 
 /// 调度派发负载（`automation-due` 事件 payload；run_now 命令的返回值同形）
@@ -96,6 +100,8 @@ pub struct AutomationDuePayload {
     pub workspace_path: Option<String>,
     pub model_provider: Option<String>,
     pub model_id: Option<String>,
+    #[serde(default)]
+    pub reuse_conversation: Option<bool>,
 }
 
 fn now_ms() -> i64 {
@@ -166,6 +172,10 @@ fn open_db() -> Result<Connection, String> {
              ON automation_runs(automation_id, created_at);",
     )
     .map_err(|e| format!("Failed to init automation schema: {}", e))?;
+    let _ = conn.execute(
+        "ALTER TABLE automations ADD COLUMN reuse_conversation INTEGER NOT NULL DEFAULT 1;",
+        [],
+    );
     Ok(conn)
 }
 
@@ -205,6 +215,13 @@ fn row_to_automation(row: &rusqlite::Row) -> rusqlite::Result<Automation> {
             Some(format!("schedule_rule JSON 损坏: {}", e)),
         ),
     };
+    let reuse_conversation = row
+        .get::<_, Option<i64>>("reuse_conversation")
+        .ok()
+        .flatten()
+        .map(|v| v != 0)
+        .or(Some(true));
+
     Ok(Automation {
         automation_id: row.get("automation_id")?,
         title: row.get("title")?,
@@ -222,13 +239,14 @@ fn row_to_automation(row: &rusqlite::Row) -> rusqlite::Result<Automation> {
         last_error,
         created_at: row.get("created_at")?,
         updated_at: row.get("updated_at")?,
+        reuse_conversation,
     })
 }
 
 const AUTOMATION_COLUMNS: &str =
     "automation_id, title, cron_expr, schedule_rule, prompt, model_provider, model_id, \
      workspace_path, enabled, lifecycle_status, run_count, next_run_at, last_run_at, \
-     last_error, created_at, updated_at";
+     last_error, created_at, updated_at, reuse_conversation";
 
 fn get_automation(conn: &Connection, automation_id: &str) -> Result<Option<Automation>, String> {
     let mut stmt = conn
@@ -249,7 +267,7 @@ fn insert_automation(conn: &Connection, automation: &Automation) -> Result<(), S
     conn.execute(
         &format!(
             "INSERT INTO automations ({AUTOMATION_COLUMNS})
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16)"
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17)"
         ),
         rusqlite::params![
             automation.automation_id,
@@ -268,6 +286,7 @@ fn insert_automation(conn: &Connection, automation: &Automation) -> Result<(), S
             automation.last_error,
             automation.created_at,
             automation.updated_at,
+            automation.reuse_conversation.unwrap_or(true) as i64,
         ],
     )
     .map_err(|e| e.to_string())?;
@@ -493,6 +512,7 @@ fn claim_due() -> Result<Vec<AutomationDuePayload>, String> {
             workspace_path: automation.workspace_path,
             model_provider: automation.model_provider,
             model_id: automation.model_id,
+            reuse_conversation: automation.reuse_conversation.or(Some(true)),
         });
     }
     Ok(payloads)
@@ -566,6 +586,7 @@ pub async fn automation_create(upsert: AutomationUpsert) -> Result<Automation, S
             last_error: None,
             created_at: now,
             updated_at: now,
+            reuse_conversation: upsert.reuse_conversation.or(Some(true)),
         };
         let conn = db_conn()?;
         insert_automation(&conn, &automation)?;
@@ -592,7 +613,7 @@ pub async fn automation_update(
         conn.execute(
             "UPDATE automations SET title=?2, cron_expr=?3, schedule_rule=?4, prompt=?5, \
              model_provider=?6, model_id=?7, workspace_path=?8, enabled=?9, lifecycle_status=?10, \
-             next_run_at=?11, updated_at=?12 WHERE automation_id=?1",
+             next_run_at=?11, updated_at=?12, reuse_conversation=?13 WHERE automation_id=?1",
             rusqlite::params![
                 automation_id,
                 upsert.title,
@@ -606,6 +627,7 @@ pub async fn automation_update(
                 if upsert.enabled { "active" } else { "paused" },
                 next,
                 now,
+                upsert.reuse_conversation.unwrap_or(true) as i64,
             ],
         )
         .map_err(|e| e.to_string())?;
@@ -698,6 +720,7 @@ pub async fn automation_run_now(automation_id: String) -> Result<AutomationDuePa
             workspace_path: automation.workspace_path,
             model_provider: automation.model_provider,
             model_id: automation.model_id,
+            reuse_conversation: automation.reuse_conversation.or(Some(true)),
         })
     })
     .await

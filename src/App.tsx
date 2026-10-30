@@ -103,7 +103,7 @@ import * as skillsLib from "./lib/skills/index";
 import { getOsInfo } from "./lib/system/systemInfo";
 import { getTerminalSettings } from "./lib/terminal/terminalSettings";
 import { generateSessionTitle } from "./lib/chat/titleGenerator";
-import { buildContextUsageData } from "./lib/chat/contextUsage";
+import { buildContextUsageData, findLastAssistantUsageMessage } from "./lib/chat/contextUsage";
 import { buildAssistantBindingsPlan } from "./lib/assistants/assistantBindings";
 import { getTools } from "./lib/agent/tools";
 import type { PendingApproval } from "./lib/chat/conversationModel";
@@ -181,7 +181,6 @@ export default function App() {
   // Hub 设置切片订阅：技能/MCP 的启用状态变化驱动上下文容量面板的技能/MCP 分类
   const hubSkillsSettings = useHubSettings((s) => s.settings.skills);
   const hubMcpServers = useHubSettings((s) => s.settings.mcp.servers);
-  const hubSetSettings = useHubSettings((s) => s.setSettings);
 
   // /clear 的二次确认弹窗（复用 checkpoint 回退同款 useConfirmDialog）
   const { confirm: confirmDialog, dialog: confirmDialogNode } = useConfirmDialog();
@@ -708,9 +707,10 @@ export default function App() {
     .join("\n\n");
 
   const contextUsage = useMemo(() => {
-    const lastAssistantApi = [...state.messages]
-      .reverse()
-      .find((m) => m.role === "assistant" && m.apiMessage)?.apiMessage as
+    // 优先倒序寻找最近一条包含有效非零真实用量的 assistant 消息
+    //（避免被中途 stopped / 异常中断产生的 0 用量消息冲刷掉上一轮真实容量）
+    const lastAssistant = findLastAssistantUsageMessage(state.messages);
+    const lastAssistantApi = lastAssistant?.apiMessage as
       | { usage?: { input?: number; output?: number; cacheRead?: number } }
       | undefined;
     const usage = lastAssistantApi?.usage;
@@ -1231,16 +1231,39 @@ export default function App() {
       const providerId = provider.id;
       const apiKey = provider.apiKey ?? "";
       // F5：免 Key 本地网关同样走真实请求（与主对话同口径），仅需 Key 而未配才演示。
-      const isDemo = !apiKey.trim() && !providerAllowsMissingApiKey(provider);
-      const taskId = store.createTask(
-        payload.title,
-        payload.workspacePath ?? null,
-        providerId,
-        modelId,
-        undefined,
-        "full",
-        "automation",
-      );
+      // F21：会话复用模式（默认开启，可在自动化编辑中设置）
+      // 优先在已有会话中寻找专属会话（避免每次运行都在侧边栏产生重复条目）
+      let taskId: string | undefined;
+      const shouldReuse = payload.reuseConversation !== false;
+      if (shouldReuse) {
+        const existingTask = store.tasks.find(
+          (t) =>
+            (payload.automationId && t.automationId === payload.automationId) ||
+            (t.source === "automation" && t.title === payload.title),
+        );
+        if (existingTask) {
+          taskId = existingTask.id;
+          if (!existingTask.automationId && payload.automationId) {
+            existingTask.automationId = payload.automationId;
+          }
+          if (existingTask.providerId !== providerId || existingTask.modelId !== modelId) {
+            store.updateTaskModel(taskId, providerId, modelId);
+          }
+        }
+      }
+
+      if (!taskId) {
+        taskId = store.createTask(
+          payload.title,
+          payload.workspacePath ?? null,
+          providerId,
+          modelId,
+          undefined,
+          "full",
+          "automation",
+          payload.automationId,
+        );
+      }
       const accepted = poolSend(taskId, payload.prompt, {
         source: isDemo ? "faux" : (providerId as never),
         config: {
@@ -2297,27 +2320,8 @@ export default function App() {
                         if (plan.taskThinkingLevel) {
                           updateTaskThinkingLevel(activeTaskId, plan.taskThinkingLevel);
                         }
-                        if (plan.skillSelection) {
-                          hubSetSettings((prev) => ({
-                            ...prev,
-                            skills: { ...prev.skills, selected: plan.skillSelection! },
-                          }));
-                        }
-                        if (plan.mcpEnabledIds) {
-                          const enabledSet = new Set(plan.mcpEnabledIds);
-                          hubSetSettings((prev) => ({
-                            ...prev,
-                            mcp: {
-                              ...prev.mcp,
-                              servers: prev.mcp.servers.map((srv) => ({
-                                ...srv,
-                                enabled: enabledSet.has(srv.id),
-                              })),
-                            },
-                          }));
-                        }
                         if (plan.summary) {
-                          toast.success(`已应用助手绑定：${plan.summary}`);
+                          toast.success(`已切换助手：${def?.name || id}（${plan.summary}）`);
                         }
                       })();
                     } else {

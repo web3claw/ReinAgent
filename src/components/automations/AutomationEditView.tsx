@@ -38,6 +38,7 @@ export function AutomationEditView(props: AutomationEditViewProps) {
   );
   const [providerId, setProviderId] = useState(automation?.modelProvider ?? defaultProviderId);
   const [modelId, setModelId] = useState(automation?.modelId ?? defaultModelId);
+  const [reuseConversation, setReuseConversation] = useState(automation?.reuseConversation ?? true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -98,6 +99,7 @@ export function AutomationEditView(props: AutomationEditViewProps) {
         modelId,
         workspacePath: workspacePath ?? null,
         enabled: automation?.enabled ?? true,
+        reuseConversation,
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -308,6 +310,47 @@ export function AutomationEditView(props: AutomationEditViewProps) {
           <Field label={t("automationsFieldWorkspace")}>
             <div className="rounded-xl border border-[var(--border)] bg-[var(--bg-card)] px-3 py-2 text-ui-xs text-[var(--text-dim)]">
               {workspacePath || t("automationsFieldWorkspaceDefault")}
+            </div>
+          </Field>
+
+          {/* 会话运行模式：复用固定会话 vs 每次新建独立会话 */}
+          <Field label={t("automationsFieldConversationMode")}>
+            <div className="flex flex-col gap-2 rounded-xl border border-[var(--border)] bg-[var(--bg-card)] p-3 text-ui-xs">
+              <label className="flex items-start gap-2.5 cursor-pointer">
+                <input
+                  type="radio"
+                  name="conversationMode"
+                  checked={reuseConversation}
+                  onChange={() => setReuseConversation(true)}
+                  className="mt-0.5 text-[var(--brand)] focus:ring-[var(--brand)]"
+                />
+                <div className="flex flex-col">
+                  <span className="font-medium text-[var(--text)]">
+                    {t("automationsConversationModeReuse")}
+                  </span>
+                  <span className="text-[11px] text-[var(--text-dim)]">
+                    {t("automationsConversationModeReuseDesc")}
+                  </span>
+                </div>
+              </label>
+
+              <label className="flex items-start gap-2.5 cursor-pointer pt-2 border-t border-[var(--border)]/40">
+                <input
+                  type="radio"
+                  name="conversationMode"
+                  checked={!reuseConversation}
+                  onChange={() => setReuseConversation(false)}
+                  className="mt-0.5 text-[var(--brand)] focus:ring-[var(--brand)]"
+                />
+                <div className="flex flex-col">
+                  <span className="font-medium text-[var(--text)]">
+                    {t("automationsConversationModeNew")}
+                  </span>
+                  <span className="text-[11px] text-[var(--text-dim)]">
+                    {t("automationsConversationModeNewDesc")}
+                  </span>
+                </div>
+              </label>
             </div>
           </Field>
 
