@@ -124,9 +124,32 @@ export const MarkdownBlockRenderer: React.FC<MarkdownBlockRendererProps> = React
             }
 
             return (
-              <code className={className} {...props}>
+              <code className={`[overflow-wrap:anywhere] break-words ${className || ""}`} {...props}>
                 {children}
               </code>
+            );
+          },
+          table({ children, ...props }: any) {
+            return (
+              <div className="w-full my-2.5 overflow-x-auto rounded-lg border border-[var(--border)]">
+                <table className="w-full text-left text-xs border-collapse" {...props}>
+                  {children}
+                </table>
+              </div>
+            );
+          },
+          th({ children, ...props }: any) {
+            return (
+              <th className="px-3 py-2 bg-[var(--surface-hover)] font-semibold border-b border-[var(--border)] text-[var(--text)] whitespace-nowrap" {...props}>
+                {children}
+              </th>
+            );
+          },
+          td({ children, ...props }: any) {
+            return (
+              <td className="px-3 py-1.5 border-b border-[var(--border)] [overflow-wrap:anywhere] break-words text-[var(--text)]" {...props}>
+                {children}
+              </td>
             );
           },
         }}

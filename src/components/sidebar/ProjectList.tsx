@@ -3,6 +3,7 @@ import { useTranslation } from '../../i18n';
 import { useAppStore } from '../../store/useAppStore';
 import { subscribeStreaming, getStreamingTaskIds, subscribePendingApprovals, getPendingApprovalTaskIds } from '../../lib/chat/conversationPool';
 import { kvGet, kvGetJSON, kvSet, kvSetJSON } from '../../lib/storage/db';
+import { isReinBotTask } from '../../lib/reinbot/reinBotTools';
 import { Tooltip } from '../ui/Tooltip';
 import {
   ChevronDown,
@@ -443,11 +444,11 @@ export function ProjectList({
     window.addEventListener("mouseup", handleMouseUp);
   };
 
-  // Consolidate userProjects and propProjects
+  // Consolidate userProjects and propProjects (排除 ReinBot 专属任务，ReinBot 任务仅在右侧工作台呈现)
   const allProjectItems = [
     ...userProjects.map((p) => {
       const displayName = p.split(/[\\/]/).filter(Boolean).pop() || p;
-      const projectTasks = tasks.filter((t) => t.project === p || t.project === displayName);
+      const projectTasks = tasks.filter((t) => (t.project === p || t.project === displayName) && !isReinBotTask(t));
       return {
         path: p,
         displayName,
@@ -461,18 +462,18 @@ export function ProjectList({
         path: pg.name,
         displayName: pg.name,
         isUserProject: false,
-        tasks: tasks.filter((t) => t.project === pg.name),
+        tasks: tasks.filter((t) => t.project === pg.name && !isReinBotTask(t)),
         children: pg.children,
       })),
   ];
 
   // 「任务」区 = 无项目任务 + 项目组未收录的任务（project 指向不在 projects 列表里的
-  // 路径，如导入会话的原始项目路径）——否则数据存在但侧栏永不渲染（隐形任务）。
+  // 路径，如导入会话的原始项目路径）——排除 ReinBot 任务（!isReinBotTask(task)）。
   const groupedProjectTasks = new Set(
     allProjectItems.flatMap((pg) => pg.tasks.map((t) => t.id)),
   );
   const globalTasks = tasks
-    .filter((task) => !task.project || !groupedProjectTasks.has(task.id))
+    .filter((task) => (!task.project || !groupedProjectTasks.has(task.id)) && !isReinBotTask(task))
     .sort((a, b) => {
       // Pinned tasks go first
       if (a.pinned && !b.pinned) return -1;

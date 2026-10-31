@@ -49,7 +49,7 @@
       </button>
       <a class="btn btn-primary" href="https://github.com/web3claw/ReinAgent/releases/latest">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11m0 0 4-4m-4 4-4-4M5 19h14"/></svg>
-        下载 <span data-latest-version>v0.2.20</span>
+        下载 <span data-latest-version>v0.3.0</span>
       </a>
     </div>
   </div>
@@ -57,7 +57,7 @@
 <main id="main">
   <section class="hero">
     <div class="wrap hero-copy">
-        <span class="tag">当前版本 <span data-latest-version>v0.2.20</span> · MIT · 本地优先</span>
+        <span class="tag">当前版本 <span data-latest-version>v0.3.0</span> · MIT · 本地优先</span>
         <h1>高性能、自主可控的本地优先 AI 编程与桌面 Agent 工作台</h1>
         <p class="lede">ReinAgent 把对话、任务、代码改动与模型配置放进同一套本地底座：Tauri 2（Rust）负责系统能力与持久化，React 19 前端负责界面与 Agent 回路，数据落在本地 SQLite WAL。模型调用只发往你自己配置的供应商。</p>
         <div class="hero-cta">
@@ -82,6 +82,10 @@
         <p>对话、任务、代码改动与模型配置共用一份本地数据；切换任务自动还原专属模型与推理等级，新建任务不产生配置污染。</p>
       </div>
       <div class="grid grid-3">
+        <div class="card">
+          <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="2"/><path d="M12 7v4m-4 5v2m8-2v2"/></svg></span>ReinBot 主动研发总管与工作台</h3>
+          <p>本地主动型自主智能体，置顶侧栏首位；左右分栏对话与 Multi-Tab 工作台无缝调度，专属目录任务闭环派发、工牌认证、产物实时预览与一键管理。</p>
+        </div>
         <div class="card">
           <h3><span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M9 16V8h4a2.5 2.5 0 0 1 0 5H9"/></svg></span>本地优先与绿色单文件</h3>
           <p>所有会话历史、任务时间线、代码改动快照、模型密钥与配置 100% 留在本地（SQLite WAL + JSON）。提供免装 Node.js / Python / Rust 的独立绿色可执行文件，解压即跑。</p>

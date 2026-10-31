@@ -37,6 +37,48 @@ export function getDefaultWorkspaceRoot(): string {
 }
 
 /**
+ * 获取 ReinBot 专属工作区路径：~/.ReinAgent/ReinBot
+ * 主目录未知时返回空串。
+ */
+export function getReinBotWorkspaceRoot(): string {
+  if (typeof window !== "undefined") {
+    const cached = kvGet("reinagent-user-home");
+    if (cached && cached.trim().length > 0) {
+      return normalizePath(`${cached.trim().replace(/\/+$/, "")}/.ReinAgent/ReinBot`);
+    }
+  }
+
+  if (typeof process !== "undefined" && process.env) {
+    const home = process.env.HOME || process.env.USERPROFILE;
+    if (home) {
+      return normalizePath(`${home.replace(/\/+$/, "")}/.ReinAgent/ReinBot`);
+    }
+  }
+
+  return "";
+}
+
+/**
+ * 确保 ReinBot 专属工作区目录存在，若不存在自动创建。
+ */
+export async function ensureReinBotWorkspace(): Promise<string> {
+  const root = getReinBotWorkspaceRoot();
+  if (!root) return "";
+  if (typeof window !== "undefined") {
+    try {
+      const { invoke } = await import("@tauri-apps/api/core");
+      const exists = await invoke<boolean>("fs_path_exists", { path: root });
+      if (!exists) {
+        await invoke("fs_create_dir", { path: root });
+      }
+    } catch (err) {
+      console.warn("[ReinBot] ensureReinBotWorkspace failed:", err);
+    }
+  }
+  return root;
+}
+
+/**
  * 从 Tauri 后端拉取真实用户主目录并写入 `reinagent-user-home` 缓存。
  * Web / 无头浏览器环境下后端不可达，返回 null（保留既有缓存，供桌面端使用过的场景）。
  */

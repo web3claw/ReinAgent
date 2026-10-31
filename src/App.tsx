@@ -127,6 +127,7 @@ import { GraphPage } from "./components/knowledge/GraphPage";
 import { pushNotification } from "./lib/inbox/api";
 import { WikiPage } from "./components/wiki/WikiPage";
 import { AppsPage } from "./components/apps/AppsPage";
+import { ReinBotPage } from "./components/reinbot/ReinBotPage";
 import { loadProvidersConfigFromDisk, providerAllowsMissingApiKey, resolveSupportedEffortLevels, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe, Gauge, X
@@ -1326,6 +1327,37 @@ export default function App() {
     [providers, settings],
   );
 
+  // ReinBot / 智能体创建新任务后自动派发并启动执行
+  const handleDispatchCreatedTask = useCallback(
+    (taskId: string, prompt: string, workspacePath?: string) => {
+      const store = useAppStore.getState();
+      const task = store.tasks.find((t) => t.id === taskId);
+      const targetProviderId = task?.providerId || activeProviderId || "deepseek";
+      const targetModelId = task?.modelId || activeModelId || "";
+      const provider = providers.find((p) => p.id === targetProviderId);
+      const targetModel = provider?.models.find((m) => m.id === targetModelId);
+
+      const options = buildTurnOptions(undefined, undefined, taskId);
+      poolSend(taskId, prompt, {
+        ...options,
+        source: isDemo ? "faux" : (targetProviderId as never),
+        config: {
+          provider: targetProviderId as never,
+          apiKey: provider?.apiKey ?? activeApiKey,
+          modelId: targetModelId,
+          baseUrl: provider?.baseUrl ?? activeBaseUrl,
+          apiFormat: provider?.apiFormat ?? currentProvider?.apiFormat,
+          hasEffort: isReasoningSupported,
+          contextWindow: targetModel?.contextWindow ?? null,
+          maxOutputTokens: targetModel?.maxOutputTokens ?? null,
+          supportsImage: targetModel?.supportsImage ?? null,
+        },
+        workspaceRoot: resolveWorkspaceRoot(workspacePath ?? task?.project ?? null),
+      });
+    },
+    [activeProviderId, activeModelId, activeApiKey, activeBaseUrl, currentProvider, providers, isDemo, isReasoningSupported, buildTurnOptions],
+  );
+
   // ref 保持最新派发器身份：automation-due 事件监听只注册一次
   const dispatchAutomationRunRef = useRef(dispatchAutomationRun);
   dispatchAutomationRunRef.current = dispatchAutomationRun;
@@ -2466,7 +2498,23 @@ export default function App() {
 
         {/* Chat / Composer Area（automations/skills/mcp/memory 视图也保留侧边栏与顶栏，主区切换内容） */}
         <div className="flex-1 flex flex-col overflow-hidden relative">
-          {currentView === "apps" ? (
+          {currentView === "reinbot" ? (
+            <ReinBotPage
+              workspaceRoot={effectiveWorkspaceRoot || undefined}
+              providerId={activeProviderId}
+              modelId={activeModelId}
+              apiKey={activeApiKey}
+              baseUrl={activeBaseUrl}
+              source={source}
+              apiFormat={currentProvider?.apiFormat}
+              onOpenSttSettings={() => {
+                setSettingsInitialTab("stt");
+                setCurrentView("settings");
+              }}
+              onRegisterPushToTalk={registerPushToTalk}
+              onDispatchTask={handleDispatchCreatedTask}
+            />
+          ) : currentView === "apps" ? (
             <AppsPage
               onNavigate={(view) => setCurrentView(view)}
               onOpenPlugins={() => {

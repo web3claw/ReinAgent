@@ -6,8 +6,8 @@ import { KV_ASSISTANT_DEFAULT } from "../lib/assistants/assistantDefs";
 export type ThemeMode = "dark" | "light";
 export type LocaleMode = "zh-CN" | "en-US";
 /** workbench=聊天工作台 / settings=设置 / automations=自动化定时任务 /
- *  skills / mcp / memory=资源中心页 / notes=笔记本 / apps=应用中心 */
-export type ViewMode = "workbench" | "settings" | "automations" | "kanban" | "assistants" | "notes" | "apps" | "graph" | "wiki" | "skills" | "mcp" | "memory";
+ *  skills / mcp / memory=资源中心页 / notes=笔记本 / apps=应用中心 / reinbot=本地主动智能体 */
+export type ViewMode = "workbench" | "settings" | "automations" | "kanban" | "assistants" | "notes" | "apps" | "graph" | "wiki" | "skills" | "mcp" | "memory" | "reinbot";
 export type ThinkingLevel = "off" | "default" | "low" | "medium" | "high" | "xhigh" | "max";
 /** 审批模式（对齐 ZCode 用户可切面）：plan=计划模式 ask=变更前确认 edit=自动编辑 full=完全访问。 */
 export type ApprovalMode = "plan" | "ask" | "edit" | "full";
@@ -54,6 +54,7 @@ interface AppState {
   isSettingsOpen: boolean;
   isSidebarOpen: boolean;
   currentView: ViewMode;
+  reinBotName: string;
   thinkingLevel: ThinkingLevel;
   approvalMode: ApprovalMode;
   selectedProject: string | null;
@@ -66,6 +67,7 @@ interface AppState {
   toggleTheme: () => void;
   setLocale: (locale: LocaleMode) => void;
   toggleLocale: () => void;
+  setReinBotName: (name: string) => void;
   setTerminalOpen: (open: boolean) => void;
   toggleTerminal: () => void;
   setSettingsOpen: (open: boolean) => void;
@@ -269,6 +271,14 @@ const getInitialProjects = (): string[] => {
   return [];
 };
 
+const getInitialReinBotName = (): string => {
+  if (typeof window !== "undefined") {
+    const saved = kvGet("reinagent-reinbot-name");
+    if (saved && saved.trim()) return saved.trim();
+  }
+  return "ReinBot";
+};
+
 const initialTasks = getInitialTasks();
 const initialProjects = getInitialProjects();
 const initialActiveTaskId = getInitialActiveTaskId(initialTasks);
@@ -282,6 +292,14 @@ export const useAppStore = create<AppState>((set) => ({
   codeViewerSource: null,
   isSidebarOpen: getInitialSidebarOpen(),
   currentView: "workbench",
+  reinBotName: getInitialReinBotName(),
+  setReinBotName: (name: string) => {
+    const trimmed = name.trim() || "ReinBot";
+    if (typeof window !== "undefined") {
+      kvSet("reinagent-reinbot-name", trimmed);
+    }
+    set({ reinBotName: trimmed });
+  },
   globalDefaultAssistantId: getInitialGlobalAssistant(),
   thinkingLevel: getInitialThinkingLevel(),
   approvalMode: getInitialApprovalMode(),
@@ -705,6 +723,7 @@ export const useAppStore = create<AppState>((set) => ({
         selectedProject:
           (activeTaskId ? tasks.find((t) => t.id === activeTaskId)?.project : null) ?? null,
         projects: getInitialProjects(),
+        reinBotName: getInitialReinBotName(),
         thinkingLevel: getInitialThinkingLevel(),
         approvalMode: getInitialApprovalMode(),
         globalDefaultAssistantId: getInitialGlobalAssistant(),

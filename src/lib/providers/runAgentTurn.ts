@@ -215,6 +215,8 @@ export interface RunAgentTurnParams {
   conversationId?: string;
   /** 检查点上下文（对齐 LiveAgent）：本轮写文件前捕获前像，供「回退本轮代码改动」。 */
   checkpoint?: { conversationId: string; turnId: string; root?: string };
+  /** 外部挂载的额外专属工具（如 ReinBot 专属的 create_task 工具） */
+  extraTools?: unknown[];
   onEvent: (ev: AgentEvent, signal?: AbortSignal) => void | Promise<void>;
 }
 
@@ -483,6 +485,8 @@ export interface TurnAssemblyParams {
   goal?: TaskGoal | null;
   /** 知识库注入开关（任务级显式 ?? 全局默认，发送时解析；缺省 false=不注入）。 */
   knowledgeEnabled?: boolean;
+  /** 外部挂载的额外专属工具 */
+  extraTools?: unknown[];
   /** 是否执行 SessionStart hooks（缺省 true；预览传 false） */
   runSessionStartHooks?: boolean;
 }
@@ -557,6 +561,9 @@ export async function assembleTurnContext(params: TurnAssemblyParams): Promise<T
       }
     }
     const allTools: unknown[] = [...tools, ...mcpTools];
+    if (Array.isArray(params.extraTools) && params.extraTools.length > 0) {
+      allTools.push(...params.extraTools);
+    }
     // AskUserQuestion 工具（P1-3）：模型向用户提问，挂起等待提问卡作答。
     // 仅在有审批协调器时挂（协调器由池注入——Web 无后端场景不挂，工具不存在即不误调）。
     if (approval) {
@@ -848,6 +855,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     toolPolicies,
     checkpoint,
     conversationId,
+    extraTools,
   } = params;
 
   const assembly = await assembleTurnContext({
@@ -862,6 +870,7 @@ export async function runAgentTurn(params: RunAgentTurnParams): Promise<RunTurnR
     ...(approval === undefined ? {} : { approval }),
     ...(checkpoint === undefined ? {} : { checkpoint }),
     ...(conversationId ? { conversationId } : {}),
+    ...(extraTools ? { extraTools } : {}),
     runSessionStartHooks: true,
   });
   const effectiveSystemPrompt = assembly.systemPrompt;

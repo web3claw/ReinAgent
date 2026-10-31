@@ -146,6 +146,7 @@ export function WorkspaceSidebar({
 }) {
   const { t } = useTranslation();
   const isSidebarOpen = useAppStore(state => state.isSidebarOpen);
+  const currentView = useAppStore(state => state.currentView);
   const setCurrentView = useAppStore(state => state.setCurrentView);
   const theme = useAppStore(state => state.theme);
   const toggleTheme = useAppStore(state => state.toggleTheme);
@@ -201,6 +202,26 @@ export function WorkspaceSidebar({
           自动化下方为 Skills / MCP / 记忆（照抄 LiveAgent sidebarShortcuts，图标 lucide 同款）；
           插件市场占位已删除。 */}
       <div className="flex flex-col gap-1 p-3">
+        {/* ReinBot 本地主动智能体入口（顶置第一位） */}
+        <button
+          onClick={() => setCurrentView('reinbot')}
+          className={`flex items-center justify-between w-full px-3 py-2 transition-colors rounded-md cursor-pointer ${
+            currentView === 'reinbot'
+              ? 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-active)] font-medium shadow-xs'
+              : 'text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)]'
+          }`}
+        >
+          <div className="flex items-center gap-2">
+            <div className="relative flex items-center justify-center">
+              <Bot className="w-4 h-4 text-[var(--brand)]" />
+              <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-[var(--success-text)] border border-[var(--sidebar-bg)]" />
+            </div>
+            <span className="text-sm font-semibold">{t('reinbotNav')}</span>
+          </div>
+          <span className="text-[10px] font-mono text-[var(--text-muted)] bg-[var(--surface)] px-1.5 py-0.5 rounded border border-[var(--border)]">
+            AI
+          </span>
+        </button>
         <button
           onClick={handleNewTask}
           className="flex items-center justify-between w-full px-3 py-2 text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text-active)] transition-colors rounded-md"

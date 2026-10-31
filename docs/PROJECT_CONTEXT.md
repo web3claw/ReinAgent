@@ -44,6 +44,12 @@ ReinAgent 架构全景
 │   ├── src/components/
 │   │   ├── apps/
 │   │   │   └── AppsPage.tsx            # 应用中心（Apps 启动台）：Squircle 大圆角彩色网格启动台
+│   │   ├── reinbot/
+│   │   │   ├── ReinBotPage.tsx         # 本地主动智能体主页：管家式对话流与左右分屏调度
+│   │   │   ├── ReinBotBadge.tsx        # 电子工牌卡片（金属夹扣、昵称修改、状态与工号）
+│   │   │   ├── ReinBotWorkspace.tsx    # 右侧工作台（工作台 Tab、最近任务与工作产物）
+│   │   │   ├── ReinBotTaskDetail.tsx   # 任务详情标签页（内嵌会话时间线与实时流，纯净标题栏与关闭回退）
+│   │   │   └── ReinBotFileViewer.tsx   # 产物文件预览标签页（Markdown 排版渲染、复制、关闭回退）
 │   │   ├── sidebar/
 │   │   │   ├── WorkspaceSidebar.tsx    # 侧边栏主体：品牌 Header、快捷操作、分组/项目 Tab、用户信息
 │   │   │   └── ProjectList.tsx         # 项目与任务类目：折叠展开、长按拖拽重排、Tooltip 触发、时间流
@@ -109,6 +115,72 @@ ReinAgent 架构全景
 - **精致悬浮提示（Radix Tooltip）**：
   - 项目右侧 `+` 按钮：悬停显示 `新建项目` / `New Project`。
   - 任务右侧 `MessageSquarePlus` 按钮：悬停显示 `新建任务` / `New Task`。
+
+### 1.1 ReinBot 本地主动型异步自主智能体（Chief of Staff）
+- **侧边栏常驻入口**：置顶于侧边栏最顶端（第 1 位，高于「新建任务」），拥有专属机器人图标、呼吸状态微光点及 AI 标记。
+- **定位**：区别于普通单次提问任务，ReinBot 作为本地管家与研发总管，统筹长程任务规划、拆解派发、工作产物汇总与主动唤醒汇报。
+- **左右分栏交互架构**：
+  - **左侧对话流**：
+    - 顶部居中状态胶囊（`ReinBot · 跟进你的所有任务`）；
+    - 贴心管家开场白与实时应答；
+    - 底部悬浮输入胶囊（支持加号附件、直接输入与语音输入）。
+  - **右侧多标签页容器（ReinBot Workspace & Multi-Tab Container）**：
+    - **顶部多标签页（Multi-tab Header）**：
+      - **第 1 个固定标签**：`工作台`（ReinBot 专属工作台，包含电子工牌、最近任务与工作产物扫描，固定不可关闭）；
+      - **动态标签**：
+        - `任务详情`（点击消息中的 `@任务[xxx]` 胶囊或右侧最近任务卡片时内嵌打开，带关闭 ✕ 按钮，顶部带有 `[ 🤖 由 {reinBotName} 发送 ]` 专属标识，完整展示该任务的会话时间线、工具调用与执行步骤；标题栏保持纯净，移除跳转主工作台的冗余按钮，防止跳出 ReinBot 独立闭环；关闭后自动回退至工作台）；
+        - `文件预览`（点击工作产物列表中的 `.md` 或其他文件时新建标签打开，支持 MarkdownText 精美排版渲染、代码块等宽查看、路径及一键复制，右上角带关闭 ✕ 按钮；点击列表 📁 文件夹图标直接唤起系统默认文件浏览器定位至产物目录）；
+    - **视口内智能放大（In-viewport Expand）**：点击右上角放大按钮，多标签容器在主工作区内最大化并隐藏左侧聊天流，同时**完整保留左侧边栏（Sidebar）**，不干扰全局项目/任务导航；再次点击一键还原分屏；
+    - **电子工牌（ID Badge）**：金属挂绳夹质感、头像、绿色官方认证徽章、点击即时改名并持久化、工号 `No.001 · ReinBot`、连接与守护状态条；
+    - **左/右侧边栏任务数据彻底隔离分流**：
+      - **左侧边栏（`WorkspaceSidebar` / `ProjectList`）**：彻底排除过滤所有 `source === "reinbot"` 的任务，默认任务区纯净保留用户自建工程任务；
+      - **右侧边栏（`ReinBotWorkspace`）**：最近任务仅展示 `source === "reinbot"` 的任务卡片，每个任务卡片右侧配备「**🗑️ 一键删除任务**」图标按钮（`Trash2`，点击调用 `deleteTask` 彻底清理任务会话与检查点，若当前处于该任务标签页则联动关闭并回退至工作台）；下方工作产物仅扫描 `~/.ReinAgent/ReinBot/` 目录；
+    - **工作产物（Artifacts Hub）**：独立锁定在 ReinBot 专属工作区目录 `~/.ReinAgent/ReinBot/`（`getReinBotWorkspaceRoot` / `ensureReinBotWorkspace` 自动建目录保障）；通过 Tauri `fs_list_dir` 真实扫描并展示产物文件（带文件类型图标），每个产物右侧配备「**📁 所在目录打开**」与「**🗑️ 一键删除产物**」图标按钮（点击调用 `fs_remove_entry` 真实移除磁盘文件并刷新列表，若当前处于该文件预览标签页则联动关闭并回退至工作台）；右上角配备「产物目录」快速打开按钮（`open_in_file_manager`）与刷新按钮；
+  - **对话流增强（防文字撑破、时间戳规则、复制/回复与任务状态动态呈现）**：
+    - **防文字撑破（Anti-Overflow）**：消息气泡增加 `min-w-0`、`break-words` 与 `[overflow-wrap:anywhere]` 约束；Markdown 表格外部自动包裹 `overflow-x-auto` 容器，行内代码与长 IP/哈希强制折行，彻底消除无空格超长字符串向右溢出气泡外的缺陷；
+    - **时间戳规则**：严格**仅对“我发送的消息”（用户消息）**显示时间（格式如 `08:30`），机器人回复不显示时间戳；
+    - **复制与回复按钮**：所有消息（用户与机器人）均配备「复制」（复制正文并弹出 Toast）与「回复」（在底部输入框上方激活引用预览条，发送时自动携带引用上下文）按钮；
+    - **任务状态实时图标**：消息气泡中的 `@任务[xxx]` 胶囊与卡片接入会话池实时状态（`getTaskExecutionStatus`），执行中显示转圈动画（`Loader2`），执行成功显示绿色对勾（`CheckCircle2`），执行失败显示红色告警（`AlertCircle`）；
+- **智能管家对话创建任务（方案 D：Chief of Staff 专属任务创建工具）**：
+  - 研发总管专属模块 `src/lib/reinbot/reinBotTools.ts`：定义 `create_task` 工具（入参包含 `title`、`initialPrompt`、`project`、`autoRun`，自动标记 `source: "reinbot"`）；
+  - ReinBot 在对话中接收到用户创建、排查或派发任务的意图时，主动调用 `create_task` 在 Store 与 SQLite 中真实落库新任务；
+  - **自动派发与后台执行闭环（Auto-Dispatch Pipeline）**：打通 `onDispatchTask` 与 `poolSend`，任务创建后立即自动启动后台 Agent 执行 `initialPrompt`（若不自动运行则触发预填事件到输入框），杜绝未启动任务点击进入后呈现空白主页（EmptyState）的问题；
+  - 默认将任务工作区绑定为 `~/.ReinAgent/ReinBot/`（若用户未指定全局/其他项目）；
+  - 任务创建完成后，ReinBot 使用 `@任务[任务名]` 格式汇报，配合气泡内的交互式任务胶囊，用户点击即可秒级在右侧边栏打开该任务的详情标签页，实时查看正在执行的 Agent 时间线；
+- **专属独立工作空间与产物路径**：
+  - ReinBot 的根工作区与产物存放路径完全独立于普通工程任务，锁定于 `~/.ReinAgent/ReinBot/`；
+  - `systemPrompt` 明确告知大模型其专属工作目录，生成的架构设计方案、分析文档与临时产物均规范保存在该目录下，杜绝污染用户当前打开的外部业务代码仓；
+- **真实大模型流式对话与模型自由切换下拉框**：
+  - **顶部居中胶囊旁独立模型选择器**：位于 `ReinBot` 状态胶囊右侧，采用精致圆角小药丸设计（`rounded-full`），宽度设为 `w-72`（288px）与下方展开的下拉菜单 100% 垂直等宽对齐；
+  - **触发按钮与下拉列表 1:1 完整复刻任务对话（LexicalComposer）元数据徽标**：
+    - **复合模型 ID 安全解析（`src/lib/reinbot/modelKeyResolver.ts`）**：采用 `:::` 安全分隔符，向下兼容单斜杠老格式，彻底规避 WorkBuddy / Magpie / OpenRouter 等自带斜杠模型 ID（如 `workbuddy/deepseek-v4.1-flash`）被错误截断为单独前缀（如 `workbuddy`）的缺陷；
+    - **触发按钮完整呈现**：左侧展示品牌状态圆点 + 完整模型名称（超长文字平滑截断），右侧紧随展示真实上下文容量标签（如 `1M`、`200K` 等）与多模态徽标（`视觉`），最右侧为流畅旋转指示箭头 `ChevronDown`；
+    - **下拉菜单精致排布**：精确继承服务商大写分组（如 `DEEPSEEK`、`GONKAROUTER`、`MAGPIE` 等）与选中项高亮圆角样式（`bg-[var(--accent)] text-[var(--accent-contrast)]` 配合左侧指示圆点），每项均展示上下文与视觉徽标；
+  - **偏好持久化记忆**：选中的模型持久化于 `reinagent-reinbot-selected-model`，若未指定则始终无感跟随全局默认；
+  - 注入 ReinBot 专属管家 System Prompt，能亲切、智能地应对日常问答、技术探讨与工程任务规划拆解，支持 Markdown 渲染与停止生成。
+- **全功能语音输入（STT）与快捷键完全对齐**：
+  - 对接底层 `useComposerStt` 与原生音频传输桥 `desktopSttTransport`，打通 Tauri Rust 原生录音与火山引擎/云端 WebSocket 识别；
+  - 支持点击麦克风切换录音/停止（附带声波高亮波纹与 Loader2 缓冲动效）；
+  - **右 Ctrl 长按说话（Push-to-Talk）**：在 ReinBot 视口下长按键盘右 Ctrl 开始录音说话，松开自动完成转写并填入输入框，快捷键体验与普通对话框 100% 一致。
+- **输入胶囊加号弹出菜单（方案 A：附件与关联任务二合一）**：
+  - **交互体验**：点击输入胶囊左侧「+」加号按钮展开快捷浮层菜单（加号带 45° 顺滑旋转动效），支持点击外部空白或按下 `ESC` 自动收起；
+  - **📎 上传附件 / 图片与剪贴板快捷粘贴（Paste Image & Vision Multimodal）**：
+    - 集成 Tauri 原生文件选择对话框（`fs_pick_files`），多选支持，图片自动读取 Base64 缩略图；
+    - **Ctrl+V 粘贴路由与异常提示（1:1 对齐任务对话框 LexicalComposer）**：对标 `LexicalComposer` 仅在焦点输入框 `<input>` 独立挂载 `handleTextareaPaste` 并显式 `e.stopPropagation()`，移除外层容器多余监听以消除 DOM 事件冒泡重叠，同时配合 `isPastingImageRef` 互斥防抖锁，保证单次粘贴操作绝对只触发一次读图与单个 Toast 弹窗；采用与任务工作台相同的 `classifyPaste` 策略（DOM 图片文件、超长文本附件落盘、无内容走 WebKitGTK 原生读图 `clipboard_read_image` 兜底、普通文本放行）；当 Linux 环境下缺少 `wl-paste` 或 `xclip` 时，严格弹出与任务对话框完全相同的红底 Toast 报错提示（`toast.error(t("pasteImageReadFailed").replace("{message}", message))`），杜绝静默失败；图片写入 `.ReinAgent/.temp/pasted/` 暂存后呈现预览条；
+    - **多模态直通**：发送消息时，若所选模型具备视觉支持，`ReinBotPage` 严格将当前生效模型的 `supportsImage: true`、`contextWindow` 与 `maxOutputTokens` 传入 `runAgentTurn`，确保 `modelFactory` 生成 `input: ["text", "image"]`，并使用 `fs_read_attachment_base64` 作为原图读取双保险，避免被 `pi-ai` 静默降级拦截，100% 完整交付给多模态大模型进行深度图像解析；气泡与历史记录无缝持久化；
+  - **🔗 关联已有任务**：在浮层内展开任务选择子视图，直读 `useAppStore.tasks`，点击目标任务将其以 `@任务[<任务名>] ` 格式插入输入框，便于 ReinBot 提取上下文展开任务跟进、进度汇总与诊断；
+  - **任务历史上下文自动解析与注入（Task Context Resolver）**：
+    - 研发总管专属模块 `src/lib/reinbot/taskContextResolver.ts`：自动提取输入中的 `@任务[xxx]` 标签并精准映射到对应任务；
+    - 深度穿透 SQLite `conversation_load_page` 分页读取该任务的真实历史对话（包含用户意图、AI 回复、工具调用及错误反馈），提炼后作为结构化背景注入 `systemPrompt`，使 ReinBot 具备对任意历史任务执行过程的全局把控与精准复盘能力；
+  - **气泡内交互式任务胶囊（Interactive Task Pill）**：
+    - 用户发送的气泡中，`@任务[xxx]` 自动升格渲染为半透明交互胶囊（带 `Link2` 链接图标与 Tooltip）；
+    - 点击任务胶囊即可一键唤醒工作台路由切换（`setActiveTaskId` + `setCurrentView("workbench")`），秒级直达该任务的原生完整时间线与代码 diff。
+  - **双语国际化支持**：中英文完整覆盖（`reinbotAttachFile`, `reinbotLinkTask`, `reinbotSelectTask`, `reinbotNoAvailableTasks`, `reinbotNavigatedTask`）。
+- **Linux WebKitGTK 渲染防损保护**：侧栏微型指示点采用纯净边框方案（`border border-[var(--sidebar-bg)]`），严禁叠用 Tailwind `ring-*` 与 `animate-pulse`，防止 WebKitGTK 硬件合成器在微小区域产生图层重绘脏矩形溢出（Black Box Dirty Rect）。
+- **偏好与会话双重持久化（Persistence & Hydration）**：
+  - 自定义名称持久化于 `reinagent-reinbot-name`，重启或重载时通过 `hydratePersisted` 自动水合；
+  - 对话历史持久化于 `reinagent-reinbot-messages`（SQLite / `db.ts` 缓存），页面切换、重启或刷新后 100% 精准无感还原；
+  - 顶部左侧配备清空对话按钮（`Trash2` 图标），支持一键重置会话并恢复初始欢迎语。
 
 ### 2. 任务与项目生命周期与隔离架构（对齐 ZCode 会话模型）
 - **多任务独立隔离与会话切换恢复（Session Isolation & Instant Task Switching）**：
@@ -3303,6 +3375,36 @@ UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在�
   - `cd src-tauri && cargo check`：0 错误编译通过；
   - `bun test`：全工程 719 项测试全部通过（0 fail）。
 
+#### 4.10 v0.2.20 版本发版与全网爆款多平台推广全自动发布 (2026-10-30)
 
+- **版本发布与全平台同步 (`v0.2.20`)**：
+  - `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 全部升级至 `0.2.20`，锁定文件同步生成；
+  - `README.md` 与官方网站 `docs/index.html` 增补第 20 章新特性（自动化定时任务长效沉淀模式、上下文容量防清零与离线 MCP 弹性展示）；
+  - 自动化运行 719 项测试全绿，类型检查 0 报错；
+  - 自动打标签 `v0.2.20` 并推送至 GitHub（`git push origin main --tags`），触发 GitHub Actions 编译流水线与 Pages 网站发布。
+- **Chrome CDP 常驻守护服务与弹窗解决 (`scripts/chrome_daemon.py`)**：
+  - 针对 Chrome 144+ 外部频繁建立 WebSocket 触发 "Allow remote debugging?" 系统弹窗的机制，落地常驻长连接守护服务（`task-4079`，监听本地 `127.0.0.1:19823`）；
+  - 实现持久长连接复用，后续所有页面检索、跳转、注入和截图均走本地 HTTP bridge 派发，实现 100% 静默免弹窗自动化。
+- **全网主流开发者平台全自动发帖验收**：
+  1. **B 站动态 (bilibili)**：在 `https://t.bilibili.com/` 自动输入引流短文，勾选协议发布成功，截图留存为 [`bilibili_done.png`](file:///home/web3claw/.gemini/antigravity/brain/43af37ff-29a3-48ce-bb34-2fc04af65daf/bilibili_done.png)；
+  2. **掘金 (juejin)**：进入 `https://juejin.cn/editor/drafts/new`，通过 CodeMirror setValue 注入 Markdown、选择【开发工具】分类与【前端】标签，发布成功跳转至 [`https://juejin.cn/post/7699746328204902410`](https://juejin.cn/post/7699746328204902410)，截图留存为 [`juejin_published_real.png`](file:///home/web3claw/.gemini/antigravity/brain/43af37ff-29a3-48ce-bb34-2fc04af65daf/juejin_published_real.png)；
+  3. **CSDN 博客**：进入 CSDN 创作中心富文本编辑器，通过 `window.CKEDITOR.instances.editor.setData` 灌入 1664 字 HTML、AI 提取摘要并关联【人工智能】标签，点击【发布博客】成功发布并跳转至文章管理页，截图留存为 [`csdn_final_status.png`](file:///home/web3claw/.gemini/antigravity/brain/43af37ff-29a3-48ce-bb34-2fc04af65daf/csdn_final_status.png)；
+  4. **博客园 (cnblogs)**：进入 `https://i.cnblogs.com/posts/edit`，通过 TinyMCE 灌入富文本排版、填入精简摘要、勾选【投稿至首页候选区】增加公域曝光度，发布成功跳转至前台文章页面 [`https://www.cnblogs.com/iwanc/p/23499031`](https://www.cnblogs.com/iwanc/p/23499031)，截图留存为 [`cnblogs_article_view.png`](file:///home/web3claw/.gemini/antigravity/brain/43af37ff-29a3-48ce-bb34-2fc04af65daf/cnblogs_article_view.png)。
 
+#### 4.11 v0.3.0 重磅里程碑发版：本地主动型研发总管 ReinBot 与自主工作台 (2026-10-31)
 
+- **版本发布与全平台同步 (`v0.3.0`)**：
+  - `package.json`、`src-tauri/Cargo.toml`、`src-tauri/tauri.conf.json` 全部升级至 `0.3.0`，`src-tauri/Cargo.lock` 同步生成；
+  - 官网主页 `docs/index.html`、英文门户 `docs/en/index.html` 以及 `docs/guide/*.html` 全部更新下载链接与版本徽标至 `v0.3.0`，主页与 `README.md` 新增 ReinBot 专属特性章节；
+  - 自动打标签 `v0.3.0` 并推送至 GitHub（`git push origin main --tags`），触发 GitHub Actions CI/CD 流水线。
+- **ReinBot 核心架构全景落地**：
+  1. **侧栏入口置顶**：置顶于侧边栏第 1 位（高于「新建任务」），拥有专属机器人图标、呼吸状态微光点与 AI 标记；
+  2. **左右分栏交互架构**：左侧贴心管家式对话流，右侧配备 Multi-Tab 专属工作台容器（工作台固定不可关闭、任务时间线详情页、工作产物 Markdown 排版实时预览）；
+  3. **电子工牌（ReinBotBadge）**：金属挂绳夹质感、头像、绿色官方认证徽章、支持即时点击改名落库持久化、工号 `No.001 · ReinBot`、连接与守护状态条；
+  4. **任务双保险隔离与模型继承**：智能管家专属任务创建工具（`create_task`），工作区锁定在专属 `~/.ReinAgent/ReinBot/` 目录；自动继承顶栏选定模型，与普通用户自建任务数据彻底双保险隔离分流；
+  5. **工作产物全景 Hub**：真实扫描产物文件，支持 Markdown 精美渲染预览标签页、一键复制代码、唤起原生文件管理器定位目录，并提供一键安全物理删除任务与产物文件；
+  6. **多模态与语音全能输入**：支持长按右 Ctrl（Push-to-Talk）语音输入、原图 Base64 双保险视觉透传、历史任务引用（`@任务[xxx]`）与上下文深挖提炼。
+- **测试与交付质量保障**：
+  - 全工程 `bun test` **762 项测试全部通过**（0 fail）；
+  - `bun x tsc --noEmit` 0 报错通过；
+  - 经过桌面端真机环境实时验证与运行，界面交互纯净整洁，无黑块遮挡。

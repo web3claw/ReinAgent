@@ -22,14 +22,19 @@ const PANEL_CLOSE_ID = "__panel__";
 export interface TerminalPaneProps {
   /** 当前任务工作区（新终端的初始 cwd） */
   workspaceRoot?: string;
+  /** 是否始终保持激活（内嵌标签页模式，忽略全局 isTerminalOpen 开关） */
+  alwaysActive?: boolean;
+  /** 是否隐藏关闭面板按钮（在固定标签页如命令行中不可关闭） */
+  hideClosePanel?: boolean;
 }
 
-export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
+export function TerminalPane({ workspaceRoot, alwaysActive = false, hideClosePanel = false }: TerminalPaneProps) {
   const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const stripRef = useRef<HTMLDivElement>(null);
   const theme = useAppStore((s) => s.theme);
   const isTerminalOpen = useAppStore((s) => s.isTerminalOpen);
+  const isTerminalActive = alwaysActive || isTerminalOpen;
   const toggleTerminal = useAppStore((s) => s.toggleTerminal);
   // 终端配置（P2-G2）：kv 读取（设置页保存后重开终端即生效）
   const [settings] = useState(getTerminalSettings);
@@ -55,7 +60,7 @@ export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
   const suppressClickRef = useRef(false);
 
   useEffect(() => {
-    if (!isTerminalOpen || !containerRef.current) return;
+    if (!isTerminalActive || !containerRef.current) return;
 
     const term = new Terminal({
       cursorBlink: true,
@@ -323,13 +328,15 @@ export function TerminalPane({ workspaceRoot }: TerminalPaneProps) {
           >
             <RotateCw className="w-3.5 h-3.5" />
           </button>
-          <button
-            onClick={requestClosePanel}
-            className="p-1 rounded text-[var(--text-dim)] hover:text-[var(--text)]"
-            title="关闭面板"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
+          {!hideClosePanel && (
+            <button
+              onClick={requestClosePanel}
+              className="p-1 rounded text-[var(--text-dim)] hover:text-[var(--text)]"
+              title="关闭面板"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          )}
         </div>
       </div>
 

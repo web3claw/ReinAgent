@@ -793,3 +793,13 @@ export function subscribeStreaming(listener: () => void): () => void {
 export function getStreamingTaskIds(): string[] {
   return streamingSignature ? streamingSignature.split(",") : [];
 }
+
+export function getTaskExecutionStatus(taskId: string): "running" | "done" | "error" | "stopped" | "idle" {
+  const entry = entries.get(taskId);
+  if (!entry) return "idle";
+  if (entry.state.status === "streaming") return "running";
+  if (entry.state.status === "error") return "error";
+  if (entry.state.messages.some((m) => m.status === "stopped")) return "stopped";
+  if (entry.state.messages.length > 0) return "done";
+  return "idle";
+}
