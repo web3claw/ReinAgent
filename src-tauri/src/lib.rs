@@ -129,10 +129,16 @@ pub fn run() {
     {
         // 关键防护：WebKitGTK 在 NVIDIA / XWayland 环境下，若启用硬加速 DMABUF 渲染器或其回退异常，
         // 在网页触发硬件加速合成时可能引发驱动异常或空指针；
-        // 设置 WEBKIT_DMABUF_RENDERER_FORCE_SHM=1 强制 WebKitGTK 使用共享内存传输缓冲区，稳定可靠；
-        // 同时清理可能导致 backing store 初始化彻底落空的 WEBKIT_DISABLE_DMABUF_RENDERER。
-        std::env::set_var("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1");
-        std::env::remove_var("WEBKIT_DISABLE_DMABUF_RENDERER");
+        // 设置 WEBKIT_DMABUF_RENDERER_FORCE_SHM=1 强制 WebKitGTK 使用共享内存传输缓冲区，稳定可靠。
+        // 但部分 GPU/驱动（如 Linux Mint 上的一些 Intel/AMD/NVIDIA 组合）在 FORCE_SHM 下仍有
+        // 局部黑块（合成层渲染失败），标准解法是 WEBKIT_DISABLE_DMABUF_RENDERER=1 或
+        // WEBKIT_DISABLE_COMPOSITING_MODE=1——用户显式设置的这两个变量必须尊重（不覆盖不清理），
+        // 优先级高于本默认值；两者都未设置时才落 FORCE_SHM 默认。
+        let user_webkit_override = std::env::var("WEBKIT_DISABLE_DMABUF_RENDERER").is_ok()
+            || std::env::var("WEBKIT_DISABLE_COMPOSITING_MODE").is_ok();
+        if !user_webkit_override {
+            std::env::set_var("WEBKIT_DMABUF_RENDERER_FORCE_SHM", "1");
+        }
         gtk::glib::set_prgname(Some("ReinAgent"));
         gtk::glib::set_application_name("ReinAgent");
     }
