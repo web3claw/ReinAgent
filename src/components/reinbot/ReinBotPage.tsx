@@ -44,6 +44,8 @@ import { toast } from "../lw/ui/toast";
 import { MarkdownText } from "../chat/MarkdownText";
 import { loadProvidersConfigFromDisk, formatModelContextWindowLabel, type ProviderItem, type ApiFormatType } from "../settings/model-provider/types";
 import { kvGet, kvSet, kvGetJSON, kvSetJSON } from "../../lib/storage/db";
+import { REINBOT_QQ_MESSAGES_EVENT } from "../../lib/reinbot/qqbotBridge";
+import { QqBrandIcon, WechatBrandIcon, FeishuBrandIcon } from "./imBrandIcons";
 import { extractLinkedTasks, buildLinkedTasksPromptContext } from "../../lib/reinbot/taskContextResolver";
 import { formatModelKey, parseModelKey, resolveActiveModelInfo } from "../../lib/reinbot/modelKeyResolver";
 import { classifyPaste, utf8ByteLength, createPastedTextFilename } from "../../lib/chat/pasteRouting";
@@ -63,6 +65,8 @@ interface ReinBotMessage {
   text: string;
   time: number;
   attachments?: ReinBotAttachment[];
+  /** 标记消息来自 IM 渠道（工牌机器人桥注入），气泡旁显示对应平台图标。 */
+  via?: "qq" | "wechat" | "feishu";
 }
 
 export interface ReinBotPageProps {
@@ -290,6 +294,18 @@ export function ReinBotPage({
   const [, setStreamingTick] = useState(0);
   useEffect(() => {
     return subscribeStreaming(() => setStreamingTick((t) => t + 1));
+  }, []);
+
+  // QQ 机器人桥实时同步（2026-11-01）：QQ 消息/回复/流式逐阶段推送完整列表到此页
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ messages: ReinBotMessage[] }>).detail;
+      if (detail?.messages?.length) {
+        setMessages(detail.messages);
+      }
+    };
+    window.addEventListener(REINBOT_QQ_MESSAGES_EVENT, handler);
+    return () => window.removeEventListener(REINBOT_QQ_MESSAGES_EVENT, handler);
   }, []);
 
   // 复制与回复功能
@@ -1330,6 +1346,22 @@ export function ReinBotPage({
                         <Reply className="w-3.5 h-3.5" />
                       </button>
                     </div>
+
+                    {/* IM 渠道标识（紧贴气泡，避免悬浮按钮占位造成大空白） */}
+                    {(msg.via === "qq" || msg.via === "wechat" || msg.via === "feishu") && (
+                      <span
+                        title={msg.via === "qq" ? "来自 QQ" : msg.via === "wechat" ? "来自微信" : "来自飞书"}
+                        className="flex-shrink-0 flex items-center justify-center w-6 h-6 rounded-lg bg-[var(--surface)] border border-[var(--border)] shadow-xs"
+                      >
+                        {msg.via === "qq" ? (
+                          <QqBrandIcon className="w-3.5 h-3.5 text-[var(--im-qq)]" />
+                        ) : msg.via === "wechat" ? (
+                          <WechatBrandIcon className="w-3.5 h-3.5 text-[var(--im-wechat)]" />
+                        ) : (
+                          <FeishuBrandIcon className="w-3.5 h-3.5 text-[var(--im-feishu)]" />
+                        )}
+                      </span>
+                    )}
 
                     {/* 用户气泡（带防溢出约束） */}
                     <div className="min-w-0 break-words [overflow-wrap:anywhere] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-xs bg-[var(--brand)] text-[var(--brand-fg)] rounded-tr-xs">

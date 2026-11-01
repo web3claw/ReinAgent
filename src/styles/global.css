@@ -40,6 +40,10 @@
   --surface-hover: #262830;
   --brand: #5b8cff;
   --brand-dim: rgba(91, 140, 255, 0.1);
+  /* IM 渠道点亮色（ReinBot 工牌三图标）：QQ / 微信 / 飞书 官方品牌色 */
+  --im-qq: #12b7f5;
+  --im-wechat: #07c160;
+  --im-feishu: #00d6b9;
   --capsule-outer-bg: #1e1f25;
   --capsule-outer-border: #2d303b;
   --capsule-bg: #282b36;
@@ -158,6 +162,10 @@
   --surface-hover: #f8fafc;
   --brand: #2563eb;
   --brand-dim: rgba(37, 99, 235, 0.1);
+  /* IM 渠道点亮色（light：QQ/飞书微加深保证浅底可读） */
+  --im-qq: #0a9fe0;
+  --im-wechat: #07c160;
+  --im-feishu: #00b8a2;
   --capsule-outer-bg: #eff2f6;
   --capsule-outer-border: #dbe0ea;
   --capsule-bg: #ffffff;

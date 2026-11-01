@@ -128,6 +128,7 @@ import { pushNotification } from "./lib/inbox/api";
 import { WikiPage } from "./components/wiki/WikiPage";
 import { AppsPage } from "./components/apps/AppsPage";
 import { ReinBotPage } from "./components/reinbot/ReinBotPage";
+import { initQqBotBridge } from "./lib/reinbot/qqbotBridge";
 import { loadProvidersConfigFromDisk, providerAllowsMissingApiKey, resolveSupportedEffortLevels, type ProviderItem, type ModelItem } from "./components/settings/model-provider/types";
 import {
   Terminal, GitBranch, FolderOpen, PanelLeftClose, PanelLeft, AlertTriangle, ArrowUpToLine, Globe, Gauge, X
@@ -268,6 +269,11 @@ export default function App() {
   useEffect(() => {
     return () => pushToTalkRef.current?.pressEnd();
   }, [activeTaskId]);
+
+  // QQ 官方机器人消息管道桥（幂等）：已配置则自启网关 + 挂状态/消息监听
+  useEffect(() => {
+    void initQqBotBridge();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

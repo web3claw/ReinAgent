@@ -1,13 +1,27 @@
-import { useState } from "react";
-import { CheckCircle2, Edit2, Link2, MessageSquare, ShieldCheck, Cpu } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, Edit2, MessageSquare, ShieldCheck, Cpu } from "lucide-react";
 import { useAppStore } from "../../store/useAppStore";
+import { useImChannelsStore, type ImPlatform } from "../../store/useImChannelsStore";
 import { useTranslation } from "../../i18n";
+import { ImChannelsDialog } from "./ImChannelsDialog";
+import { FeishuBrandIcon, QqBrandIcon, WechatBrandIcon } from "./imBrandIcons";
 
 export function ReinBotBadge() {
   const { reinBotName, setReinBotName } = useAppStore();
   const { t } = useTranslation();
   const [isEditing, setIsEditing] = useState(false);
   const [tempName, setTempName] = useState(reinBotName);
+  const [imDialogOpen, setImDialogOpen] = useState(false);
+  const [imDialogPlatform, setImDialogPlatform] = useState<ImPlatform>("qq");
+  const imChannels = useImChannelsStore((s) => s.channels);
+  const qqGatewayOnline = useImChannelsStore((s) => s.qqGatewayOnline);
+  const wechatGatewayOnline = useImChannelsStore((s) => s.wechatGatewayOnline);
+  const feishuGatewayOnline = useImChannelsStore((s) => s.feishuGatewayOnline);
+
+  // 模块求值期 kv 未水合（store 陷阱）：挂载时重读渠道配置
+  useEffect(() => {
+    useImChannelsStore.getState().rehydrate();
+  }, []);
 
   const handleSaveName = () => {
     if (tempName.trim()) {
@@ -15,6 +29,13 @@ export function ReinBotBadge() {
     }
     setIsEditing(false);
   };
+
+  /** 三平台图标定义（点亮色走 global.css 语义 token --im-*）。 */
+  const imEntries: Array<{ id: ImPlatform; label: string; icon: React.ReactNode; colorVar: string }> = [
+    { id: "qq", label: t("reinbotImQq"), icon: <QqBrandIcon className="w-4 h-4" />, colorVar: "var(--im-qq)" },
+    { id: "wechat", label: t("reinbotImWechat"), icon: <WechatBrandIcon className="w-4 h-4" />, colorVar: "var(--im-wechat)" },
+    { id: "feishu", label: t("reinbotImFeishu"), icon: <FeishuBrandIcon className="w-4 h-4" />, colorVar: "var(--im-feishu)" },
+  ];
 
   return (
     <div className="flex flex-col items-center w-full px-4 pt-2 pb-6 select-none">
@@ -102,11 +123,56 @@ export function ReinBotBadge() {
           </div>
         </div>
 
-        {/* 底部连接状态横条 */}
+        {/* 底部连接状态横条：三平台 IM 机器人图标（灰=未接入，点亮=真实连通） */}
         <div className="mt-4 pt-3 border-t border-[var(--border)] flex items-center justify-between text-xs text-[var(--text-muted)]">
-          <div className="flex items-center gap-1.5">
-            <Link2 className="w-3.5 h-3.5 text-[var(--brand)]" />
-            <span className="font-medium text-[var(--text)]">{t("reinbotStatusRemote")}</span>
+          <div className="flex items-center gap-1">
+            {imEntries.map((entry) => {
+              const rawConnected = imChannels[entry.id]?.status === "connected";
+              // 点亮语义 = 凭据有效 + 消息网关在线（断线自动重连期间回灰）
+              const gatewayOnline =
+                entry.id === "qq" ? qqGatewayOnline : entry.id === "wechat" ? wechatGatewayOnline : feishuGatewayOnline;
+              const connected = rawConnected && gatewayOnline;
+              const qqReconnecting = rawConnected && !gatewayOnline;
+              const tooltip = `${entry.label} · ${
+                connected
+                  ? t("reinbotImConnected")
+                  : qqReconnecting
+                    ? t("reinbotImGatewayOffline")
+                    : t("reinbotImClickToSetup")
+              }`;
+              return (
+                <div key={entry.id} className="group/tt relative inline-flex items-center justify-center">
+                  <button
+                    type="button"
+                    aria-label={tooltip}
+                    onClick={() => {
+                      setImDialogPlatform(entry.id);
+                      setImDialogOpen(true);
+                    }}
+                    style={connected ? { color: entry.colorVar } : undefined}
+                    className={`flex items-center justify-center w-6 h-6 rounded-md transition-all duration-150 cursor-pointer active:scale-95 ${
+                      connected
+                        ? "hover:bg-[var(--bg-hover)]"
+                        : "text-[var(--text-muted)] opacity-50 hover:opacity-90 hover:bg-[var(--bg-hover)]"
+                    }`}
+                  >
+                    {entry.icon}
+                  </button>
+                  {/* Tooltip */}
+                  <span
+                    role="tooltip"
+                    className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 z-50 mb-1.5 whitespace-nowrap rounded-lg border border-[var(--border)] bg-[var(--bg-elev)] px-2.5 py-1.5 opacity-0 shadow-xl transition-opacity duration-100 group-hover/tt:opacity-100"
+                  >
+                    <span
+                      className="text-xs font-medium"
+                      style={connected ? { color: entry.colorVar } : { color: "var(--text)" }}
+                    >
+                      {tooltip}
+                    </span>
+                  </span>
+                </div>
+              );
+            })}
           </div>
 
           <div className="flex items-center gap-2">
@@ -118,6 +184,14 @@ export function ReinBotBadge() {
           </div>
         </div>
       </div>
+
+      {/* IM 机器人接入配置弹窗 */}
+      <ImChannelsDialog
+        open={imDialogOpen}
+        onOpenChange={setImDialogOpen}
+        platform={imDialogPlatform}
+        onPlatformChange={setImDialogPlatform}
+      />
     </div>
   );
 }

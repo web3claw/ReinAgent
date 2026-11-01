@@ -39,6 +39,9 @@
 ### 2. 活跃跟踪经验池（Active Lessons）
 
 #### 分类 A：返工与修漏（Regression & Incomplete Fix）
+- **store 在模块求值期读 kv 缓存必须在挂载后补 rehydrate，严禁只靠 loadInitial** - useImChannelsStore 用 loadInitial() 在模块求值时读 kv，但 main.tsx 的 await initStorage() 晚于整个静态模块图求值，应用每次冷启动 store 都读到空缓存：用户已配置的 QQ 渠道配置「消失」、网关自启链路静默跳过（与 hubSettingsStore 三 kv 切片陷阱同源）- store 增加 rehydrate()（重读 kv 并保留运行态字段），在 initQqBotBridge 与 ReinBotBadge 挂载时调用 - Done right: 见 useImChannelsStore.rehydrate + qqbotBridge.initQqBotBridge 首行 + ReinBotBadge useEffect - Seen 2× (2026-10-25, 2026-11-01).
+- **Red Check 破坏变异必须确认变异真实落盘，严禁只看「测试通过/失败」的表面结果** - 在 im_channels.rs 飞书签名 Red Check 中用 sed 做变异后测试依然全绿（假绿），排查发现 sed 模式未匹配源码、变异根本没有生效，测试是在未变异代码上通过的；若据此误判「Red Check 通过」则守护测试形同虚设 - 变异后必须先 grep/读取源码确认变异文本真实存在再跑测试，或直接用 Edit 工具做原子变异（杜绝 sed 静默不匹配）- Done right: 2026-10-31 im_channels.rs 的两处 Red Check 均先 grep 确认 `{secret}
+{timestamp}` 已落盘再断言测试变红 - Seen 1× (2026-10-31).
 - **多任务切换时必须设置非空快照防御与 currentMessagesRef 守卫** - 曾因在新建任务或切换任务时调用了 `clear()`，导致历史消息在切回瞬间被短暂的空状态覆盖丢失 - 必须通过 `currentMessagesRef` 在清空前核验非空与目标 ID 匹配性 - Done right: 参考 `useConversation.ts` 与 `ProjectList.tsx` 的会话恢复防空保护 - Seen 2× (2026-10-05, 2026-10-08).
 - **同类 Bug 或同类组件改造必须一并全量更新，严禁只修报告截图中单一实例** - 曾修复输入框下拉组件时仅处理了 ModelSelector，遗漏了 ReasoningEffort 下拉框的同类层级与滚动穿透问题，引发二次返工 - 任何交互修复必须排查全项目同构组件 - Done right: 全局检查类似 Dropdown/Popover 行为并同步应用 - Seen 1× (2026-10-10).
 - **任务级定制状态（如特定模型）在新建与草稿时必须干净回退至系统默认** - 曾在任务 A 定制了特定模型后，点击侧边栏 `+` 新建任务依然残留上一个任务的模型，破坏全局默认设定 - 点击新建必须显式恢复系统默认配置 - Done right: 检查 `AppTask` 的 `providerId/modelId` 附着与重置生命周期 - Seen 2× (2026-10-09, 2026-10-12).

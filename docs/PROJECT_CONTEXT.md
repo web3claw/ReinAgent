@@ -3408,3 +3408,72 @@ UsageSourceSection 三块新交互（ZCode 复刻面板区零改动，全部在�
   - 全工程 `bun test` **762 项测试全部通过**（0 fail）；
   - `bun x tsc --noEmit` 0 报错通过；
   - 经过桌面端真机环境实时验证与运行，界面交互纯净整洁，无黑块遮挡。
+
+## IM 机器人渠道接入（ReinBot 工牌三图标，2026-10-31 落地）
+
+ReinBot 电子工牌（`ReinBotBadge`）底部「IM 连接」装饰位升级为 **QQ / 微信 / 飞书 三平台品牌图标**：
+未接入 = 灰色（`var(--text-muted)` 半透明），**真实连通测试通过才点亮**（点亮色 = 品牌色语义 token `--im-qq` / `--im-wechat` / `--im-feishu`，明暗主题两套，global.css 定义）。点击图标弹出配置弹窗，测试通过自动保存并点亮；失败照存配置但保持灰色并**如实展示原始错误**（No-Fallback）。
+
+### 组成与键位
+- **前端**：
+  - `src/components/reinbot/imBrandIcons.tsx`：单色品牌 SVG（QQ/微信=simple-icons CC0 path；飞书=字节官方 IconPark `new-lark` Apache 2.0）；
+  - `src/components/reinbot/ImChannelsDialog.tsx`：三平台 tab 配置弹窗（QQ=官方平台表单直出（AppID/AppSecret/沙箱），OneBot 模式已删；飞书表单+测试；微信=扫码登录流 + 高级手动 Token）；二维码用 `qrcode` 包由 iLink 短链 URL 现场渲染（实测 `qrcode_img_content` 是 URL 不是图片）；
+  - `src/store/useImChannelsStore.ts`：状态 + kv `reinagent-reinbot-im-channels` 持久化（JSON：每平台 status/connectedAt/凭据/错误原文；QQ 为 appId/appSecret/botUsername，OneBot 的 mode/addr/token/version 与沙箱 sandbox 字段均已删）。
+- **Rust**（`src-tauri/src/im_channels.rs`，lib.rs 已注册 5 命令）：
+  - `im_qqbot_test`：**QQ 官方机器人开放平台（q.qq.com/qqbot，2026-11-01 用户拍板对接）**——`bots.qq.com/app/getAppAccessToken`（AppID+AppSecret→access_token；**实测错误也返回 HTTP 200**，靠 body `code` 判定，如 10004 机器人不存在/100007 appid invalid，必须检查 code 而非状态码）→ `api.sgroup.qq.com/users/@me`（头 `Authorization: QQBot {token}`）拿机器人用户名；access_token 不落盘（沙箱环境选项已于 2026-11-01 按用户要求移除，固定走正式 api.sgroup.qq.com）；
+  - （OneBot 11 个人号模式已于 2026-11-01 按用户要求整体移除：im_qq_test/qq_test_*/normalize_qq_addr/parse_onebot_response 及相关测试全删，cargo/tokio-tungstenite WS 链路不再使用）；
+  - `im_feishu_test`：自定义机器人 webhook 真实发消息，官方签名算法 HMAC-SHA256（key=`{timestamp}\n{secret}`、data 空串、base64），响应认 `code`/旧版 `StatusCode`；
+  - `im_wechat_qrcode_start` / `im_wechat_qrcode_poll` / `im_wechat_verify`：微信个人号 Bot（腾讯 **iLink / ClawBot** 协议，基址默认 `https://ilinkai.weixin.qq.com`）。请求头固定 `AuthorizationType: ilink_bot_token` + `X-WECHAT-UIN: base64(随机uint32十进制)` + `Authorization: Bearer {bot_token}`；扫码流 `get_bot_qrcode?bot_type=3` → 轮询 `get_qrcode_status`（**长轮询**最长 35s，status=wait/scan**ed**/confirmed/expired）至 `confirmed` 拿 `bot_token`/`baseurl`/`ilink_user_id`（扫码人 ID）→ **confirmed 即登录完成**（参考 openclaw-weixin 源码：不做额外校验——`getconfig` 的 GetTypingTicket RPC 需聊天上下文，新机器人必返 `ret=-4 "GetTypingTicket rpc failed!"`，不能当校验用；实测踩坑 2026-11-01）。手动 Token 路径的校验走 `getupdates`（空游标长轮询，token 无效立即报错，有效 hold ~35s 后 ret:0）。**实测（2026-10-31）成功响应带 `ret:0`、Content-Type 为 octet-stream（不能按 content-type 判定）**。
+- **HTTP 代理语义**：全部 reqwest 走 `app_proxy::build_proxied_reqwest_client`（设置页代理/no-proxy 规则）；WS 由 tungstenite 直连（不经代理）。
+
+### 交付验证（2026-10-31）
+- cargo 11/11：6 单测（飞书签名 node 独立预计算向量 `49KjO5wW…fi0=`、QQ/iLink/飞书响应解析、地址规范化、UIN 头格式）+ 5 真实传输层集成测试（本地真实 TCP/HTTP/WS 服务器：QQ HTTP 全链路、QQ WS 握手+echo、飞书服务端独立重算 HMAC 验签、飞书错误路径、微信扫码三接口全链路+三鉴权头校验）；
+- Red Check 2 项：签名 key 顺序互换 → 向量测试真实报错；飞书 code 门改全通过 → 解析测试真实报错；
+- CDP UI 全链路 E2E：三平台配置→测试→图标点亮（computed color = `rgb(18,183,245)` / `rgb(7,193,96)` / `rgb(0,214,185)`）→ kv 持久化落账 → clearChannel 断开回灰；顺手完成 iLink `get_bot_qrcode` 真实外网冒烟（真二维码 200/ret=0）；
+- tsc 0 报错。
+- ⚠️ 未实测项：真实 NapCat/飞书/微信扫码凭据（无真实凭据，腾讯侧确认流程需真人扫码）。
+
+### IM 消息管道（QQ 官方网关，2026-11-01 落地）
+
+在连通层之上补齐 QQ 官方机器人的**真实消息收发**（「未连接灵魂」即指未接入消息服务）：
+
+- **Rust 网关**（`src-tauri/src/qqbot_gateway.rs`，lib.rs 注册 4 命令）：
+  - `qqbot_gateway_start/stop/status`：常驻连接 `wss://api.sgroup.qq.com/websocket`（op10 Hello → op2 identify，intents=GROUP_AND_C2C_EVENT 1<<25 → 心跳 op1/op11 → op7/op9 触发 resume（op6）或重新 identify，指数退避重连 2s→60s）；状态经 `qqbot-status` `{online, detail}` 实时上报，事件 `qqbot-message` 推给前端；
+  - `im_qqbot_send`：REST 被动回复，群 `POST /v2/groups/{group_openid}/messages`、单聊 `/v2/users/{openid}/messages`，body `{msg_type:0, content, msg_id, msg_seq}`；access_token 内存缓存提前 5 分钟续期（expires_in 默认 7200）；
+  - 单测 5 例（帧解析/消息提取（C2C 优先 `author.user_openid`）/分块（≤450 字 × 5 条）/本地真实 WS 全链路（token 端点注入））+ Red Check（分块上限变异）。
+- **前端桥**（`src/lib/reinbot/qqbotBridge.ts`）：`initQqBotBridge()` 由 App 挂载调用（幂等）——rehydrate 渠道配置 → 已配置则自启网关 → 挂 `qqbot-status`/`qqbot-message` 监听；消息串行（promise 链）注入 ReinBot 会话（与 ReinBotPage 同 kv `reinagent-reinbot-messages`、同系统提示词），`runAgentTurn` 生成回复后**渐进分段回发 QQ**（2026-11-01：平台无消息编辑接口、做不到真·流式——流式中每逢换行且累积 ≥80 字即发一条，复用被动回复额度每条 msg_id 最多 5 条 × ≤450 字，超出截断标注；发送串行化 + 300ms 间隔防频控）；QQ 场景系统提示词追加「回复会被原样发回 QQ，精炼作答」。**模型严格模式（2026-11-01 用户拍板，无任何回退）**：只用 ReinBot 模型胶囊选中项（kv `reinagent-reinbot-selected-model`），未选择/供应商未启用/模型不存在 → 错误如实回显 QQ 与页面气泡，绝不悄悄换模型。**页面实时同步**：桥每阶段（消息到达/流式/完成/失败）经 CustomEvent `reinbot-qq-messages` 推完整列表，ReinBotPage 监听 setMessages 实时渲染；QQ 来源消息带 `via:"qq"`，气泡旁显示 QQ 品牌图标徽章（--im-qq）。
+- **点亮语义升级**：QQ 图标 = 凭据有效 **+ 网关在线**；断线重连期间 tooltip「凭据有效 · 网关连接中…」。测试连接成功即拉起网关；「断开」按钮停网关并清配置。
+- **⚠️ kv 水合陷阱（Seen 2×）**：store 模块求值期读 kv 缓存为空（main.tsx `await initStorage()` 晚于静态模块图求值）——`useImChannelsStore.rehydrate()` 必须在 App/徽章挂载后调用，否则冷启动渠道配置「消失」且网关自启静默跳过。
+- **交付验证**：cargo 9/9 + gateway 5/5（含本地真实 TCP/WS 全链路）；真实凭据 E2E——干净冷启动 → 自启 → 腾讯 WS `online:true` + READY/session_id（实测 2 秒内上线）；tsc 0；bun 762/762。⚠️ 未实测：真实 QQ 群 @ 消息 → 自动回复（需用户真人发消息触发）。
+
+### IM 消息管道——微信（iLink getupdates 网关，2026-11-01 落地）
+
+微信补齐与 QQ 同构的消息管道（此前只有扫码登录的连通层，收发消息无响应）：
+
+- **Rust 网关**（`src-tauri/src/wechat_gateway.rs`，lib.rs 注册 4 命令 `wechat_gateway_start/stop/status` + `im_wechat_send`）：
+  - 收：`getupdates` **长轮询循环**（body `{get_updates_buf: 游标, base_info:{channel_version}}`，服务器 hold 最长 ~35s；**游标必须回写**否则重复收消息）；提取 `message_type==1` 的用户文本消息（`item_list[].text_item.text` 拼接），携带 `from_user_id` + `context_token`（**被动回复必需**）经 `wechat-message` 事件推前端；
+  - 发：`sendmessage`，body `{msg:{from_user_id:"", to_user_id, **client_id**（客户端唯一 ID，格式 reinagent-weixin:{millis}-{hex8}——**缺失时腾讯收下 ret:0 但不投递**，2026-11-01 实测踩坑）, message_type:2, message_state:2, context_token, item_list:[{type:1,text_item:{text}}]}, base_info}`；ret 门如实报错；前端发送前 markdown 转纯文本（微信不渲染，对齐参考实现）；
+  - 鉴权失败（HTTP 401/403）→ 网关停止并提示重新扫码；网络错误指数退避（2s→60s）；
+  - 单测 3 例（消息提取/真实 TCP sendmessage/失败路径）。
+- **前端**：`qqbotBridge.ts` 重构为双平台统一管道——`runImTurn`（严格模型/会话注入/页面实时同步）+ 平台各自的收消息 handler 与 sendPiece；**发送模式分治（2026-11-01）**：QQ=progressive（流式分段，msg_id 5 条额度），微信=single（**整条一次发送**——context_token 疑似一次性，复用多条会静默失败；超 2000 字截断）；错误记录不再被成功路径清除（保留最近一次错误供诊断）；微信图标点亮语义 = 凭据有效 + 网关在线（`wechatGatewayOnline`）；QQ 消息气泡徽章之外微信消息带绿色微信徽章（`via:"wechat"`）。
+- **真实链路验证**：干净冷启动 → 双网关自启（QQ WS + 微信 getupdates）→ store 双 online:true；真实微信消息回复需用户真人触发。
+
+### IM 消息管道——飞书应用机器人（长连接网关，2026-11-01 落地）
+
+按用户拍板，飞书通道从「自定义机器人 webhook（仅单向、已移除）」升级为**应用机器人**（双向：收 @/单聊 → 自动回复）：
+
+- **Rust 网关**（`src-tauri/src/feishu_gateway.rs`，lib.rs 注册 4 命令 `feishu_gateway_start/stop/status` + `im_feishu_reply` + `im_feishu_test`）：
+  - **长连接协议**（无官方文档、从 @larksuiteoapi/node-sdk 源码提取，手写 protobuf wire format 零新依赖）：
+    ① 注册：POST `/callback/ws/endpoint`（body `{"AppID","AppSecret"}`）→ `{data:{URL:"wss://gateway...?device_id=..&service_id=.."}}`；
+    ② WS 收发二进制 **pbbp2.Frame**（1=SeqID 2=LogID 3=service 4=method(0=control/1=data) 5=repeated Header{1:key,2:value} 8=payload）；
+    ③ 心跳：每 PingInterval 秒发 control 帧（headers type=ping），服务端 pong payload `{PingInterval:..}` 动态更新；
+    ④ 事件：data 帧 headers `{message_id,sum,seq,type:"event",trace_id}`，处理后**必须回帧**（同 headers+biz_rt，payload `{"code":200}`）；
+  - `im.message.receive_v1` 事件 → 提取文本消息（剥除 @机器人 前缀）→ `feishu-message` 事件推前端；
+  - **回复 API**：POST `/open-apis/im/v1/messages/{message_id}/reply`（`Bearer tenant_access_token`，body `{msg_type:"text", content:"{\"text\":..}"}`）；
+  - `tenant_access_token`：POST `/open-apis/auth/v3/tenant_access_token/internal`，**错误也是 HTTP 200 + code!=0**（必须查 code），缓存提前 5 分钟续期；
+  - `im_feishu_test`：token + GET `/open-apis/bot/v3/info` 拉机器人名做连通验证；
+  - 单测 5 例（帧编解码往返/ping 帧形态/消息提取含 @剥除/真实 TCP reply/token code 门）。
+- **旧 webhook 自定义机器人模式整体移除**（im_channels.rs 的 FeishuTestArgs/feishu_sign/parse_feishu_response/feishu_test/im_feishu_test 及 4 个相关测试；tauri 宏同名命令会 crate 级冲突——两个模块不能有同名命令）。
+- **前端**：飞书 tab 改 App ID + App Secret（同 QQ 表单形态）；bridge 加 `feishu-status`/`feishu-message` 监听 + `handleFeishuIncoming`（复用 runImTurn，single 模式）；飞书图标点亮 = 凭据有效 + 网关在线；消息徽章 via:"feishu"（飞书品牌图标）。
+- **用户侧前提**：open.feishu.cn/app 建企业自建应用 → 开机器人能力 → 申请权限（im:message.group_at_msg:readonly / p2p_msg:readonly / im:message:send_as_bot）→ 事件订阅选「长连接」+ 订阅接收消息 v2.0 → 发布审批 → App ID/Secret 填入。
+- **验证**：cargo feishu 5/5 + im 6/6；tsc 0；bun 762/762；三网关冷启动自启（QQ/微信在线，飞书待用户配置凭证）。⚠️ 未实测：真实飞书应用收发（需用户建应用拿凭证）。

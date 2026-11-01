@@ -248,6 +248,25 @@ ReinAgent 致力于为开发者打造极致轻量、超高响应速度与 100% �
 
 ---
 
+### 21. IM 机器人三平台接入与自动回复 (IM Bot Channels, v0.3.1)
+- **ReinBot 工牌三平台图标（QQ / 微信 / 飞书）**：
+  - 工牌底部三枚品牌图标，未接入灰色、**真实连通测试通过 + 消息网关在线才点亮**（断线自动重连期间回灰并提示「网关连接中」）；
+  - 点击图标弹出配置弹窗，测试连接 = 真实调平台 API（QQ：AppID/AppSecret → access_token → 机器人资料；飞书：tenant_access_token + 机器人信息），错误原文如实上屏（No-Fallback）；
+- **QQ（官方机器人开放平台 q.qq.com/qqbot）**：
+  - Rust 常驻 WebSocket 网关（鉴权 identify / 心跳 / 断线 resume / 指数退避重连）接收群聊@与单聊事件；
+  - REST 被动回复（msg_id + msg_seq，access_token 自动续期），长回复按段落渐进分段发送（每条消息最多 5 段）；
+- **微信（个人号 Bot，腾讯 iLink / ClawBot 官方通道）**：
+  - 扫码登录流（生成二维码 → 轮询 → 自动保存 bot_token），getupdates 长轮询收消息（游标续传）+ sendmessage 被动回复（client_id 唯一标识）；
+  - 发送前自动转纯文本（微信不渲染 markdown），整条一次性发送；
+- **飞书（应用机器人）**：
+  - 长连接网关接收 `im.message.receive_v1` 事件（手写 protobuf 帧协议，从官方 SDK 提取，无第三方依赖、无需公网回调）；
+  - tenant_access_token 自动续期 + 「回复消息」API；需在开放平台自建应用并申请 im:message 权限；
+- **统一消息管道**：
+  - 三平台消息统一注入 ReinBot 会话（与桌面端同一份历史、人设与模型），大模型生成后回发对应平台；
+  - **模型严格模式**：IM 回复只使用 ReinBot 模型胶囊选中的模型，零回退；未选择时如实提示；
+  - ReinBot 页面实时同步 IM 对话（消息带对应平台品牌徽章），流式打字效果与桌面端一致。
+
+---
 ## 🏗️ 系统架构
 
 ```

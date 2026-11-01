@@ -41,6 +41,10 @@ mod app_proxy;
 mod llm_proxy;
 mod hide_to_tray;
 mod self_update;
+mod im_channels;
+mod qqbot_gateway;
+mod wechat_gateway;
+mod feishu_gateway;
 mod webdav;
 mod webdav_backup;
 mod backup_snapshot;
@@ -317,6 +321,23 @@ pub fn run() {
             self_update::update_check,
             self_update::update_install,
             self_update::update_restart,
+            im_channels::im_qqbot_test,
+            im_channels::im_wechat_qrcode_start,
+            im_channels::im_wechat_qrcode_poll,
+            im_channels::im_wechat_verify,
+            qqbot_gateway::qqbot_gateway_start,
+            qqbot_gateway::qqbot_gateway_stop,
+            qqbot_gateway::qqbot_gateway_status,
+            qqbot_gateway::im_qqbot_send,
+            wechat_gateway::wechat_gateway_start,
+            wechat_gateway::wechat_gateway_stop,
+            wechat_gateway::wechat_gateway_status,
+            wechat_gateway::im_wechat_send,
+            feishu_gateway::feishu_gateway_start,
+            feishu_gateway::feishu_gateway_stop,
+            feishu_gateway::feishu_gateway_status,
+            feishu_gateway::im_feishu_reply,
+            feishu_gateway::im_feishu_test,
             usage_stats::usage_snapshot,
             usage_stats::usage_reset,
             fs_base64::fs_read_base64_file,
