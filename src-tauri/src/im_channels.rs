@@ -26,9 +26,7 @@
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine as _;
-use hmac::{Hmac, Mac};
 use serde::{Deserialize, Serialize};
-use sha2::Sha256;
 
 /// 微信 iLink 默认基址（协议文档与实测一致）。
 pub const WECHAT_DEFAULT_BASE_URL: &str = "https://ilinkai.weixin.qq.com";
