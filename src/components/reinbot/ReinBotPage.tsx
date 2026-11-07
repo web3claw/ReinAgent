@@ -20,6 +20,7 @@ import {
   Copy,
   Reply,
   CheckCircle2,
+  CircleAlert,
   AlertCircle,
   Terminal,
   LayoutDashboard,
@@ -45,6 +46,7 @@ import { MarkdownText } from "../chat/MarkdownText";
 import { loadProvidersConfigFromDisk, formatModelContextWindowLabel, type ProviderItem, type ApiFormatType } from "../settings/model-provider/types";
 import { kvGet, kvSet, kvGetJSON, kvSetJSON } from "../../lib/storage/db";
 import { REINBOT_QQ_MESSAGES_EVENT } from "../../lib/reinbot/qqbotBridge";
+import { createClipTools } from "../../lib/reinbot/clipTools";
 import { QqBrandIcon, WechatBrandIcon, FeishuBrandIcon } from "./imBrandIcons";
 import { extractLinkedTasks, buildLinkedTasksPromptContext } from "../../lib/reinbot/taskContextResolver";
 import { formatModelKey, parseModelKey, resolveActiveModelInfo } from "../../lib/reinbot/modelKeyResolver";
@@ -67,6 +69,8 @@ interface ReinBotMessage {
   attachments?: ReinBotAttachment[];
   /** 标记消息来自 IM 渠道（工牌机器人桥注入），气泡旁显示对应平台图标。 */
   via?: "qq" | "wechat" | "feishu";
+  /** 工具运行状态事件（链接收藏管道等），气泡内渲染运行卡。 */
+  toolEvents?: Array<{ tool: string; phase: "start" | "done" | "error"; detail: string }>;
 }
 
 export interface ReinBotPageProps {
@@ -262,6 +266,10 @@ export function ReinBotPage({
   );
   const [inputValue, setInputValue] = useState("");
   const [isStreaming, setIsStreaming] = useState(false);
+  /** 当前回合开始时间（思考超时兜底用）。 */
+  const [turnStartedAt, setTurnStartedAt] = useState<number | null>(null);
+  /** 思考已持续秒数（1s 心跳）。 */
+  const [thinkingSeconds, setThinkingSeconds] = useState(0);
   const [isWorkspaceCollapsed, setIsWorkspaceCollapsed] = useState(false);
   const [isWorkspaceExpanded, setIsWorkspaceExpanded] = useState(false);
   const [workspaceWidth, setWorkspaceWidth] = useState(380);
@@ -295,6 +303,19 @@ export function ReinBotPage({
   useEffect(() => {
     return subscribeStreaming(() => setStreamingTick((t) => t + 1));
   }, []);
+
+  // 思考计时心跳：回合运行中每秒推进（用于超时兜底提示）
+  useEffect(() => {
+    if (!isStreaming || turnStartedAt === null) {
+      setThinkingSeconds(0);
+      return;
+    }
+    setThinkingSeconds(Math.floor((Date.now() - turnStartedAt) / 1000));
+    const timer = window.setInterval(() => {
+      setThinkingSeconds(Math.floor((Date.now() - turnStartedAt) / 1000));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isStreaming, turnStartedAt]);
 
   // QQ 机器人桥实时同步（2026-11-01）：QQ 消息/回复/流式逐阶段推送完整列表到此页
   useEffect(() => {
@@ -849,6 +870,7 @@ export function ReinBotPage({
     setInputValue("");
     setAttachments([]);
     setIsStreaming(true);
+    setTurnStartedAt(Date.now());
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -874,6 +896,8 @@ export function ReinBotPage({
       "4. 你拥有创建新任务的专属工具 create_task。当用户在对话中要求新建、规划、创建或派发新任务时，请主动调用 create_task 工具创建任务，并在回复中使用 @任务[任务名] 格式汇报，以便用户一键点击胶囊直接跳转至该任务工作台；",
       "5. 遇到用户通过 @任务[任务名] 询问关联任务时，充分结合下方注入的该任务历史对话与执行进展背景，直接给出详尽、准确的总结与分析；",
       "6. 始终使用与用户相同的语言（默认中文），语气亲切可靠、专业干练，使用 Markdown 格式。",
+      "7. 链接收藏能力：用户单独发来网页链接（或明确要求收藏/总结某链接）时，先调用 fetch_article 抓取正文，基于正文总结（核心观点/关键要点/可行动项），再调用 save_clip 落盘（tags 自拟 2-4 个），最后回执总结要点与保存路径。链接只是回答问题的参考资料时，按普通问题处理，不必落盘。",
+    "8. 工具调用失败时（如网页抓取失败），必须如实告知用户失败原因，严禁声称已成功、严禁编造正文内容。",
       linkedTasksContext,
     ]
       .filter(Boolean)
@@ -996,8 +1020,10 @@ export function ReinBotPage({
         },
         messages: agentMessages,
         systemPrompt,
+        thinkingLevel: useAppStore.getState().thinkingLevel,
         workspaceRoot: reinBotWorkspaceRoot,
         extraTools: [
+          ...createClipTools({ channel: "desktop" }),
           createReinBotTaskTool({
             defaultProject: reinBotWorkspaceRoot,
             providerId: activeProvId,
@@ -1054,6 +1080,7 @@ export function ReinBotPage({
       }
     } finally {
       setIsStreaming(false);
+      setTurnStartedAt(null);
       abortControllerRef.current = null;
       setMessages((latest) => {
         persistMessages(latest);
@@ -1414,12 +1441,67 @@ export function ReinBotPage({
                     <div className="flex-1 min-w-0">
                       {/* 机器人消息气泡（带防溢出约束与任务胶囊图表卡片） */}
                       <div className="min-w-0 break-words [overflow-wrap:anywhere] rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-xs bg-[var(--surface)] text-[var(--text)] border border-[var(--border)] rounded-tl-xs">
+                        {/* 工具运行卡：链接收藏管道等工具的实时状态 */}
+                        {(msg.toolEvents?.length ?? 0) > 0 && (
+                          <div className="mb-2 flex flex-col gap-1">
+                            {(msg.toolEvents ?? []).map((ev, i) => (
+                              <div
+                                key={`${ev.tool}-${i}`}
+                                className="flex items-center gap-1.5 text-[11px] text-[var(--text-muted)] bg-[var(--bg)] border border-[var(--border)] rounded-md px-2 py-1"
+                              >
+                                {ev.phase === "start" ? (
+                                  <Loader2 className="w-3 h-3 animate-spin text-[var(--brand)] shrink-0" />
+                                ) : ev.phase === "done" ? (
+                                  <CheckCircle2 className="w-3 h-3 text-[var(--success-text)] shrink-0" />
+                                ) : (
+                                  <CircleAlert className="w-3 h-3 text-[var(--danger)] shrink-0" />
+                                )}
+                                <span className="truncate">
+                                  {ev.tool === "fetch_article"
+                                    ? ev.phase === "start"
+                                      ? "正在抓取网页正文…"
+                                      : ev.phase === "done"
+                                        ? `已抓取正文 · ${ev.detail}`
+                                        : `抓取失败 · ${ev.detail}`
+                                    : ev.phase === "start"
+                                      ? "正在归档…"
+                                      : ev.phase === "done"
+                                        ? `已归档 · ${ev.detail}`
+                                        : `归档失败 · ${ev.detail}`}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                         {msg.text ? (
                           renderBotMessageContent(msg.text, tasks, handleNavigateTask)
+                        ) : thinkingSeconds >= 30 ? (
+                          /* 超时兜底（2026-11-02）：30s 无任何文本产出 → 如实告知 + 可中断，
+                             绝不无限「正在思考中」（模型 thinking 卡死/内容为空时的真实状态） */
+                          <div className="flex flex-col gap-1.5 py-1">
+                            <div className="flex items-center gap-2 text-[var(--warning-text,var(--text-muted))]">
+                              <CircleAlert className="w-4 h-4 shrink-0" />
+                              <span>
+                                已等待 {thinkingSeconds}s 仍无回复内容——模型可能卡在思考阶段或返回了空内容
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-2 pl-6">
+                              <button
+                                type="button"
+                                onClick={handleStop}
+                                className="text-xs px-2 py-0.5 rounded border border-[var(--border)] text-[var(--text)] hover:bg-[var(--surface)] transition-colors cursor-pointer"
+                              >
+                                停止本次生成
+                              </button>
+                              <span className="text-[11px] text-[var(--text-muted)]">
+                                可在顶栏切换其他模型后重试
+                              </span>
+                            </div>
+                          </div>
                         ) : (
                           <div className="flex items-center gap-2 text-[var(--text-muted)] py-1">
                             <Loader2 className="w-4 h-4 animate-spin text-[var(--brand)]" />
-                            <span>正在思考中...</span>
+                            <span>正在思考中...{thinkingSeconds >= 5 ? ` (${thinkingSeconds}s)` : ""}</span>
                           </div>
                         )}
                       </div>

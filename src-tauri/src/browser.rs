@@ -24,7 +24,7 @@ use windows::core::PWSTR;
 #[cfg(target_os = "windows")]
 use webview2_com::WebMessageReceivedEventHandler;
 
-const BROWSER_LABEL: &str = "browser-pane";
+pub const BROWSER_LABEL: &str = "browser-pane";
 
 fn get_browser_webview(app: &AppHandle) -> Result<Webview, String> {
     let window = app

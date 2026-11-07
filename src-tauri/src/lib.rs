@@ -45,6 +45,7 @@ mod im_channels;
 mod qqbot_gateway;
 mod wechat_gateway;
 mod feishu_gateway;
+mod web_clip;
 mod webdav;
 mod webdav_backup;
 mod backup_snapshot;
@@ -344,6 +345,9 @@ pub fn run() {
             feishu_gateway::feishu_gateway_status,
             feishu_gateway::im_feishu_reply,
             feishu_gateway::im_feishu_test,
+            web_clip::im_article_fetch,
+            web_clip::im_clip_save,
+            web_clip::im_wechat_typing_notify,
             usage_stats::usage_snapshot,
             usage_stats::usage_reset,
             fs_base64::fs_read_base64_file,

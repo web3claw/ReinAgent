@@ -3477,3 +3477,42 @@ ReinBot 电子工牌（`ReinBotBadge`）底部「IM 连接」装饰位升级为 
 - **前端**：飞书 tab 改 App ID + App Secret（同 QQ 表单形态）；bridge 加 `feishu-status`/`feishu-message` 监听 + `handleFeishuIncoming`（复用 runImTurn，single 模式）；飞书图标点亮 = 凭据有效 + 网关在线；消息徽章 via:"feishu"（飞书品牌图标）。
 - **用户侧前提**：open.feishu.cn/app 建企业自建应用 → 开机器人能力 → 申请权限（im:message.group_at_msg:readonly / p2p_msg:readonly / im:message:send_as_bot）→ 事件订阅选「长连接」+ 订阅接收消息 v2.0 → 发布审批 → App ID/Secret 填入。
 - **验证**：cargo feishu 5/5 + im 6/6；tsc 0；bun 762/762；三网关冷启动自启（QQ/微信在线，飞书待用户配置凭证）。⚠️ 未实测：真实飞书应用收发（需用户建应用拿凭证）。
+
+### 链接收藏与文章归档管道（2026-11-02 落地）
+
+IM 三平台 + 桌面端 ReinBot 发送文章链接 → 自动分析总结 → 归档进知识库（用户拍板：混合触发交模型判断、独立目录+自动知识索引、桌面端同挂、中间态回执）：
+
+- **两个 ReinBot 工具**（`src/lib/reinbot/clipTools.ts`，IM 与桌面端 extraTools 均挂载）：
+  - `fetch_article(url)`：Rust `im_article_fetch`（web_clip.rs）——HTTP 直抓（浏览器 UA）+ dom_query 启发式正文提取（剥 script/nav/footer 等 → article/main 容器候选 → 结构化文本），正文 <200 字如实报错（疑似 JS 渲染页）；输出限 24k 字符防 token 爆炸；非 html content-type 如实拒绝；
+  - `save_clip(title, summary, source_url, tags, notebook?)`：Rust `im_clip_save`——落盘为**笔记本「收藏夹」**（不存在自动创建）下 `YYYY-MM-DD-{slug}.md`，frontmatter（source_url/site/channel/clipped_at/tags）+ 三段式总结；返回知识索引 source_id（`{notebook}:{file}`），工具内调度 `scheduleKnowledgeIndex`（未配置 embedding 内部跳过）；对话里指名笔记本可归档到其他笔记本。
+- **触发语义（交模型判断）**：系统提示词写明「用户单独发链接=收藏意图；链接只是参考资料时正常回答不落盘」——IM（runImTurn）与桌面端（ReinBotPage.handleSend）提示词均已追加第 7 条。
+- **中间态回执分平台**：QQ=回复一条「📖 正在阅读…」（占 5 条被动回复额度 1 条，seq 与最终回复同计数器防重号）；微信=`wechat_typing_notify`（getconfig→typing_ticket→sendtyping status=1，**不占额度**，失败尽力忽略）；飞书=直接回一条「正在处理」（reply 无条数上限）；桌面端=流式可见不发。
+- **runImTurn 发送接口重构**：`sendPiece/maxChunks` → `im: {notify, send, quotaLeft}` 三件套（平台 handler 持有计数器，管道持额度门）；错误路径以 `didSendContent` 区分「一条未发才发错误提示」。
+- **验证**：cargo web_clip 5/5（提取/slug/日期/真实落盘）+ 全量 352 过（2 存量平台失败除外）；bun 768/768（clipFormat 6 测试）；**真实 E2E**：桌面端发 Wikipedia/Markdown 链接 → LLM 调 fetch_article 真实抓取 → 三段式总结（tags 自拟）→ save_clip 落盘 frontmatter 完整 → 知识索引调度。⚠️ IM 端真实触发需用户发消息（管道与桌面共用同一套工具，桌面已验证）。
+
+#### 链接收藏管道 v1.1（2026-11-02 补：运行状态可视化 + SPA 渲染抓取）
+
+- **运行状态可视化（ReinBot 页面）**：`ReinBotMessage.toolEvents`（{tool, phase: start|done|error, detail}）——clipTools 的 `onStatus` 回调逐事件写入当前 bot 消息，气泡内渲染**工具运行卡**（🔄抓取中/✅已抓取 xx 字/🔴抓取失败·原因）；消息流末尾 `isStreaming` 指示「处理中…」；两者配合解决「工具有没有在跑/跑到哪一步」不可见。
+- **提示词硬化（No-Fallback 延续）**：IM 与桌面双管道系统提示词新增第 8 条——**工具失败必须如实告知失败原因，严禁声称已成功、严禁编造正文**（实测中 GLM 曾在抓取失败后宣称「正文全部拿到了」，据此修正）。
+- **第二层抓取：内置浏览器渲染降级**（`web_clip::render_article_via_browser`）：HTTP 直抓正文 <200 字（SPA/JS 渲染页，如掘金/知乎）→ `browser_open` 加载真实页面（执行 JS）→ 轮询 `browser_read_page` 注入提取脚本（候选容器 innerText，20×1s 窗口）→ 取到正文即返回并清理临时浏览器（原本未打开时关闭）。实测掘金首页 SPA 7 秒取到 2807 字真实内容。
+- **⚠️ 已知限制**：个别 SPA 页（如 `juejin.cn/recommended`）在嵌入式浏览器内长时间不响应，`browser_read_page` 15s 超时 → 如实报错（「HTTP 直抓仅得 N 字…内置浏览器渲染也没能取到正文」）；此时模型按硬化后的提示词如实告知用户，不编造。**失效链接**（404）也会被如实报告。
+
+#### 链接收藏 v1.2：代理白名单 + 标题规约（2026-11-02）
+
+- **代理白名单是掘金类反爬站的关键**：用户把 `*.juejin.cn`、`*.cnblogs.com` 加入 `reinagent-web-proxy-no-proxy` 后，HTTP 直抓立刻打通——**掘金文章 225~292ms、5174~5705 字真实正文**（此前返回「Please wait...」反爬挑战页）；博客园文章 200ms / 6215 字。结论：多数「需要 JS 渲染」的判断其实是**代理出口被反爬拦截**，白名单直连优先于渲染降级。
+- **标题规约**（`normalize_article_title`）：站点常把「标题 + 正文摘要 + 站名」塞进 `<title>`（掘金尤甚），导致文件名超长。按 ` | ` / `｜` / ` - ` / ` – ` / ` — ` 分隔符切出主标题（仅当首段 ≥4 字），限长 100 字符；无分隔符则原样限长。单测 5 例。
+- **⚠️ 内置浏览器通道脆弱性**：反复 `browser_open`/`browser_close` 会让 WebView2 的 `WebMessageReceived` handler 注册状态错乱 → `browser_read_page` 全部超时（连 `1+1` 都读不到）。**恢复方式=重启应用**。因此链接抓取应优先走 HTTP 直抓，渲染降级只在必要时用，且避免频繁开关浏览器。
+- **验证**：cargo web_clip 6/6；掘金真实文章抓取 225ms/5174 字 + 落盘闭环成功；博客园 200ms/6215 字；飞书渠道收藏（channel=feishu）此前已实测成功。
+
+#### 链接收藏 v1.3：串页修复 + 标题提取定稿（2026-11-02）
+
+**严重 bug 修复：收藏内容与来源链接不符（串页）**
+- 现象：飞书连续发两篇掘金链接，第二篇收藏到了第一篇的正文。
+- 根因：浏览器已打开时 `browser_open` 走 `navigate`，**页面切换有延迟**；渲染降级读得太早 → 读到上一篇残留内容。
+- 修复：导航后**轮询 `browser_current_url` 确认已切到目标页**（最长 12s），未切过去则中止并如实报错（绝不读错内容）。
+- 附带结论：**有代理白名单时不该走渲染降级**——直连 HTTP 抓取两个 URL 均 270~285ms 成功，串页只发生在渲染路径。
+
+**标题提取定稿（`extract_article`）**
+- 优先级改为 **第一个 `h1` → og:title → `<title>`**：掘金**无 og:title**，且 `<title>` 是「标题+正文摘要+站名」，只有 `h1` 是干净标题。
+- `normalize_article_title` 增强：除分隔符切分外，**超 60 字时截到第一个句末标点**（？?。！!），避免摘要混入标题导致文件名过长。
+- 实测验证：两篇掘金文章标题分别为「Skill、MCP、Workflow、Rules、Memory 有什么区别？拿几次真实开发任务讲清楚」与「为什么越来越多人用 ZXing？」，文件名与内容完全对应。

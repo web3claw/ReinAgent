@@ -18,6 +18,7 @@ import { useImChannelsStore, isChannelConnected } from "../../store/useImChannel
 import { useAppStore } from "../../store/useAppStore";
 import { runAgentTurn } from "../providers/runAgentTurn";
 import { createReinBotTaskTool } from "./reinBotTools";
+import { createClipTools } from "./clipTools";
 import { parseModelKey } from "./modelKeyResolver";
 import { loadProvidersConfigFromDisk } from "../../components/settings/model-provider/types";
 import type { ProviderConfig } from "../providers/modelFactory";
@@ -248,14 +249,16 @@ function emitMessages(messages: BridgeMessage[]): void {
 async function runImTurn(params: {
   platform: ImPlatform;
   userText: string;
-  /** 平台单条原始发送（pieceIndex 为本次回合内第几条，1 起；管道负责切分与额度）。 */
-  sendPiece: (content: string, pieceIndex: number) => Promise<void>;
-  /** 该平台的被动回复条数上限（QQ=5 条/msg_id）。 */
-  maxChunks: number;
+  /** 平台发送三件套：notify=中间态回执（不占额度或平台允许）；send=被动回复；quotaLeft=剩余额度。 */
+  im: {
+    notify: (text: string) => Promise<void>;
+    send: (content: string) => Promise<void>;
+    quotaLeft: () => number;
+  };
   /** 发送模式：progressive=流式分段（QQ）；single=整条一次（微信——context_token 疑似一次性，多条复用会失败）。 */
   sendMode: "progressive" | "single";
 }): Promise<void> {
-  const { platform, userText, sendPiece, maxChunks, sendMode } = params;
+  const { platform, userText, im, sendMode } = params;
   const store = useImChannelsStore.getState();
   const reinBotName = useAppStore.getState().reinBotName || "ReinBot";
   const workspaceRoot = await resolveWorkspaceRoot();
@@ -287,9 +290,48 @@ async function runImTurn(params: {
   } catch (err) {
     const errText = `⚠️ ${err instanceof Error ? err.message : String(err)}`;
     publish(errText);
-    await sendPiece(errText.slice(0, 450), 1);
+    await im.send(errText.slice(0, 450));
     store.setQqGatewayLastError(errText);
     return;
+  }
+
+  // —— 确定性预抓取（2026-11-02 用户反馈修复）——
+  // 模型有时跳过 fetch_article 直接凭记忆编造内容（实测发生过：链接是 Skill/MCP 那篇，
+  // 总结成 FlashAttention）。**当整条消息只是一条 URL 时，由程序直接抓取**，
+  // 把真实正文注入上下文；模型只负责总结，无编造空间。
+  let prefetched: { url: string; title: string; text: string; site: string } | null = null;
+  {
+    const bare = userText.trim();
+    const urlMatch = bare.match(/^https?:\/\/\S+$/);
+    const urlInSentence = bare.match(/https?:\/\/\S+/);
+    const looksLikeClipIntent =
+      !!urlMatch ||
+      (/收藏|归档|总结|分析|看一?下|clip/i.test(bare) && !!urlInSentence);
+    if (looksLikeClipIntent && urlInSentence) {
+      const targetUrl = urlInSentence[0].replace(/[，。；、！？）)】\]]+$/, "");
+      try {
+        const article = await invoke<{
+          title: string;
+          site: string;
+          text: string;
+          charCount: number;
+        }>("im_article_fetch", { args: { url: targetUrl } });
+        prefetched = {
+          url: targetUrl,
+          title: article.title,
+          text: article.text,
+          site: article.site,
+        };
+      } catch (err) {
+        // 抓取失败如实告知（绝不编造）；把错误注入上下文让模型照实回执
+        prefetched = null;
+        const reason = err instanceof Error ? err.message : String(err);
+        publish(`⚠️ 抓取失败：${reason}`);
+        await im.send(`⚠️ 抓取失败：${reason.slice(0, 400)}`);
+        store.setQqGatewayLastError(reason);
+        return;
+      }
+    }
   }
 
   const systemPrompt = [
@@ -301,6 +343,14 @@ async function runImTurn(params: {
     "4. 你拥有创建新任务的专属工具 create_task。当用户要求新建、规划、创建或派发新任务时，请主动调用 create_task 工具创建任务，并在回复中使用 @任务[任务名] 格式汇报；",
     "5. 始终使用与用户相同的语言（默认中文），语气亲切可靠、专业干练。",
     "6. 当前消息来自 IM 渠道（QQ 或微信），回复会被原样发回：请精炼作答（避免超长输出），不要输出无法在 IM 呈现的复杂排版。",
+    "7. 链接收藏能力：用户单独发来网页链接（或明确要求收藏/总结某链接）时，先调用 fetch_article 抓取正文，基于正文总结（核心观点/关键要点/可行动项，简洁 markdown），再调用 save_clip 落盘（tags 按内容自拟 2-4 个），最后回执：总结要点 + 保存路径。链接只是回答问题的参考资料时，按普通问题处理，不必落盘。",
+    "8. 工具调用失败时（如网页抓取失败），必须如实告知用户失败原因，严禁声称已成功、严禁编造正文内容。",
+    prefetched
+      ? `\n【已抓取的文章正文】（用户消息里的链接由系统预先抓取，以下是真实内容，请严格基于它总结，禁止使用你记忆中的任何其他文章内容）\n标题：${prefetched.title}\n来源：${prefetched.url}\n\n${prefetched.text}`
+      : "",
+    prefetched
+      ? "9. 上面已提供真实正文：请直接基于它写总结（核心观点/关键要点/可行动项），然后立刻调用 save_clip 落盘（title 用上面给的标题、source_url 用上面给的来源），最后如实回执保存路径。不要再调用 fetch_article。"
+      : "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -321,20 +371,19 @@ async function runImTurn(params: {
   );
 
   let finalText = "";
+  let didSendContent = false;
   // —— 渐进分段发送：平台无消息编辑接口，做不到真·流式；
   // 流式中每逢换行且累积 ≥80 字即发一条（每平台 ≤maxChunks 条 × ≤450 字）。
   const REPLY_CHARS = 450;
   const FLUSH_MIN_CHARS = 80;
-  let nextSeq = 1; // 同步计数，保证发送顺序
   let sentChars = 0;
   let sendChain: Promise<void> = Promise.resolve();
   const sendPieceOrdered = (content: string): Promise<void> => {
-    if (nextSeq > maxChunks || !content.trim()) return sendChain;
-    const pieceIndex = nextSeq;
-    nextSeq += 1;
+    if (im.quotaLeft() <= 0 || !content.trim()) return sendChain;
+    didSendContent = true;
     sendChain = sendChain.then(async () => {
       try {
-        await sendPiece(content, pieceIndex);
+        await im.send(content);
         // 轻微间隔，降低连续触发平台频控的风险
         await new Promise((r) => setTimeout(r, 300));
       } catch (err) {
@@ -346,7 +395,7 @@ async function runImTurn(params: {
   };
   const flushParagraphs = () => {
     if (sendMode !== "progressive") return;
-    if (nextSeq > maxChunks) return;
+    if (im.quotaLeft() <= 0) return;
     const pendingText = finalText.slice(sentChars);
     const nl = pendingText.lastIndexOf("\n");
     if (nl >= FLUSH_MIN_CHARS) {
@@ -371,6 +420,7 @@ async function runImTurn(params: {
           onTaskCreated: () => {},
           onDispatchTask: () => {},
         }),
+        ...createClipTools({ notify: im.notify, channel: platform }),
       ],
       signal: new AbortController().signal,
       onEvent: (ev) => {
@@ -402,7 +452,7 @@ async function runImTurn(params: {
     // 已渐进发出部分内容的不再补发错误（避免打断已收到的分段）。
     const errText = `⚠️ ${err instanceof Error ? err.message : String(err)}`;
     publish(errText);
-    if (nextSeq === 1) {
+    if (!didSendContent) {
       await sendPieceOrdered(errText.slice(0, REPLY_CHARS));
       await sendChain;
     }
@@ -420,18 +470,18 @@ async function runImTurn(params: {
       full = full.slice(0, 2000) + "\n…（后续内容已省略）";
     }
     if (full.trim()) {
-      nextSeq += 1;
-      await sendPiece(full, nextSeq - 1);
+      await im.send(full);
     }
     return;
   }
 
   // 发送剩余部分（最后一条装不下则截断标注）
   let remaining = finalText.slice(sentChars);
-  while (remaining.trim() && nextSeq <= maxChunks) {
+  while (remaining.trim() && im.quotaLeft() > 0) {
+    const isLastAllowed = im.quotaLeft() === 1;
     let piece = remaining.slice(0, REPLY_CHARS);
     remaining = remaining.slice(REPLY_CHARS);
-    if (nextSeq === maxChunks && remaining.length > 0) {
+    if (isLastAllowed && remaining.length > 0) {
       piece += `\n…（后续内容已省略）`;
       remaining = "";
     }
@@ -445,23 +495,38 @@ async function handleQqIncoming(msg: QqBotIncomingMessage): Promise<void> {
   if (!qq.appId || !qq.appSecret) {
     throw new Error("QQ 凭据缺失，无法回复");
   }
+  // 被动回复额度：每条 msg_id 最多 5 条（notify 也占额度）
+  const QQ_MAX = 5;
+  let used = 0;
+  const sendWithSeq = async (content: string) => {
+    const seq = used + 1;
+    used = seq;
+    await invoke("im_qqbot_send", {
+      args: {
+        app_id: qq.appId,
+        app_secret: qq.appSecret,
+        target: msg.source,
+        target_openid: msg.source === "group" ? msg.groupOpenid ?? "" : msg.userOpenid,
+        msg_id: msg.messageId,
+        msg_seq: seq,
+        content,
+      },
+    });
+  };
   await runImTurn({
     platform: "qq",
     userText: msg.content,
-    maxChunks: 5,
     sendMode: "progressive",
-    sendPiece: async (content, pieceIndex) => {
-      await invoke("im_qqbot_send", {
-        args: {
-          app_id: qq.appId,
-          app_secret: qq.appSecret,
-          target: msg.source,
-          target_openid: msg.source === "group" ? msg.groupOpenid ?? "" : msg.userOpenid,
-          msg_id: msg.messageId,
-          msg_seq: pieceIndex,
-          content,
-        },
-      });
+    im: {
+      notify: async (text) => {
+        if (used >= QQ_MAX) return;
+        await sendWithSeq(text);
+      },
+      send: async (content) => {
+        if (used >= QQ_MAX) return;
+        await sendWithSeq(content);
+      },
+      quotaLeft: () => QQ_MAX - used,
     },
   });
 }
@@ -485,20 +550,31 @@ async function handleFeishuIncoming(msg: FeishuIncomingMessage): Promise<void> {
   if (!feishu.appId || !feishu.appSecret) {
     throw new Error("飞书 AppID/AppSecret 缺失，无法回复");
   }
+  const replyFeishu = async (content: string) => {
+    await invoke("im_feishu_reply", {
+      args: {
+        app_id: feishu.appId ?? "",
+        app_secret: feishu.appSecret ?? "",
+        message_id: msg.messageId,
+        content,
+      },
+    });
+  };
   await runImTurn({
     platform: "feishu",
     userText: msg.content,
-    maxChunks: 1,
     sendMode: "single",
-    sendPiece: async (content) => {
-      await invoke("im_feishu_reply", {
-        args: {
-          app_id: feishu.appId ?? "",
-          app_secret: feishu.appSecret ?? "",
-          message_id: msg.messageId,
-          content,
-        },
-      });
+    im: {
+      // 中间态 = 直接回一条「正在处理」（reply API 无每消息条数上限）
+      notify: async (text) => {
+        await replyFeishu(text).catch((err) =>
+          console.warn("[im-bridge] 飞书中间态回执失败（忽略）：", err),
+        );
+      },
+      send: async (content) => {
+        await replyFeishu(content);
+      },
+      quotaLeft: () => 999,
     },
   });
 }
@@ -511,18 +587,32 @@ async function handleWechatIncoming(msg: WechatIncomingMessage): Promise<void> {
   await runImTurn({
     platform: "wechat",
     userText: msg.content,
-    maxChunks: 1,
     sendMode: "single",
-    sendPiece: async (content) => {
-      await invoke("im_wechat_send", {
-        args: {
-          bot_token: wechat.botToken ?? "",
-          base_url: wechat.baseUrl ?? null,
-          to_user_id: msg.fromUserId,
-          context_token: msg.contextToken,
-          content: wechatPlainText(content),
-        },
-      });
+    im: {
+      // 中间态 = 「对方正在输入」指示（不占被动回复额度，失败尽力忽略）
+      notify: async () => {
+        const ilinkUserId = useImChannelsStore.getState().channels.wechat.ilinkUserId ?? "";
+        if (!ilinkUserId) return;
+        await invoke("wechat_typing_notify", {
+          args: {
+            bot_token: wechat.botToken ?? "",
+            base_url: wechat.baseUrl ?? null,
+            ilink_user_id: ilinkUserId,
+          },
+        }).catch((err) => console.warn("[im-bridge] 微信 typing 失败（忽略）：", err));
+      },
+      send: async (content) => {
+        await invoke("im_wechat_send", {
+          args: {
+            bot_token: wechat.botToken ?? "",
+            base_url: wechat.baseUrl ?? null,
+            to_user_id: msg.fromUserId,
+            context_token: msg.contextToken,
+            content: wechatPlainText(content),
+          },
+        });
+      },
+      quotaLeft: () => 1,
     },
   });
 }

@@ -39,6 +39,9 @@
 ### 2. 活跃跟踪经验池（Active Lessons）
 
 #### 分类 A：返工与修漏（Regression & Incomplete Fix）
+- **严禁向真实用户配置写入任何假凭据/假数据，测试必须与用户数据隔离** - 2026-11-02 为验证 IM 渠道工具链，向 kv `reinagent-reinbot-im-channels` 的 feishu 槽位写入 `cli_test/test_secret` 假凭据，清理时一并清空，导致用户真实飞书 App ID/Secret 丢失且无备份、必须重新配置。同类错误还包括：为跑通链路而伪造 token、mock 用户真实会话/笔记/收藏 - **任何测试/验证要么只读、要么完整备份原值并在 finally 精确还原；能通过直接调用底层命令（如 im_article_fetch）验证的，绝不写入上层 store/config** - Done right: 本次正确做法应为直接 `invoke("im_article_fetch")` 验证抓取、完全绕开渠道配置 - Seen 1× (2026-11-02).
+- **不得只靠提示词约束模型行为，关键路径必须在代码层强制** - 2026-11-02 链接收藏场景：系统提示词已写明「先调 fetch_article 再总结」，但模型仍跳过工具直接凭记忆编造内容（把 Skill/MCP 文章总结成 FlashAttention，并伪造保存路径）。提示词是建议不是保证 - **涉及「必须基于真实数据」的路径，必须由代码预先获取真实数据并注入上下文（模型只做加工），失败时直接如实报错、压根不进入模型环节** - Done right: `qqbotBridge.runImTurn` 的确定性预抓取（消息含链接 → 程序直调 im_article_fetch → 正文注入 systemPrompt） - Seen 1× (2026-11-02).
+
 - **store 在模块求值期读 kv 缓存必须在挂载后补 rehydrate，严禁只靠 loadInitial** - useImChannelsStore 用 loadInitial() 在模块求值时读 kv，但 main.tsx 的 await initStorage() 晚于整个静态模块图求值，应用每次冷启动 store 都读到空缓存：用户已配置的 QQ 渠道配置「消失」、网关自启链路静默跳过（与 hubSettingsStore 三 kv 切片陷阱同源）- store 增加 rehydrate()（重读 kv 并保留运行态字段），在 initQqBotBridge 与 ReinBotBadge 挂载时调用 - Done right: 见 useImChannelsStore.rehydrate + qqbotBridge.initQqBotBridge 首行 + ReinBotBadge useEffect - Seen 2× (2026-10-25, 2026-11-01).
 - **Red Check 破坏变异必须确认变异真实落盘，严禁只看「测试通过/失败」的表面结果** - 在 im_channels.rs 飞书签名 Red Check 中用 sed 做变异后测试依然全绿（假绿），排查发现 sed 模式未匹配源码、变异根本没有生效，测试是在未变异代码上通过的；若据此误判「Red Check 通过」则守护测试形同虚设 - 变异后必须先 grep/读取源码确认变异文本真实存在再跑测试，或直接用 Edit 工具做原子变异（杜绝 sed 静默不匹配）- Done right: 2026-10-31 im_channels.rs 的两处 Red Check 均先 grep 确认 `{secret}
 {timestamp}` 已落盘再断言测试变红 - Seen 1× (2026-10-31).

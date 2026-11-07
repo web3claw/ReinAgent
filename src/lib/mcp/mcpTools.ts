@@ -55,7 +55,14 @@ export async function createMcpTools(allowedServerIds?: string[]): Promise<unkno
 
   let entries: McpToolEntry[];
   try {
-    entries = await invoke<McpToolEntry[]>("mcp_list_tools", { servers: enabled });
+    // 超时护栏（2026-11-02）：不可达的 MCP 服务器会让枚举阻塞数十秒（Rust 侧 3 次重试 × 15s），
+    // 期间模型请求根本发不出去、用户只看到「正在思考中」。8s 内拿不到即跳过本轮 MCP 工具并如实告知。
+    entries = await Promise.race([
+      invoke<McpToolEntry[]>("mcp_list_tools", { servers: enabled }),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error("MCP 工具枚举超时（8s，服务器可能不可达）")), 8000),
+      ),
+    ]);
   } catch (err) {
     // 全部启用服务器都失败（后端部分失败跳过、全失败才 Err）：如实告知用户
     // 「启用了却没带上」，不能只留在 console（No-Fallback 铁律）
